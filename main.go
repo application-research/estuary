@@ -1,26 +1,21 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	crand "crypto/rand"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-address"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
-	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
-	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-blockservice"
@@ -48,11 +43,13 @@ import (
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
 
+	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 var log = logging.Logger("estuary")
@@ -143,10 +140,11 @@ func (dbc dbCID) Value() (driver.Value, error) {
 
 type Content struct {
 	gorm.Model
-	Cid  dbCID
-	Name string
-	User string
-	Size int64
+	Cid    dbCID
+	Name   string
+	User   string
+	Size   int64
+	Active bool
 }
 
 type Object struct {
@@ -160,46 +158,6 @@ type ObjRef struct {
 	ID      uint `gorm:"primarykey"`
 	Content uint
 	Object  uint
-}
-
-var testMarketsCmd = &cli.Command{
-	Name: "test-markets",
-	Action: func(cctx *cli.Context) error {
-		return nil
-		/*
-			ctx := context.TODO()
-			h, err := libp2p.New(ctx)
-			if err != nil {
-				return err
-			}
-
-			api, closer, err := lcli.GetGatewayAPI(cctx)
-			if err != nil {
-				return err
-			}
-
-			defer closer()
-
-			fc, err := filc.NewClient(h, api, wallet, addr)
-			if err != nil {
-				return err
-			}
-
-			addr, err := address.NewFromString(cctx.Args().First())
-			if err != nil {
-				return err
-			}
-
-			fmt.Println("calling get ask", addr)
-			ask, err := fc.GetAsk(ctx, addr)
-			if err != nil {
-				return err
-			}
-
-			fmt.Printf("ASK: %#v\n", ask)
-
-		*/
-	},
 }
 
 func setupWallet(dir string) (*wallet.LocalWallet, error) {
@@ -238,14 +196,16 @@ func setupWallet(dir string) (*wallet.LocalWallet, error) {
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
+
 	app := cli.NewApp()
-	app.Commands = []*cli.Command{
-		testMarketsCmd,
-	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
+		},
+		&cli.StringFlag{
+			Name:  "database",
+			Value: "sqlite=estuary.db",
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
@@ -317,28 +277,28 @@ func main() {
 			}
 		}()
 
-		db, err := gorm.Open(sqlite.Open("estuary.db"), &gorm.Config{})
+		db, err := setupDatabase(cctx)
 		if err != nil {
 			return err
 		}
-		db.AutoMigrate(&Content{})
-		db.AutoMigrate(&Object{})
-		db.AutoMigrate(&ObjRef{})
-
-		db.AutoMigrate(&contentDeal{})
-		db.AutoMigrate(&dfeRecord{})
-		db.AutoMigrate(&PieceCommRecord{})
 
 		s.DB = db
+
+		cm := NewContentManager(db, api, fc)
+		go cm.ContentWatcher()
+
+		s.CM = cm
 
 		e := echo.New()
 		e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 			log.Errorf("handler error: %s", err)
 		}
-
+		e.Use(middleware.CORS())
 		e.POST("/content/add", s.handleAdd)
 		e.GET("/content/stats", s.handleStats)
 		e.GET("/content/ensure-replication/:datacid", s.handleEnsureReplication)
+		e.GET("/content/status/:id", s.handleContentStatus)
+		e.GET("/content/list", s.handleListContent)
 
 		e.GET("/deals/query/:miner", s.handleQueryAsk)
 		e.POST("/deals/make/:miner", s.handleMakeDeal)
@@ -359,11 +319,44 @@ func main() {
 	}
 }
 
+func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
+	dbval := cctx.String("database")
+	parts := strings.SplitN(dbval, "=", 2)
+	if len(parts) == 1 {
+		return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS'")
+	}
+
+	var dial gorm.Dialector
+	switch parts[0] {
+	case "sqlite":
+		dial = sqlite.Open(parts[1])
+	case "postgres":
+		dial = postgres.Open(parts[1])
+	default:
+		return nil, fmt.Errorf("unsupported or unrecognized db type: %s", parts[0])
+	}
+
+	db, err := gorm.Open(dial, &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	db.AutoMigrate(&Content{})
+	db.AutoMigrate(&Object{})
+	db.AutoMigrate(&ObjRef{})
+
+	db.AutoMigrate(&contentDeal{})
+	db.AutoMigrate(&dfeRecord{})
+	db.AutoMigrate(&PieceCommRecord{})
+
+	return db, nil
+}
+
 type Server struct {
 	Node      *Node
 	DB        *gorm.DB
 	FilClient *filclient.FilClient
 	Api       api.GatewayAPI
+	CM        *ContentManager
 }
 
 type statsResp struct {
@@ -469,9 +462,10 @@ func (s *Server) handleAdd(c echo.Context) error {
 
 	// okay cool, we added the content, now track it
 	content := &Content{
-		Cid:  dbCID{nd.Cid()},
-		Size: totalSize,
-		Name: fname,
+		Cid:    dbCID{nd.Cid()},
+		Size:   totalSize,
+		Name:   fname,
+		Active: true,
 	}
 
 	if err := s.DB.Create(content).Error; err != nil {
@@ -488,6 +482,8 @@ func (s *Server) handleAdd(c echo.Context) error {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
+	s.CM.ToCheck <- content.ID
+
 	go func() {
 		if err := s.Node.Dht.Provide(context.TODO(), nd.Cid(), true); err != nil {
 			fmt.Println("providing failed: ", err)
@@ -503,8 +499,80 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 		return err
 	}
 
-	return s.EnsureStorage(data)
+	var content Content
+	if err := s.DB.Find(&content, "cid = ?", data.Bytes()).Error; err != nil {
+		return err
+	}
 
+	fmt.Println("Content: ", content.Cid.CID, data)
+
+	s.CM.ToCheck <- content.ID
+	return nil
+}
+
+func (s *Server) handleListContent(c echo.Context) error {
+	var contents []Content
+	if err := s.DB.Find(&contents, "active").Error; err != nil {
+		return err
+	}
+
+	var ids []uint
+	for _, c := range contents {
+		ids = append(ids, c.ID)
+	}
+
+	return c.JSON(200, ids)
+}
+
+type dealStatus struct {
+	Deal           contentDeal             `json:"deal"`
+	TransferStatus *filclient.ChannelState `json:"transfer"`
+}
+
+func (s *Server) handleContentStatus(c echo.Context) error {
+	ctx := context.TODO()
+	val, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", val).Error; err != nil {
+		return err
+	}
+
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "content = ?", content.ID).Error; err != nil {
+		return err
+	}
+
+	var ds []dealStatus
+	for _, d := range deals {
+		maddr, err := d.MinerAddr()
+		if err != nil {
+			return err
+		}
+		chanst, err := s.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
+		if err != nil && err != filclient.ErrNoTransferFound {
+			return err
+		}
+
+		ds = append(ds, dealStatus{
+			Deal:           d,
+			TransferStatus: chanst,
+		})
+	}
+
+	var failures []dfeRecord
+	if err := s.DB.Find(&failures, "content = ?", content.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"content":  content,
+		"deals":    ds,
+		"failures": failures,
+	})
 }
 
 func (s *Server) handleQueryAsk(c echo.Context) error {
@@ -747,426 +815,6 @@ func (s *Server) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs
 	}
 
 	return pc, size, nil
-}
-
-func (s *Server) pickMiners(n int) ([]address.Address, error) {
-	perm := rand.Perm(len(miners))[:n]
-	out := make([]address.Address, n)
-	for ix, val := range perm {
-		out[ix] = miners[val]
-	}
-	return out, nil
-}
-
-type contentDeal struct {
-	gorm.Model
-	Content  uint
-	PropCid  dbCID
-	Miner    string
-	DealID   int64
-	Failed   bool
-	FailedAt time.Time
-}
-
-func (cd contentDeal) MinerAddr() (address.Address, error) {
-	return address.NewFromString(cd.Miner)
-}
-
-func (s *Server) EnsureStorage(c cid.Cid) error {
-	ctx := context.TODO()
-
-	// check if content has enough deals made for it
-	// if not enough deals, go make more
-	// check all existing deals, ensure they are still active
-	// if not active, repair!
-	var content Content
-	if err := s.DB.Find(&content, "cid = ?", c.Bytes()).Error; err != nil {
-		return err
-	}
-
-	fmt.Println("Content: ", content.Cid.CID, c)
-
-	var deals []contentDeal
-	if err := s.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
-		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-	}
-
-	replicationFactor := 10
-
-	if len(deals) < replicationFactor {
-		// make some more deals!
-		fmt.Printf("Content only has %d deals, making %d more.\n", len(deals), replicationFactor-len(deals))
-		if err := s.makeDealsForContent(ctx, content, replicationFactor-len(deals)); err != nil {
-			return err
-		}
-	}
-
-	// check on each of the existing deals, see if they need fixing
-	for _, d := range deals {
-		ok, err := s.checkDeal(&d)
-		if err != nil {
-			var dfe *DealFailureError
-			if xerrors.As(err, &dfe) {
-				s.recordDealFailure(dfe)
-				continue
-			} else {
-				return err
-			}
-		}
-
-		if !ok {
-			if err := s.repairDeal(&d); err != nil {
-				return xerrors.Errorf("repairing deal failed: %w", err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) getContent(id uint) (*Content, error) {
-	var content Content
-	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
-		return nil, err
-	}
-	return &content, nil
-}
-
-func (s *Server) checkDeal(d *contentDeal) (bool, error) {
-	ctx := context.TODO()
-
-	maddr, err := d.MinerAddr()
-	if err != nil {
-		return false, err
-	}
-
-	if d.DealID != 0 {
-		return s.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
-	}
-
-	// case where deal isnt yet on chain...
-
-	fmt.Println("checking proposal cid: ", d.PropCid.CID)
-	provds, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID)
-	if err != nil {
-		// if we cant get deal status from a miner and the data hasnt landed on
-		// chain what do we do?
-		s.recordDealFailure(&DealFailureError{
-			Miner:   maddr,
-			Phase:   "check-status",
-			Message: err.Error(),
-			Content: d.Content,
-		})
-		return false, nil
-	}
-
-	content, err := s.getContent(d.Content)
-	if err != nil {
-		return false, err
-	}
-
-	if provds.PublishCid != nil {
-		id, err := s.getDealID(ctx, *provds.PublishCid, d)
-		if err != nil {
-			return false, xerrors.Errorf("failed to check deal id: %w", err)
-		}
-
-		fmt.Println("Got deal ID for deal!", id)
-		d.DealID = int64(id)
-		if err := s.DB.Save(&d).Error; err != nil {
-			return false, xerrors.Errorf("failed to update database entry: %w", err)
-		}
-		return true, nil
-	}
-
-	head, err := s.Api.ChainHead(ctx)
-	if err != nil {
-		return false, err
-	}
-
-	if provds.Proposal.StartEpoch < head.Height() {
-		// deal expired, miner didnt start it in time
-		return false, nil
-	}
-	// miner still has time...
-
-	fmt.Println("Checking transfer status...")
-	status, err := s.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
-	if err != nil {
-		if err != filclient.ErrNoTransferFound {
-			return false, err
-		}
-
-		// no transfer found for this pair, need to create a new one
-	}
-
-	switch status.Status {
-	case datatransfer.Failed:
-		fmt.Println("Transfer failed!", status.Message)
-		s.recordDealFailure(&DealFailureError{
-			Miner:   maddr,
-			Phase:   "data-transfer",
-			Message: fmt.Sprintf("transfer failed: %s", status.Message),
-			Content: content.ID,
-		})
-	case datatransfer.Cancelled:
-		fmt.Println("Transfer canceled!", status.Message)
-		s.recordDealFailure(&DealFailureError{
-			Miner:   maddr,
-			Phase:   "data-transfer",
-			Message: fmt.Sprintf("transfer cancelled: %s", status.Message),
-			Content: content.ID,
-		})
-	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
-		// these are all okay
-		fmt.Println("Transfer is finished-ish!", status.Status)
-	case datatransfer.Ongoing:
-		fmt.Println("transfer status is ongoing!")
-		// expected, this is fine
-	default:
-		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", status.Status, status.Message)
-	}
-
-	return true, nil
-}
-
-func (s *Server) getDealID(ctx context.Context, pubcid cid.Cid, d *contentDeal) (abi.DealID, error) {
-	mlookup, err := s.Api.StateSearchMsg(ctx, pubcid)
-	if err != nil {
-		return 0, xerrors.Errorf("could not find published deal on chain: %w", err)
-	}
-
-	if mlookup.Message != pubcid {
-		// TODO: can probably deal with this by checking the message contents?
-		return 0, xerrors.Errorf("publish deal message was replaced on chain")
-	}
-
-	msg, err := s.Api.ChainGetMessage(ctx, mlookup.Message)
-	if err != nil {
-		return 0, err
-	}
-
-	var params market.PublishStorageDealsParams
-	if err := params.UnmarshalCBOR(bytes.NewReader(msg.Params)); err != nil {
-		return 0, err
-	}
-
-	dealix := -1
-	for i, pd := range params.Deals {
-		nd, err := cborutil.AsIpld(&pd)
-		if err != nil {
-			return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
-		}
-
-		if nd.Cid() == d.PropCid.CID {
-			dealix = i
-			break
-		}
-	}
-
-	if dealix == -1 {
-		return 0, fmt.Errorf("our deal was not in this publish message")
-	}
-
-	if mlookup.Receipt.ExitCode != 0 {
-		return 0, xerrors.Errorf("miners deal publish failed (exit: %d)", mlookup.Receipt.ExitCode)
-	}
-
-	var retval market.PublishStorageDealsReturn
-	if err := retval.UnmarshalCBOR(bytes.NewReader(mlookup.Receipt.Return)); err != nil {
-		return 0, xerrors.Errorf("publish deal return was improperly formatted: %w", err)
-	}
-
-	if len(retval.IDs) != len(params.Deals) {
-		return 0, fmt.Errorf("return value from publish deals did not match length of params")
-	}
-
-	return retval.IDs[dealix], nil
-}
-
-func (s *Server) repairDeal(d *contentDeal) error {
-	d.Failed = true
-	d.FailedAt = time.Now()
-	if err := s.DB.Save(d).Error; err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (s *Server) priceIsTooHigh(price abi.TokenAmount) bool {
-	return false
-}
-
-func (s *Server) makeDealsForContent(ctx context.Context, content Content, count int) error {
-	ms, err := s.pickMiners(count)
-	if err != nil {
-		return err
-	}
-
-	asks := make([]*network.AskResponse, len(ms))
-	var successes int
-	for i, m := range ms {
-		ask, err := s.FilClient.GetAsk(ctx, m)
-		if err != nil {
-			s.recordDealFailure(&DealFailureError{
-				Miner:   m,
-				Phase:   "query-ask",
-				Message: err.Error(),
-				Content: content.ID,
-			})
-			fmt.Printf("failed to get ask for miner %s: %s\n", m, err)
-			continue
-		}
-		asks[i] = ask
-		successes++
-	}
-
-	proposals := make([]*network.Proposal, len(ms))
-	for i, m := range ms {
-		if asks[i] == nil {
-			continue
-		}
-
-		prop, err := s.FilClient.MakeDeal(ctx, m, content.Cid.CID, asks[i].Ask.Ask.Price, 1000000)
-		if err != nil {
-			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
-		}
-
-		proposals[i] = prop
-	}
-
-	responses := make([]*network.SignedResponse, len(ms))
-	for i, p := range proposals {
-		if p == nil {
-			continue
-		}
-
-		dealresp, err := s.FilClient.SendProposal(ctx, p)
-		if err != nil {
-			s.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "send-proposal",
-				Message: err.Error(),
-				Content: content.ID,
-			})
-			fmt.Println("failed to propose deal with miner: ", err)
-			continue
-		}
-
-		// TODO: verify signature!
-		switch dealresp.Response.State {
-		case storagemarket.StorageDealError:
-			if err := s.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
-				Phase:   "propose",
-				Message: dealresp.Response.Message,
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		case storagemarket.StorageDealProposalRejected:
-			if err := s.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
-				Phase:   "propose",
-				Message: dealresp.Response.Message,
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		default:
-			if err := s.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
-				Phase:   "propose",
-				Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-			fmt.Println("good deal state!", dealresp.Response.State)
-			responses[i] = dealresp
-
-			cd := &contentDeal{
-				Content: content.ID,
-				PropCid: dbCID{dealresp.Response.Proposal},
-				Miner:   ms[i].String(),
-			}
-
-			if err := s.DB.Create(cd).Error; err != nil {
-				return xerrors.Errorf("failed to create database entry for deal: %w", err)
-			}
-		}
-	}
-
-	// Now start up some data transfers!
-	// note: its okay if we dont start all the data transfers, we can just do it next time around
-	for i, resp := range responses {
-		if resp == nil {
-			continue
-		}
-
-		chanid, err := s.FilClient.StartDataTransfer(ctx, ms[i], resp.Response.Proposal, content.Cid.CID)
-		if err != nil {
-			if oerr := s.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "start-data-transfer",
-				Message: err.Error(),
-				Content: content.ID,
-			}); oerr != nil {
-				return oerr
-			}
-		}
-
-		log.Infow("Started data transfer", "chanid", chanid)
-	}
-
-	return nil
-}
-
-func (s *Server) recordDealFailure(dfe *DealFailureError) error {
-	log.Infow("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
-	return s.DB.Create(dfe.Record()).Error
-}
-
-type DealFailureError struct {
-	Miner   address.Address
-	Phase   string
-	Message string
-	Content uint
-}
-
-type dfeRecord struct {
-	gorm.Model
-	Miner   string
-	Phase   string
-	Message string
-	Content uint
-}
-
-func (dfe *DealFailureError) Record() *dfeRecord {
-	return &dfeRecord{
-		Miner:   dfe.Miner.String(),
-		Phase:   dfe.Phase,
-		Message: dfe.Message,
-		Content: dfe.Content,
-	}
-}
-
-func (dfe *DealFailureError) Error() string {
-	return fmt.Sprintf("deal with miner %s failed in phase %s: %s", dfe.Message, dfe.Phase, dfe.Message)
-
-}
-
-func averageAskPrice(asks []*network.AskResponse) types.FIL {
-	total := abi.NewTokenAmount(0)
-	for _, a := range asks {
-		total = types.BigAdd(total, a.Ask.Ask.Price)
-	}
-
-	return types.FIL(big.Div(total, big.NewInt(int64(len(asks)))))
 }
 
 type Node struct {

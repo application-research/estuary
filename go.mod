@@ -28,6 +28,7 @@ require (
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/ipld/go-ipld-prime v0.5.1-0.20201021195245-109253e8a018
+	github.com/labstack/echo v3.3.10+incompatible // indirect
 	github.com/labstack/echo/v4 v4.2.0
 	github.com/libp2p/go-libp2p v0.13.0
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
@@ -40,6 +41,7 @@ require (
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+	gorm.io/driver/postgres v1.0.8 // indirect
 	gorm.io/driver/sqlite v1.1.4
 	gorm.io/gorm v1.20.12
 )

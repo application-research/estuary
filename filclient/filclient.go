@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
@@ -68,7 +69,13 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 	dtn := dtnet.NewFromLibp2pHost(h)
 	counter := storedcounter.New(ds, datastore.NewKey("datatransfer"))
 
-	mgr, err := dtimpl.NewDataTransfer(ds, "cidlistsdir", dtn, tpt, counter)
+	dtRestartConfig := dtimpl.PushChannelRestartConfig(time.Second*30, 10, 1024, 2*time.Minute, 3)
+	mgr, err := dtimpl.NewDataTransfer(ds, "cidlistsdir", dtn, tpt, counter, dtRestartConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mgr.RegisterVoucherType(&requestvalidation.StorageDataTransferVoucher{}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -89,45 +96,46 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 }
 
 func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol protocol.ID) (inet.Stream, error) {
-	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	mpid, err := fc.connectToMiner(ctx, maddr)
 	if err != nil {
 		return nil, err
 	}
 
+	s, err := fc.host.NewStream(ctx, mpid, protocol)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to open stream to peer: %w", err)
+	}
+
+	return s, nil
+}
+
+func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
+	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	if err != nil {
+		return "", err
+	}
+
 	if minfo.PeerId == nil {
-		return nil, fmt.Errorf("miner %s has no peer ID set", maddr)
+		return "", fmt.Errorf("miner %s has no peer ID set", maddr)
 	}
 
 	var maddrs []multiaddr.Multiaddr
 	for _, mma := range minfo.Multiaddrs {
 		ma, err := multiaddr.NewMultiaddrBytes(mma)
 		if err != nil {
-			return nil, fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err)
+			return "", fmt.Errorf("miner %s had invalid multiaddrs in their info: %w", maddr, err)
 		}
 		maddrs = append(maddrs, ma)
 	}
 
-	fmt.Println("miner: ", *minfo.PeerId)
-	fmt.Println("addrs:")
-	for _, a := range maddrs {
-		fmt.Println(a)
-	}
-
-	fmt.Println("connecting...")
 	if err := fc.host.Connect(ctx, peer.AddrInfo{
 		ID:    *minfo.PeerId,
 		Addrs: maddrs,
 	}); err != nil {
-		return nil, err
+		return "", err
 	}
 
-	fmt.Println("new stream time")
-	s, err := fc.host.NewStream(ctx, *minfo.PeerId, protocol)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to open stream to peer: %w", err)
-	}
-
-	return s, nil
+	return *minfo.PeerId, nil
 }
 
 func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*network.AskResponse, error) {
@@ -318,51 +326,56 @@ type ChannelState struct {
 	//datatransfer.Channel
 
 	// SelfPeer returns the peer this channel belongs to
-	SelfPeer peer.ID
+	SelfPeer   peer.ID `json:"self_peer"`
+	RemotePeer peer.ID `json:"remote_peer"`
 
 	// Status is the current status of this channel
-	Status datatransfer.Status
+	Status    datatransfer.Status `json:"status"`
+	StatusStr string              `json:"status_str"`
 
 	// Sent returns the number of bytes sent
-	Sent uint64
+	Sent uint64 `json:"sent"`
 
 	// Received returns the number of bytes received
-	Received uint64
+	Received uint64 `json:"received"`
 
 	// Message offers additional information about the current status
-	Message string
+	Message string `json:"message"`
 
-	BaseCid   cid.Cid
-	ChannelID datatransfer.ChannelID
+	BaseCid cid.Cid `json:"base_cid"`
+
+	ChannelID datatransfer.ChannelID `json:"chanid"`
 
 	// Vouchers returns all vouchers sent on this channel
-	Vouchers []datatransfer.Voucher
+	//Vouchers []datatransfer.Voucher
 
 	// VoucherResults are results of vouchers sent on the channel
-	VoucherResults []datatransfer.VoucherResult
+	//VoucherResults []datatransfer.VoucherResult
 
 	// LastVoucher returns the last voucher sent on the channel
-	LastVoucher datatransfer.Voucher
+	//LastVoucher datatransfer.Voucher
 
 	// LastVoucherResult returns the last voucher result sent on the channel
-	LastVoucherResult datatransfer.VoucherResult
+	//LastVoucherResult datatransfer.VoucherResult
 
 	// ReceivedCids returns the cids received so far on the channel
-	ReceivedCids []cid.Cid
+	//ReceivedCids []cid.Cid
 
 	// Queued returns the number of bytes read from the node and queued for sending
-	Queued uint64
+	//Queued uint64
 }
 
 func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 	return &ChannelState{
-		SelfPeer:  st.SelfPeer(),
-		Status:    st.Status(),
-		Sent:      st.Sent(),
-		Received:  st.Received(),
-		Message:   st.Message(),
-		BaseCid:   st.BaseCID(),
-		ChannelID: st.ChannelID(),
+		SelfPeer:   st.SelfPeer(),
+		RemotePeer: st.OtherPeer(),
+		Status:     st.Status(),
+		StatusStr:  datatransfer.Statuses[st.Status()],
+		Sent:       st.Sent(),
+		Received:   st.Received(),
+		Message:    st.Message(),
+		BaseCid:    st.BaseCID(),
+		ChannelID:  st.ChannelID(),
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
 		//LastVoucher:       st.LastVoucher(),
@@ -535,4 +548,29 @@ func (fc *FilClient) CheckChainDeal(ctx context.Context, dealid abi.DealID) (boo
 	}
 
 	return true, nil
+}
+
+func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Address, st *ChannelState) (outerr error) {
+	defer func() {
+		// TODO: this is only here because for some reason restarting a data transfer can just panic
+		// https://github.com/filecoin-project/go-data-transfer/issues/150
+		if e := recover(); e != nil {
+			outerr = fmt.Errorf("panic while checking transfer: %s", e)
+		}
+	}()
+	// make sure we at least have an open connection to the miner
+	if fc.host.Network().Connectedness(st.RemotePeer) != inet.Connected {
+		// try reconnecting
+		mpid, err := fc.connectToMiner(ctx, miner)
+		if err != nil {
+			return xerrors.Errorf("failed to reconnect to miner: %w", err)
+		}
+
+		if mpid != st.RemotePeer {
+			return fmt.Errorf("miner peer ID is different than RemotePeer in data transfer channel")
+		}
+	}
+
+	return fc.dataTransfer.RestartDataTransferChannel(ctx, st.ChannelID)
+
 }
