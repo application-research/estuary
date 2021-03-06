@@ -18,9 +18,11 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/ipfs/go-cid"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ContentManager struct {
@@ -28,22 +30,27 @@ type ContentManager struct {
 	Api       api.GatewayAPI
 	FilClient *filclient.FilClient
 
+	Blockstore blockstore.Blockstore
+
 	ToCheck chan uint
 }
 
-func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient, bs blockstore.Blockstore) *ContentManager {
 	return &ContentManager{
-		DB:        db,
-		Api:       api,
-		FilClient: fc,
-		ToCheck:   make(chan uint, 10),
+		DB:         db,
+		Api:        api,
+		FilClient:  fc,
+		Blockstore: bs,
+		ToCheck:    make(chan uint, 10),
 	}
 }
 
 func (cm *ContentManager) ContentWatcher() {
-	if err := cm.startup(); err != nil {
-		log.Errorf("failed to recheck existing content: %s", err)
-	}
+	/*
+		if err := cm.startup(); err != nil {
+			log.Errorf("failed to recheck existing content: %s", err)
+		}
+	*/
 
 	ticker := time.Tick(time.Minute * 5)
 
@@ -366,6 +373,12 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return err
 	}
 
+	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
+	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
+	if err != nil {
+		return err
+	}
+
 	var asks []*network.AskResponse
 	var ms []address.Address
 	var successes int
@@ -379,6 +392,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				Content: content.ID,
 			})
 			fmt.Printf("failed to get ask for miner %s: %s\n", m, err)
+			continue
+		}
+
+		if ask.Ask.Ask.MinPieceSize > size.Padded() {
+			continue
+		}
+
+		if cm.priceIsTooHigh(ask.Ask.Ask.Price) {
+			log.Infow("miners price is too high", "miner", m, "price", ask.Ask.Ask.Price)
 			continue
 		}
 
@@ -532,4 +554,43 @@ func averageAskPrice(asks []*network.AskResponse) types.FIL {
 	}
 
 	return types.FIL(big.Div(total, big.NewInt(int64(len(asks)))))
+}
+
+type PieceCommRecord struct {
+	Data  dbCID `gorm:"unique"`
+	Piece dbCID
+	Size  abi.UnpaddedPieceSize
+}
+
+func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	var pcr PieceCommRecord
+	err := cm.DB.First(&pcr, "data = ?", data.Bytes()).Error
+	if err == nil {
+		fmt.Println("database response!!!")
+		if !pcr.Piece.CID.Defined() {
+			return cid.Undef, 0, fmt.Errorf("got an undefined thing back from database")
+		}
+		return pcr.Piece.CID, pcr.Size, nil
+	}
+
+	if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+		return cid.Undef, 0, err
+	}
+
+	pc, size, err := filclient.GeneratePieceCommitment(rt, data, bs)
+	if err != nil {
+		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
+	}
+
+	pcr = PieceCommRecord{
+		Data:  dbCID{data},
+		Piece: dbCID{pc},
+		Size:  size,
+	}
+
+	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&pcr).Error; err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return pc, size, nil
 }

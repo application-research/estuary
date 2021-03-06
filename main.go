@@ -46,7 +46,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -241,7 +240,7 @@ func main() {
 			Api:  api,
 		}
 
-		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, s.getPieceCommitment)
+		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore)
 		if err != nil {
 			return err
 		}
@@ -284,7 +283,8 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc)
+		cm := NewContentManager(db, api, fc, s.Node.Blockstore)
+		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		go cm.ContentWatcher()
 
 		s.CM = cm
@@ -293,6 +293,8 @@ func main() {
 		e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 			log.Errorf("handler error: %s", err)
 		}
+
+		e.Use(middleware.Logger())
 		e.Use(middleware.CORS())
 		e.POST("/content/add", s.handleAdd)
 		e.GET("/content/stats", s.handleStats)
@@ -404,21 +406,13 @@ where obj_refs.content = ?`
 }
 
 func (s *Server) handleAdd(c echo.Context) error {
-	vals, err := c.FormParams()
-	if err != nil {
-		return err
-	}
-
-	namevals := vals["name"]
-	if len(namevals) == 0 || namevals[0] == "" {
-		return c.JSON(400, map[string]string{"error": "must specify a filename"})
-	}
-	fname := namevals[0]
 
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
 	}
+
+	fname := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
@@ -776,45 +770,6 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
-}
-
-type PieceCommRecord struct {
-	Data  dbCID `gorm:"unique"`
-	Piece dbCID
-	Size  abi.UnpaddedPieceSize
-}
-
-func (s *Server) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
-	var pcr PieceCommRecord
-	err := s.DB.First(&pcr, "data = ?", data.Bytes()).Error
-	if err == nil {
-		fmt.Println("database response!!!")
-		if !pcr.Piece.CID.Defined() {
-			return cid.Undef, 0, fmt.Errorf("got an undefined thing back from database")
-		}
-		return pcr.Piece.CID, pcr.Size, nil
-	}
-
-	if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-		return cid.Undef, 0, err
-	}
-
-	pc, size, err := filclient.GeneratePieceCommitment(rt, data, bs)
-	if err != nil {
-		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
-	}
-
-	pcr = PieceCommRecord{
-		Data:  dbCID{data},
-		Piece: dbCID{pc},
-		Size:  size,
-	}
-
-	if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&pcr).Error; err != nil {
-		return cid.Undef, 0, err
-	}
-
-	return pc, size, nil
 }
 
 type Node struct {
