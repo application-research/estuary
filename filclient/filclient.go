@@ -185,6 +185,9 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		return nil, err
 	}
 
+	// set provider collateral 10% above minimum to avoid fluctuations causing deal failure
+	provCol := big.Div(big.Mul(collBounds.Min, big.NewInt(11)), big.NewInt(10))
+
 	dealStart := head.Height() + (epochsPerHour * 50)
 
 	end := dealStart + duration
@@ -204,7 +207,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		EndEpoch:   end,
 
 		StoragePricePerEpoch: pricePerEpoch,
-		ProviderCollateral:   collBounds.Min,
+		ProviderCollateral:   provCol,
 		ClientCollateral:     big.Zero(),
 	}
 

@@ -46,11 +46,9 @@ func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient,
 }
 
 func (cm *ContentManager) ContentWatcher() {
-	/*
-		if err := cm.startup(); err != nil {
-			log.Errorf("failed to recheck existing content: %s", err)
-		}
-	*/
+	if err := cm.startup(); err != nil {
+		log.Errorf("failed to recheck existing content: %s", err)
+	}
 
 	ticker := time.Tick(time.Minute * 5)
 
@@ -363,7 +361,21 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 	return nil
 }
 
+var priceMax abi.TokenAmount
+
+func init() {
+	max, err := types.ParseFIL("0.00000003")
+	if err != nil {
+		panic(err)
+	}
+	priceMax = abi.TokenAmount(max)
+}
+
 func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
+	if types.BigCmp(price, priceMax) > 0 {
+		return true
+	}
+
 	return false
 }
 

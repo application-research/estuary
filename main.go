@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/peer"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -206,15 +208,27 @@ func main() {
 			Name:  "database",
 			Value: "sqlite=estuary.db",
 		},
+		&cli.StringFlag{
+			Name:  "apilisten",
+			Usage: "address for the api server to listen on",
+			Value: ":3004",
+		},
+		&cli.StringFlag{
+			Name:  "datadir",
+			Usage: "directory to store data in",
+			Value: ".",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
+		ddir := cctx.String("datadir")
 		cfg := &Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			Blockstore:    "estuary-blocks",
-			Libp2pKeyFile: "estuary-peer.key",
-			Datastore:     "estuary-leveldb",
+			Blockstore:    filepath.Join(ddir, "estuary-blocks"),
+			Libp2pKeyFile: filepath.Join(ddir, "estuary-peer.key"),
+			Datastore:     filepath.Join(ddir, "estuary-leveldb"),
+			WalletDir:     filepath.Join(ddir, "estuary-wallet"),
 		}
 
 		//api, closer, err := lcli.GetGatewayAPI(cctx)
@@ -294,7 +308,7 @@ func main() {
 			log.Errorf("handler error: %s", err)
 		}
 
-		e.Use(middleware.Logger())
+		//e.Use(middleware.Logger())
 		e.Use(middleware.CORS())
 		e.POST("/content/add", s.handleAdd)
 		e.GET("/content/stats", s.handleStats)
@@ -313,7 +327,7 @@ func main() {
 		e.GET("/admin/balance", s.handleAdminBalance)
 		e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
 
-		return e.Start(":3004")
+		return e.Start(cctx.String("apilisten"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -783,6 +797,8 @@ type Node struct {
 	Bitswap            *bitswap.Bitswap
 
 	Wallet *wallet.LocalWallet
+
+	Bwc *metrics.BandwidthCounter
 }
 
 type Config struct {
@@ -793,6 +809,8 @@ type Config struct {
 	Libp2pKeyFile string
 
 	Datastore string
+
+	WalletDir string
 }
 
 func setup(ctx context.Context, cfg *Config) (*Node, error) {
@@ -801,11 +819,14 @@ func setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
+	bwc := metrics.NewBandwidthCounter()
+
 	h, err := libp2p.New(ctx,
 		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
 		libp2p.NATPortMap(),
 		libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
 		libp2p.Identity(peerkey),
+		libp2p.BandwidthReporter(bwc),
 	)
 	if err != nil {
 		return nil, err
@@ -833,7 +854,7 @@ func setup(ctx context.Context, cfg *Config) (*Node, error) {
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, tbs)
 
-	wallet, err := setupWallet("estuary-wallet")
+	wallet, err := setupWallet(cfg.WalletDir)
 	if err != nil {
 		return nil, err
 	}
@@ -846,6 +867,7 @@ func setup(ctx context.Context, cfg *Config) (*Node, error) {
 		Bitswap:            bswap.(*bitswap.Bitswap),
 		TrackingBlockstore: tbs,
 		Wallet:             wallet,
+		Bwc:                bwc,
 	}, nil
 }
 
