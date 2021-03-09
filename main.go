@@ -254,7 +254,7 @@ func main() {
 			Api:  api,
 		}
 
-		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore)
+		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}
@@ -303,36 +303,40 @@ func main() {
 
 		s.CM = cm
 
-		e := echo.New()
-		e.HTTPErrorHandler = func(err error, ctx echo.Context) {
-			log.Errorf("handler error: %s", err)
-		}
-
-		//e.Use(middleware.Logger())
-		e.Use(middleware.CORS())
-		e.POST("/content/add", s.handleAdd)
-		e.GET("/content/stats", s.handleStats)
-		e.GET("/content/ensure-replication/:datacid", s.handleEnsureReplication)
-		e.GET("/content/status/:id", s.handleContentStatus)
-		e.GET("/content/list", s.handleListContent)
-
-		e.GET("/deals/query/:miner", s.handleQueryAsk)
-		e.POST("/deals/make/:miner", s.handleMakeDeal)
-		e.POST("/deals/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
-		e.POST("/deals/transfer/status", s.handleTransferStatus)
-		e.GET("/deals/transfer/in-progress", s.handleTransferInProgress)
-		e.POST("/deals/transfer/restart", s.handleTransferRestart)
-		e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
-
-		e.GET("/admin/balance", s.handleAdminBalance)
-		e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
-
-		return e.Start(cctx.String("apilisten"))
+		return s.ServeAPI(cctx.String("apilisten"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
 	}
+}
+
+func (s *Server) ServeAPI(srv string) error {
+	e := echo.New()
+	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
+		log.Errorf("handler error: %s", err)
+	}
+
+	//e.Use(middleware.Logger())
+	e.Use(middleware.CORS())
+	e.POST("/content/add", s.handleAdd)
+	e.GET("/content/stats", s.handleStats)
+	e.GET("/content/ensure-replication/:datacid", s.handleEnsureReplication)
+	e.GET("/content/status/:id", s.handleContentStatus)
+	e.GET("/content/list", s.handleListContent)
+
+	e.GET("/deals/query/:miner", s.handleQueryAsk)
+	e.POST("/deals/make/:miner", s.handleMakeDeal)
+	e.POST("/deals/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	e.POST("/deals/transfer/status", s.handleTransferStatus)
+	e.GET("/deals/transfer/in-progress", s.handleTransferInProgress)
+	e.POST("/deals/transfer/restart", s.handleTransferRestart)
+	e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
+
+	e.GET("/admin/balance", s.handleAdminBalance)
+	e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
+
+	return e.Start(srv)
 }
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {

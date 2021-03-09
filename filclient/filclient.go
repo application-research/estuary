@@ -3,6 +3,7 @@ package filclient
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -63,14 +64,14 @@ type FilClient struct {
 
 type GetPieceCommFunc func(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
-func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching) (*FilClient, error) {
+func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
 	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
 	counter := storedcounter.New(ds, datastore.NewKey("datatransfer"))
 
 	dtRestartConfig := dtimpl.PushChannelRestartConfig(time.Second*30, 10, 1024, 2*time.Minute, 3)
-	mgr, err := dtimpl.NewDataTransfer(ds, "cidlistsdir", dtn, tpt, counter, dtRestartConfig)
+	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, counter, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}
