@@ -226,12 +226,6 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		ClientSignature: *sig,
 	}
 
-	nd, err := cborutil.AsIpld(sigprop)
-	if err != nil {
-		return nil, err
-	}
-	fmt.Println("proposal cid: ", nd.Cid())
-
 	return &network.Proposal{
 		DealProposal: sigprop,
 		Piece: &storagemarket.DataRef{
@@ -452,10 +446,11 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 }
 
 type Balance struct {
-	Account      address.Address
-	Balance      types.FIL
-	MarketEscrow types.FIL
-	MarketLocked types.FIL
+	Account         address.Address
+	Balance         types.FIL
+	MarketEscrow    types.FIL
+	MarketLocked    types.FIL
+	MarketAvailable types.FIL
 }
 
 func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
@@ -469,11 +464,14 @@ func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
 		return nil, err
 	}
 
+	avail := types.BigSub(market.Escrow, market.Locked)
+
 	return &Balance{
-		Account:      fc.clientAddr,
-		Balance:      types.FIL(act.Balance),
-		MarketEscrow: types.FIL(market.Escrow),
-		MarketLocked: types.FIL(market.Locked),
+		Account:         fc.clientAddr,
+		Balance:         types.FIL(act.Balance),
+		MarketEscrow:    types.FIL(market.Escrow),
+		MarketLocked:    types.FIL(market.Locked),
+		MarketAvailable: types.FIL(avail),
 	}, nil
 }
 

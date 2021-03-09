@@ -75,6 +75,7 @@ func (cm *ContentManager) ContentWatcher() {
 }
 
 func (cm *ContentManager) startup() error {
+	return nil
 	// TODO: something a wee bit smarter
 	return cm.queueAllContent()
 }
@@ -379,6 +380,11 @@ func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
 	return false
 }
 
+type proposalRecord struct {
+	PropCid dbCID
+	Data    []byte
+}
+
 func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int) error {
 	minerpool, err := cm.pickMiners(count * 2)
 	if err != nil {
@@ -436,6 +442,19 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 
 		proposals[i] = prop
+
+		nd, err := cborutil.AsIpld(prop)
+		if err != nil {
+			return err
+		}
+		fmt.Println("proposal cid: ", nd.Cid())
+
+		if err := cm.DB.Create(&proposalRecord{
+			PropCid: dbCID{nd.Cid()},
+			Data:    nd.RawData(),
+		}).Error; err != nil {
+			return err
+		}
 	}
 
 	responses := make([]*network.SignedResponse, len(ms))
