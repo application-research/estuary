@@ -75,7 +75,6 @@ func (cm *ContentManager) ContentWatcher() {
 }
 
 func (cm *ContentManager) startup() error {
-	return nil
 	// TODO: something a wee bit smarter
 	return cm.queueAllContent()
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http/pprof"
 	"strconv"
 
 	"github.com/filecoin-project/go-address"
@@ -27,6 +28,8 @@ func (s *Server) ServeAPI(srv string) error {
 		log.Errorf("handler error: %s", err)
 	}
 
+	e.GET("/debug/pprof/:prof", serveProfile)
+
 	//e.Use(middleware.Logger())
 	e.Use(middleware.CORS())
 	e.POST("/content/add", s.handleAdd)
@@ -48,6 +51,11 @@ func (s *Server) ServeAPI(srv string) error {
 	e.GET("/admin/dealstats", s.handleDealStats)
 
 	return e.Start(srv)
+}
+
+func serveProfile(c echo.Context) error {
+	pprof.Handler(c.Param("prof")).ServeHTTP(c.Response().Writer, c.Request())
+	return nil
 }
 
 type statsResp struct {

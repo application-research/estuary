@@ -579,3 +579,7 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 	return fc.dataTransfer.RestartDataTransferChannel(ctx, st.ChannelID)
 
 }
+
+func (fc *FilClient) RetrieveContent(ctx context.Context, c uint) error {
+	return nil
+}
