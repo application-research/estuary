@@ -419,6 +419,12 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 		if cm.priceIsTooHigh(ask.Ask.Ask.Price) {
 			log.Infow("miners price is too high", "miner", m, "price", ask.Ask.Ask.Price)
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   m,
+				Phase:   "miner-search",
+				Message: fmt.Sprintf("miners price is too high: %s", types.FIL(ask.Ask.Ask.Price)),
+				Content: content.ID,
+			})
 			continue
 		}
 
