@@ -188,6 +188,7 @@ func setupWallet(dir string) (*wallet.LocalWallet, error) {
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
+	logging.SetLogLevel("paych", "debug")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -208,6 +209,9 @@ func main() {
 			Name:  "datadir",
 			Usage: "directory to store data in",
 			Value: ".",
+		},
+		&cli.BoolFlag{
+			Name: "no-storage-cron",
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
@@ -290,7 +294,10 @@ func main() {
 
 		cm := NewContentManager(db, api, fc, s.Node.Blockstore)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
-		go cm.ContentWatcher()
+
+		if !cctx.Bool("no-storage-cron") {
+			go cm.ContentWatcher()
+		}
 
 		s.CM = cm
 
@@ -331,6 +338,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&dfeRecord{})
 	db.AutoMigrate(&PieceCommRecord{})
 	db.AutoMigrate(&proposalRecord{})
+	db.AutoMigrate(&retrievalFailureRecord{})
 
 	return db, nil
 }

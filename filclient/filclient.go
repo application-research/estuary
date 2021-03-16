@@ -90,6 +90,9 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 	}
 
 	pchmgr := paychmgr.NewManager(ctx, shutdown, smapi, store, papi)
+	if err := pchmgr.Start(); err != nil {
+		return nil, err
+	}
 
 	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
 	tpt := gst.NewTransport(h.ID(), gse)
@@ -639,6 +642,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 }
 
 func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) error {
+	fmt.Println("attempting retrieval with miner: ", miner)
 	mpid, err := fc.minerPeer(ctx, miner)
 	if err != nil {
 		return xerrors.Errorf("failed to get miner peer: %w", err)
@@ -666,12 +670,13 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		amount = abi.TokenAmount(reqBalance)
 	}
 
+	fmt.Println("getting payment channel: ", fc.clientAddr, minerOwner)
 	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.clientAddr, minerOwner, amount)
 	if err != nil {
 		return xerrors.Errorf("failed to get payment channel: %w", err)
 	}
 
-	_ = pchaddr
+	fmt.Println("got payment channel: ", pchaddr, mcid)
 
 	if mcid.Defined() {
 		fmt.Println("waiting for payment channel message...")
@@ -703,7 +708,11 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 			return err
 		}
 
-		res := st.LastVoucherResult()
+		results := st.VoucherResults()
+		var res datatransfer.VoucherResult
+		if len(results) > 0 {
+			res = results[len(results)-1]
+		}
 		switch rest := res.(type) {
 		case *retrievalmarket.DealResponse:
 			switch rest.Status {

@@ -2,7 +2,6 @@ package filclient
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/filecoin-project/go-address"
@@ -33,8 +32,6 @@ func (mp *MsgPusher) MpoolPushMessage(ctx context.Context, msg *types.Message, m
 	mp.nlk.Lock()
 	defer mp.nlk.Unlock()
 
-	fmt.Println("Calling mpool push message")
-
 	kaddr, err := mp.gapi.StateAccountKey(ctx, msg.From, types.EmptyTSK)
 	if err != nil {
 		return nil, err
@@ -58,7 +55,7 @@ func (mp *MsgPusher) MpoolPushMessage(ctx context.Context, msg *types.Message, m
 		return nil, xerrors.Errorf("failed to estimate gas: %w", err)
 	}
 
-	sig, err := mp.w.WalletSign(ctx, kaddr, msg.Cid().Bytes(), api.MsgMeta{Type: api.MTChainMsg})
+	sig, err := mp.w.WalletSign(ctx, kaddr, estim.Cid().Bytes(), api.MsgMeta{Type: api.MTChainMsg})
 	if err != nil {
 		return nil, err
 	}
