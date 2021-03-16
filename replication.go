@@ -75,6 +75,7 @@ func (cm *ContentManager) ContentWatcher() {
 }
 
 func (cm *ContentManager) startup() error {
+	return nil
 	// TODO: something a wee bit smarter
 	return cm.queueAllContent()
 }
@@ -217,6 +218,12 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 			if xerrors.Is(err, ErrNotOnChainYet) {
 				if provds.Proposal.StartEpoch < head.Height() {
 					// deal expired, miner didnt start it in time
+					cm.recordDealFailure(&DealFailureError{
+						Miner:   maddr,
+						Phase:   "check-status",
+						Message: "deal did not make it on chain in time (but has publish deal cid set)",
+						Content: d.Content,
+					})
 					return false, nil
 				}
 				return true, nil
@@ -234,6 +241,12 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 
 	if provds.Proposal.StartEpoch < head.Height() {
 		// deal expired, miner didnt start it in time
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   maddr,
+			Phase:   "check-status",
+			Message: "deal did not make it on chain in time",
+			Content: d.Content,
+		})
 		return false, nil
 	}
 	// miner still has time...

@@ -14,6 +14,7 @@ import (
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/impl/requestvalidation"
@@ -22,12 +23,15 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-storedcounter"
 	"github.com/filecoin-project/lotus/api"
+	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
+	paychmgr "github.com/filecoin-project/lotus/paychmgr"
 	"github.com/filecoin-project/specs-actors/actors/builtin"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/namespace"
 	graphsync "github.com/ipfs/go-graphsync/impl"
 	gsnet "github.com/ipfs/go-graphsync/network"
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
@@ -45,8 +49,13 @@ import (
 const DealProtocol = "/fil/storage/mk/1.1.0"
 const QueryAskProtocol = "/fil/storage/ask/1.1.0"
 const DealStatusProtocol = "/fil/storage/status/1.1.0"
+const RetrievalQueryProtocol = "/fil/retrieval/qry/1.0.0"
 
 type FilClient struct {
+	mpusher *MsgPusher
+
+	pchmgr *paychmgr.Manager
+
 	host host.Host
 
 	api api.GatewayAPI
@@ -65,6 +74,23 @@ type FilClient struct {
 type GetPieceCommFunc func(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
 func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
+	ctx, shutdown := context.WithCancel(context.Background())
+
+	mpusher := NewMsgPusher(api, w)
+
+	smapi := rpcstmgr.NewRPCStateManager(api)
+
+	pchds := namespace.Wrap(ds, datastore.NewKey("paych"))
+	store := paychmgr.NewStore(pchds)
+
+	papi := &paychApiProvider{
+		GatewayAPI: api,
+		wallet:     w,
+		mp:         mpusher,
+	}
+
+	pchmgr := paychmgr.NewManager(ctx, shutdown, smapi, store, papi)
+
 	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
 	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
@@ -81,6 +107,21 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 		return nil, err
 	}
 
+	err = mgr.RegisterVoucherType(&retrievalmarket.DealProposal{}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mgr.RegisterVoucherType(&retrievalmarket.DealPayment{}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mgr.RegisterVoucherResultType(&retrievalmarket.DealResponse{})
+	if err != nil {
+		return nil, err
+	}
+
 	if err := mgr.Start(context.TODO()); err != nil {
 		return nil, err
 	}
@@ -92,6 +133,8 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 		clientAddr:   addr,
 		blockstore:   bs,
 		dataTransfer: mgr,
+		pchmgr:       pchmgr,
+		mpusher:      mpusher,
 	}, nil
 }
 
@@ -323,6 +366,18 @@ func (fc *FilClient) minerPeer(ctx context.Context, miner address.Address) (peer
 	return *minfo.PeerId, nil
 }
 
+func (fc *FilClient) minerOwner(ctx context.Context, miner address.Address) (address.Address, error) {
+	minfo, err := fc.api.StateMinerInfo(ctx, miner, types.EmptyTSK)
+	if err != nil {
+		return address.Undef, err
+	}
+	if minfo.PeerId == nil {
+		return address.Undef, fmt.Errorf("miner has no peer id")
+	}
+
+	return minfo.Owner, nil
+}
+
 type ChannelState struct {
 	//datatransfer.Channel
 
@@ -414,6 +469,10 @@ func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.C
 
 	for chanid, state := range inprog {
 		if chanid.Responder == mpid {
+			if state.IsPull() {
+				// this isnt a storage deal transfer...
+				continue
+			}
 			if state.BaseCID() == content {
 				return ChannelStateConv(state), nil
 			}
@@ -504,36 +563,13 @@ func (fc *FilClient) LockMarketFunds(ctx context.Context, amt types.FIL) (*LockF
 		Nonce:  act.Nonce,
 	}
 
-	estim, err := fc.api.GasEstimateMessageGas(ctx, msg, &api.MessageSendSpec{}, types.EmptyTSK)
-	if err != nil {
-		return nil, err
-	}
-
-	blk, err := estim.ToStorageBlock()
-	if err != nil {
-		return nil, err
-	}
-
-	sig, err := fc.wallet.WalletSign(ctx, fc.clientAddr, blk.Cid().Bytes(), api.MsgMeta{
-		Type:  api.MTChainMsg,
-		Extra: blk.RawData(),
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	signedMsg := &types.SignedMessage{
-		Message:   *estim,
-		Signature: *sig,
-	}
-
-	c, err := fc.api.MpoolPush(ctx, signedMsg)
+	smsg, err := fc.mpusher.MpoolPushMessage(ctx, msg, &api.MessageSendSpec{})
 	if err != nil {
 		return nil, err
 	}
 
 	return &LockFundsResp{
-		MsgCid: c,
+		MsgCid: smsg.Cid(),
 	}, nil
 }
 
@@ -580,6 +616,108 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 
 }
 
-func (fc *FilClient) RetrieveContent(ctx context.Context, c uint) error {
-	return nil
+func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, pcid cid.Cid) (*retrievalmarket.QueryResponse, error) {
+	s, err := fc.streamToMiner(ctx, maddr, RetrievalQueryProtocol)
+	if err != nil {
+		return nil, err
+	}
+
+	q := &retrievalmarket.Query{
+		PayloadCID: pcid,
+	}
+
+	if err := cborutil.WriteCborRPC(s, q); err != nil {
+		return nil, err
+	}
+
+	var resp retrievalmarket.QueryResponse
+	if err := cborutil.ReadCborRPC(s, &resp); err != nil {
+		return nil, err
+	}
+
+	return &resp, nil
+}
+
+func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) error {
+	mpid, err := fc.minerPeer(ctx, miner)
+	if err != nil {
+		return xerrors.Errorf("failed to get miner peer: %w", err)
+	}
+
+	minerOwner, err := fc.minerOwner(ctx, miner)
+	if err != nil {
+		return err
+	}
+
+	avail, err := fc.pchmgr.AvailableFundsByFromTo(fc.clientAddr, minerOwner)
+	if err != nil {
+		return err
+	}
+
+	reqBalance, err := types.ParseFIL("0.01")
+	if err != nil {
+		return err
+	}
+
+	amount := abi.NewTokenAmount(0)
+	if types.BigCmp(avail.ConfirmedAmt, types.BigInt(reqBalance)) < 0 {
+		// TODO: this logic is almost certainly wrong. But I have no idea how the paych
+		// code works, so lets see how it goes
+		amount = abi.TokenAmount(reqBalance)
+	}
+
+	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.clientAddr, minerOwner, amount)
+	if err != nil {
+		return xerrors.Errorf("failed to get payment channel: %w", err)
+	}
+
+	_ = pchaddr
+
+	if mcid.Defined() {
+		fmt.Println("waiting for payment channel message...")
+		ml, err := fc.api.StateWaitMsg(ctx, mcid, 1)
+		if err != nil {
+			return xerrors.Errorf("failed to wait for payment channel: %w", err)
+		}
+
+		if ml.Receipt.ExitCode != 0 {
+			return xerrors.Errorf("payment channel message (%s) failed: exit %d", mcid, ml.Receipt.ExitCode)
+		}
+	}
+
+	sel := shared.AllSelector()
+
+	var vouch datatransfer.Voucher = proposal
+
+	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpid, vouch, proposal.PayloadCID, sel)
+	if err != nil {
+		return err
+	}
+
+	// looping here is dumb, but the alternative is to write a lot of code that
+	// connects into the data transfer events watcher thing and interprets the
+	// entrails of our sacrifices to determine when to do the next things
+	for {
+		st, err := fc.dataTransfer.ChannelState(ctx, chanid)
+		if err != nil {
+			return err
+		}
+
+		res := st.LastVoucherResult()
+		switch rest := res.(type) {
+		case *retrievalmarket.DealResponse:
+			switch rest.Status {
+			case retrievalmarket.DealStatusAccepted:
+				fmt.Println("Accepted! ", rest.Message, types.FIL(rest.PaymentOwed))
+			case retrievalmarket.DealStatusRejected:
+				fmt.Println("Rejected! ", rest.Message)
+			default:
+				fmt.Println("deal status: ", rest.Status)
+			}
+		default:
+			return fmt.Errorf("unrecognized voucher response type: %T", res)
+		}
+
+		time.Sleep(time.Second)
+	}
 }

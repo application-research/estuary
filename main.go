@@ -131,11 +131,12 @@ func (dbc dbCID) Value() (driver.Value, error) {
 
 type Content struct {
 	gorm.Model
-	Cid    dbCID
-	Name   string
-	User   string
-	Size   int64
-	Active bool
+	Cid         dbCID
+	Name        string
+	User        string
+	Description string
+	Size        int64
+	Active      bool
 }
 
 type Object struct {

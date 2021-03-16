@@ -46,6 +46,8 @@ func (s *Server) ServeAPI(srv string) error {
 	e.POST("/deals/transfer/restart", s.handleTransferRestart)
 	e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
 
+	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
+
 	e.GET("/admin/balance", s.handleAdminBalance)
 	e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
 	e.GET("/admin/dealstats", s.handleDealStats)
@@ -487,4 +489,18 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	}
 
 	return c.JSON(200, sbc)
+}
+
+func (s *Server) handleRetrievalCheck(c echo.Context) error {
+	ctx := context.TODO()
+	contid, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+	if err := s.retrieveContent(ctx, uint(contid)); err != nil {
+		return err
+	}
+
+	return c.JSON(200, "We did a thing")
+
 }
