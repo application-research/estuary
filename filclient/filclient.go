@@ -681,6 +681,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 	fmt.Println("got payment channel: ", pchaddr, mcid)
 
+	// If we have a message to wait on, wait on it (this usually happens when
+	// the payment channel is being created, or we are adding new funds)
 	if mcid.Defined() {
 		fmt.Println("waiting for payment channel message...")
 		ml, err := fc.api.StateWaitMsg(ctx, mcid, 1)
@@ -693,20 +695,25 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		}
 	}
 
+	// Allocate a lane on our payment channel, usually you want a new lane per retrieval
 	lane, err := fc.pchmgr.AllocateLane(pchaddr)
 	if err != nil {
 		return xerrors.Errorf("failed to allocate lane: %w", err)
 	}
 
+	// Use the data transfer protocol to propose the retrieval deal
 	sel := shared.AllSelector()
-
 	var vouch datatransfer.Voucher = proposal
-
 	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpid, vouch, proposal.PayloadCID, sel)
 	if err != nil {
 		return err
 	}
 
+	// NB: data transfer will propose the retrieval, and if the miner accepts
+	// it, will start sending data via graphsync to us. This happens behind the
+	// scenes, and we dont get much introspection into this
+
+	// Now, we poll the data transfer channel status and wait until it says its accepted
 	if err := fc.waitForDealAccepted(ctx, chanid); err != nil {
 		return err
 	}
@@ -715,6 +722,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	total := abi.NewTokenAmount(0)
 
 	for {
+		// Now that the deal has been accepted, we sit around and wait for data
+		// to come in and for the miner to ask for more money
 		amt, err := fc.waitForPaymentNeeded(ctx, chanid)
 		if err != nil {
 			return err
