@@ -78,6 +78,11 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	for m, ask := range asks {
 		if err := s.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
+			s.recordRetrievalFailure(&retrievalFailureRecord{
+				Miner:   m.String(),
+				Phase:   "retrieval",
+				Message: err.Error(),
+			})
 			continue
 		}
 
@@ -88,7 +93,6 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 }
 
 func (s *Server) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
-
 	proposal := &retrievalmarket.DealProposal{
 		PayloadCID: c,
 		ID:         retrievalmarket.DealID(rand.Int63n(1000000) + 100000),

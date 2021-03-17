@@ -23,6 +23,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-storedcounter"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -662,15 +663,17 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	if err != nil {
 		return err
 	}
+	fmt.Println("available", avail.ConfirmedAmt)
 
-	amount := abi.NewTokenAmount(0)
+	amount := abi.TokenAmount(reqBalance)
 	if types.BigCmp(avail.ConfirmedAmt, types.BigInt(reqBalance)) < 0 {
 		// TODO: this logic is almost certainly wrong. But I have no idea how the paych
 		// code works, so lets see how it goes
-		amount = abi.TokenAmount(reqBalance)
+		fmt.Println("add more!")
+		amount = abi.TokenAmount(types.BigMul(types.BigInt(reqBalance), types.NewInt(2)))
 	}
 
-	fmt.Println("getting payment channel: ", fc.clientAddr, minerOwner)
+	fmt.Println("getting payment channel: ", fc.clientAddr, minerOwner, amount)
 	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.clientAddr, minerOwner, amount)
 	if err != nil {
 		return xerrors.Errorf("failed to get payment channel: %w", err)
@@ -690,6 +693,11 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		}
 	}
 
+	lane, err := fc.pchmgr.AllocateLane(pchaddr)
+	if err != nil {
+		return xerrors.Errorf("failed to allocate lane: %w", err)
+	}
+
 	sel := shared.AllSelector()
 
 	var vouch datatransfer.Voucher = proposal
@@ -699,6 +707,50 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		return err
 	}
 
+	if err := fc.waitForDealAccepted(ctx, chanid); err != nil {
+		return err
+	}
+
+	var nonce uint64
+	total := abi.NewTokenAmount(0)
+
+	for {
+		amt, err := fc.waitForPaymentNeeded(ctx, chanid)
+		if err != nil {
+			return err
+		}
+
+		total = types.BigAdd(total, *amt)
+
+		vres, err := fc.pchmgr.CreateVoucher(ctx, pchaddr, paych.SignedVoucher{
+			ChannelAddr: pchaddr,
+			Lane:        lane,
+			Nonce:       nonce,
+			Amount:      total,
+		})
+		if err != nil {
+			return err
+		}
+
+		if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
+			return fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall)
+		}
+
+		paymnt := &retrievalmarket.DealPayment{
+			ID:             proposal.ID,
+			PaymentChannel: pchaddr,
+			PaymentVoucher: vres.Voucher,
+		}
+
+		if err := fc.dataTransfer.SendVoucher(ctx, chanid, paymnt); err != nil {
+			return xerrors.Errorf("failed to send payment voucher: %w", err)
+		}
+
+		nonce++
+	}
+}
+
+func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfer.ChannelID) error {
 	// looping here is dumb, but the alternative is to write a lot of code that
 	// connects into the data transfer events watcher thing and interprets the
 	// entrails of our sacrifices to determine when to do the next things
@@ -717,14 +769,68 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		case *retrievalmarket.DealResponse:
 			switch rest.Status {
 			case retrievalmarket.DealStatusAccepted:
-				fmt.Println("Accepted! ", rest.Message, types.FIL(rest.PaymentOwed))
+				fmt.Println("Accepted! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
+				return nil
 			case retrievalmarket.DealStatusRejected:
 				fmt.Println("Rejected! ", rest.Message)
+				return fmt.Errorf("deal rejected: %s", rest.Message)
 			default:
 				fmt.Println("deal status: ", rest.Status)
+				return fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
 			}
 		default:
-			return fmt.Errorf("unrecognized voucher response type: %T", res)
+			if res != nil {
+				return fmt.Errorf("unrecognized voucher response type: %T", res)
+			}
+		}
+
+		time.Sleep(time.Second)
+	}
+
+	return nil
+}
+
+const noDataTimeout = time.Second * 10
+
+func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransfer.ChannelID) (*abi.TokenAmount, error) {
+
+	var lastReceived uint64
+	lastReceivedTime := time.Now()
+
+	for {
+		st, err := fc.dataTransfer.ChannelState(ctx, chanid)
+		if err != nil {
+			return nil, err
+		}
+		if lastReceived == st.Received() {
+			if time.Since(lastReceivedTime) > noDataTimeout {
+				return nil, fmt.Errorf("timed out waiting for data or payment request")
+			}
+		} else {
+			lastReceived = st.Received()
+			lastReceivedTime = time.Now()
+		}
+
+		fmt.Println("channel state: ", st.Received(), st.Status(), st.Message())
+		time.Sleep(time.Second)
+
+		res := st.LastVoucherResult()
+		switch rest := res.(type) {
+		case *retrievalmarket.DealResponse:
+			switch rest.Status {
+			case retrievalmarket.DealStatusAccepted:
+				fmt.Println("Accepted status while waiting for data! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
+			case retrievalmarket.DealStatusFundsNeeded:
+				fmt.Println("Funds needed!", rest.Message, types.FIL(rest.PaymentOwed))
+				return &rest.PaymentOwed, nil
+			default:
+				fmt.Println("deal status: ", rest.Status)
+				return nil, fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
+			}
+		default:
+			if res != nil {
+				return nil, fmt.Errorf("unrecognized voucher response type: %T", res)
+			}
 		}
 
 		time.Sleep(time.Second)
