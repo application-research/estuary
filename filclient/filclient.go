@@ -721,13 +721,20 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	var nonce uint64
 	total := abi.NewTokenAmount(0)
 
+	var voucherCount int
 	for {
 		// Now that the deal has been accepted, we sit around and wait for data
 		// to come in and for the miner to ask for more money
-		amt, err := fc.waitForPaymentNeeded(ctx, chanid)
+		amt, nvc, done, err := fc.waitForPaymentNeeded(ctx, chanid, voucherCount)
 		if err != nil {
 			return err
 		}
+
+		if done {
+			break
+		}
+
+		voucherCount = nvc
 
 		total = types.BigAdd(total, *amt)
 
@@ -757,6 +764,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 		nonce++
 	}
+
+	return nil
 }
 
 func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfer.ChannelID) error {
@@ -793,7 +802,7 @@ func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfe
 			}
 		}
 
-		time.Sleep(time.Second)
+		time.Sleep(pollingDelay)
 	}
 
 	return nil
@@ -801,7 +810,9 @@ func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfe
 
 const noDataTimeout = time.Second * 10
 
-func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransfer.ChannelID) (*abi.TokenAmount, error) {
+const pollingDelay = time.Millisecond * 200
+
+func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransfer.ChannelID, curcount int) (*abi.TokenAmount, int, bool, error) {
 
 	var lastReceived uint64
 	lastReceivedTime := time.Now()
@@ -809,39 +820,53 @@ func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransf
 	for {
 		st, err := fc.dataTransfer.ChannelState(ctx, chanid)
 		if err != nil {
-			return nil, err
+			return nil, 0, false, err
 		}
 		if lastReceived == st.Received() {
 			if time.Since(lastReceivedTime) > noDataTimeout {
-				return nil, fmt.Errorf("timed out waiting for data or payment request")
+				return nil, 0, false, fmt.Errorf("timed out waiting for data or payment request")
 			}
 		} else {
 			lastReceived = st.Received()
 			lastReceivedTime = time.Now()
 		}
 
-		fmt.Println("channel state: ", st.Received(), st.Status(), st.Message())
-		time.Sleep(time.Second)
+		switch st.Status() {
+		case datatransfer.TransferFinished:
+			return nil, 0, true, nil
+		case datatransfer.ResponderPaused:
+			// fmt.Println("for some reason the status is 'paused'")
+		default:
+			return nil, 0, false, fmt.Errorf("unrecognized transfer status: %d", st.Status())
 
-		res := st.LastVoucherResult()
+		}
+
+		voucherResults := st.VoucherResults()
+		if curcount == len(voucherResults) {
+			// no new voucher results, dont want to make decisions based on old
+			// information
+			time.Sleep(pollingDelay)
+			continue
+		}
+
+		res := voucherResults[len(voucherResults)-1]
 		switch rest := res.(type) {
 		case *retrievalmarket.DealResponse:
 			switch rest.Status {
 			case retrievalmarket.DealStatusAccepted:
-				fmt.Println("Accepted status while waiting for data! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
+				// this is what we want to see, means things are good for now
+				//fmt.Println("Accepted status while waiting for data! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
 			case retrievalmarket.DealStatusFundsNeeded:
-				fmt.Println("Funds needed!", rest.Message, types.FIL(rest.PaymentOwed))
-				return &rest.PaymentOwed, nil
+				return &rest.PaymentOwed, len(voucherResults), false, nil
 			default:
-				fmt.Println("deal status: ", rest.Status)
-				return nil, fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
+				return nil, 0, false, fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
 			}
 		default:
 			if res != nil {
-				return nil, fmt.Errorf("unrecognized voucher response type: %T", res)
+				return nil, 0, false, fmt.Errorf("unrecognized voucher response type: %T", res)
 			}
 		}
 
-		time.Sleep(time.Second)
+		time.Sleep(pollingDelay)
 	}
 }
