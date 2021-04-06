@@ -218,6 +218,7 @@ func main() {
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
 	logging.SetLogLevel("paych", "debug")
+	logging.SetLogLevel("filclient", "debug")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -450,6 +451,8 @@ type Node struct {
 	Wallet *wallet.LocalWallet
 
 	Bwc *metrics.BandwidthCounter
+
+	Config *Config
 }
 
 type Config struct {
@@ -519,6 +522,7 @@ func setup(ctx context.Context, cfg *Config) (*Node, error) {
 		TrackingBlockstore: tbs,
 		Wallet:             wallet,
 		Bwc:                bwc,
+		Config:             cfg,
 	}, nil
 }
 

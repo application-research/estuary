@@ -20,6 +20,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/estuary/filclient"
+	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm/clause"
 )
@@ -56,6 +57,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.GET("/admin/balance", s.handleAdminBalance)
 	e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
 	e.GET("/admin/dealstats", s.handleDealStats)
+	e.GET("/admin/disk-info", s.handleDiskSpaceCheck)
 	e.POST("/admin/add-miner/:miner", s.handleAdminAddMiner)
 
 	return e.Start(srv)
@@ -448,12 +450,12 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 }
 
 type contentDealStats struct {
-	NumDeals     int
-	NumConfirmed int
-	NumFailed    int
+	NumDeals     int `json:"num_deals"`
+	NumConfirmed int `json:"num_confirmed"`
+	NumFailed    int `json:"num_failed"`
 
-	TotalSpending     abi.TokenAmount
-	ConfirmedSpending abi.TokenAmount
+	TotalSpending     abi.TokenAmount `json:"total_spending"`
+	ConfirmedSpending abi.TokenAmount `json:"confirmed_spending"`
 }
 
 func (s *Server) handleDealStats(c echo.Context) error {
@@ -504,6 +506,24 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	}
 
 	return c.JSON(200, sbc)
+}
+
+type diskSpaceInfo struct {
+	BstoreSize uint64 `json:"bstore_size"`
+	BstoreFree uint64 `json:"bstore_free"`
+}
+
+func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
+	var st unix.Statfs_t
+	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
+		return err
+	}
+
+	return c.JSON(200, &diskSpaceInfo{
+		BstoreSize: st.Blocks * uint64(st.Bsize),
+
+		BstoreFree: st.Bavail * uint64(st.Bsize),
+	})
 }
 
 func (s *Server) handleRetrievalCheck(c echo.Context) error {

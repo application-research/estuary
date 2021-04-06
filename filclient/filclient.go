@@ -37,6 +37,7 @@ import (
 	gsnet "github.com/ipfs/go-graphsync/network"
 	storeutil "github.com/ipfs/go-graphsync/storeutil"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-core/host"
 	inet "github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -46,6 +47,8 @@ import (
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
 )
+
+var log = logging.Logger("filclient")
 
 const DealProtocol = "/fil/storage/mk/1.1.0"
 const QueryAskProtocol = "/fil/storage/ask/1.1.0"
@@ -476,6 +479,10 @@ func (fc *FilClient) TransferStatus(ctx context.Context, chanid *datatransfer.Ch
 var ErrNoTransferFound = fmt.Errorf("no transfer found")
 
 func (fc *FilClient) TransferStatusForContent(ctx context.Context, content cid.Cid, miner address.Address) (*ChannelState, error) {
+	start := time.Now()
+	defer func() {
+		log.Infof("check transfer status took: %s", time.Since(start))
+	}()
 	mpid, err := fc.minerPeer(ctx, miner)
 	if err != nil {
 		return nil, err
