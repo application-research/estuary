@@ -11,7 +11,7 @@ import (
 )
 
 type paychApiProvider struct {
-	api.GatewayAPI
+	api.Gateway
 	wallet *wallet.LocalWallet
 	mp     *MsgPusher
 }

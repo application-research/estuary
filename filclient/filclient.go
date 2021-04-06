@@ -11,6 +11,7 @@ import (
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
 	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
@@ -21,7 +22,6 @@ import (
 	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-storedcounter"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
@@ -59,7 +59,7 @@ type FilClient struct {
 
 	host host.Host
 
-	api api.GatewayAPI
+	api api.Gateway
 
 	wallet *wallet.LocalWallet
 
@@ -74,7 +74,7 @@ type FilClient struct {
 
 type GetPieceCommFunc func(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
-func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
+func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	mpusher := NewMsgPusher(api, w)
@@ -85,9 +85,9 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 	store := paychmgr.NewStore(pchds)
 
 	papi := &paychApiProvider{
-		GatewayAPI: api,
-		wallet:     w,
-		mp:         mpusher,
+		Gateway: api,
+		wallet:  w,
+		mp:      mpusher,
 	}
 
 	pchmgr := paychmgr.NewManager(ctx, shutdown, smapi, store, papi)
@@ -98,10 +98,19 @@ func NewClient(h host.Host, api api.GatewayAPI, w *wallet.LocalWallet, addr addr
 	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
 	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
-	counter := storedcounter.New(ds, datastore.NewKey("datatransfer"))
+	//counter := storedcounter.New(ds, datastore.NewKey("datatransfer"))
 
-	dtRestartConfig := dtimpl.PushChannelRestartConfig(time.Second*30, 10, 1024, 2*time.Minute, 3)
-	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, counter, dtRestartConfig)
+	dtRestartConfig := dtimpl.ChannelRestartConfig(channelmonitor.Config{
+		MonitorPushChannels:    true,
+		AcceptTimeout:          time.Second * 30,
+		Interval:               time.Minute,
+		MinBytesTransferred:    4 << 10,
+		ChecksPerInterval:      20,
+		RestartBackoff:         time.Second * 20,
+		MaxConsecutiveRestarts: 10,
+		CompleteTimeout:        time.Second * 30,
+	})
+	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}

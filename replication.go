@@ -27,7 +27,7 @@ import (
 
 type ContentManager struct {
 	DB        *gorm.DB
-	Api       api.GatewayAPI
+	Api       api.Gateway
 	FilClient *filclient.FilClient
 
 	Blockstore blockstore.Blockstore
@@ -36,7 +36,7 @@ type ContentManager struct {
 	ToCheck chan uint
 }
 
-func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
 	return &ContentManager{
 		DB:         db,
 		Api:        api,
@@ -923,4 +923,7 @@ func (cm *ContentManager) pullTextileMinersList() error {
 	}
 
 	return nil
+}
+
+func (cm *ContentManager) FreeStorage() {
 }

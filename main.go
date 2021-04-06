@@ -391,7 +391,7 @@ type Server struct {
 	Node      *Node
 	DB        *gorm.DB
 	FilClient *filclient.FilClient
-	Api       api.GatewayAPI
+	Api       api.Gateway
 	CM        *ContentManager
 }
 

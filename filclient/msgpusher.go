@@ -13,14 +13,14 @@ import (
 
 // a simple nonce tracking message pusher that assumes it is the only thing with access to the given key
 type MsgPusher struct {
-	gapi api.GatewayAPI
+	gapi api.Gateway
 	w    *wallet.LocalWallet
 
 	nlk    sync.Mutex
 	nonces map[address.Address]uint64
 }
 
-func NewMsgPusher(gapi api.GatewayAPI, w *wallet.LocalWallet) *MsgPusher {
+func NewMsgPusher(gapi api.Gateway, w *wallet.LocalWallet) *MsgPusher {
 	return &MsgPusher{
 		gapi:   gapi,
 		w:      w,
