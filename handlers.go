@@ -42,6 +42,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.GET("/content/ensure-replication/:datacid", s.handleEnsureReplication)
 	e.GET("/content/status/:id", s.handleContentStatus)
 	e.GET("/content/list", s.handleListContent)
+	e.GET("/content/failures/:content", s.handleGetContentFailures)
 
 	e.GET("/deals/query/:miner", s.handleQueryAsk)
 	e.POST("/deals/make/:miner", s.handleMakeDeal)
@@ -51,6 +52,8 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.POST("/deals/transfer/restart", s.handleTransferRestart)
 	e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
 	e.GET("/deals/estimate", s.handleEstimateDealCost)
+
+	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
 
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
@@ -253,8 +256,27 @@ func (s *Server) handleContentStatus(c echo.Context) error {
 		if err != nil {
 			return err
 		}
-		chanst, err := s.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
-		if err != nil && err != filclient.ErrNoTransferFound {
+
+		var chanst *filclient.ChannelState
+		chanid, err := d.ChannelID()
+		switch err {
+		case nil:
+			chanst, err = s.FilClient.TransferStatus(ctx, &chanid)
+			if err != nil {
+				return err
+			}
+		case ErrNoChannelID:
+			chanst, err = s.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
+			if err != nil && err != filclient.ErrNoTransferFound {
+				return err
+			}
+
+			d.DTChan = chanst.ChannelID.String()
+
+			if err := s.DB.Save(&d).Error; err != nil {
+				return err
+			}
+		default:
 			return err
 		}
 
@@ -568,4 +590,32 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	return c.JSON(200, &priceEstimateResponse{
 		Total: types.FIL(*total).String(),
 	})
+}
+
+func (s *Server) handleGetMinerFailures(c echo.Context) error {
+	maddr, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	var merrs []dfeRecord
+	if err := s.DB.Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, merrs)
+}
+
+func (s *Server) handleGetContentFailures(c echo.Context) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var errs []dfeRecord
+	if err := s.DB.Find(&errs, "content = ?", cont).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, errs)
 }

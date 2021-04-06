@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -19,6 +21,7 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -182,8 +185,6 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.Padded
 			continue
 		}
 
-		fmt.Println("got ask", m, ask.Price, ask.MinPieceSize)
-
 		if cm.sizeIsCloseEnough(size, ask.MinPieceSize) {
 			out = append(out, m)
 		}
@@ -204,9 +205,7 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 		}
 	}
 
-	fmt.Println("time since update: ", time.Since(msa.UpdatedAt))
 	if time.Since(msa.UpdatedAt) < maxCacheAge {
-		fmt.Println("using cache!")
 		return &msa, nil
 	}
 
@@ -263,10 +262,45 @@ type contentDeal struct {
 	DealID   int64     `json:"dealId"`
 	Failed   bool      `json:"failed"`
 	FailedAt time.Time `json:"failedAt,omitempty"`
+	DTChan   string    `json:"dtChan"`
 }
 
 func (cd contentDeal) MinerAddr() (address.Address, error) {
 	return address.NewFromString(cd.Miner)
+}
+
+var ErrNoChannelID = fmt.Errorf("no data transfer channel id in deal")
+
+func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
+	if cd.DTChan == "" {
+		return datatransfer.ChannelID{}, ErrNoChannelID
+	}
+
+	parts := strings.Split(cd.DTChan, "-")
+	if len(parts) != 3 {
+		return datatransfer.ChannelID{}, fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record")
+	}
+
+	initiator, err := peer.Decode(parts[0])
+	if err != nil {
+		return datatransfer.ChannelID{}, err
+	}
+
+	responder, err := peer.Decode(parts[1])
+	if err != nil {
+		return datatransfer.ChannelID{}, err
+	}
+
+	id, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return datatransfer.ChannelID{}, err
+	}
+
+	return datatransfer.ChannelID{
+		Initiator: initiator,
+		Responder: responder,
+		ID:        datatransfer.TransferID(id),
+	}, nil
 }
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
@@ -627,6 +661,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 	}
 
+	deals := make([]*contentDeal, len(ms))
 	responses := make([]*network.SignedResponse, len(ms))
 	for i, p := range proposals {
 		if p == nil {
@@ -687,6 +722,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			if err := cm.DB.Create(cd).Error; err != nil {
 				return xerrors.Errorf("failed to create database entry for deal: %w", err)
 			}
+
+			deals[i] = cd
 		}
 	}
 
@@ -694,6 +731,12 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
 	for i, resp := range responses {
 		if resp == nil {
+			continue
+		}
+
+		cd := deals[i]
+		if cd == nil {
+			log.Warnf("have no contentDeal for response we are about to start transfer on")
 			continue
 		}
 
@@ -707,6 +750,12 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			}); oerr != nil {
 				return oerr
 			}
+		}
+
+		cd.DTChan = chanid.String()
+
+		if err := cm.DB.Save(cd).Error; err != nil {
+			return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 		}
 
 		log.Infow("Started data transfer", "chanid", chanid)
@@ -729,10 +778,10 @@ type DealFailureError struct {
 
 type dfeRecord struct {
 	gorm.Model
-	Miner   string
-	Phase   string
-	Message string
-	Content uint
+	Miner   string `json:"miner"`
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	Content uint   `json:"content"`
 }
 
 func (dfe *DealFailureError) Record() *dfeRecord {
