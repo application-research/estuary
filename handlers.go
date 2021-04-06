@@ -271,10 +271,12 @@ func (s *Server) handleContentStatus(c echo.Context) error {
 				return err
 			}
 
-			d.DTChan = chanst.ChannelID.String()
+			if chanst != nil {
+				d.DTChan = chanst.ChannelID.String()
 
-			if err := s.DB.Save(&d).Error; err != nil {
-				return err
+				if err := s.DB.Save(&d).Error; err != nil {
+					return err
+				}
 			}
 		default:
 			return err
