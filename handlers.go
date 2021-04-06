@@ -24,7 +24,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (s *Server) ServeAPI(srv string) error {
+func (s *Server) ServeAPI(srv string, logging bool) error {
 	e := echo.New()
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
@@ -32,7 +32,9 @@ func (s *Server) ServeAPI(srv string) error {
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 
-	//e.Use(middleware.Logger())
+	if logging {
+		e.Use(middleware.Logger())
+	}
 	e.Use(middleware.CORS())
 	e.POST("/content/add", s.handleAdd)
 	e.GET("/content/stats", s.handleStats)
@@ -65,10 +67,10 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	Cid           cid.Cid
-	File          string
-	BWUsed        int64
-	TotalRequests int64
+	Cid           cid.Cid `json:"cid"`
+	File          string  `json:"file"`
+	BWUsed        int64   `json:"bw_used"`
+	TotalRequests int64   `json:"total_requests"`
 }
 
 func (s *Server) handleStats(c echo.Context) error {
@@ -287,9 +289,9 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Cid      cid.Cid
-	Price    types.BigInt
-	Duration abi.ChainEpoch
+	Cid      cid.Cid        `json:"cid"`
+	Price    types.BigInt   `json:"price"`
+	Duration abi.ChainEpoch `json:"duration"`
 }
 
 func (s *Server) handleMakeDeal(c echo.Context) error {

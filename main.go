@@ -242,6 +242,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "no-storage-cron",
 		},
+		&cli.BoolFlag{
+			Name: "logging",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -330,7 +333,7 @@ func main() {
 
 		s.CM = cm
 
-		return s.ServeAPI(cctx.String("apilisten"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
