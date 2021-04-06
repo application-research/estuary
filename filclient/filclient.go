@@ -531,11 +531,11 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 }
 
 type Balance struct {
-	Account         address.Address
-	Balance         types.FIL
-	MarketEscrow    types.FIL
-	MarketLocked    types.FIL
-	MarketAvailable types.FIL
+	Account         address.Address `json:"account"`
+	Balance         types.FIL       `json:"balance"`
+	MarketEscrow    types.FIL       `json:"marketEscrow"`
+	MarketLocked    types.FIL       `json:"marketLocked"`
+	MarketAvailable types.FIL       `json:"marketAvailable"`
 }
 
 func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {

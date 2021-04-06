@@ -262,7 +262,7 @@ type contentDeal struct {
 	Miner    string    `json:"miner"`
 	DealID   int64     `json:"dealId"`
 	Failed   bool      `json:"failed"`
-	FailedAt time.Time `json:"failedAt"`
+	FailedAt time.Time `json:"failedAt,omitempty"`
 }
 
 func (cd contentDeal) MinerAddr() (address.Address, error) {
