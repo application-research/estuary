@@ -257,12 +257,12 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 
 type contentDeal struct {
 	gorm.Model
-	Content  uint
-	PropCid  dbCID
-	Miner    string
-	DealID   int64
-	Failed   bool
-	FailedAt time.Time
+	Content  uint      `json:"content"`
+	PropCid  dbCID     `json:"propCid"`
+	Miner    string    `json:"miner"`
+	DealID   int64     `json:"dealId"`
+	Failed   bool      `json:"failed"`
+	FailedAt time.Time `json:"failedAt"`
 }
 
 func (cd contentDeal) MinerAddr() (address.Address, error) {

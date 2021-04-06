@@ -404,12 +404,12 @@ type ChannelState struct {
 	//datatransfer.Channel
 
 	// SelfPeer returns the peer this channel belongs to
-	SelfPeer   peer.ID `json:"self_peer"`
-	RemotePeer peer.ID `json:"remote_peer"`
+	SelfPeer   peer.ID `json:"selfPeer"`
+	RemotePeer peer.ID `json:"remotePeer"`
 
 	// Status is the current status of this channel
 	Status    datatransfer.Status `json:"status"`
-	StatusStr string              `json:"status_str"`
+	StatusStr string              `json:"statusStr"`
 
 	// Sent returns the number of bytes sent
 	Sent uint64 `json:"sent"`
@@ -420,9 +420,9 @@ type ChannelState struct {
 	// Message offers additional information about the current status
 	Message string `json:"message"`
 
-	BaseCid cid.Cid `json:"base_cid"`
+	BaseCid cid.Cid `json:"baseCid"`
 
-	ChannelID datatransfer.ChannelID `json:"chanid"`
+	ChannelID datatransfer.ChannelID `json:"channelId"`
 
 	// Vouchers returns all vouchers sent on this channel
 	//Vouchers []datatransfer.Voucher
