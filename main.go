@@ -157,15 +157,34 @@ func (dbc dbCID) Value() (driver.Value, error) {
 	return dbc.CID.Bytes(), nil
 }
 
+func (dbc dbCID) MarshalJSON() ([]byte, error) {
+	return json.Marshal(dbc.CID.String())
+}
+
+func (dbc *dbCID) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	c, err := cid.Decode(s)
+	if err != nil {
+		return err
+	}
+
+	dbc.CID = c
+	return nil
+}
+
 type Content struct {
 	gorm.Model
-	Cid         dbCID
-	Name        string
-	User        string
-	Description string
-	Size        int64
-	Active      bool
-	Offloaded   bool
+	Cid         dbCID  `json:"cid"`
+	Name        string `json:"name"`
+	User        string `json:"user"`
+	Description string `json:"description"`
+	Size        int64  `json:"size"`
+	Active      bool   `json:"active"`
+	Offloaded   bool   `json:"offloaded"`
 }
 
 type Object struct {

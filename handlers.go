@@ -71,8 +71,8 @@ func serveProfile(c echo.Context) error {
 type statsResp struct {
 	Cid           cid.Cid `json:"cid"`
 	File          string  `json:"file"`
-	BWUsed        int64   `json:"bw_used"`
-	TotalRequests int64   `json:"total_requests"`
+	BWUsed        int64   `json:"bwUsed"`
+	TotalRequests int64   `json:"totalRequests"`
 }
 
 func (s *Server) handleStats(c echo.Context) error {
@@ -450,12 +450,12 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 }
 
 type contentDealStats struct {
-	NumDeals     int `json:"num_deals"`
-	NumConfirmed int `json:"num_confirmed"`
-	NumFailed    int `json:"num_failed"`
+	NumDeals     int `json:"numDeals"`
+	NumConfirmed int `json:"numConfirmed"`
+	NumFailed    int `json:"numFailed"`
 
-	TotalSpending     abi.TokenAmount `json:"total_spending"`
-	ConfirmedSpending abi.TokenAmount `json:"confirmed_spending"`
+	TotalSpending     abi.TokenAmount `json:"totalSpending"`
+	ConfirmedSpending abi.TokenAmount `json:"confirmedSpending"`
 }
 
 func (s *Server) handleDealStats(c echo.Context) error {
@@ -509,8 +509,8 @@ func (s *Server) handleDealStats(c echo.Context) error {
 }
 
 type diskSpaceInfo struct {
-	BstoreSize uint64 `json:"bstore_size"`
-	BstoreFree uint64 `json:"bstore_free"`
+	BstoreSize uint64 `json:"bstoreSize"`
+	BstoreFree uint64 `json:"bstoreFree"`
 }
 
 func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
@@ -543,7 +543,7 @@ func (s *Server) handleRetrievalCheck(c echo.Context) error {
 type estimateDealBody struct {
 	Size         uint64 `json:"size"`
 	Replication  int    `json:"replication"`
-	DurationBlks int    `json:"duration_blks"`
+	DurationBlks int    `json:"durationBlks"`
 	Verified     bool   `json:"verified"`
 }
 
