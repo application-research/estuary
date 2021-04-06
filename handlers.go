@@ -9,6 +9,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/ipfs/go-blockservice"
@@ -20,6 +21,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm/clause"
 )
 
 func (s *Server) ServeAPI(srv string) error {
@@ -45,12 +47,14 @@ func (s *Server) ServeAPI(srv string) error {
 	e.GET("/deals/transfer/in-progress", s.handleTransferInProgress)
 	e.POST("/deals/transfer/restart", s.handleTransferRestart)
 	e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
+	e.GET("/deals/estimate", s.handleEstimateDealCost)
 
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
 	e.GET("/admin/balance", s.handleAdminBalance)
 	e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
 	e.GET("/admin/dealstats", s.handleDealStats)
+	e.POST("/admin/add-miner/:miner", s.handleAdminAddMiner)
 
 	return e.Start(srv)
 }
@@ -432,6 +436,15 @@ func (s *Server) handleAdminAddEscrow(c echo.Context) error {
 	return c.JSON(200, resp)
 }
 
+func (s *Server) handleAdminAddMiner(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	return s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: dbAddr{m}}).Error
+}
+
 type contentDealStats struct {
 	NumDeals     int
 	NumConfirmed int
@@ -503,4 +516,34 @@ func (s *Server) handleRetrievalCheck(c echo.Context) error {
 
 	return c.JSON(200, "We did a thing")
 
+}
+
+type estimateDealBody struct {
+	Size         uint64 `json:"size"`
+	Replication  int    `json:"replication"`
+	DurationBlks int    `json:"duration_blks"`
+	Verified     bool   `json:"verified"`
+}
+
+type priceEstimateResponse struct {
+	Total string
+}
+
+func (s *Server) handleEstimateDealCost(c echo.Context) error {
+	ctx := context.TODO()
+	var body estimateDealBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	rounded := padreader.PaddedSize(body.Size)
+
+	total, err := s.CM.estimatePrice(ctx, body.Replication, rounded.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, &priceEstimateResponse{
+		Total: types.FIL(*total).String(),
+	})
 }

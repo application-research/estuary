@@ -52,7 +52,7 @@ var bootstrappers = []string{
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
 }
 
-var miners []address.Address
+var defaultMiners []address.Address
 
 func init() {
 	//miners from minerX spreadsheet
@@ -102,8 +102,36 @@ func init() {
 			panic(err)
 		}
 
-		miners = append(miners, a)
+		defaultMiners = append(defaultMiners, a)
 	}
+}
+
+type storageMiner struct {
+	gorm.Model
+	Address dbAddr `gorm:"unique"`
+}
+
+type dbAddr struct {
+	Addr address.Address
+}
+
+func (dba *dbAddr) Scan(v interface{}) error {
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("dbAddrs must be strings")
+	}
+
+	addr, err := address.NewFromString(s)
+	if err != nil {
+		return err
+	}
+
+	dba.Addr = addr
+	return nil
+}
+
+func (dba dbAddr) Value() (driver.Value, error) {
+	return dba.Addr.String(), nil
 }
 
 type dbCID struct {
@@ -137,6 +165,7 @@ type Content struct {
 	Description string
 	Size        int64
 	Active      bool
+	Offloaded   bool
 }
 
 type Object struct {
@@ -292,7 +321,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.Blockstore)
+		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		if !cctx.Bool("no-storage-cron") {
@@ -340,6 +369,21 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&proposalRecord{})
 	db.AutoMigrate(&retrievalFailureRecord{})
 
+	db.AutoMigrate(&minerStorageAsk{})
+	db.AutoMigrate(&storageMiner{})
+
+	var count int64
+	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
+		return nil, err
+	}
+
+	if count == 0 {
+		fmt.Println("adding default miner list to database...")
+		for _, m := range defaultMiners {
+			db.Create(&storageMiner{Address: dbAddr{m}})
+		}
+
+	}
 	return db, nil
 }
 

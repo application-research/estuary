@@ -10,6 +10,7 @@ require (
 	github.com/filecoin-project/go-commp-utils v0.0.0-20201119054358-b88f7a96a434
 	github.com/filecoin-project/go-data-transfer v1.2.8
 	github.com/filecoin-project/go-fil-markets v1.1.9
+	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
 	github.com/filecoin-project/go-state-types v0.1.0
 	github.com/filecoin-project/go-storedcounter v0.0.0-20200421200003-1c99c62e8a5b
 	github.com/filecoin-project/lotus v1.5.3-rc1.0.20210315003656-a54c6bfb057d

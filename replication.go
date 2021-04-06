@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
+	"net/http"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -31,16 +31,18 @@ type ContentManager struct {
 	FilClient *filclient.FilClient
 
 	Blockstore blockstore.Blockstore
+	Tracker    *TrackingBlockstore
 
 	ToCheck chan uint
 }
 
-func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient, bs blockstore.Blockstore) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.GatewayAPI, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
 	return &ContentManager{
 		DB:         db,
 		Api:        api,
 		FilClient:  fc,
-		Blockstore: bs,
+		Blockstore: tbs.Under(),
+		Tracker:    tbs,
 		ToCheck:    make(chan uint, 10),
 	}
 }
@@ -95,13 +97,162 @@ func (cm *ContentManager) queueAllContent() error {
 	return nil
 }
 
-func (cm *ContentManager) pickMiners(n int) ([]address.Address, error) {
-	perm := rand.Perm(len(miners))[:n]
-	out := make([]address.Address, n)
-	for ix, val := range perm {
-		out[ix] = miners[val]
+func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*abi.TokenAmount, error) {
+	miners, err := cm.pickMiners(ctx, repl, size)
+	if err != nil {
+		return nil, err
+	}
+	if len(miners) == 0 {
+		return nil, fmt.Errorf("failed to find any miners for estimating deal price")
+	}
+
+	fmt.Println("miners: ", miners)
+	total := abi.NewTokenAmount(0)
+	for _, m := range miners {
+		ask, err := cm.getAsk(ctx, m, time.Minute*30)
+		if err != nil {
+			return nil, err
+		}
+
+		var price *abi.TokenAmount
+		if verified {
+			p, err := ask.GetVerifiedPrice()
+			if err != nil {
+				return nil, err
+			}
+			price = p
+		} else {
+			p, err := ask.GetPrice()
+			if err != nil {
+				return nil, err
+			}
+			price = p
+		}
+
+		fmt.Println("ask price: ", price)
+
+		cost, err := filclient.ComputePrice(*price, size, duration)
+		if err != nil {
+			return nil, err
+		}
+
+		total = types.BigAdd(total, *cost)
+	}
+
+	return &total, nil
+}
+
+type minerStorageAsk struct {
+	gorm.Model
+	Miner         string `gorm:"unique"`
+	Price         string
+	VerifiedPrice string
+	MinPieceSize  abi.PaddedPieceSize
+}
+
+func (msa *minerStorageAsk) GetPrice() (*types.BigInt, error) {
+	v, err := types.BigFromString(msa.Price)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v, nil
+}
+
+func (msa *minerStorageAsk) GetVerifiedPrice() (*types.BigInt, error) {
+	v, err := types.BigFromString(msa.VerifiedPrice)
+	if err != nil {
+		return nil, err
+	}
+
+	return &v, nil
+}
+
+func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize) ([]address.Address, error) {
+	var dbminers []storageMiner
+	if err := cm.DB.Order("random()").Find(&dbminers).Error; err != nil {
+		return nil, err
+	}
+	var out []address.Address
+	for _, val := range dbminers {
+		m := val.Address.Addr
+		ask, err := cm.getAsk(ctx, m, time.Minute*30)
+		if err != nil {
+			log.Errorf("getting ask from %s failed: %s", m, err)
+			continue
+		}
+
+		fmt.Println("got ask", m, ask.Price, ask.MinPieceSize)
+
+		if cm.sizeIsCloseEnough(size, ask.MinPieceSize) {
+			out = append(out, m)
+		}
+
+		if len(out) >= n {
+			fmt.Println("breaking", len(out), n)
+			break
+		}
 	}
 	return out, nil
+}
+
+func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*minerStorageAsk, error) {
+	var msa minerStorageAsk
+	if err := cm.DB.First(&msa, "miner = ?", m.String()).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+
+	fmt.Println("time since update: ", time.Since(msa.UpdatedAt))
+	if time.Since(msa.UpdatedAt) < maxCacheAge {
+		fmt.Println("using cache!")
+		return &msa, nil
+	}
+
+	netask, err := cm.FilClient.GetAsk(ctx, m)
+	if err != nil {
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   m,
+			Phase:   "query-ask",
+			Message: err.Error(),
+		})
+		return nil, err
+	}
+
+	nmsa := toDBAsk(netask)
+
+	if err := cm.DB.Clauses(clause.OnConflict{
+		Columns: []clause.Column{
+			{Name: "miner"},
+		},
+		DoUpdates: clause.AssignmentColumns([]string{"price", "verified_price", "min_piece_size"}),
+	}).Create(nmsa).Error; err != nil {
+		return nil, err
+	}
+
+	return nmsa, nil
+}
+
+func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bool {
+	if fsize > limit {
+		return true
+	}
+
+	if fsize*2 > limit {
+		return true
+	}
+
+	return false
+}
+
+func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
+	return &minerStorageAsk{
+		Miner:         netask.Ask.Ask.Miner.String(),
+		Price:         netask.Ask.Ask.Price.String(),
+		VerifiedPrice: netask.Ask.Ask.VerifiedPrice.String(),
+		MinPieceSize:  netask.Ask.Ask.MinPieceSize,
+	}
 }
 
 type contentDeal struct {
@@ -398,13 +549,14 @@ type proposalRecord struct {
 }
 
 func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int) error {
-	minerpool, err := cm.pickMiners(count * 2)
+
+	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
+	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
 	if err != nil {
 		return err
 	}
 
-	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
+	minerpool, err := cm.pickMiners(ctx, count*2, size.Padded())
 	if err != nil {
 		return err
 	}
@@ -497,7 +649,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		switch dealresp.Response.State {
 		case storagemarket.StorageDealError:
 			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
+				Miner:   ms[i],
 				Phase:   "propose",
 				Message: dealresp.Response.Message,
 				Content: content.ID,
@@ -506,7 +658,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			}
 		case storagemarket.StorageDealProposalRejected:
 			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
+				Miner:   ms[i],
 				Phase:   "propose",
 				Message: dealresp.Response.Message,
 				Content: content.ID,
@@ -515,7 +667,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			}
 		default:
 			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   miners[i],
+				Miner:   ms[i],
 				Phase:   "propose",
 				Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
 				Content: content.ID,
@@ -642,4 +794,133 @@ func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data ci
 	}
 
 	return pc, size, nil
+}
+
+func (cm *ContentManager) ClearUnused() error {
+	// first, gather candidates for removal
+	// that is any content we have made the correct number of deals for, that
+	// hasnt been fetched from us in X days
+
+	return nil
+}
+
+func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
+	var conts []Content
+	if err := cm.DB.Find(&conts, "active and not offloaded").Error; err != nil {
+		return nil, err
+	}
+
+	var toOffload []Content
+	for _, c := range conts {
+		ok, err := cm.contentIsProperlyReplicated(c.ID)
+		if err != nil {
+			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
+		}
+
+		if !ok {
+			// maybe kick off repairs?
+			continue
+		}
+
+		toOffload = append(toOffload, c)
+	}
+
+	return nil, nil
+}
+
+func (cm *ContentManager) contentIsProperlyReplicated(c uint) (bool, error) {
+	return false, nil
+}
+
+/*
+"miner": {
+        "minerAddr": "f022352",
+        "metadata": {
+          "location": "NO"
+        },
+        "filecoin": {
+          "relativePower": 0.00005677536865959914,
+          "askPrice": "20000000000",
+          "askVerifiedPrice": "0",
+          "minPieceSize": "17179869184",
+          "maxPieceSize": "34359738368",
+          "sectorSize": "34359738368",
+          "activeSectors": "7487",
+          "faultySectors": "1",
+          "updatedAt": "2021-04-06T00:03:38.049Z"
+        },
+        "textile": {
+          "regions": {
+            "021": {
+              "deals": {
+                "total": "279",
+                "last": "2021-03-24T17:52:01.258Z",
+                "failures": "13",
+                "lastFailure": "2021-04-04T18:04:43.824Z",
+                "tailTransfers": [
+                  {
+                    "transferedAt": "2021-03-23T21:09:57Z",
+                    "mibPerSec": 6.0512123834078535
+                  },
+                  {
+                    "transferedAt": "2021-03-03T18:18:15Z",
+                    "mibPerSec": 6.590866735426046
+                  }
+                ],
+                "tailSealed": [
+                  {
+                    "sealedAt": "2021-03-24T17:52:01Z",
+                    "durationSeconds": "6091"
+                  },
+                  {
+                    "sealedAt": "2021-03-04T01:14:13Z",
+                    "durationSeconds": "6300"
+                  }
+                ]
+              },
+              "retrievals": {
+                "total": "1",
+                "last": "2021-03-19T20:34:08.289Z",
+                "failures": "0",
+                "lastFailure": null,
+                "tailTransfers": [
+                  {
+                    "transferedAt": "2021-03-19T20:34:08Z",
+                    "mibPerSec": 1.3760741723550332
+                  }
+                ]
+              }
+            }
+          },
+          "dealsSummary": {
+            "total": "279",
+            "last": "2021-03-24T17:52:01.258Z",
+            "failures": "13",
+            "lastFailure": "2021-04-04T18:04:43.824Z"
+          },
+          "retrievalsSummary": {
+            "total": "1",
+            "last": "2021-03-19T20:34:08.289Z",
+            "failures": "0",
+            "lastFailure": null
+          },
+          "updatedAt": "2021-04-06T00:03:32.340Z"
+        },
+        "updatedAt": "2021-04-06T00:03:32.340Z"
+      }
+    },
+*/
+func (cm *ContentManager) pullTextileMinersList() error {
+	url := "https://minerindex.hub.textile.io/v1/index/query?sort.ascending=false&sort.field=TEXTILE_DEALS_TOTAL_SUCCESSFUL&limit=100"
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("bad response from textile: %d %s", resp.StatusCode, resp.Status)
+	}
+
+	return nil
 }

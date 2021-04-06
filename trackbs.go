@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"time"
 
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -22,8 +23,9 @@ type TrackingBlockstore struct {
 }
 
 type accesses struct {
-	Get int
-	Has int
+	Last time.Time
+	Get  int
+	Has  int
 }
 
 func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlockstore {
@@ -48,6 +50,10 @@ type getCountsReq struct {
 	resp chan []int
 }
 
+func (tbs *TrackingBlockstore) Under() blockstore.Blockstore {
+	return tbs.bs
+}
+
 func (tbs *TrackingBlockstore) GetCounts(objects []Object) ([]int, error) {
 	req := getCountsReq{
 		req:  objects,
@@ -67,6 +73,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 		case c := <-tbs.getCh:
 			acc := tbs.buffer[c]
 			acc.Get++
+			acc.Last = time.Now()
 			tbs.buffer[c] = acc
 		case c := <-tbs.hasCh:
 			acc := tbs.buffer[c]

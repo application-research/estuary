@@ -212,6 +212,12 @@ func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*networ
 
 const epochsPerHour = 60 * 2
 
+func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.ChainEpoch) (*abi.TokenAmount, error) {
+	cost := big.Mul(big.Div(big.Mul(big.NewInt(int64(size)), askPrice), big.NewInt(1<<30)), big.NewInt(int64(duration)))
+
+	return (*abi.TokenAmount)(&cost), nil
+}
+
 func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, duration abi.ChainEpoch) (*network.Proposal, error) {
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 
