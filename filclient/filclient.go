@@ -409,7 +409,7 @@ type ChannelState struct {
 
 	// Status is the current status of this channel
 	Status    datatransfer.Status `json:"status"`
-	StatusStr string              `json:"statusStr"`
+	StatusStr string              `json:"statusMessage"`
 
 	// Sent returns the number of bytes sent
 	Sent uint64 `json:"sent"`
@@ -420,7 +420,7 @@ type ChannelState struct {
 	// Message offers additional information about the current status
 	Message string `json:"message"`
 
-	BaseCid cid.Cid `json:"baseCid"`
+	BaseCid string `json:"baseCid"`
 
 	ChannelID datatransfer.ChannelID `json:"channelId"`
 
@@ -452,7 +452,7 @@ func ChannelStateConv(st datatransfer.ChannelState) *ChannelState {
 		Sent:       st.Sent(),
 		Received:   st.Received(),
 		Message:    st.Message(),
-		BaseCid:    st.BaseCID(),
+		BaseCid:    st.BaseCID().String(),
 		ChannelID:  st.ChannelID(),
 		//Vouchers:          st.Vouchers(),
 		//VoucherResults:    st.VoucherResults(),
