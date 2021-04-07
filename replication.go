@@ -80,8 +80,6 @@ func (cm *ContentManager) ContentWatcher() {
 }
 
 func (cm *ContentManager) startup() error {
-	return nil
-	// TODO: something a wee bit smarter
 	return cm.queueAllContent()
 }
 
@@ -134,7 +132,12 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 
 		fmt.Println("ask price: ", price)
 
-		cost, err := filclient.ComputePrice(*price, size, duration)
+		dealSize := size
+		if dealSize < ask.MinPieceSize {
+			dealSize = ask.MinPieceSize
+		}
+
+		cost, err := filclient.ComputePrice(*price, dealSize, duration)
 		if err != nil {
 			return nil, err
 		}
@@ -238,9 +241,11 @@ func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bo
 		return true
 	}
 
-	if fsize*2 > limit {
-		return true
-	}
+	/*
+		if fsize*64 > limit {
+			return true
+		}
+	*/
 
 	return false
 }
@@ -611,10 +616,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		if ask.Ask.Ask.MinPieceSize > size.Padded() {
-			continue
-		}
-
 		if cm.priceIsTooHigh(ask.Ask.Ask.Price) {
 			log.Infow("miners price is too high", "miner", m, "price", ask.Ask.Ask.Price)
 			cm.recordDealFailure(&DealFailureError{
@@ -640,7 +641,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, asks[i].Ask.Ask.Price, 1000000)
+		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, asks[i].Ask.Ask.Price, asks[i].Ask.Ask.MinPieceSize, 1000000)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -750,6 +751,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			}); oerr != nil {
 				return oerr
 			}
+			continue
 		}
 
 		cd.DTChan = chanid.String()

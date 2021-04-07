@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/cheggaaa/pb/v3 v3.0.6
+	github.com/filecoin-project/filecoin-ffi v0.30.4-0.20200910194244-f640612a1a1f
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.3
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2

@@ -333,7 +333,7 @@ func (s *Server) handleMakeDeal(c echo.Context) error {
 		return err
 	}
 
-	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, req.Duration)
+	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, 0, req.Duration)
 	if err != nil {
 		return err
 	}

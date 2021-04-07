@@ -7,9 +7,11 @@ import (
 	"strings"
 	"time"
 
+	ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
 	"github.com/filecoin-project/go-commp-utils/writer"
+	"github.com/filecoin-project/go-commp-utils/zerocomm"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
@@ -230,12 +232,22 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 	return (*abi.TokenAmount)(&cost), nil
 }
 
-func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, duration abi.ChainEpoch) (*network.Proposal, error) {
+func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch) (*network.Proposal, error) {
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 
 	commP, size, err := fc.computePieceComm(sealType, data, fc.blockstore)
 	if err != nil {
 		return nil, err
+	}
+
+	if size.Padded() < minSize {
+		padded, err := ZeroPadPieceCommitment(commP, size, minSize.Unpadded())
+		if err != nil {
+			return nil, err
+		}
+
+		commP = padded
+		size = minSize.Unpadded()
 	}
 
 	fmt.Println("commp: ", commP)
@@ -338,7 +350,36 @@ func GeneratePieceCommitment(rt abi.RegisteredSealProof, payloadCid cid.Cid, bst
 	if err != nil {
 		return cid.Undef, 0, err
 	}
+
 	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
+}
+
+func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
+
+	cur := c
+	for curSize < toSize {
+
+		zc := zerocomm.ZeroPieceCommitment(curSize)
+
+		p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
+			abi.PieceInfo{
+				Size:     curSize.Padded(),
+				PieceCID: cur,
+			},
+			abi.PieceInfo{
+				Size:     curSize.Padded(),
+				PieceCID: zc,
+			},
+		})
+		if err != nil {
+			return cid.Undef, err
+		}
+
+		cur = p
+		curSize = curSize * 2
+	}
+
+	return cur, nil
 }
 
 func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {
