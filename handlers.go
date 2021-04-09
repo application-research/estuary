@@ -54,6 +54,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.GET("/deals/estimate", s.handleEstimateDealCost)
 
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
+	e.GET("/miners/deals/:miner", s.handleGetMinerDeals)
 
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
@@ -252,33 +253,9 @@ func (s *Server) handleContentStatus(c echo.Context) error {
 
 	var ds []dealStatus
 	for _, d := range deals {
-		maddr, err := d.MinerAddr()
+
+		chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID)
 		if err != nil {
-			return err
-		}
-
-		var chanst *filclient.ChannelState
-		chanid, err := d.ChannelID()
-		switch err {
-		case nil:
-			chanst, err = s.FilClient.TransferStatus(ctx, &chanid)
-			if err != nil {
-				return err
-			}
-		case ErrNoChannelID:
-			chanst, err = s.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
-			if err != nil && err != filclient.ErrNoTransferFound {
-				return err
-			}
-
-			if chanst != nil {
-				d.DTChan = chanst.ChannelID.String()
-
-				if err := s.DB.Save(&d).Error; err != nil {
-					return err
-				}
-			}
-		default:
 			return err
 		}
 
@@ -606,6 +583,20 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	}
 
 	return c.JSON(200, merrs)
+}
+
+func (s *Server) handleGetMinerDeals(c echo.Context) error {
+	maddr, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "miner = ?", maddr.String()).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, deals)
 }
 
 func (s *Server) handleGetContentFailures(c echo.Context) error {

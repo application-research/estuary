@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -19,6 +21,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -37,16 +40,20 @@ type ContentManager struct {
 	Tracker    *TrackingBlockstore
 
 	ToCheck chan uint
+
+	retrLk               sync.Mutex
+	retrievalsInProgress map[uint]*retrievalProgress
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
 	return &ContentManager{
-		DB:         db,
-		Api:        api,
-		FilClient:  fc,
-		Blockstore: tbs.Under(),
-		Tracker:    tbs,
-		ToCheck:    make(chan uint, 10),
+		DB:                   db,
+		Api:                  api,
+		FilClient:            fc,
+		Blockstore:           tbs.Under(),
+		Tracker:              tbs,
+		ToCheck:              make(chan uint, 10),
+		retrievalsInProgress: make(map[uint]*retrievalProgress),
 	}
 }
 
@@ -442,13 +449,9 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 	// miner still has time...
 
 	fmt.Println("Checking transfer status...")
-	status, err := cm.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
+	status, err := cm.GetTransferStatus(ctx, d, content.Cid.CID)
 	if err != nil {
-		if err != filclient.ErrNoTransferFound {
-			return false, err
-		}
-
-		// no transfer found for this pair, need to create a new one
+		return false, err
 	}
 
 	switch status.Status {
@@ -491,6 +494,40 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, ccid cid.Cid) (*filclient.ChannelState, error) {
+	miner, err := d.MinerAddr()
+	if err != nil {
+		return nil, err
+	}
+
+	chanid, err := d.ChannelID()
+	switch err {
+	case nil:
+		chanst, err := cm.FilClient.TransferStatus(ctx, &chanid)
+		if err != nil {
+			return nil, err
+		}
+		return chanst, nil
+	case ErrNoChannelID:
+		chanst, err := cm.FilClient.TransferStatusForContent(ctx, ccid, miner)
+		if err != nil && err != filclient.ErrNoTransferFound {
+			return nil, err
+		}
+
+		if chanst != nil {
+			d.DTChan = chanst.ChannelID.String()
+
+			if err := cm.DB.Save(&d).Error; err != nil {
+				return nil, err
+			}
+		}
+
+		return chanst, nil
+	default:
+		return nil, err
+	}
 }
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
@@ -863,24 +900,175 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 
 	var toOffload []Content
 	for _, c := range conts {
-		ok, err := cm.contentIsProperlyReplicated(c.ID)
+		ok, err := cm.contentIsProperlyReplicated(c.ID, 10)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
 
 		if !ok {
 			// maybe kick off repairs?
+			log.Infof("content %d is in need of repairs", c.ID)
 			continue
 		}
 
 		toOffload = append(toOffload, c)
 	}
 
-	return nil, nil
+	return toOffload, nil
 }
 
-func (cm *ContentManager) contentIsProperlyReplicated(c uint) (bool, error) {
+func (cm *ContentManager) contentIsProperlyReplicated(c uint, repl int) (bool, error) {
+	var contentDeals []contentDeal
+	if err := cm.DB.Find(&contentDeals, "content = ? and not failed").Error; err != nil {
+		return false, err
+	}
+
+	if len(contentDeals) >= repl {
+		return true, nil
+	}
+
 	return false, nil
+}
+
+func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) {
+	var obj Object
+	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
+		return nil, xerrors.Errorf("failed to get object from db: ", err)
+	}
+
+	var refs []ObjRef
+	if err := cm.DB.Find(&refs, "object = ?", obj.ID).Error; err != nil {
+		return nil, err
+	}
+
+	var contentToFetch uint
+	switch len(refs) {
+	case 0:
+		return nil, xerrors.Errorf("have no object references for object %d in database")
+	case 1:
+		// easy case, fetch this thing.
+		contentToFetch = refs[0].Content
+	default:
+		// have more than one reference for the same object. Need to pick one to retrieve
+
+		// if one of the referenced contents has the requested cid as its root, then we should probably fetch that one
+
+		var contents []Content
+		if err := cm.DB.Find(&contents, "cid = ?", c.Bytes()).Error; err != nil {
+			return nil, err
+		}
+
+		if len(contents) == 0 {
+			// okay, this isnt anythings root cid. Just pick one I guess?
+			contentToFetch = refs[0].Content
+		} else {
+			// good, this is a root cid, lets fetch that one.
+			contentToFetch = contents[0].ID
+		}
+	}
+
+	ctx := context.TODO()
+	if err := cm.retrieveContent(ctx, contentToFetch); err != nil {
+		return nil, xerrors.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
+	}
+
+	out, err := cm.Blockstore.Get(c)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to get desired block even after retrieval: %w", err)
+	}
+
+	return out, nil
+}
+
+type retrievalProgress struct {
+	wait   chan struct{}
+	endErr error
+}
+
+func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint) error {
+	cm.retrLk.Lock()
+	prog, ok := cm.retrievalsInProgress[contentToFetch]
+	if !ok {
+		prog = &retrievalProgress{
+			wait: make(chan struct{}),
+		}
+		cm.retrievalsInProgress[contentToFetch] = prog
+	}
+	cm.retrLk.Unlock()
+
+	if ok {
+		select {
+		case <-prog.wait:
+			return prog.endErr
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	defer func() {
+		close(prog.wait)
+	}()
+
+	if err := cm.runRetrieval(ctx, contentToFetch); err != nil {
+		prog.endErr = err
+		return err
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) error {
+	var content Content
+	if err := cm.DB.First(&content, contentToFetch).Error; err != nil {
+		return err
+	}
+
+	var deals []contentDeal
+	if err := cm.DB.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
+		return err
+	}
+
+	if len(deals) == 0 {
+		return xerrors.Errorf("no active deals for content %d we are trying to retrieve", contentToFetch)
+	}
+
+	// TODO: probably need some better way to pick miners to retrieve from...
+	perm := rand.Perm(len(deals))
+	for _, i := range perm {
+		deal := deals[i]
+
+		maddr, err := deal.MinerAddr()
+		if err != nil {
+			log.Errorf("deal %d had bad miner address: %s", deal.ID, err)
+			continue
+		}
+
+		ask, err := cm.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
+		if err != nil {
+			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
+			cm.recordRetrievalFailure(&retrievalFailureRecord{
+				Miner:   maddr.String(),
+				Phase:   "query",
+				Message: err.Error(),
+			})
+			continue
+		}
+
+		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
+			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
+			cm.recordRetrievalFailure(&retrievalFailureRecord{
+				Miner:   maddr.String(),
+				Phase:   "query",
+				Message: err.Error(),
+			})
+			continue
+		}
+
+		// success
+		break
+	}
+
+	return nil
 }
 
 /*
@@ -974,7 +1162,4 @@ func (cm *ContentManager) pullTextileMinersList() error {
 	}
 
 	return nil
-}
-
-func (cm *ContentManager) FreeStorage() {
 }

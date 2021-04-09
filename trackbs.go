@@ -8,6 +8,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
@@ -15,6 +16,8 @@ type TrackingBlockstore struct {
 	bs blockstore.Blockstore
 
 	db *gorm.DB
+
+	cidReq func(cid.Cid) (blocks.Block, error)
 
 	buffer    map[cid.Cid]accesses
 	getCh     chan cid.Cid
@@ -29,9 +32,14 @@ type accesses struct {
 }
 
 func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlockstore {
+	cidReq := func(cid.Cid) (blocks.Block, error) {
+		return nil, blockstore.ErrNotFound
+	}
+
 	tbs := &TrackingBlockstore{
 		bs:        bs,
 		db:        db,
+		cidReq:    cidReq,
 		buffer:    make(map[cid.Cid]accesses),
 		getCh:     make(chan cid.Cid, 32),
 		hasCh:     make(chan cid.Cid, 32),
@@ -45,13 +53,17 @@ func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlock
 
 var _ (blockstore.Blockstore) = (*TrackingBlockstore)(nil)
 
-type getCountsReq struct {
-	req  []Object
-	resp chan []int
+func (tbs *TrackingBlockstore) SetCidReqFunc(f func(cid.Cid) (blocks.Block, error)) {
+	tbs.cidReq = f
 }
 
 func (tbs *TrackingBlockstore) Under() blockstore.Blockstore {
 	return tbs.bs
+}
+
+type getCountsReq struct {
+	req  []Object
+	resp chan []int
 }
 
 func (tbs *TrackingBlockstore) GetCounts(objects []Object) ([]int, error) {
@@ -99,7 +111,29 @@ func (tbs *TrackingBlockstore) DeleteBlock(_ cid.Cid) error {
 
 func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	tbs.getCh <- c
-	return tbs.bs.Get(c)
+	blk, err := tbs.bs.Get(c)
+	if err != nil {
+		if xerrors.Is(err, blockstore.ErrNotFound) {
+			var obj Object
+			if dberr := tbs.db.First(&obj, "where cid = ?", c.Bytes()).Error; dberr != nil {
+				if xerrors.Is(dberr, gorm.ErrRecordNotFound) {
+					// explicitly return original error
+					return nil, err
+				}
+				return nil, dberr
+			}
+
+			// having the object here in our database implies we are tracking it
+			// So since we don't have it, and are tracking it, we need to retrieve it
+
+			// TODO: this will wait for the retrieval to complete, which *might* take a while.
+			// maybe we return not found now, and get back to it later?
+			return tbs.cidReq(c)
+		}
+		return nil, err
+	}
+
+	return blk, nil
 }
 
 func (tbs *TrackingBlockstore) GetSize(c cid.Cid) (int, error) {

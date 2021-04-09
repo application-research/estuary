@@ -265,6 +265,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "logging",
 		},
+		&cli.BoolFlag{
+			Name: "enable-auto-retrieve",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -286,7 +289,12 @@ func main() {
 
 		defer closer()
 
-		nd, err := setup(context.Background(), cfg)
+		db, err := setupDatabase(cctx)
+		if err != nil {
+			return err
+		}
+
+		nd, err := setup(context.Background(), cfg, db)
 		if err != nil {
 			return err
 		}
@@ -337,15 +345,14 @@ func main() {
 			}
 		}()
 
-		db, err := setupDatabase(cctx)
-		if err != nil {
-			return err
-		}
-
 		s.DB = db
 
 		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
+
+		if cctx.Bool("enable-auto-retrive") {
+			nd.TrackingBlockstore.SetCidReqFunc(cm.RefreshContentForCid)
+		}
 
 		if !cctx.Bool("no-storage-cron") {
 			go cm.ContentWatcher()
@@ -486,7 +493,7 @@ type Config struct {
 	WalletDir string
 }
 
-func setup(ctx context.Context, cfg *Config) (*Node, error) {
+func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
 	if err != nil {
 		return nil, err
@@ -522,7 +529,7 @@ func setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	tbs := NewTrackingBlockstore(bstore, nil)
+	tbs := NewTrackingBlockstore(bstore, db)
 
 	bsnet := bsnet.NewFromIpfsHost(h, dht)
 	bswap := bitswap.New(ctx, bsnet, tbs)

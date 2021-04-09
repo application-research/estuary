@@ -32,7 +32,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			s.recordRetrievalFailure(&retrievalFailureRecord{
+			s.CM.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -54,8 +54,8 @@ type retrievalFailureRecord struct {
 	Message string
 }
 
-func (s *Server) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
-	return s.DB.Create(rfr).Error
+func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
+	return cm.DB.Create(rfr).Error
 }
 
 func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
@@ -76,9 +76,9 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	for m, ask := range asks {
-		if err := s.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
+		if err := s.CM.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			s.recordRetrievalFailure(&retrievalFailureRecord{
+			s.CM.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
@@ -92,7 +92,7 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	return nil
 }
 
-func (s *Server) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
+func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
 	proposal := &retrievalmarket.DealProposal{
 		PayloadCID: c,
 		ID:         retrievalmarket.DealID(rand.Int63n(1000000) + 100000),
@@ -106,5 +106,5 @@ func (s *Server) tryRetrieve(ctx context.Context, maddr address.Address, c cid.C
 		},
 	}
 
-	return s.FilClient.RetrieveContent(ctx, maddr, proposal)
+	return cm.FilClient.RetrieveContent(ctx, maddr, proposal)
 }
