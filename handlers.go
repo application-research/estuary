@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http/pprof"
 	"strconv"
 
@@ -15,8 +16,10 @@ import (
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	"github.com/ipfs/go-merkledag"
 	importer "github.com/ipfs/go-unixfs/importer"
+	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/estuary/filclient"
@@ -63,6 +66,11 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.GET("/admin/dealstats", s.handleDealStats)
 	e.GET("/admin/disk-info", s.handleDiskSpaceCheck)
 	e.POST("/admin/add-miner/:miner", s.handleAdminAddMiner)
+
+	e.GET("/admin/cm/read/:content", s.handleReadLocalContent)
+	e.GET("/admin/cm/offload/candidates", s.handleGetOffloadingCandidates)
+	e.POST("/admin/cm/offload/:content", s.handleOffloadContent)
+	e.GET("/admin/cm/refresh/:content", s.handleRefreshContent)
 
 	return e.Start(srv)
 }
@@ -611,4 +619,66 @@ func (s *Server) handleGetContentFailures(c echo.Context) error {
 	}
 
 	return c.JSON(200, errs)
+}
+
+func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
+	conts, err := s.CM.getRemovalCandidates()
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, conts)
+}
+
+func (s *Server) handleOffloadContent(c echo.Context) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	s.CM.OffloadContent(ctx, uint(cont))
+	return nil
+}
+
+func (s *Server) handleRefreshContent(c echo.Context) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	ctx := context.Background()
+	return s.CM.RefreshContent(ctx, uint(cont))
+}
+
+func (s *Server) handleReadLocalContent(c echo.Context) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+		return err
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	dserv := merkledag.NewDAGService(bserv)
+
+	ctx := context.Background()
+	nd, err := dserv.Get(ctx, content.Cid.CID)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+	r, err := uio.NewDagReader(ctx, nd, dserv)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+
+	io.Copy(c.Response(), r)
+	return nil
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,6 +42,8 @@ type ContentManager struct {
 
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*retrievalProgress
+
+	contentLk sync.Mutex
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
@@ -892,6 +893,58 @@ func (cm *ContentManager) ClearUnused() error {
 	return nil
 }
 
+type refResult struct {
+	Cid dbCID
+}
+
+func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
+	cm.contentLk.Lock()
+	defer cm.contentLk.Unlock()
+	var cont Content
+	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", true).Error; err != nil {
+		return err
+	}
+
+	// select * from obj_refs group by object having MIN(obj_refs.offloaded) = 1 and obj_refs.content = 1;
+	q := cm.DB.Debug().Model(&ObjRef{}).
+		Select("objects.cid").
+		Joins("left join objects on obj_refs.object = objects.id").
+		Group("object").
+		Having("obj_refs.content = ? and MIN(obj_refs.offloaded) = 1", c)
+
+	rows, err := q.Rows()
+	if err != nil {
+		return err
+	}
+
+	// TODO: I believe that we need to hold a lock for the entire period that
+	// we are deleting objects from the blockstore, otherwise a new file could
+	// come in that has overlapping blocks, and have its blocks deleted by this
+	// process.
+	for rows.Next() {
+		fmt.Println("iter rows")
+		var dbc dbCID
+		if err := rows.Scan(&dbc); err != nil {
+			return err
+		}
+
+		fmt.Println("cid: ", dbc.CID)
+
+		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 	var conts []Content
 	if err := cm.DB.Find(&conts, "active and not offloaded").Error; err != nil {
@@ -980,6 +1033,18 @@ func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) 
 	return out, nil
 }
 
+func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
+	if err := cm.DB.Model(&Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", false).Error; err != nil {
+		return err
+	}
+
+	return cm.retrieveContent(ctx, cont)
+}
+
 type retrievalProgress struct {
 	wait   chan struct{}
 	endErr error
@@ -1043,6 +1108,8 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			continue
 		}
 
+		log.Infow("attempting retrieval deal", "content", contentToFetch, "miner", maddr)
+
 		ask, err := cm.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
 			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
@@ -1053,6 +1120,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			})
 			continue
 		}
+		log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
 
 		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
@@ -1066,99 +1134,6 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 		// success
 		break
-	}
-
-	return nil
-}
-
-/*
-"miner": {
-        "minerAddr": "f022352",
-        "metadata": {
-          "location": "NO"
-        },
-        "filecoin": {
-          "relativePower": 0.00005677536865959914,
-          "askPrice": "20000000000",
-          "askVerifiedPrice": "0",
-          "minPieceSize": "17179869184",
-          "maxPieceSize": "34359738368",
-          "sectorSize": "34359738368",
-          "activeSectors": "7487",
-          "faultySectors": "1",
-          "updatedAt": "2021-04-06T00:03:38.049Z"
-        },
-        "textile": {
-          "regions": {
-            "021": {
-              "deals": {
-                "total": "279",
-                "last": "2021-03-24T17:52:01.258Z",
-                "failures": "13",
-                "lastFailure": "2021-04-04T18:04:43.824Z",
-                "tailTransfers": [
-                  {
-                    "transferedAt": "2021-03-23T21:09:57Z",
-                    "mibPerSec": 6.0512123834078535
-                  },
-                  {
-                    "transferedAt": "2021-03-03T18:18:15Z",
-                    "mibPerSec": 6.590866735426046
-                  }
-                ],
-                "tailSealed": [
-                  {
-                    "sealedAt": "2021-03-24T17:52:01Z",
-                    "durationSeconds": "6091"
-                  },
-                  {
-                    "sealedAt": "2021-03-04T01:14:13Z",
-                    "durationSeconds": "6300"
-                  }
-                ]
-              },
-              "retrievals": {
-                "total": "1",
-                "last": "2021-03-19T20:34:08.289Z",
-                "failures": "0",
-                "lastFailure": null,
-                "tailTransfers": [
-                  {
-                    "transferedAt": "2021-03-19T20:34:08Z",
-                    "mibPerSec": 1.3760741723550332
-                  }
-                ]
-              }
-            }
-          },
-          "dealsSummary": {
-            "total": "279",
-            "last": "2021-03-24T17:52:01.258Z",
-            "failures": "13",
-            "lastFailure": "2021-04-04T18:04:43.824Z"
-          },
-          "retrievalsSummary": {
-            "total": "1",
-            "last": "2021-03-19T20:34:08.289Z",
-            "failures": "0",
-            "lastFailure": null
-          },
-          "updatedAt": "2021-04-06T00:03:32.340Z"
-        },
-        "updatedAt": "2021-04-06T00:03:32.340Z"
-      }
-    },
-*/
-func (cm *ContentManager) pullTextileMinersList() error {
-	url := "https://minerindex.hub.textile.io/v1/index/query?sort.ascending=false&sort.field=TEXTILE_DEALS_TOTAL_SUCCESSFUL&limit=100"
-
-	resp, err := http.Get(url)
-	if err != nil {
-		return err
-	}
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("bad response from textile: %d %s", resp.StatusCode, resp.Status)
 	}
 
 	return nil

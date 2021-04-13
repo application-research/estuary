@@ -195,9 +195,10 @@ type Object struct {
 }
 
 type ObjRef struct {
-	ID      uint `gorm:"primarykey"`
-	Content uint
-	Object  uint
+	ID        uint `gorm:"primarykey"`
+	Content   uint
+	Object    uint
+	Offloaded uint
 }
 
 func setupWallet(dir string) (*wallet.LocalWallet, error) {
@@ -398,6 +399,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&PieceCommRecord{})
 	db.AutoMigrate(&proposalRecord{})
 	db.AutoMigrate(&retrievalFailureRecord{})
+	db.AutoMigrate(&retrievalSuccessRecord{})
 
 	db.AutoMigrate(&minerStorageAsk{})
 	db.AutoMigrate(&storageMiner{})

@@ -8,6 +8,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/ipfs/go-cid"
+	"github.com/whyrusleeping/estuary/filclient"
 	"gorm.io/gorm"
 )
 
@@ -106,5 +107,40 @@ func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address
 		},
 	}
 
-	return cm.FilClient.RetrieveContent(ctx, maddr, proposal)
+	stats, err := cm.FilClient.RetrieveContent(ctx, maddr, proposal)
+	if err != nil {
+		return err
+	}
+
+	cm.recordRetrievalSuccess(c, maddr, stats)
+	return nil
+}
+
+type retrievalSuccessRecord struct {
+	PropCid dbCID
+	Miner   string
+
+	Peer         string
+	Size         uint64
+	DurationMs   int64
+	AverageSpeed uint64
+	TotalPayment string
+	NumPayments  int
+	AskPrice     string
+}
+
+func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
+	if err := cm.DB.Create(&retrievalSuccessRecord{
+		PropCid:      dbCID{cc},
+		Miner:        m.String(),
+		Peer:         rstats.Peer.String(),
+		Size:         rstats.Size,
+		DurationMs:   rstats.Duration.Milliseconds(),
+		AverageSpeed: rstats.AverageSpeed,
+		TotalPayment: rstats.TotalPayment.String(),
+		NumPayments:  rstats.NumPayments,
+		AskPrice:     rstats.AskPrice.String(),
+	}).Error; err != nil {
+		log.Errorf("failed to write retrieval success record: %s", err)
+	}
 }

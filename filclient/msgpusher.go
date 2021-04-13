@@ -5,6 +5,8 @@ import (
 	"sync"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -54,6 +56,9 @@ func (mp *MsgPusher) MpoolPushMessage(ctx context.Context, msg *types.Message, m
 	if err != nil {
 		return nil, xerrors.Errorf("failed to estimate gas: %w", err)
 	}
+
+	estim.GasFeeCap = abi.NewTokenAmount(4000000000)
+	estim.GasPremium = big.Mul(estim.GasPremium, big.NewInt(2))
 
 	sig, err := mp.w.WalletSign(ctx, kaddr, estim.Cid().Bytes(), api.MsgMeta{Type: api.MTChainMsg})
 	if err != nil {

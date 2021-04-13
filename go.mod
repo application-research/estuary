@@ -9,8 +9,8 @@ require (
 	github.com/filecoin-project/go-bs-lmdb v1.0.3
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.0
-	github.com/filecoin-project/go-data-transfer v1.4.1
-	github.com/filecoin-project/go-fil-markets v1.2.4
+	github.com/filecoin-project/go-data-transfer v1.4.3
+	github.com/filecoin-project/go-fil-markets v1.2.5
 	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
 	github.com/filecoin-project/go-state-types v0.1.0
 	github.com/filecoin-project/lotus v1.5.3-rc1.0.20210315003656-a54c6bfb057d
@@ -25,6 +25,7 @@ require (
 	github.com/ipfs/go-graphsync v0.6.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.3
 	github.com/ipfs/go-ipfs-chunker v0.0.5
+	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-ipld-format v0.2.0
 	github.com/ipfs/go-log v1.0.4
 	github.com/ipfs/go-merkledag v0.3.2
