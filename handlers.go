@@ -88,6 +88,8 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 
+	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
+
 	return e.Start(srv)
 }
 
@@ -460,6 +462,21 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 	}
 
 	return c.JSON(200, status)
+}
+
+func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
+	code := c.Param("code")
+	invite := &InviteCode{
+		Code:      code,
+		CreatedBy: u.ID,
+	}
+	if err := s.DB.Create(invite).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{
+		"code": invite.Code,
+	})
 }
 
 func (s *Server) handleAdminBalance(c echo.Context) error {
