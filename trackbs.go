@@ -23,6 +23,7 @@ type TrackingBlockstore struct {
 	getCh     chan cid.Cid
 	hasCh     chan cid.Cid
 	countsReq chan getCountsReq
+	accessReq chan accessReq
 }
 
 type accesses struct {
@@ -44,6 +45,7 @@ func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlock
 		getCh:     make(chan cid.Cid, 32),
 		hasCh:     make(chan cid.Cid, 32),
 		countsReq: make(chan getCountsReq, 32),
+		accessReq: make(chan accessReq, 32),
 	}
 
 	go tbs.coalescer()
@@ -97,7 +99,34 @@ func (tbs *TrackingBlockstore) coalescer() {
 				resp[i] = tbs.buffer[o.Cid.CID].Get
 			}
 			req.resp <- resp
+		case req := <-tbs.accessReq:
+			acc := tbs.buffer[req.c]
+			req.resp <- acc
 		}
+	}
+}
+
+type accessReq struct {
+	c    cid.Cid
+	resp chan accesses
+}
+
+func (tbs *TrackingBlockstore) LastAccess(ctx context.Context, c cid.Cid) (time.Time, error) {
+	req := accessReq{
+		c:    c,
+		resp: make(chan accesses),
+	}
+	select {
+	case tbs.accessReq <- req:
+	case <-ctx.Done():
+		return time.Time{}, ctx.Err()
+	}
+
+	select {
+	case resp := <-req.resp:
+		return resp.Last, nil
+	case <-ctx.Done():
+		return time.Time{}, ctx.Err()
 	}
 }
 

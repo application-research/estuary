@@ -107,7 +107,7 @@ func (cm *ContentManager) queueAllContent() error {
 }
 
 func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*abi.TokenAmount, error) {
-	miners, err := cm.pickMiners(ctx, repl, size)
+	miners, err := cm.pickMiners(ctx, repl, size, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -182,13 +182,21 @@ func (msa *minerStorageAsk) GetVerifiedPrice() (*types.BigInt, error) {
 	return &v, nil
 }
 
-func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize) ([]address.Address, error) {
+func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize, exclude map[string]bool) ([]address.Address, error) {
+	if exclude == nil {
+		exclude = make(map[string]bool)
+	}
+
 	var dbminers []storageMiner
 	if err := cm.DB.Order("random()").Find(&dbminers).Error; err != nil {
 		return nil, err
 	}
 	var out []address.Address
 	for _, val := range dbminers {
+		if exclude[val.Address.Addr.String()] {
+			continue
+		}
+
 		m := val.Address.Addr
 		ask, err := cm.getAsk(ctx, m, time.Minute*30)
 		if err != nil {
@@ -332,10 +340,15 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 
 	replicationFactor := 10
 
+	minersAlready := make(map[string]bool)
+	for _, d := range deals {
+		minersAlready[d.Miner] = true
+	}
+
 	if len(deals) < replicationFactor {
 		// make some more deals!
 		fmt.Printf("Content only has %d deals, making %d more.\n", len(deals), replicationFactor-len(deals))
-		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals)); err != nil {
+		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready); err != nil {
 			return err
 		}
 	}
@@ -625,7 +638,7 @@ type proposalRecord struct {
 	Data    []byte
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[string]bool) error {
 
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
@@ -633,7 +646,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return err
 	}
 
-	minerpool, err := cm.pickMiners(ctx, count*2, size.Padded())
+	minerpool, err := cm.pickMiners(ctx, count*2, size.Padded(), exclude)
 	if err != nil {
 		return err
 	}
@@ -883,104 +896,6 @@ func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data ci
 	}
 
 	return pc, size, nil
-}
-
-func (cm *ContentManager) ClearUnused() error {
-	// first, gather candidates for removal
-	// that is any content we have made the correct number of deals for, that
-	// hasnt been fetched from us in X days
-
-	return nil
-}
-
-type refResult struct {
-	Cid dbCID
-}
-
-func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
-	cm.contentLk.Lock()
-	defer cm.contentLk.Unlock()
-	var cont Content
-	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
-		return err
-	}
-
-	if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
-		return err
-	}
-
-	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", true).Error; err != nil {
-		return err
-	}
-
-	// select * from obj_refs group by object having MIN(obj_refs.offloaded) = 1 and obj_refs.content = 1;
-	q := cm.DB.Debug().Model(&ObjRef{}).
-		Select("objects.cid").
-		Joins("left join objects on obj_refs.object = objects.id").
-		Group("object").
-		Having("obj_refs.content = ? and MIN(obj_refs.offloaded) = 1", c)
-
-	rows, err := q.Rows()
-	if err != nil {
-		return err
-	}
-
-	// TODO: I believe that we need to hold a lock for the entire period that
-	// we are deleting objects from the blockstore, otherwise a new file could
-	// come in that has overlapping blocks, and have its blocks deleted by this
-	// process.
-	for rows.Next() {
-		fmt.Println("iter rows")
-		var dbc dbCID
-		if err := rows.Scan(&dbc); err != nil {
-			return err
-		}
-
-		fmt.Println("cid: ", dbc.CID)
-
-		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
-	var conts []Content
-	if err := cm.DB.Find(&conts, "active and not offloaded").Error; err != nil {
-		return nil, err
-	}
-
-	var toOffload []Content
-	for _, c := range conts {
-		ok, err := cm.contentIsProperlyReplicated(c.ID, 10)
-		if err != nil {
-			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
-		}
-
-		if !ok {
-			// maybe kick off repairs?
-			log.Infof("content %d is in need of repairs", c.ID)
-			continue
-		}
-
-		toOffload = append(toOffload, c)
-	}
-
-	return toOffload, nil
-}
-
-func (cm *ContentManager) contentIsProperlyReplicated(c uint, repl int) (bool, error) {
-	var contentDeals []contentDeal
-	if err := cm.DB.Find(&contentDeals, "content = ? and not failed").Error; err != nil {
-		return false, err
-	}
-
-	if len(contentDeals) >= repl {
-		return true, nil
-	}
-
-	return false, nil
 }
 
 func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) {
