@@ -180,7 +180,7 @@ type Content struct {
 	gorm.Model
 	Cid         dbCID  `json:"cid"`
 	Name        string `json:"name"`
-	User        string `json:"user"`
+	UserID      uint   `json:"userId"`
 	Description string `json:"description"`
 	Size        int64  `json:"size"`
 	Active      bool   `json:"active"`

@@ -49,14 +49,16 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.POST("/login", s.handleLoginUser)
 
 	content := e.Group("/content")
-	content.POST("/add", s.handleAdd)
-	content.GET("/stats", s.handleStats)
+	content.Use(s.AuthRequired(false))
+	content.POST("/add", withUser(s.handleAdd))
+	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
-	content.GET("/status/:id", s.handleContentStatus)
-	content.GET("/list", s.handleListContent)
-	content.GET("/failures/:content", s.handleGetContentFailures)
+	content.GET("/status/:id", withUser(s.handleContentStatus))
+	content.GET("/list", withUser(s.handleListContent))
+	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 
 	deals := e.Group("/deals")
+	content.Use(s.AuthRequired(false))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", s.handleMakeDeal)
 	deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
@@ -66,12 +68,15 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.GET("/estimate", s.handleEstimateDealCost)
 
+	// explicitly public, for now
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
 	e.GET("/miners/deals/:miner", s.handleGetMinerDeals)
 
+	// should probably remove this
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
 	admin := e.Group("/admin")
+	admin.Use(s.AuthRequired(true))
 	admin.GET("/balance", s.handleAdminBalance)
 	admin.GET("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
@@ -107,9 +112,20 @@ type statsResp struct {
 	TotalRequests int64   `json:"totalRequests"`
 }
 
-func (s *Server) handleStats(c echo.Context) error {
+func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
+	return func(c echo.Context) error {
+		u, ok := c.Get("user").(*User)
+		if !ok {
+			return fmt.Errorf("endpoint not called with proper authentication")
+		}
+
+		return f(c, u)
+	}
+}
+
+func (s *Server) handleStats(c echo.Context, u *User) error {
 	var contents []Content
-	if err := s.DB.Find(&contents).Error; err != nil {
+	if err := s.DB.Find(&contents, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -144,8 +160,7 @@ where obj_refs.content = ?`
 	return c.JSON(200, out)
 }
 
-func (s *Server) handleAdd(c echo.Context) error {
-
+func (s *Server) handleAdd(c echo.Context, u *User) error {
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
@@ -199,6 +214,7 @@ func (s *Server) handleAdd(c echo.Context) error {
 		Size:   totalSize,
 		Name:   fname,
 		Active: true,
+		UserID: u.ID,
 	}
 
 	if err := s.DB.Create(content).Error; err != nil {
@@ -243,9 +259,9 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) handleListContent(c echo.Context) error {
+func (s *Server) handleListContent(c echo.Context, u *User) error {
 	var contents []Content
-	if err := s.DB.Find(&contents, "active").Error; err != nil {
+	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -262,7 +278,7 @@ type dealStatus struct {
 	TransferStatus *filclient.ChannelState `json:"transfer"`
 }
 
-func (s *Server) handleContentStatus(c echo.Context) error {
+func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	ctx := context.TODO()
 	val, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -270,7 +286,7 @@ func (s *Server) handleContentStatus(c echo.Context) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", val).Error; err != nil {
+	if err := s.DB.First(&content, "id = ? and user_id = ?", val, u.ID).Error; err != nil {
 		return err
 	}
 
@@ -627,7 +643,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	return c.JSON(200, deals)
 }
 
-func (s *Server) handleGetContentFailures(c echo.Context) error {
+func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
