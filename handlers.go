@@ -5,14 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/http/pprof"
 	"strconv"
+	"time"
 
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
@@ -25,6 +28,7 @@ import (
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -40,39 +44,55 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 		e.Use(middleware.Logger())
 	}
 	e.Use(middleware.CORS())
-	e.POST("/content/add", s.handleAdd)
-	e.GET("/content/stats", s.handleStats)
-	e.GET("/content/ensure-replication/:datacid", s.handleEnsureReplication)
-	e.GET("/content/status/:id", s.handleContentStatus)
-	e.GET("/content/list", s.handleListContent)
-	e.GET("/content/failures/:content", s.handleGetContentFailures)
 
-	e.GET("/deals/query/:miner", s.handleQueryAsk)
-	e.POST("/deals/make/:miner", s.handleMakeDeal)
-	e.POST("/deals/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
-	e.POST("/deals/transfer/status", s.handleTransferStatus)
-	e.GET("/deals/transfer/in-progress", s.handleTransferInProgress)
-	e.POST("/deals/transfer/restart", s.handleTransferRestart)
-	e.GET("/deals/status/:miner/:propcid", s.handleDealStatus)
-	e.GET("/deals/estimate", s.handleEstimateDealCost)
+	e.POST("/register", s.handleRegisterUser)
+	e.POST("/login", s.handleLoginUser)
+
+	content := e.Group("/content")
+	content.POST("/add", s.handleAdd)
+	content.GET("/stats", s.handleStats)
+	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
+	content.GET("/status/:id", s.handleContentStatus)
+	content.GET("/list", s.handleListContent)
+	content.GET("/failures/:content", s.handleGetContentFailures)
+
+	deals := e.Group("/deals")
+	deals.GET("/query/:miner", s.handleQueryAsk)
+	deals.POST("/make/:miner", s.handleMakeDeal)
+	deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	deals.POST("/transfer/status", s.handleTransferStatus)
+	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
+	deals.POST("/transfer/restart", s.handleTransferRestart)
+	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
+	deals.GET("/estimate", s.handleEstimateDealCost)
 
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
 	e.GET("/miners/deals/:miner", s.handleGetMinerDeals)
 
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
-	e.GET("/admin/balance", s.handleAdminBalance)
-	e.GET("/admin/add-escrow/:amt", s.handleAdminAddEscrow)
-	e.GET("/admin/dealstats", s.handleDealStats)
-	e.GET("/admin/disk-info", s.handleDiskSpaceCheck)
-	e.POST("/admin/add-miner/:miner", s.handleAdminAddMiner)
+	admin := e.Group("/admin")
+	admin.GET("/balance", s.handleAdminBalance)
+	admin.GET("/add-escrow/:amt", s.handleAdminAddEscrow)
+	admin.GET("/dealstats", s.handleDealStats)
+	admin.GET("/disk-info", s.handleDiskSpaceCheck)
+	admin.POST("/add-miner/:miner", s.handleAdminAddMiner)
 
-	e.GET("/admin/cm/read/:content", s.handleReadLocalContent)
-	e.GET("/admin/cm/offload/candidates", s.handleGetOffloadingCandidates)
-	e.POST("/admin/cm/offload/:content", s.handleOffloadContent)
-	e.GET("/admin/cm/refresh/:content", s.handleRefreshContent)
+	admin.GET("/cm/read/:content", s.handleReadLocalContent)
+	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
+	admin.POST("/cm/offload/:content", s.handleOffloadContent)
+	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 
 	return e.Start(srv)
+}
+
+type httpError struct {
+	Code    int
+	Message string
+}
+
+func (he httpError) Error() string {
+	return he.Message
 }
 
 func serveProfile(c echo.Context) error {
@@ -681,4 +701,156 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 
 	io.Copy(c.Response(), r)
 	return nil
+}
+
+func (s *Server) checkTokenAuth(token string) (*User, error) {
+	var authToken AuthToken
+	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &httpError{
+				Code:    http.StatusForbidden,
+				Message: "invalid token",
+			}
+		}
+		return nil, err
+	}
+
+	if authToken.Expiry.Before(time.Now()) {
+		return nil, &httpError{
+			Code:    http.StatusForbidden,
+			Message: "token expired",
+		}
+	}
+
+	var user User
+	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &httpError{
+				Code:    http.StatusForbidden,
+				Message: "invalid token, not bound to user",
+			}
+		}
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (s *Server) AuthRequired(admin bool) echo.MiddlewareFunc {
+	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+		Validator: func(key string, c echo.Context) (bool, error) {
+			u, err := s.checkTokenAuth(key)
+			if err != nil {
+				return false, err
+			}
+
+			if (admin && u.Perm >= 10) || (!admin && u.Perm >= 2) {
+				c.Set("user", u)
+				return true, nil
+			}
+
+			return false, nil
+		},
+	})
+}
+
+type registerBody struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"passwordHash"`
+	InviteCode   string `json:"inviteCode"`
+}
+
+type registerResponse struct {
+}
+
+func (s *Server) handleRegisterUser(c echo.Context) error {
+	var reg registerBody
+	if err := c.Bind(&reg); err != nil {
+		return err
+	}
+
+	var invite InviteCode
+	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &httpError{
+				Code:    http.StatusForbidden,
+				Message: "invalid invite code",
+			}
+		}
+
+	}
+
+	var exist User
+	if err := s.DB.First(&exist, "username = ?", reg.Username).Error; err == nil {
+		return &httpError{
+			Code:    http.StatusForbidden,
+			Message: "username already taken",
+		}
+	}
+
+	newUser := &User{
+		Username: reg.Username,
+		UUID:     uuid.New().String(),
+		PassHash: reg.PasswordHash,
+	}
+	if err := s.DB.Create(newUser).Error; err != nil {
+		herr := &httpError{
+			Code:    http.StatusForbidden,
+			Message: "failed to create user",
+		}
+
+		return fmt.Errorf("user creation failed: %s: %w", err, herr)
+	}
+
+	return c.NoContent(200)
+}
+
+type loginBody struct {
+	Username string `json:"username"`
+	PassHash string `json:"passwordHash"`
+}
+
+type loginResponse struct {
+	Token  string    `json:"token"`
+	Expiry time.Time `json:"expiry"`
+}
+
+func (s *Server) handleLoginUser(c echo.Context) error {
+	var body loginBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	var user User
+	if err := s.DB.First(&user, "username = ?", body.Username).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &httpError{
+				Code:    http.StatusForbidden,
+				Message: "no such user",
+			}
+		}
+		return err
+	}
+
+	if user.PassHash != body.PassHash {
+		return &httpError{
+			Code:    http.StatusForbidden,
+			Message: "invalid username or password",
+		}
+	}
+
+	authToken := &AuthToken{
+		Token:  "EST" + uuid.New().String() + "ARY",
+		User:   user.ID,
+		Expiry: time.Now().Add(time.Hour * 24 * 7),
+	}
+
+	if err := s.DB.Create(authToken).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &loginResponse{
+		Token:  authToken.Token,
+		Expiry: authToken.Expiry,
+	})
 }
