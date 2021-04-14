@@ -20,6 +20,7 @@ import (
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-fil-markets/storagemarket/impl/clientutils"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/impl/requestvalidation"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -272,6 +273,11 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 
 	pricePerEpoch := big.Div(big.Mul(big.NewInt(int64(size.Padded())), price), big.NewInt(1<<30))
 
+	label, err := clientutils.LabelField(data)
+	if err != nil {
+		return nil, xerrors.Errorf("failed to construct label field: %w", err)
+	}
+
 	proposal := &market.DealProposal{
 		PieceCID:     commP,
 		PieceSize:    size.Padded(),
@@ -279,7 +285,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		Client:       fc.clientAddr,
 		Provider:     miner,
 
-		Label: "estuary",
+		Label: label,
 
 		StartEpoch: dealStart,
 		EndEpoch:   end,
