@@ -32,6 +32,11 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const (
+	PermLevelUser  = 2
+	PermLevelAdmin = 10
+)
+
 func (s *Server) ServeAPI(srv string, logging bool) error {
 	e := echo.New()
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
@@ -49,7 +54,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.POST("/login", s.handleLoginUser)
 
 	content := e.Group("/content")
-	content.Use(s.AuthRequired(false))
+	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
@@ -58,7 +63,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 
 	deals := e.Group("/deals")
-	content.Use(s.AuthRequired(false))
+	content.Use(s.AuthRequired(PermLevelUser))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", s.handleMakeDeal)
 	deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
@@ -76,7 +81,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 
 	admin := e.Group("/admin")
-	admin.Use(s.AuthRequired(true))
+	admin.Use(s.AuthRequired(PermLevelAdmin))
 	admin.GET("/balance", s.handleAdminBalance)
 	admin.GET("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
@@ -174,6 +179,17 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
+	replication := defaultReplication
+	replVal := c.FormValue("replication")
+	if replVal != "" {
+		parsed, err := strconv.Atoi(replVal)
+		if err != nil {
+			log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+		} else {
+			replication = parsed
+		}
+	}
+
 	bserv := blockservice.New(s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 	// TODO: use a temporary on-disk blockstore to store the uploaded data until the user pays us
@@ -212,11 +228,12 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	// okay cool, we added the content, now track it
 	content := &Content{
-		Cid:    dbCID{nd.Cid()},
-		Size:   totalSize,
-		Name:   fname,
-		Active: true,
-		UserID: u.ID,
+		Cid:         dbCID{nd.Cid()},
+		Size:        totalSize,
+		Name:        fname,
+		Active:      true,
+		UserID:      u.ID,
+		Replication: replication,
 	}
 
 	if err := s.DB.Create(content).Error; err != nil {
@@ -769,7 +786,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	return &user, nil
 }
 
-func (s *Server) AuthRequired(admin bool) echo.MiddlewareFunc {
+func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
 		Validator: func(key string, c echo.Context) (bool, error) {
 			u, err := s.checkTokenAuth(key)
@@ -777,7 +794,7 @@ func (s *Server) AuthRequired(admin bool) echo.MiddlewareFunc {
 				return false, err
 			}
 
-			if (admin && u.Perm >= 10) || (!admin && u.Perm >= 2) {
+			if u.Perm >= level {
 				c.Set("user", u)
 				return true, nil
 			}

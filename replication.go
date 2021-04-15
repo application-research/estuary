@@ -30,6 +30,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const defaultReplication = 6
+
 type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
@@ -338,7 +340,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		}
 	}
 
-	replicationFactor := 10
+	replicationFactor := defaultReplication
+	if content.Replication > 0 {
+		replicationFactor = content.Replication
+	}
 
 	minersAlready := make(map[string]bool)
 	for _, d := range deals {

@@ -185,6 +185,7 @@ type Content struct {
 	Size        int64  `json:"size"`
 	Active      bool   `json:"active"`
 	Offloaded   bool   `json:"offloaded"`
+	Replication int    `json:"replication"`
 }
 
 type Object struct {
