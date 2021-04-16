@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -804,21 +805,47 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 }
 
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
-	return middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
-		Validator: func(key string, c echo.Context) (bool, error) {
-			u, err := s.checkTokenAuth(key)
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			auth := c.Request().Header.Get("Authorization")
+			if auth == "" {
+				return &httpError{
+					Code:    403,
+					Message: "no authorization header set",
+				}
+			}
+
+			parts := strings.Split(auth, " ")
+			if len(parts) != 2 {
+				return &httpError{
+					Code:    403,
+					Message: "invalid authorization header",
+				}
+			}
+
+			if parts[0] != "Bearer" {
+				return &httpError{
+					Code:    403,
+					Message: "expected bearer token",
+				}
+			}
+
+			u, err := s.checkTokenAuth(parts[1])
 			if err != nil {
-				return false, err
+				return err
 			}
 
 			if u.Perm >= level {
 				c.Set("user", u)
-				return true, nil
+				return next(c)
 			}
 
-			return false, nil
-		},
-	})
+			return &httpError{
+				Code:    401,
+				Message: "not authorized",
+			}
+		}
+	}
 }
 
 type registerBody struct {
