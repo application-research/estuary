@@ -352,7 +352,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 
 	if len(deals) < replicationFactor {
 		// make some more deals!
-		fmt.Printf("Content only has %d deals, making %d more.\n", len(deals), replicationFactor-len(deals))
+		log.Infof("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready); err != nil {
 			return err
 		}
@@ -552,7 +552,7 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
 
 func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *contentDeal) (abi.DealID, error) {
-	mlookup, err := cm.Api.StateSearchMsg(ctx, pubcid)
+	mlookup, err := cm.Api.StateSearchMsg(ctx, types.EmptyTSK, pubcid, 1000, false)
 	if err != nil {
 		return 0, xerrors.Errorf("could not find published deal on chain: %w", err)
 	}
@@ -610,7 +610,21 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 }
 
 func (cm *ContentManager) repairDeal(d *contentDeal) error {
-	fmt.Println("repair deal: ", d.PropCid.CID, d.Miner, d.Content)
+	if d.DealID != 0 {
+		log.Infow("miner faulted on deal", "deal", d.DealID, "content", d.Content, "miner", d.Miner)
+		maddr, err := d.MinerAddr()
+		if err != nil {
+			log.Errorf("failed to get miner address from deal (%s): %w", d.Miner, err)
+		}
+
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   maddr,
+			Phase:   "fault",
+			Message: "miner faulted on deal",
+			Content: d.Content,
+		})
+	}
+	log.Infof("repair deal: ", d.PropCid.CID, d.Miner, d.Content)
 	d.Failed = true
 	d.FailedAt = time.Now()
 	if err := cm.DB.Save(d).Error; err != nil {

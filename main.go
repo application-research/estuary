@@ -32,7 +32,7 @@ import (
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
 
-	"github.com/filecoin-project/lotus/api"
+	v0api "github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -283,8 +283,8 @@ func main() {
 			WalletDir:     filepath.Join(ddir, "estuary-wallet"),
 		}
 
-		//api, closer, err := lcli.GetGatewayAPI(cctx)
-		api, closer, err := lcli.GetFullNodeAPI(cctx)
+		api, closer, err := lcli.GetGatewayAPI(cctx)
+		//api, closer, err := lcli.GetFullNodeAPI(cctx)
 		if err != nil {
 			return err
 		}
@@ -428,7 +428,7 @@ type Server struct {
 	Node      *Node
 	DB        *gorm.DB
 	FilClient *filclient.FilClient
-	Api       api.Gateway
+	Api       v0api.Gateway
 	CM        *ContentManager
 }
 

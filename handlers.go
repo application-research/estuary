@@ -41,6 +41,23 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e := echo.New()
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
+		var herr *httpError
+		if xerrors.As(err, &herr) {
+			ctx.JSON(herr.Code, map[string]string{
+				"error": herr.Message,
+			})
+			return
+		}
+
+		var echoErr *echo.HTTPError
+		if xerrors.As(err, &echoErr) {
+			ctx.JSON(echoErr.Code, map[string]interface{}{
+				"error": echoErr.Message,
+			})
+			return
+		}
+
+		ctx.NoContent(500)
 	}
 
 	e.GET("/debug/pprof/:prof", serveProfile)

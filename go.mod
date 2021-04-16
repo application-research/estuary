@@ -10,7 +10,6 @@ require (
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.0
 	github.com/filecoin-project/go-data-transfer v1.4.3
-	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.2.5
 	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
 	github.com/filecoin-project/go-state-types v0.1.0
@@ -40,6 +39,7 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.11.1
 	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
+	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc

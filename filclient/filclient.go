@@ -26,6 +26,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/api/v0api"
 	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -65,7 +66,7 @@ type FilClient struct {
 
 	host host.Host
 
-	api api.Gateway
+	api v0api.Gateway
 
 	wallet *wallet.LocalWallet
 
@@ -80,7 +81,7 @@ type FilClient struct {
 
 type GetPieceCommFunc func(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
-func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
+func NewClient(h host.Host, api v0api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	mpusher := NewMsgPusher(api, w)
