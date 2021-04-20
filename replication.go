@@ -352,7 +352,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 
 	if len(deals) < replicationFactor {
 		// make some more deals!
-		log.Infof("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
+		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready); err != nil {
 			return err
 		}

@@ -241,7 +241,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	cset := cid.NewSet()
 	err = merkledag.Walk(context.TODO(), dserv.GetLinks, nd.Cid(), func(c cid.Cid) bool {
 		if cset.Visit(c) {
-			size, err := s.Node.Blockstore.GetSize(c)
+			size, err := bs.GetSize(c)
 			if err != nil {
 				log.Errorf("failed to get object size in walk %s: %s", c, err)
 			}
@@ -902,9 +902,6 @@ type registerBody struct {
 	InviteCode   string `json:"inviteCode"`
 }
 
-type registerResponse struct {
-}
-
 func (s *Server) handleRegisterUser(c echo.Context) error {
 	var reg registerBody
 	if err := c.Bind(&reg); err != nil {
@@ -944,7 +941,20 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		return fmt.Errorf("user creation failed: %s: %w", err, herr)
 	}
 
-	return c.NoContent(200)
+	authToken := &AuthToken{
+		Token:  "EST" + uuid.New().String() + "ARY",
+		User:   newUser.ID,
+		Expiry: time.Now().Add(time.Hour * 24 * 7),
+	}
+
+	if err := s.DB.Create(authToken).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &loginResponse{
+		Token:  authToken.Token,
+		Expiry: authToken.Expiry,
+	})
 }
 
 type loginBody struct {
