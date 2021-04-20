@@ -105,7 +105,6 @@ func NewClient(h host.Host, api v0api.Gateway, w *wallet.LocalWallet, addr addre
 	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
 	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
-	//counter := storedcounter.New(ds, datastore.NewKey("datatransfer"))
 
 	dtRestartConfig := dtimpl.ChannelRestartConfig(channelmonitor.Config{
 		MonitorPushChannels:    true,
@@ -885,17 +884,15 @@ func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfe
 		case *retrievalmarket.DealResponse:
 			switch rest.Status {
 			case retrievalmarket.DealStatusAccepted:
-				fmt.Println("Accepted! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
+				log.Infow("retrieval deal accepted! ", "msg", rest.Message, "owed", types.FIL(rest.PaymentOwed), "received", st.Received())
 				return nil
 			case retrievalmarket.DealStatusRejected:
-				fmt.Println("Rejected! ", rest.Message)
 				return fmt.Errorf("deal rejected: %s", rest.Message)
 			case retrievalmarket.DealStatusFundsNeededUnseal:
 				return fmt.Errorf("data needs to be unsealed")
 			case retrievalmarket.DealStatusErrored:
 				return fmt.Errorf("retrieval deal errored: %s", rest.Message)
 			default:
-				fmt.Println("deal status: ", rest.Status)
 				return fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
 			}
 		default:

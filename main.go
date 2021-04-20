@@ -189,10 +189,11 @@ type Content struct {
 }
 
 type Object struct {
-	ID    uint `gorm:"primarykey"`
-	Cid   dbCID
-	Size  int
-	Reads int
+	ID         uint `gorm:"primarykey"`
+	Cid        dbCID
+	Size       int
+	Reads      int
+	LastAccess time.Time
 }
 
 type ObjRef struct {
@@ -306,9 +307,15 @@ func main() {
 			return err
 		}
 
+		sbmgr, err := NewStagingBSMgr(filepath.Join(ddir, "stagingdata"))
+		if err != nil {
+			return err
+		}
+
 		s := &Server{
-			Node: nd,
-			Api:  api,
+			Node:       nd,
+			Api:        api,
+			StagingMgr: sbmgr,
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
@@ -425,11 +432,12 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 }
 
 type Server struct {
-	Node      *Node
-	DB        *gorm.DB
-	FilClient *filclient.FilClient
-	Api       v0api.Gateway
-	CM        *ContentManager
+	Node       *Node
+	DB         *gorm.DB
+	FilClient  *filclient.FilClient
+	Api        v0api.Gateway
+	CM         *ContentManager
+	StagingMgr *StagingBSMgr
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {

@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	"github.com/ipfs/go-merkledag"
@@ -31,6 +32,20 @@ import (
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+)
+
+const (
+	ERR_INVALID_TOKEN        = "ERR_INVALID_TOKEN"
+	ERR_TOKEN_EXPIRED        = "ERR_TOKEN_EXPIRED"
+	ERR_AUTH_MISSING         = "ERR_AUTH_MISSING"
+	ERR_INVALID_AUTH         = "ERR_INVALID_AUTH"
+	ERR_AUTH_MISSING_BEARER  = "ERR_AUTH_MISSING_BEARER"
+	ERR_NOT_AUTHORIZED       = "ERR_NOT_AUTHORIZED"
+	ERR_INVALID_INVITE       = "ERR_INVALID_INVITE"
+	ERR_USERNAME_TAKEN       = "ERR_USERNAME_TAKEN"
+	ERR_USER_CREATION_FAILED = "ERR_USER_CREATION_FAILED"
+	ERR_USER_NOT_FOUND       = "ERR_USER_NOT_FOUND"
+	ERR_INVALID_PASSWORD     = "ERR_INVALID_PASSWORD"
 )
 
 const (
@@ -208,9 +223,13 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, nil)
+	bsid, bs, err := s.StagingMgr.AllocNew()
+	if err != nil {
+		return err
+	}
+
+	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
-	// TODO: use a temporary on-disk blockstore to store the uploaded data until the user pays us
 	spl := chunker.DefaultSplitter(fi)
 	nd, err := importer.BuildDagFromReader(dserv, spl)
 	if err != nil {
@@ -268,6 +287,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
+	if err := dumpBlockstoreTo(bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	if err := s.StagingMgr.CleanUp(bsid); err != nil {
+		log.Errorf("failed to clean up staging blockstore: %s", err)
+	}
+
 	s.CM.ToCheck <- content.ID
 
 	go func() {
@@ -277,6 +304,27 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		fmt.Println("providing complete")
 	}()
 	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+}
+
+func dumpBlockstoreTo(from, to blockstore.Blockstore) error {
+	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
+	keys, err := from.AllKeysChan(context.TODO())
+	if err != nil {
+		return err
+	}
+
+	for k := range keys {
+		blk, err := from.Get(k)
+		if err != nil {
+			return err
+		}
+
+		if err := to.Put(blk); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (s *Server) handleEnsureReplication(c echo.Context) error {
@@ -777,7 +825,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &httpError{
 				Code:    http.StatusForbidden,
-				Message: "invalid token",
+				Message: ERR_INVALID_TOKEN,
 			}
 		}
 		return nil, err
@@ -786,7 +834,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	if authToken.Expiry.Before(time.Now()) {
 		return nil, &httpError{
 			Code:    http.StatusForbidden,
-			Message: "token expired",
+			Message: ERR_TOKEN_EXPIRED,
 		}
 	}
 
@@ -795,7 +843,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &httpError{
 				Code:    http.StatusForbidden,
-				Message: "invalid token, not bound to user",
+				Message: ERR_INVALID_TOKEN,
 			}
 		}
 		return nil, err
@@ -811,7 +859,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 			if auth == "" {
 				return &httpError{
 					Code:    403,
-					Message: "no authorization header set",
+					Message: ERR_AUTH_MISSING,
 				}
 			}
 
@@ -819,14 +867,14 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 			if len(parts) != 2 {
 				return &httpError{
 					Code:    403,
-					Message: "invalid authorization header",
+					Message: ERR_INVALID_AUTH,
 				}
 			}
 
 			if parts[0] != "Bearer" {
 				return &httpError{
 					Code:    403,
-					Message: "expected bearer token",
+					Message: ERR_AUTH_MISSING_BEARER,
 				}
 			}
 
@@ -842,7 +890,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 
 			return &httpError{
 				Code:    401,
-				Message: "not authorized",
+				Message: ERR_NOT_AUTHORIZED,
 			}
 		}
 	}
@@ -868,7 +916,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &httpError{
 				Code:    http.StatusForbidden,
-				Message: "invalid invite code",
+				Message: ERR_INVALID_INVITE,
 			}
 		}
 
@@ -878,7 +926,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	if err := s.DB.First(&exist, "username = ?", reg.Username).Error; err == nil {
 		return &httpError{
 			Code:    http.StatusForbidden,
-			Message: "username already taken",
+			Message: ERR_USERNAME_TAKEN,
 		}
 	}
 
@@ -890,7 +938,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	if err := s.DB.Create(newUser).Error; err != nil {
 		herr := &httpError{
 			Code:    http.StatusForbidden,
-			Message: "failed to create user",
+			Message: ERR_USER_CREATION_FAILED,
 		}
 
 		return fmt.Errorf("user creation failed: %s: %w", err, herr)
@@ -920,7 +968,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &httpError{
 				Code:    http.StatusForbidden,
-				Message: "no such user",
+				Message: ERR_USER_NOT_FOUND,
 			}
 		}
 		return err
@@ -929,7 +977,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	if user.PassHash != body.PassHash {
 		return &httpError{
 			Code:    http.StatusForbidden,
-			Message: "invalid username or password",
+			Message: ERR_INVALID_PASSWORD,
 		}
 	}
 

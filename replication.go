@@ -45,7 +45,7 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*retrievalProgress
 
-	contentLk sync.Mutex
+	contentLk sync.RWMutex
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {

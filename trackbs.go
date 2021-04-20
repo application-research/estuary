@@ -82,6 +82,8 @@ func (tbs *TrackingBlockstore) GetCounts(objects []Object) ([]int, error) {
 }
 
 func (tbs *TrackingBlockstore) coalescer() {
+	ticker := time.Tick(time.Minute * 10)
+
 	for {
 		select {
 		case c := <-tbs.getCh:
@@ -102,6 +104,22 @@ func (tbs *TrackingBlockstore) coalescer() {
 		case req := <-tbs.accessReq:
 			acc := tbs.buffer[req.c]
 			req.resp <- acc
+		case <-ticker:
+			oldbuffer := tbs.buffer
+			tbs.buffer = make(map[cid.Cid]accesses)
+			go tbs.persistAccessCounts(oldbuffer)
+		}
+	}
+}
+
+func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
+	for c, acc := range buf {
+		err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
+			"reads":       gorm.Expr("reads + ?", acc.Get),
+			"last_access": acc.Last,
+		}).Error
+		if err != nil {
+			log.Errorf("failed to update object in db: %s", err)
 		}
 	}
 }
@@ -139,7 +157,7 @@ func (tbs *TrackingBlockstore) DeleteBlock(_ cid.Cid) error {
 }
 
 func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
-	tbs.getCh <- c
+	tbs.getCh <- c // TODO: should we be tracking all requests? or all successful servings?
 	blk, err := tbs.bs.Get(c)
 	if err != nil {
 		if xerrors.Is(err, blockstore.ErrNotFound) {
