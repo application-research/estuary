@@ -890,6 +890,8 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				return next(c)
 			}
 
+			log.Warnw("User not authorized", "user", u.ID, "perm", u.Perm, "required", level)
+
 			return &httpError{
 				Code:    401,
 				Message: ERR_NOT_AUTHORIZED,
@@ -933,6 +935,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		Username: reg.Username,
 		UUID:     uuid.New().String(),
 		PassHash: reg.PasswordHash,
+		Perm:     PermLevelUser,
 	}
 	if err := s.DB.Create(newUser).Error; err != nil {
 		herr := &httpError{
