@@ -86,6 +86,8 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(PermLevelUser))
+
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
@@ -1004,5 +1006,15 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	return c.JSON(200, &loginResponse{
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
+	})
+}
+
+type viewerResponse struct {
+	Username string `json:"username"`
+}
+
+func (s *Server) handleGetViewer(c echo.Context, u *User) error {
+	return c.JSON(200, &viewerResponse{
+		Username: u.Username,
 	})
 }
