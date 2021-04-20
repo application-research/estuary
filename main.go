@@ -32,7 +32,7 @@ import (
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
 
-	v0api "github.com/filecoin-project/lotus/api/v0api"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -435,7 +435,7 @@ type Server struct {
 	Node       *Node
 	DB         *gorm.DB
 	FilClient  *filclient.FilClient
-	Api        v0api.Gateway
+	Api        api.Gateway
 	CM         *ContentManager
 	StagingMgr *StagingBSMgr
 }
