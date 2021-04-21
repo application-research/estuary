@@ -30,7 +30,6 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
-	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -438,45 +437,6 @@ type Server struct {
 	Api        api.Gateway
 	CM         *ContentManager
 	StagingMgr *StagingBSMgr
-}
-
-func (s *Server) GarbageCollect(ctx context.Context) error {
-	// since we're reference counting all the content, garbage collection becomes easy
-	// its even easier if we don't care that its 'perfect'
-
-	// We can probably even just remove stuff when its references are removed from the database
-	keych, err := s.Node.Blockstore.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	for c := range keych {
-		keep, err := s.trackingObject(c)
-		if err != nil {
-			return err
-		}
-
-		if !keep {
-			// can batch these deletes and execute them at the datastore layer for more perfs
-			if err := s.Node.Blockstore.DeleteBlock(c); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) trackingObject(c cid.Cid) (bool, error) {
-	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return count > 0, nil
 }
 
 type Node struct {
