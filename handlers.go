@@ -85,6 +85,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
+	e.GET("/health", s.handleHealth)
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(PermLevelUser))
 
@@ -1026,5 +1027,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 	return c.JSON(200, &viewerResponse{
 		Username: u.Username,
 		Perms:    perms,
+	})
+}
+
+func (s *Server) handleHealth(c echo.Context) error {
+	return c.JSON(200, map[string]string{
+		"status": "ok",
 	})
 }
