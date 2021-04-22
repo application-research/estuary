@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -58,4 +59,49 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
+}
+
+func (cm *ContentManager) RemoveContent(c uint, now bool) error {
+	cm.contentLk.Lock()
+	defer cm.contentLk.Unlock()
+
+	if err := cm.DB.Delete(&Content{}, c).Error; err != nil {
+		return fmt.Errorf("failed to delete content from db: %w", err)
+	}
+
+	var objIds []struct {
+		Object uint
+	}
+
+	if err := cm.DB.Model(&ObjRef{}).Find(&objIds, "content = ?", c).Error; err != nil {
+		return fmt.Errorf("failed to gather referenced object IDs: %w", err)
+	}
+
+	if err := cm.DB.Where("content = ?", c).Delete(&ObjRef{}).Error; err != nil {
+		return fmt.Errorf("failed to delete related object references: %w", err)
+	}
+
+	ids := make([]uint, len(objIds))
+	for i, obj := range objIds {
+		ids[i] = obj.Object
+	}
+
+	// Since im kinda bad at sql, this is going to be faster than the naive
+	// query for now. Maybe can think of something more clever later
+	batchSize := 100
+	for i := 0; i < len(ids); i += 100 {
+		count := batchSize
+		if len(ids[i:]) < count {
+			count = len(ids[i:])
+		}
+
+		slice := ids[i : i+count]
+
+		subq := cm.DB.Table("obj_refs").Select("1").Where("obj_refs.object = objects.id")
+		if err := cm.DB.Where("id IN ? and not exists (?)", slice, subq).Delete(&Object{}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

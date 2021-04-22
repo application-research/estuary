@@ -1014,10 +1014,17 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 
 type viewerResponse struct {
 	Username string `json:"username"`
+	Perms    string `json:"perms"`
 }
 
 func (s *Server) handleGetViewer(c echo.Context, u *User) error {
+	perms := "user"
+	if u.Perm > PermLevelAdmin {
+		perms = "admin"
+	}
+
 	return c.JSON(200, &viewerResponse{
 		Username: u.Username,
+		Perms:    perms,
 	})
 }
