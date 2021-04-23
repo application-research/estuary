@@ -119,7 +119,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(PermLevelAdmin))
 	admin.GET("/balance", s.handleAdminBalance)
-	admin.GET("/add-escrow/:amt", s.handleAdminAddEscrow)
+	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
 	admin.POST("/add-miner/:miner", s.handleAdminAddMiner)
@@ -172,7 +172,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		return err
 	}
 
-	var out []statsResp
+	out := []statsResp{}
 	for _, c := range contents {
 		q := `select *
 from obj_refs
