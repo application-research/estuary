@@ -89,6 +89,11 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(PermLevelUser))
 
+	user := e.Group("/user")
+	user.Use(s.AuthRequired(PermLevelUser))
+	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
+	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
+
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
@@ -122,7 +127,9 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
+	admin.GET("/stats", s.handleAdminStats)
 	admin.POST("/add-miner/:miner", s.handleAdminAddMiner)
+	admin.GET("/miners", s.handleAdminGetMiners)
 
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
@@ -130,6 +137,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
+	admin.GET("/invite", s.handleAdminGetInvites)
 
 	return e.Start(srv)
 }
@@ -550,6 +558,24 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 	return c.JSON(200, status)
 }
 
+type getInvitesResp struct {
+	Code     string `json:"code"`
+	Username string `json:"createdBy"`
+}
+
+func (s *Server) handleAdminGetInvites(c echo.Context) error {
+	var invites []getInvitesResp
+	if err := s.DB.Debug().Model(&InviteCode{}).
+		Select("code, username").
+		Where("claimed_by IS NULL").
+		Joins("left join users on users.id = invite_codes.created_by").
+		Scan(&invites).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, invites)
+}
+
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
 	code := c.Param("code")
 	invite := &InviteCode{
@@ -586,6 +612,98 @@ func (s *Server) handleAdminAddEscrow(c echo.Context) error {
 	}
 
 	return c.JSON(200, resp)
+}
+
+type adminStatsResponse struct {
+	TotalDealAttempted   int64 `json:"totalDealsAttempted"`
+	TotalDealsSuccessful int64 `json:"totalDealsSuccessful"`
+	TotalDealsFailed     int64 `json:"totalDealsFailed"`
+
+	NumMiners int64 `json:"numMiners"`
+	NumUsers  int64 `json:"numUsers"`
+	NumFiles  int64 `json:"numFiles"`
+
+	NumRetrievals      int64 `json:"numRetrievals"`
+	NumRetrFailures    int64 `json:"numRetrievalFailures"`
+	NumStorageFailures int64 `json:"numStorageFailures"`
+}
+
+func (s *Server) handleAdminStats(c echo.Context) error {
+
+	var dealsTotal int64
+	if err := s.DB.Model(&contentDeal{}).Count(&dealsTotal).Error; err != nil {
+		return err
+	}
+
+	var dealsSuccessful int64
+	if err := s.DB.Model(&contentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
+		return err
+	}
+
+	var dealsFailed int64
+	if err := s.DB.Model(&contentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
+		return err
+	}
+
+	var numMiners int64
+	if err := s.DB.Model(&storageMiner{}).Count(&numMiners).Error; err != nil {
+		return err
+	}
+
+	var numUsers int64
+	if err := s.DB.Model(&User{}).Count(&numUsers).Error; err != nil {
+		return err
+	}
+
+	var numFiles int64
+	if err := s.DB.Model(&Content{}).Where("active").Count(&numFiles).Error; err != nil {
+		return err
+	}
+
+	var numRetrievals int64
+	if err := s.DB.Model(&retrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
+		return err
+	}
+
+	var numRetrievalFailures int64
+	if err := s.DB.Model(&retrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
+		return err
+	}
+
+	var numStorageFailures int64
+	if err := s.DB.Model(&dfeRecord{}).Count(&numStorageFailures).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &adminStatsResponse{
+		TotalDealAttempted:   dealsTotal,
+		TotalDealsSuccessful: dealsSuccessful,
+		TotalDealsFailed:     dealsFailed,
+		NumMiners:            numMiners,
+		NumUsers:             numUsers,
+		NumFiles:             numFiles,
+		NumRetrievals:        numRetrievals,
+		NumRetrFailures:      numRetrievalFailures,
+		NumStorageFailures:   numStorageFailures,
+	})
+}
+
+type minerResp struct {
+	Addr address.Address
+}
+
+func (s *Server) handleAdminGetMiners(c echo.Context) error {
+	var miners []storageMiner
+	if err := s.DB.Find(&miners).Error; err != nil {
+		return err
+	}
+
+	out := make([]minerResp, len(miners))
+	for i, m := range miners {
+		out[i].Addr = m.Address.Addr
+	}
+
+	return c.JSON(200, out)
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -997,13 +1115,8 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken := &AuthToken{
-		Token:  "EST" + uuid.New().String() + "ARY",
-		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 7),
-	}
-
-	if err := s.DB.Create(authToken).Error; err != nil {
+	authToken, err := s.newAuthTokenForUser(&user)
+	if err != nil {
 		return err
 	}
 
@@ -1011,6 +1124,20 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
 	})
+}
+
+func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
+	authToken := &AuthToken{
+		Token:  "EST" + uuid.New().String() + "ARY",
+		User:   user.ID,
+		Expiry: time.Now().Add(time.Hour * 24 * 7),
+	}
+
+	if err := s.DB.Create(authToken).Error; err != nil {
+		return nil, err
+	}
+
+	return authToken, nil
 }
 
 type viewerResponse struct {
@@ -1030,4 +1157,38 @@ func (s *Server) handleHealth(c echo.Context) error {
 	return c.JSON(200, map[string]string{
 		"status": "ok",
 	})
+}
+
+type getApiKeysResp struct {
+	Token  string    `json:"token"`
+	Expiry time.Time `json:"expiry"`
+}
+
+func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
+	authToken, err := s.newAuthTokenForUser(u)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, &getApiKeysResp{
+		Token:  authToken.Token,
+		Expiry: authToken.Expiry,
+	})
+}
+
+func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
+	var keys []AuthToken
+	if err := s.DB.Find(&keys, "user = ?", u.ID).Error; err != nil {
+		return err
+	}
+
+	var out []getApiKeysResp
+	for _, k := range keys {
+		out = append(out, getApiKeysResp{
+			Token:  k.Token,
+			Expiry: k.Expiry,
+		})
+	}
+
+	return c.JSON(200, out)
 }
