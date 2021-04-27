@@ -117,6 +117,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	// explicitly public, for now
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
 	e.GET("/miners/deals/:miner", s.handleGetMinerDeals)
+	e.GET("/miners/stats/:miner", s.handleGetMinerStats)
 
 	// should probably remove this
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
@@ -161,6 +162,7 @@ type statsResp struct {
 	File          string  `json:"file"`
 	BWUsed        int64   `json:"bwUsed"`
 	TotalRequests int64   `json:"totalRequests"`
+	Offloaded     bool    `json:"offloaded"`
 }
 
 func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
@@ -848,6 +850,48 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	}
 
 	return c.JSON(200, merrs)
+}
+
+type minerStatsResp struct {
+	Miner         address.Address `json:"miner"`
+	UsedByEstuary bool            `json:"usedByEstuary"`
+	DealCount     int64           `json:"dealCount"`
+	ErrorCount    int64           `json:"errorCount"`
+}
+
+func (s *Server) handleGetMinerStats(c echo.Context) error {
+	maddr, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	var m storageMiner
+	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return c.JSON(200, &minerStatsResp{
+				Miner:         maddr,
+				UsedByEstuary: false,
+			})
+		}
+		return err
+	}
+
+	var dealscount int64
+	if err := s.DB.Model(&contentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+		return err
+	}
+
+	var errorcount int64
+	if err := s.DB.Model(&dfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &minerStatsResp{
+		Miner:         maddr,
+		UsedByEstuary: true,
+		DealCount:     dealscount,
+		ErrorCount:    errorcount,
+	})
 }
 
 func (s *Server) handleGetMinerDeals(c echo.Context) error {

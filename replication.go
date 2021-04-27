@@ -46,6 +46,11 @@ type ContentManager struct {
 	retrievalsInProgress map[uint]*retrievalProgress
 
 	contentLk sync.RWMutex
+
+	// Some fields for miner reputation management
+	minerLk      sync.Mutex
+	sortedMiners []address.Address
+	lastComputed time.Time
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
@@ -184,22 +189,45 @@ func (msa *minerStorageAsk) GetVerifiedPrice() (*types.BigInt, error) {
 	return &v, nil
 }
 
-func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize, exclude map[string]bool) ([]address.Address, error) {
-	if exclude == nil {
-		exclude = make(map[string]bool)
+func (cm *ContentManager) pickMinerDist(n int) (int, int) {
+	if n < 3 {
+		return n, 0
 	}
 
-	var dbminers []storageMiner
-	if err := cm.DB.Order("random()").Find(&dbminers).Error; err != nil {
+	if n < 5 {
+		return 3, n - 2
+	}
+
+	return n - (n / 2), n / 2
+
+}
+func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
+	if exclude == nil {
+		exclude = make(map[address.Address]bool)
+	}
+
+	// some portion of the miners will be 'first N of our best miners' and the rest will be randomly chosen from our list
+	// over time, our miner list will be all fairly high quality so this should just serve to shake things up a bit and
+	// give miners more of a chance to prove themselves
+	_, nrand := cm.pickMinerDist(n)
+
+	randminers, err := cm.randomMinerList()
+	if err != nil {
 		return nil, err
 	}
+
 	var out []address.Address
-	for _, val := range dbminers {
-		if exclude[val.Address.Addr.String()] {
+	for _, m := range randminers {
+		if len(out) >= nrand {
+			break
+		}
+
+		if exclude[m] {
 			continue
 		}
 
-		m := val.Address.Addr
+		exclude[m] = true
+
 		ask, err := cm.getAsk(ctx, m, time.Minute*30)
 		if err != nil {
 			log.Errorf("getting ask from %s failed: %s", m, err)
@@ -209,12 +237,47 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.Padded
 		if cm.sizeIsCloseEnough(size, ask.MinPieceSize) {
 			out = append(out, m)
 		}
+	}
 
+	sortedminers, err := cm.sortedMinerList()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, m := range sortedminers {
 		if len(out) >= n {
-			fmt.Println("breaking", len(out), n)
 			break
 		}
+
+		if exclude[m] {
+			continue
+		}
+
+		ask, err := cm.getAsk(ctx, m, time.Minute*30)
+		if err != nil {
+			log.Errorf("getting ask from %s failed: %s", m, err)
+			continue
+		}
+
+		if cm.sizeIsCloseEnough(size, ask.MinPieceSize) {
+			out = append(out, m)
+		}
 	}
+
+	return out, nil
+}
+
+func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
+	var dbminers []storageMiner
+	if err := cm.DB.Order("random()").Find(&dbminers).Error; err != nil {
+		return nil, err
+	}
+
+	out := make([]address.Address, 0, len(dbminers))
+	for _, dbm := range dbminers {
+		out = append(out, dbm.Address.Addr)
+	}
+
 	return out, nil
 }
 
@@ -284,6 +347,7 @@ type contentDeal struct {
 	Miner    string    `json:"miner"`
 	DealID   int64     `json:"dealId"`
 	Failed   bool      `json:"failed"`
+	Verified bool      `json:"verified"`
 	FailedAt time.Time `json:"failedAt,omitempty"`
 	DTChan   string    `json:"dtChan"`
 }
@@ -345,15 +409,19 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		replicationFactor = content.Replication
 	}
 
-	minersAlready := make(map[string]bool)
+	minersAlready := make(map[address.Address]bool)
 	for _, d := range deals {
-		minersAlready[d.Miner] = true
+		maddr, err := d.MinerAddr()
+		if err != nil {
+			return err
+		}
+		minersAlready[maddr] = true
 	}
 
 	if len(deals) < replicationFactor {
 		// make some more deals!
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
-		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready); err != nil {
+		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, false); err != nil {
 			return err
 		}
 	}
@@ -409,13 +477,7 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
-		cm.recordDealFailure(&DealFailureError{
-			Miner:   maddr,
-			Phase:   "check-status",
-			Message: err.Error(),
-			Content: d.Content,
-		})
-		return false, nil
+		return false, xerrors.Errorf("checking deal status through client failed: %w", err)
 	}
 
 	content, err := cm.getContent(d.Content)
@@ -657,7 +719,7 @@ type proposalRecord struct {
 	Data    []byte
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[string]bool) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[address.Address]bool, verified bool) error {
 
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
@@ -785,9 +847,10 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			responses[i] = dealresp
 
 			cd := &contentDeal{
-				Content: content.ID,
-				PropCid: dbCID{dealresp.Response.Proposal},
-				Miner:   ms[i].String(),
+				Content:  content.ID,
+				PropCid:  dbCID{dealresp.Response.Proposal},
+				Miner:    ms[i].String(),
+				Verified: verified,
 			}
 
 			if err := cm.DB.Create(cd).Error; err != nil {
