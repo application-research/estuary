@@ -130,6 +130,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
 	admin.GET("/stats", s.handleAdminStats)
 	admin.POST("/add-miner/:miner", s.handleAdminAddMiner)
+	admin.POST("/rm-miner/:miner", s.handleAdminRemoveMiner)
 	admin.GET("/miners", s.handleAdminGetMiners)
 
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
@@ -706,6 +707,15 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	return s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
