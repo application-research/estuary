@@ -70,7 +70,7 @@ func (cm *ContentManager) ContentWatcher() {
 		log.Errorf("failed to recheck existing content: %s", err)
 	}
 
-	ticker := time.Tick(time.Minute * 5)
+	timer := time.NewTimer(time.Minute * 10)
 
 	for {
 		select {
@@ -85,11 +85,12 @@ func (cm *ContentManager) ContentWatcher() {
 				log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
 				continue
 			}
-		case <-ticker:
+		case <-timer.C:
 			if err := cm.queueAllContent(); err != nil {
 				log.Errorf("rechecking content: %s", err)
 				continue
 			}
+			timer.Reset(time.Minute * 10)
 		}
 	}
 }
