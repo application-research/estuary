@@ -495,12 +495,12 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 				if provds.DealID != 0 {
 					deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
 					if err == nil {
-						nd, err := cborutil.AsIpld(&deal.Proposal)
+						pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
 						if err != nil {
-							return false, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
+							return false, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
 						}
 
-						if nd.Cid() != d.PropCid.CID {
+						if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
 							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
 							return false, fmt.Errorf("deal checking issue")
 						}
