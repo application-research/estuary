@@ -174,10 +174,22 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 	return s, nil
 }
 
+type ApiError struct {
+	Under error
+}
+
+func (e *ApiError) Error() string {
+	return fmt.Sprintf("api error: %s", e.Under)
+}
+
+func (e *ApiError) Unwrap() error {
+	return e.Under
+}
+
 func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) (peer.ID, error) {
 	minfo, err := fc.api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
 	if err != nil {
-		return "", err
+		return "", &ApiError{err}
 	}
 
 	if minfo.PeerId == nil {

@@ -487,6 +487,7 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 	}
 
 	if provds.PublishCid != nil {
+		log.Infow("checking publish CID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
 			if xerrors.Is(err, ErrNotOnChainYet) {
@@ -730,13 +731,16 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	for _, m := range minerpool {
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
-			cm.recordDealFailure(&DealFailureError{
-				Miner:   m,
-				Phase:   "query-ask",
-				Message: err.Error(),
-				Content: content.ID,
-			})
-			fmt.Printf("failed to get ask for miner %s: %s\n", m, err)
+			var apierr *filclient.ApiError
+			if !xerrors.Is(err, &apierr) {
+				cm.recordDealFailure(&DealFailureError{
+					Miner:   m,
+					Phase:   "query-ask",
+					Message: err.Error(),
+					Content: content.ID,
+				})
+			}
+			log.Warnf("failed to get ask for miner %s: %s\n", m, err)
 			continue
 		}
 
