@@ -122,7 +122,6 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 		return nil, fmt.Errorf("failed to find any miners for estimating deal price")
 	}
 
-	fmt.Println("miners: ", miners)
 	total := abi.NewTokenAmount(0)
 	for _, m := range miners {
 		ask, err := cm.getAsk(ctx, m, time.Minute*30)
@@ -144,8 +143,6 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 			}
 			price = p
 		}
-
-		fmt.Println("ask price: ", price)
 
 		dealSize := size
 		if dealSize < ask.MinPieceSize {
@@ -472,7 +469,6 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 
 	// case where deal isnt yet on chain...
 
-	fmt.Println("checking proposal cid: ", d.PropCid.CID)
 	provds, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID)
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on
@@ -509,7 +505,6 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 			return false, xerrors.Errorf("failed to check deal id: %w", err)
 		}
 
-		fmt.Println("Got deal ID for deal!", id)
 		d.DealID = int64(id)
 		if err := cm.DB.Save(&d).Error; err != nil {
 			return false, xerrors.Errorf("failed to update database entry: %w", err)
@@ -529,7 +524,6 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 	}
 	// miner still has time...
 
-	fmt.Println("Checking transfer status...")
 	status, err := cm.GetTransferStatus(ctx, d, content.Cid.CID)
 	if err != nil {
 		return false, err
@@ -537,7 +531,6 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 
 	switch status.Status {
 	case datatransfer.Failed:
-		fmt.Println("Transfer failed!", status.Message)
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "data-transfer",
@@ -545,7 +538,6 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 			Content: content.ID,
 		})
 	case datatransfer.Cancelled:
-		fmt.Println("Transfer canceled!", status.Message)
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "data-transfer",
@@ -553,13 +545,13 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 			Content: content.ID,
 		})
 	case datatransfer.Requested:
-		fmt.Println("transfer is requested, hasnt started yet")
+		//fmt.Println("transfer is requested, hasnt started yet")
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		// these are all okay
-		fmt.Println("transfer is finished-ish!", status.Status)
+		//fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
-		fmt.Println("transfer status is ongoing!")
+		//fmt.Println("transfer status is ongoing!")
 		if err := cm.FilClient.CheckOngoingTransfer(ctx, maddr, status); err != nil {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
@@ -784,7 +776,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		if err != nil {
 			return err
 		}
-		fmt.Println("proposal cid: ", nd.Cid())
+		//fmt.Println("proposal cid: ", nd.Cid())
 
 		if err := cm.DB.Create(&proposalRecord{
 			PropCid: dbCID{nd.Cid()},
@@ -809,7 +801,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				Message: err.Error(),
 				Content: content.ID,
 			})
-			fmt.Println("failed to propose deal with miner: ", err)
 			continue
 		}
 
@@ -843,7 +834,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				return err
 			}
 		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-			fmt.Println("good deal state!", dealresp.Response.State)
 			responses[i] = dealresp
 
 			cd := &contentDeal{
@@ -951,7 +941,6 @@ func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data ci
 	var pcr PieceCommRecord
 	err := cm.DB.First(&pcr, "data = ?", data.Bytes()).Error
 	if err == nil {
-		fmt.Println("database response!!!")
 		if !pcr.Piece.CID.Defined() {
 			return cid.Undef, 0, fmt.Errorf("got an undefined thing back from database")
 		}

@@ -129,9 +129,10 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.GET("/dealstats", s.handleDealStats)
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
 	admin.GET("/stats", s.handleAdminStats)
-	admin.POST("/add-miner/:miner", s.handleAdminAddMiner)
-	admin.POST("/rm-miner/:miner", s.handleAdminRemoveMiner)
+	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
+	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
 	admin.GET("/miners", s.handleAdminGetMiners)
+	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
@@ -707,6 +708,15 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
+	sml, err := s.CM.computeSortedMinerList()
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, sml)
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {

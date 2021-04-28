@@ -32,12 +32,12 @@ func (cm *ContentManager) sortedMinerList() ([]address.Address, error) {
 }
 
 type minerDealStats struct {
-	Miner address.Address
+	Miner address.Address `json:"miner"`
 
-	TotalDeals     int
-	ConfirmedDeals int
-	FailedDeals    int
-	DealFaults     int
+	TotalDeals     int `json:"totalDeals"`
+	ConfirmedDeals int `json:"confirmedDeals"`
+	FailedDeals    int `json:"failedDeals"`
+	DealFaults     int `json:"dealFaults"`
 }
 
 func (mds *minerDealStats) SuccessRatio() float64 {
