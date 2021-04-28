@@ -732,7 +732,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
 			var apierr *filclient.ApiError
-			if !xerrors.Is(err, &apierr) {
+			if !xerrors.As(err, &apierr) {
 				cm.recordDealFailure(&DealFailureError{
 					Miner:   m,
 					Phase:   "query-ask",
