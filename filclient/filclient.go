@@ -69,7 +69,7 @@ type FilClient struct {
 
 	wallet *wallet.LocalWallet
 
-	clientAddr address.Address
+	ClientAddr address.Address
 
 	blockstore blockstore.Blockstore
 
@@ -148,7 +148,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		host:         h,
 		api:          api,
 		wallet:       w,
-		clientAddr:   addr,
+		ClientAddr:   addr,
 		blockstore:   bs,
 		dataTransfer: mgr,
 		pchmgr:       pchmgr,
@@ -293,7 +293,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		PieceCID:     commP,
 		PieceSize:    size.Padded(),
 		VerifiedDeal: verified,
-		Client:       fc.clientAddr,
+		Client:       fc.ClientAddr,
 		Provider:     miner,
 
 		Label: label,
@@ -310,7 +310,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	if err != nil {
 		return nil, err
 	}
-	sig, err := fc.wallet.WalletSign(ctx, fc.clientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
+	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, raw, api.MsgMeta{Type: api.MTDealProposal})
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +405,7 @@ func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, prop
 		return nil, err
 	}
 
-	sig, err := fc.wallet.WalletSign(ctx, fc.clientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
+	sig, err := fc.wallet.WalletSign(ctx, fc.ClientAddr, cidb, api.MsgMeta{Type: api.MTUnknown})
 	if err != nil {
 		return nil, xerrors.Errorf("signing status request failed: %w", err)
 	}
@@ -597,12 +597,12 @@ type Balance struct {
 }
 
 func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
-	act, err := fc.api.StateGetActor(ctx, fc.clientAddr, types.EmptyTSK)
+	act, err := fc.api.StateGetActor(ctx, fc.ClientAddr, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
 
-	market, err := fc.api.StateMarketBalance(ctx, fc.clientAddr, types.EmptyTSK)
+	market, err := fc.api.StateMarketBalance(ctx, fc.ClientAddr, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +610,7 @@ func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
 	avail := types.BigSub(market.Escrow, market.Locked)
 
 	return &Balance{
-		Account:         fc.clientAddr,
+		Account:         fc.ClientAddr,
 		Balance:         types.FIL(act.Balance),
 		MarketEscrow:    types.FIL(market.Escrow),
 		MarketLocked:    types.FIL(market.Locked),
@@ -624,7 +624,7 @@ type LockFundsResp struct {
 
 func (fc *FilClient) LockMarketFunds(ctx context.Context, amt types.FIL) (*LockFundsResp, error) {
 
-	act, err := fc.api.StateGetActor(ctx, fc.clientAddr, types.EmptyTSK)
+	act, err := fc.api.StateGetActor(ctx, fc.ClientAddr, types.EmptyTSK)
 	if err != nil {
 		return nil, err
 	}
@@ -633,13 +633,13 @@ func (fc *FilClient) LockMarketFunds(ctx context.Context, amt types.FIL) (*LockF
 		return nil, fmt.Errorf("not enough funds to add: %s < %s", types.FIL(act.Balance), amt)
 	}
 
-	encAddr, err := cborutil.Dump(&fc.clientAddr)
+	encAddr, err := cborutil.Dump(&fc.ClientAddr)
 	if err != nil {
 		return nil, err
 	}
 
 	msg := &types.Message{
-		From:   fc.clientAddr,
+		From:   fc.ClientAddr,
 		To:     builtin.StorageMarketActorAddr,
 		Method: builtin.MethodsMarket.AddBalance,
 		Value:  types.BigInt(amt),
@@ -724,7 +724,7 @@ func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, 
 
 func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Address) (address.Address, error) {
 
-	avail, err := fc.pchmgr.AvailableFundsByFromTo(fc.clientAddr, dest)
+	avail, err := fc.pchmgr.AvailableFundsByFromTo(fc.ClientAddr, dest)
 	if err != nil {
 		return address.Undef, err
 	}
@@ -741,8 +741,8 @@ func (fc *FilClient) getPaychWithMinFunds(ctx context.Context, dest address.Addr
 
 	amount := abi.TokenAmount(types.BigMul(types.BigInt(reqBalance), types.NewInt(2)))
 
-	fmt.Println("getting payment channel: ", fc.clientAddr, dest, amount)
-	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.clientAddr, dest, amount)
+	fmt.Println("getting payment channel: ", fc.ClientAddr, dest, amount)
+	pchaddr, mcid, err := fc.pchmgr.GetPaych(ctx, fc.ClientAddr, dest, amount)
 	if err != nil {
 		return address.Undef, xerrors.Errorf("failed to get payment channel: %w", err)
 	}

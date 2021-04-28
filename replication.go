@@ -491,6 +491,31 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
 			if xerrors.Is(err, ErrNotOnChainYet) {
+				// if they sent us a dealID, lets check it and verify
+				if provds.DealID != 0 {
+					deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
+					if err == nil {
+						nd, err := cborutil.AsIpld(&deal.Proposal)
+						if err != nil {
+							return false, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
+						}
+
+						if nd.Cid() != d.PropCid.CID {
+							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
+							return false, fmt.Errorf("deal checking issue")
+						}
+
+						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
+						d.DealID = int64(provds.DealID)
+						if err := cm.DB.Save(&d).Error; err != nil {
+							return false, xerrors.Errorf("failed to update database entry: %w", err)
+						}
+
+						return true, nil
+					}
+				}
+
+				log.Infof("publish message not landed on chain yet: %s", *provds.PublishCid)
 				if provds.Proposal.StartEpoch < head.Height() {
 					// deal expired, miner didnt start it in time
 					cm.recordDealFailure(&DealFailureError{
@@ -506,6 +531,7 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 			return false, xerrors.Errorf("failed to check deal id: %w", err)
 		}
 
+		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 		d.DealID = int64(id)
 		if err := cm.DB.Save(&d).Error; err != nil {
 			return false, xerrors.Errorf("failed to update database entry: %w", err)
@@ -941,18 +967,30 @@ type PieceCommRecord struct {
 	Size  abi.UnpaddedPieceSize
 }
 
-func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord, error) {
 	var pcr PieceCommRecord
 	err := cm.DB.First(&pcr, "data = ?", data.Bytes()).Error
 	if err == nil {
 		if !pcr.Piece.CID.Defined() {
-			return cid.Undef, 0, fmt.Errorf("got an undefined thing back from database")
+			return nil, fmt.Errorf("got an undefined thing back from database")
 		}
-		return pcr.Piece.CID, pcr.Size, nil
+		return &pcr, nil
 	}
 
 	if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	pcr, err := cm.lookupPieceCommRecord(data)
+	if err != nil {
 		return cid.Undef, 0, err
+	}
+	if pcr != nil {
+		return pcr.Piece.CID, pcr.Size, nil
 	}
 
 	pc, size, err := filclient.GeneratePieceCommitment(rt, data, bs)
@@ -960,13 +998,13 @@ func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data ci
 		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
 	}
 
-	pcr = PieceCommRecord{
+	opcr := PieceCommRecord{
 		Data:  dbCID{data},
 		Piece: dbCID{pc},
 		Size:  size,
 	}
 
-	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&pcr).Error; err != nil {
+	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
 		return cid.Undef, 0, err
 	}
 
