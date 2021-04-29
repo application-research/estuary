@@ -46,6 +46,7 @@ const (
 	ERR_USER_CREATION_FAILED = "ERR_USER_CREATION_FAILED"
 	ERR_USER_NOT_FOUND       = "ERR_USER_NOT_FOUND"
 	ERR_INVALID_PASSWORD     = "ERR_INVALID_PASSWORD"
+	ERR_INVITE_ALREADY_USED  = "ERR_INVITE_ALREADY_USED"
 )
 
 const (
@@ -1125,7 +1126,13 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 				Message: ERR_INVALID_INVITE,
 			}
 		}
+	}
 
+	if invite.ClaimedBy != 0 {
+		return &httpError{
+			Code:    http.StatusForbidden,
+			Message: ERR_INVITE_ALREADY_USED,
+		}
 	}
 
 	var exist User
