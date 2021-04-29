@@ -140,7 +140,7 @@ func (s *Server) ServeAPI(srv string, logging bool) error {
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
-	admin.GET("/invite", s.handleAdminGetInvites)
+	admin.GET("/invites", s.handleAdminGetInvites)
 
 	return e.Start(srv)
 }
@@ -563,15 +563,16 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 }
 
 type getInvitesResp struct {
-	Code     string `json:"code"`
-	Username string `json:"createdBy"`
+	Code      string `json:"code"`
+	Username  string `json:"createdBy"`
+	ClaimedBy string `json:"claimedBy"`
 }
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Debug().Model(&InviteCode{}).
-		Select("code, username").
-		Where("claimed_by IS NULL").
+		Select("code, username, claimed_by").
+		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Scan(&invites).Error; err != nil {
 		return err
@@ -1137,6 +1138,9 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	if err := s.DB.Create(authToken).Error; err != nil {
 		return err
+	}
+
+	if err := s.DB.Model(&InviteCode{}).Update("claimed_by", newUser.ID).Where("code = ?", reg.InviteCode).Error; err != nil {
 	}
 
 	return c.JSON(200, &loginResponse{
