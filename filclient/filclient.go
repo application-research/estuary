@@ -594,6 +594,8 @@ type Balance struct {
 	MarketEscrow    types.FIL       `json:"marketEscrow"`
 	MarketLocked    types.FIL       `json:"marketLocked"`
 	MarketAvailable types.FIL       `json:"marketAvailable"`
+
+	VerifiedClientBalance *abi.StoragePower `json:"verifiedClientBalance"`
 }
 
 func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
@@ -607,14 +609,20 @@ func (fc *FilClient) Balance(ctx context.Context) (*Balance, error) {
 		return nil, err
 	}
 
+	vcstatus, err := fc.api.StateVerifiedClientStatus(ctx, fc.ClientAddr, types.EmptyTSK)
+	if err != nil {
+		return nil, err
+	}
+
 	avail := types.BigSub(market.Escrow, market.Locked)
 
 	return &Balance{
-		Account:         fc.ClientAddr,
-		Balance:         types.FIL(act.Balance),
-		MarketEscrow:    types.FIL(market.Escrow),
-		MarketLocked:    types.FIL(market.Locked),
-		MarketAvailable: types.FIL(avail),
+		Account:               fc.ClientAddr,
+		Balance:               types.FIL(act.Balance),
+		MarketEscrow:          types.FIL(market.Escrow),
+		MarketLocked:          types.FIL(market.Locked),
+		MarketAvailable:       types.FIL(avail),
+		VerifiedClientBalance: vcstatus,
 	}, nil
 }
 
