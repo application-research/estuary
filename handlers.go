@@ -1162,6 +1162,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	}
 
 	if err := s.DB.Model(&InviteCode{}).Update("claimed_by", newUser.ID).Where("code = ?", reg.InviteCode).Error; err != nil {
+		return err
 	}
 
 	return c.JSON(200, &loginResponse{
