@@ -356,7 +356,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore)
+		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Dht)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		if cctx.Bool("enable-auto-retrive") {

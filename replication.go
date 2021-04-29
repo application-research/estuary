@@ -24,6 +24,7 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/libp2p/go-libp2p-core/peer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -36,6 +37,7 @@ type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
 	FilClient *filclient.FilClient
+	Dht       *dht.IpfsDHT
 
 	Blockstore blockstore.Blockstore
 	Tracker    *TrackingBlockstore
@@ -53,8 +55,9 @@ type ContentManager struct {
 	lastComputed time.Time
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, dht *dht.IpfsDHT) *ContentManager {
 	return &ContentManager{
+		Dht:                  dht,
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
@@ -70,7 +73,7 @@ func (cm *ContentManager) ContentWatcher() {
 		log.Errorf("failed to recheck existing content: %s", err)
 	}
 
-	timer := time.NewTimer(time.Minute * 10)
+	timer := time.NewTimer(time.Minute * 5)
 
 	for {
 		select {
@@ -90,12 +93,14 @@ func (cm *ContentManager) ContentWatcher() {
 				log.Errorf("rechecking content: %s", err)
 				continue
 			}
-			timer.Reset(time.Minute * 10)
+			timer.Reset(time.Minute * 5)
 		}
 	}
 }
 
 func (cm *ContentManager) startup() error {
+	go cm.RunReprovider()
+
 	return cm.queueAllContent()
 }
 
@@ -293,11 +298,14 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 
 	netask, err := cm.FilClient.GetAsk(ctx, m)
 	if err != nil {
-		cm.recordDealFailure(&DealFailureError{
-			Miner:   m,
-			Phase:   "query-ask",
-			Message: err.Error(),
-		})
+		var apierr *filclient.ApiError
+		if !xerrors.As(err, &apierr) {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   m,
+				Phase:   "query-ask",
+				Message: err.Error(),
+			})
+		}
 		return nil, err
 	}
 
