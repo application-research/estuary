@@ -373,9 +373,16 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 	return c.JSON(200, ids)
 }
 
+type onChainDealState struct {
+	SectorStartEpoch abi.ChainEpoch `json:"sectorStartEpoch"`
+	LastUpdatedEpoch abi.ChainEpoch `json:"lastUpdatedEpoch"`
+	SlashEpoch       abi.ChainEpoch `json:"slashEpoch"`
+}
+
 type dealStatus struct {
 	Deal           contentDeal             `json:"deal"`
 	TransferStatus *filclient.ChannelState `json:"transfer"`
+	OnChainState   *onChainDealState       `json:"onChainState"`
 }
 
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
@@ -397,16 +404,30 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 	var ds []dealStatus
 	for _, d := range deals {
+		dstatus := dealStatus{
+			Deal: d,
+		}
 
 		chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID)
 		if err != nil {
 			return err
 		}
+		dstatus.TransferStatus = chanst
 
-		ds = append(ds, dealStatus{
-			Deal:           d,
-			TransferStatus: chanst,
-		})
+		if d.DealID > 0 {
+			markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(d.DealID), types.EmptyTSK)
+			if err != nil {
+				log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
+			} else {
+				dstatus.OnChainState = &onChainDealState{
+					SectorStartEpoch: markDeal.State.SectorStartEpoch,
+					LastUpdatedEpoch: markDeal.State.LastUpdatedEpoch,
+					SlashEpoch:       markDeal.State.SlashEpoch,
+				}
+			}
+		}
+
+		ds = append(ds, dstatus)
 	}
 
 	var failures []dfeRecord
