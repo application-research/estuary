@@ -15,7 +15,7 @@ require (
 	github.com/filecoin-project/go-state-types v0.1.0
 	github.com/filecoin-project/lotus v1.5.3-rc1.0.20210315003656-a54c6bfb057d
 	github.com/filecoin-project/specs-actors v0.9.13
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.1.4
 	github.com/influxdata/influxdb-client-go/v2 v2.2.2
 	github.com/ipfs/go-bitswap v0.3.3
 	github.com/ipfs/go-block-format v0.0.3
@@ -39,11 +39,14 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.11.1
 	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
+	github.com/lightstep/otel-launcher-go v0.18.0
 	github.com/minio/sha256-simd v1.0.0 // indirect
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
-	golang.org/x/sys v0.0.0-20201119102817-f84b799fce68
+	go.opentelemetry.io/otel v0.18.0
+	go.opentelemetry.io/otel/trace v0.18.0
+	golang.org/x/sys v0.0.0-20210123111255-9b0068b26619
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	gorm.io/driver/postgres v1.0.8
 	gorm.io/driver/sqlite v1.1.4

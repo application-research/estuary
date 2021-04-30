@@ -27,11 +27,14 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
+
+	"go.opentelemetry.io/otel"
 )
 
 const (
@@ -54,8 +57,21 @@ const (
 	PermLevelAdmin = 10
 )
 
-func (s *Server) ServeAPI(srv string, logging bool) error {
+func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
+	if lsteptok != "" {
+		ls := launcher.ConfigureOpentelemetry(
+			launcher.WithServiceName("estuary-api"),
+			launcher.WithAccessToken(lsteptok),
+		)
+
+		defer ls.Shutdown()
+	}
+
+	s.tracer = otel.Tracer("estuary")
+
 	e := echo.New()
+
+	//e.Use(s.tracingMiddleware)
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
 		var herr *httpError
@@ -859,7 +875,7 @@ type estimateDealBody struct {
 }
 
 type priceEstimateResponse struct {
-	Total string
+	Total string `json:"total"`
 }
 
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
@@ -1289,4 +1305,10 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		return nil
+	}
 }

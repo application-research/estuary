@@ -30,6 +30,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
@@ -271,6 +272,10 @@ func main() {
 		&cli.BoolFlag{
 			Name: "enable-auto-retrieve",
 		},
+		&cli.StringFlag{
+			Name:  "lightstep-token",
+			Usage: "specify lightstep access token for enabling trace exports",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -369,7 +374,7 @@ func main() {
 
 		s.CM = cm
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -432,6 +437,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 }
 
 type Server struct {
+	tracer     trace.Tracer
 	Node       *Node
 	DB         *gorm.DB
 	FilClient  *filclient.FilClient
