@@ -35,6 +35,9 @@ import (
 	"gorm.io/gorm/clause"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/semconv"
+	"go.opentelemetry.io/otel/trace"
 )
 
 const (
@@ -71,7 +74,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 
 	e := echo.New()
 
-	//e.Use(s.tracingMiddleware)
+	e.Use(s.tracingMiddleware)
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
 		var herr *httpError
@@ -1322,6 +1325,33 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
+		r := c.Request()
+		tctx, span := s.tracer.Start(context.Background(),
+			"HTTP "+r.Method+" "+r.URL.Path,
+			trace.WithAttributes(
+				semconv.HTTPMethodKey.String(r.Method),
+				semconv.HTTPRouteKey.String(r.URL.Path),
+				semconv.HTTPClientIPKey.String(r.RemoteAddr),
+				semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
+			),
+		)
+		defer span.End()
+
+		r = r.WithContext(tctx)
+		c.SetRequest(r)
+
+		if err := next(c); err != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
+			c.Error(err)
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+
+		span.SetAttributes(
+			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
+		)
+
 		return nil
 	}
 }
