@@ -22,8 +22,9 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
-	importer "github.com/ipfs/go-unixfs/importer"
+	"github.com/ipfs/go-unixfs/importer"
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -34,7 +35,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -69,8 +69,6 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 
 		defer ls.Shutdown()
 	}
-
-	s.tracer = otel.Tracer("estuary")
 
 	e := echo.New()
 
@@ -236,6 +234,8 @@ where obj_refs.content = ?`
 }
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
@@ -265,64 +265,19 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
-	spl := chunker.DefaultSplitter(fi)
-	nd, err := importer.BuildDagFromReader(dserv, spl)
+
+	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
 	}
 
-	var objects []*Object
-	var totalSize int64
-	cset := cid.NewSet()
-	err = merkledag.Walk(context.TODO(), dserv.GetLinks, nd.Cid(), func(c cid.Cid) bool {
-		if cset.Visit(c) {
-			size, err := bs.GetSize(c)
-			if err != nil {
-				log.Errorf("failed to get object size in walk %s: %s", c, err)
-			}
-			objects = append(objects, &Object{
-				Cid:  dbCID{c},
-				Size: size,
-			})
-			totalSize += int64(size)
-
-			return true
-		}
-		return false
-	})
+	content, err := s.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
 	if err != nil {
-		return err
+		return xerrors.Errorf("encountered problem computing object references: %w", err)
+
 	}
 
-	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
-	}
-
-	// okay cool, we added the content, now track it
-	content := &Content{
-		Cid:         dbCID{nd.Cid()},
-		Size:        totalSize,
-		Name:        fname,
-		Active:      true,
-		UserID:      u.ID,
-		Replication: replication,
-	}
-
-	if err := s.DB.Create(content).Error; err != nil {
-		return xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	refs := make([]ObjRef, len(objects))
-	for i := range refs {
-		refs[i].Content = content.ID
-		refs[i].Object = objects[i].ID
-	}
-
-	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
-	}
-
-	if err := dumpBlockstoreTo(bs, s.Node.Blockstore); err != nil {
+	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -341,9 +296,78 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
 }
 
-func dumpBlockstoreTo(from, to blockstore.Blockstore) error {
+func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
+	_, span := s.tracer.Start(ctx, "importFile")
+	defer span.End()
+
+	spl := chunker.DefaultSplitter(fi)
+	return importer.BuildDagFromReader(dserv, spl)
+}
+
+func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.LinkGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
+	ctx, span := s.tracer.Start(ctx, "computeObjRefs")
+	defer span.End()
+
+	var objects []*Object
+	var totalSize int64
+	cset := cid.NewSet()
+	err := merkledag.Walk(ctx, dserv.GetLinks, root, func(c cid.Cid) bool {
+		if cset.Visit(c) {
+			size, err := bs.GetSize(c)
+			if err != nil {
+				log.Errorf("failed to get object size in walk %s: %s", c, err)
+			}
+			objects = append(objects, &Object{
+				Cid:  dbCID{c},
+				Size: size,
+			})
+			totalSize += int64(size)
+
+			return true
+		}
+		return false
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
+		return nil, xerrors.Errorf("failed to create objects in db: %w", err)
+	}
+
+	// okay cool, we added the content, now track it
+	content := &Content{
+		Cid:         dbCID{root},
+		Size:        totalSize,
+		Name:        fname,
+		Active:      true,
+		UserID:      u.ID,
+		Replication: replication,
+	}
+
+	if err := s.DB.Create(content).Error; err != nil {
+		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
+	}
+
+	refs := make([]ObjRef, len(objects))
+	for i := range refs {
+		refs[i].Content = content.ID
+		refs[i].Object = objects[i].ID
+	}
+
+	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
+		return nil, xerrors.Errorf("failed to create refs: %w", err)
+	}
+
+	return content, nil
+}
+
+func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
+	ctx, span := s.tracer.Start(ctx, "blockstoreCopy")
+	defer span.End()
+
 	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
-	keys, err := from.AllKeysChan(context.TODO())
+	keys, err := from.AllKeysChan(ctx)
 	if err != nil {
 		return err
 	}
@@ -406,7 +430,7 @@ type dealStatus struct {
 }
 
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
-	ctx := context.TODO()
+	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return err
@@ -1350,6 +1374,7 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		span.SetAttributes(
 			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
+			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
 		)
 
 		return nil

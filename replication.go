@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/whyrusleeping/estuary/filclient"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -38,6 +39,8 @@ type ContentManager struct {
 	Api       api.Gateway
 	FilClient *filclient.FilClient
 	Dht       *dht.IpfsDHT
+
+	tracer trace.Tracer
 
 	Blockstore blockstore.Blockstore
 	Tracker    *TrackingBlockstore
@@ -606,6 +609,9 @@ func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
 }
 
 func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, ccid cid.Cid) (*filclient.ChannelState, error) {
+	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
+	defer span.End()
+
 	miner, err := d.MinerAddr()
 	if err != nil {
 		return nil, err

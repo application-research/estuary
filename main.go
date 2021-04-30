@@ -30,6 +30,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
@@ -321,6 +322,7 @@ func main() {
 			Node:       nd,
 			Api:        api,
 			StagingMgr: sbmgr,
+			tracer:     otel.Tracer("estuary"),
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
@@ -363,6 +365,8 @@ func main() {
 
 		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Dht)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
+
+		cm.tracer = s.tracer
 
 		if cctx.Bool("enable-auto-retrive") {
 			nd.TrackingBlockstore.SetCidReqFunc(cm.RefreshContentForCid)
