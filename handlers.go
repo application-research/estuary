@@ -136,6 +136,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
 	e.GET("/miners/deals/:miner", s.handleGetMinerDeals)
 	e.GET("/miners/stats/:miner", s.handleGetMinerStats)
+	e.GET("/miners/storage/query/:miner", s.handleQueryAsk)
 
 	// should probably remove this
 	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
