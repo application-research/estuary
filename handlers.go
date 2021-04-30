@@ -1254,9 +1254,17 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 	return authToken, nil
 }
 
+type userSettings struct {
+	Replication  int  `json:"replication"`
+	Verified     bool `json:"verified"`
+	DealDuration int  `json:"dealDuration"`
+}
+
 type viewerResponse struct {
 	Username string `json:"username"`
 	Perms    int    `json:"perms"`
+
+	Settings userSettings `json:"settings"`
 }
 
 func (s *Server) handleGetViewer(c echo.Context, u *User) error {
@@ -1264,6 +1272,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 	return c.JSON(200, &viewerResponse{
 		Username: u.Username,
 		Perms:    u.Perm,
+		Settings: userSettings{
+			Replication:  6,
+			Verified:     false,
+			DealDuration: 1000000,
+		},
 	})
 }
 
