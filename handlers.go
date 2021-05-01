@@ -130,7 +130,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
 	deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
-	deals.GET("/estimate", s.handleEstimateDealCost)
+	deals.POST("/estimate", s.handleEstimateDealCost)
 
 	// explicitly public, for now
 	e.GET("/miners/failures/:miner", s.handleGetMinerFailures)
@@ -475,15 +475,15 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		ds = append(ds, dstatus)
 	}
 
-	var failures []dfeRecord
-	if err := s.DB.Find(&failures, "content = ?", content.ID).Error; err != nil {
+	var failCount int64
+	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
 		return err
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"content":  content,
-		"deals":    ds,
-		"failures": failures,
+		"content":        content,
+		"deals":          ds,
+		"failures_count": failCount,
 	})
 }
 
