@@ -481,9 +481,9 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"content":        content,
-		"deals":          ds,
-		"failures_count": failCount,
+		"content":       content,
+		"deals":         ds,
+		"failuresCount": failCount,
 	})
 }
 
@@ -1303,7 +1303,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Settings: userSettings{
 			Replication:  6,
 			Verified:     false,
-			DealDuration: 1000000,
+			DealDuration: 2880 * 365,
 		},
 	})
 }
