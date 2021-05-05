@@ -1337,11 +1337,11 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 
 func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 	var keys []AuthToken
-	if err := s.DB.Find(&keys, "user = ?", u.ID).Error; err != nil {
+	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
 		return err
 	}
 
-	var out []getApiKeysResp
+	out := []getApiKeysResp{}
 	for _, k := range keys {
 		out = append(out, getApiKeysResp{
 			Token:  k.Token,
