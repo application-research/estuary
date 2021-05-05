@@ -641,7 +641,7 @@ type getInvitesResp struct {
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Debug().Model(&InviteCode{}).
-		Select("code, username, claimed_by").
+		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Scan(&invites).Error; err != nil {
