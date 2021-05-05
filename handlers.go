@@ -133,8 +133,10 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	deals.POST("/estimate", s.handleEstimateDealCost)
 
 	// explicitly public, for now
-	miners := e.Group("/miner")
-	miners.GET("/", s.handleAdminGetMiners)
+	public := e.Group("/public")
+
+	miners := public.Group("/miners")
+	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
 	miners.GET("/deals/:miner", s.handleGetMinerDeals)
 	miners.GET("/stats/:miner", s.handleGetMinerStats)
