@@ -46,6 +46,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 	"github.com/multiformats/go-multiaddr"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -53,7 +54,7 @@ import (
 	cborutil "github.com/filecoin-project/go-cbor-util"
 )
 
-var Tracer trace.Tracer
+var Tracer trace.Tracer = otel.Tracer("filclient")
 
 var log = logging.Logger("filclient")
 
