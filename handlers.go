@@ -111,6 +111,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	user.Use(s.AuthRequired(PermLevelUser))
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
+	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
@@ -414,12 +415,7 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	var ids []uint
-	for _, c := range contents {
-		ids = append(ids, c.ID)
-	}
-
-	return c.JSON(200, ids)
+	return c.JSON(200, contents)
 }
 
 type onChainDealState struct {
@@ -906,8 +902,17 @@ type estimateDealBody struct {
 	Verified     bool   `json:"verified"`
 }
 
+type askResponse struct {
+	Miner         string           `json:"miner"`
+	Price         *abi.TokenAmount `json:"price"`
+	VerifiedPrice *abi.TokenAmount `json:"verifiedPrice"`
+	MinDealSize   int64            `json:"minDealSize"`
+}
+
 type priceEstimateResponse struct {
-	Total string `json:"total"`
+	TotalStr string `json:"total_str"`
+	Total    string `json:"total"`
+	Asks     []*minerStorageAsk
 }
 
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
@@ -919,13 +924,15 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 
 	rounded := padreader.PaddedSize(body.Size)
 
-	total, err := s.CM.estimatePrice(ctx, body.Replication, rounded.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	estimate, err := s.CM.estimatePrice(ctx, body.Replication, rounded.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(200, &priceEstimateResponse{
-		Total: types.FIL(*total).String(),
+		TotalStr: types.FIL(*estimate.Total).String(),
+		Total:    estimate.Total.String(),
+		Asks:     estimate.Asks,
 	})
 }
 
@@ -1321,6 +1328,16 @@ func (s *Server) handleHealth(c echo.Context) error {
 type getApiKeysResp struct {
 	Token  string    `json:"token"`
 	Expiry time.Time `json:"expiry"`
+}
+
+func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
+	kval := c.Param("key")
+
+	if err := s.DB.Delete(&AuthToken{}, "auth_token.user = ? AND token = ?", u.ID, kval).Error; err != nil {
+		return err
+	}
+
+	return c.NoContent(200)
 }
 
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {

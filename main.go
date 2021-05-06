@@ -179,7 +179,11 @@ func (dbc *dbCID) UnmarshalJSON(b []byte) error {
 }
 
 type Content struct {
-	gorm.Model
+	ID        uint           `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time      `json:"-"`
+	UpdatedAt time.Time      `json:"-"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
 	Cid         dbCID  `json:"cid"`
 	Name        string `json:"name"`
 	UserID      uint   `json:"userId"`

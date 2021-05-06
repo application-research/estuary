@@ -122,7 +122,12 @@ func (cm *ContentManager) queueAllContent() error {
 	return nil
 }
 
-func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*abi.TokenAmount, error) {
+type estimateResponse struct {
+	Total *abi.TokenAmount
+	Asks  []*minerStorageAsk
+}
+
+func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
 	miners, err := cm.pickMiners(ctx, repl, size, nil)
 	if err != nil {
 		return nil, err
@@ -131,12 +136,15 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 		return nil, fmt.Errorf("failed to find any miners for estimating deal price")
 	}
 
+	var asks []*minerStorageAsk
 	total := abi.NewTokenAmount(0)
 	for _, m := range miners {
 		ask, err := cm.getAsk(ctx, m, time.Minute*30)
 		if err != nil {
 			return nil, err
 		}
+
+		asks = append(asks, ask)
 
 		var price *abi.TokenAmount
 		if verified {
@@ -166,7 +174,10 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 		total = types.BigAdd(total, *cost)
 	}
 
-	return &total, nil
+	return &estimateResponse{
+		Total: &total,
+		Asks:  asks,
+	}, nil
 }
 
 type minerStorageAsk struct {
