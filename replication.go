@@ -26,6 +26,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/whyrusleeping/estuary/filclient"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -128,6 +129,11 @@ type estimateResponse struct {
 }
 
 func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
+	ctx, span := cm.tracer.Start(ctx, "estimatePrice", trace.WithAttributes(
+		attribute.Int("replication", repl),
+	))
+	defer span.End()
+
 	miners, err := cm.pickMiners(ctx, repl, size, nil)
 	if err != nil {
 		return nil, err
@@ -219,6 +225,10 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 
 }
 func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
+	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
+		attribute.Int("count", n),
+	))
+	defer span.End()
 	if exclude == nil {
 		exclude = make(map[address.Address]bool)
 	}
@@ -299,6 +309,11 @@ func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
 }
 
 func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*minerStorageAsk, error) {
+	ctx, span := cm.tracer.Start(ctx, "getAsk", trace.WithAttributes(
+		attribute.Stringer("miner", m),
+	))
+	defer span.End()
+
 	var msa minerStorageAsk
 	if err := cm.DB.First(&msa, "miner = ?", m.String()).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -411,6 +426,12 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 }
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
+	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
+		attribute.Int("content", int(content.ID)),
+	))
+	defer span.End()
+
+	verified := true
 
 	// check if content has enough deals made for it
 	// if not enough deals, go make more
@@ -441,14 +462,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 	if len(deals) < replicationFactor {
 		// make some more deals!
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
-		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, false); err != nil {
+		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
 			return err
 		}
 	}
 
 	// check on each of the existing deals, see if they need fixing
 	for _, d := range deals {
-		ok, err := cm.checkDeal(&d)
+		ok, err := cm.checkDeal(ctx, &d)
 		if err != nil {
 			var dfe *DealFailureError
 			if xerrors.As(err, &dfe) {
@@ -477,9 +498,12 @@ func (cm *ContentManager) getContent(id uint) (*Content, error) {
 	return &content, nil
 }
 
-func (cm *ContentManager) checkDeal(d *contentDeal) (bool, error) {
+func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, error) {
+	ctx, span := cm.tracer.Start(ctx, "checkDeal", trace.WithAttributes(
+		attribute.Int("deal", int(d.ID)),
+	))
+	defer span.End()
 	log.Infow("checking deal", "miner", d.Miner, "content", d.Content, "dbid", d.ID)
-	ctx := context.TODO()
 
 	maddr, err := d.MinerAddr()
 	if err != nil {
@@ -765,9 +789,14 @@ type proposalRecord struct {
 }
 
 func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[address.Address]bool, verified bool) error {
+	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
+		attribute.Int64("content", int64(content.ID)),
+		attribute.Int("count", count),
+	))
+	defer span.End()
 
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-	_, size, err := cm.getPieceCommitment(sealType, content.Cid.CID, cm.Blockstore)
+	_, size, err := cm.getPieceCommitment(ctx, sealType, content.Cid.CID, cm.Blockstore)
 	if err != nil {
 		return err
 	}
@@ -1010,7 +1039,10 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return nil, nil
 }
 
-func (cm *ContentManager) getPieceCommitment(rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (cm *ContentManager) getPieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	_, span := cm.tracer.Start(ctx, "getPieceComm")
+	defer span.End()
+
 	pcr, err := cm.lookupPieceCommRecord(data)
 	if err != nil {
 		return cid.Undef, 0, err

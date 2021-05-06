@@ -9,10 +9,17 @@ import (
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/ipfs/go-cid"
 	"github.com/whyrusleeping/estuary/filclient"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 )
 
 func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
+	ctx, span := s.tracer.Start(ctx, "retrievalAsksForContent", trace.WithAttributes(
+		attribute.Int("content", int(contid)),
+	))
+	defer span.End()
+
 	var content Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
 		return nil, err
@@ -60,6 +67,11 @@ func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) er
 }
 
 func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
+	ctx, span := s.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
+		attribute.Int("content", int(contid)),
+	))
+	defer span.End()
+
 	content, err := s.CM.getContent(contid)
 	if err != nil {
 		return err

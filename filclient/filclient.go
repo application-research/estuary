@@ -46,10 +46,14 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	protocol "github.com/libp2p/go-libp2p-protocol"
 	"github.com/multiformats/go-multiaddr"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
 )
+
+var Tracer trace.Tracer
 
 var log = logging.Logger("filclient")
 
@@ -78,7 +82,7 @@ type FilClient struct {
 	computePieceComm GetPieceCommFunc
 }
 
-type GetPieceCommFunc func(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
+type GetPieceCommFunc func(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
@@ -161,6 +165,11 @@ func (fc *FilClient) SetPieceCommFunc(pcf GetPieceCommFunc) {
 }
 
 func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, protocol protocol.ID) (inet.Stream, error) {
+	ctx, span := Tracer.Start(ctx, "streamToMiner", trace.WithAttributes(
+		attribute.Stringer("miner", maddr),
+	))
+	defer span.End()
+
 	mpid, err := fc.connectToMiner(ctx, maddr)
 	if err != nil {
 		return nil, err
@@ -216,6 +225,11 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 }
 
 func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*network.AskResponse, error) {
+	ctx, span := Tracer.Start(ctx, "getAsk", trace.WithAttributes(
+		attribute.Stringer("miner", maddr),
+	))
+	defer span.End()
+
 	s, err := fc.streamToMiner(ctx, maddr, QueryAskProtocol)
 	if err != nil {
 		return nil, err
@@ -245,9 +259,18 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 }
 
 func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch) (*network.Proposal, error) {
+	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
+		attribute.Stringer("miner", miner),
+		attribute.Stringer("price", price),
+		attribute.Int64("minSize", int64(minSize)),
+		attribute.Int64("duration", int64(duration)),
+		attribute.Stringer("cid", data),
+	))
+	defer span.End()
+
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 
-	commP, size, err := fc.computePieceComm(sealType, data, fc.blockstore)
+	commP, size, err := fc.computePieceComm(ctx, sealType, data, fc.blockstore)
 	if err != nil {
 		return nil, err
 	}
@@ -261,8 +284,6 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		commP = padded
 		size = minSize.Unpadded()
 	}
-
-	fmt.Println("commp: ", commP)
 
 	head, err := fc.api.ChainHead(ctx)
 	if err != nil {
@@ -709,6 +730,11 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 }
 
 func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, pcid cid.Cid) (*retrievalmarket.QueryResponse, error) {
+	ctx, span := Tracer.Start(ctx, "retrievalQuery", trace.WithAttributes(
+		attribute.Stringer("miner", maddr),
+	))
+	defer span.End()
+
 	s, err := fc.streamToMiner(ctx, maddr, RetrievalQueryProtocol)
 	if err != nil {
 		return nil, err

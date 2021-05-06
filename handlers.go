@@ -663,7 +663,7 @@ func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleAdminBalance(c echo.Context) error {
-	balance, err := s.FilClient.Balance(context.TODO())
+	balance, err := s.FilClient.Balance(c.Request().Context())
 	if err != nil {
 		return err
 	}
@@ -1313,7 +1313,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Perms:    u.Perm,
 		Settings: userSettings{
 			Replication:  6,
-			Verified:     false,
+			Verified:     true,
 			DealDuration: 2880 * 365,
 		},
 	})
@@ -1371,9 +1371,10 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
+
 		r := c.Request()
 		tctx, span := s.tracer.Start(context.Background(),
-			"HTTP "+r.Method+" "+r.URL.Path,
+			"HTTP "+r.Method+" "+c.Path(),
 			trace.WithAttributes(
 				semconv.HTTPMethodKey.String(r.Method),
 				semconv.HTTPRouteKey.String(r.URL.Path),
