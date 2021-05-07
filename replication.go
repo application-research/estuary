@@ -188,10 +188,10 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 
 type minerStorageAsk struct {
 	gorm.Model
-	Miner         string `gorm:"unique"`
-	Price         string
-	VerifiedPrice string
-	MinPieceSize  abi.PaddedPieceSize
+	Miner         string              `gorm:"unique" json:"miner"`
+	Price         string              `json:"price"`
+	VerifiedPrice string              `json:"verifiedPrice"`
+	MinPieceSize  abi.PaddedPieceSize `json:"minPieceSize"`
 }
 
 func (msa *minerStorageAsk) GetPrice() (*types.BigInt, error) {
@@ -1139,6 +1139,11 @@ type retrievalProgress struct {
 }
 
 func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint) error {
+	ctx, span := cm.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
+		attribute.Int("content", int(contentToFetch)),
+	))
+	defer span.End()
+
 	cm.retrLk.Lock()
 	prog, ok := cm.retrievalsInProgress[contentToFetch]
 	if !ok {
@@ -1171,6 +1176,9 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 }
 
 func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) error {
+	ctx, span := cm.tracer.Start(ctx, "runRetrieval")
+	defer span.End()
+
 	var content Content
 	if err := cm.DB.First(&content, contentToFetch).Error; err != nil {
 		return err
@@ -1200,6 +1208,8 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 		ask, err := cm.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
+			span.RecordError(err)
+
 			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   maddr.String(),
@@ -1211,6 +1221,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
 
 		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
+			span.RecordError(err)
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   maddr.String(),
