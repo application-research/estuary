@@ -192,6 +192,7 @@ type minerStorageAsk struct {
 	Price         string              `json:"price"`
 	VerifiedPrice string              `json:"verifiedPrice"`
 	MinPieceSize  abi.PaddedPieceSize `json:"minPieceSize"`
+	MaxPieceSize  abi.PaddedPieceSize `json:"maxPieceSize"`
 }
 
 func (msa *minerStorageAsk) GetPrice() (*types.BigInt, error) {
@@ -374,6 +375,7 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 		Price:         netask.Ask.Ask.Price.String(),
 		VerifiedPrice: netask.Ask.Ask.VerifiedPrice.String(),
 		MinPieceSize:  netask.Ask.Ask.MinPieceSize,
+		MaxPieceSize:  netask.Ask.Ask.MaxPieceSize,
 	}
 }
 
