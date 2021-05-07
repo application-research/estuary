@@ -335,6 +335,7 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 				Message: err.Error(),
 			})
 		}
+		span.RecordError(err)
 		return nil, err
 	}
 
@@ -346,6 +347,7 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 		},
 		DoUpdates: clause.AssignmentColumns([]string{"price", "verified_price", "min_piece_size"}),
 	}).Create(nmsa).Error; err != nil {
+		span.RecordError(err)
 		return nil, err
 	}
 

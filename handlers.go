@@ -212,7 +212,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	for _, c := range contents {
 		q := `select *
 from obj_refs
-left join objects on objects.id == obj_refs.object
+left join objects on objects.id = obj_refs.object
 where obj_refs.content = ?`
 		var objects []Object
 		if err := s.DB.Raw(q, c.ID).Find(&objects).Error; err != nil {
@@ -814,7 +814,8 @@ type contentDealStats struct {
 }
 
 func (s *Server) handleDealStats(c echo.Context) error {
-	ctx := context.TODO()
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleDealStats")
+	defer span.End()
 
 	var alldeals []contentDeal
 	if err := s.DB.Find(&alldeals).Error; err != nil {
@@ -910,8 +911,8 @@ type askResponse struct {
 }
 
 type priceEstimateResponse struct {
-	TotalStr string `json:"total_str"`
-	Total    string `json:"total"`
+	TotalStr string `json:"totalFil"`
+	Total    string `json:"totalAttoFil"`
 	Asks     []*minerStorageAsk
 }
 
