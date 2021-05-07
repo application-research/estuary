@@ -187,7 +187,7 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 }
 
 type minerStorageAsk struct {
-	gorm.Model
+	gorm.Model    `json:"-"`
 	Miner         string              `gorm:"unique" json:"miner"`
 	Price         string              `json:"price"`
 	VerifiedPrice string              `json:"verifiedPrice"`

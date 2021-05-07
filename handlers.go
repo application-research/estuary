@@ -498,7 +498,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, ask)
+	return c.JSON(200, toDBAsk(ask))
 }
 
 type dealRequest struct {
