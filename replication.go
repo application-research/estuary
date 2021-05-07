@@ -456,6 +456,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 
 	minersAlready := make(map[address.Address]bool)
 	for _, d := range deals {
+		if d.Failed {
+			// TODO: this is an interesting choice, because it gives miners more chances to try again if they fail.
+			// I think that as we get a more diverse set of stable miners, we can *not* do this.
+			continue
+		}
 		maddr, err := d.MinerAddr()
 		if err != nil {
 			return err

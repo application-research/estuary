@@ -226,7 +226,7 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 }
 
 func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*network.AskResponse, error) {
-	ctx, span := Tracer.Start(ctx, "getAsk", trace.WithAttributes(
+	ctx, span := Tracer.Start(ctx, "doGetAsk", trace.WithAttributes(
 		attribute.Stringer("miner", maddr),
 	))
 	defer span.End()
