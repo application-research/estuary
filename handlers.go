@@ -211,29 +211,27 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 
 	out := []statsResp{}
 	for _, c := range contents {
-		q := `select *
-from obj_refs
-left join objects on objects.id = obj_refs.object
-where obj_refs.content = ?`
-		var objects []Object
-		if err := s.DB.Raw(q, c.ID).Find(&objects).Error; err != nil {
-			return xerrors.Errorf("object lookup failed: %w", err)
-		}
-
-		counts, err := s.Node.TrackingBlockstore.GetCounts(objects)
-		if err != nil {
-			return err
-		}
-
 		st := statsResp{
 			Cid:  c.Cid.CID,
 			File: c.Name,
 		}
 
-		for i, count := range counts {
-			st.TotalRequests += int64(count)
-			st.BWUsed += int64(count * objects[i].Size)
+		var res struct {
+			Bw         int64
+			TotalReads int64
 		}
+
+		if err := s.DB.Model(ObjRef{}).
+			Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
+			Where("obj_refs.content = ?", c.ID).
+			Joins("left join objects on obj_refs.object = objects.id").
+			Scan(&res).Error; err != nil {
+			return err
+		}
+
+		st.TotalRequests = res.TotalReads
+		st.BWUsed = res.Bw
+
 		out = append(out, st)
 	}
 
