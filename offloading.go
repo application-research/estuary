@@ -56,7 +56,6 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 			return err
 		}
 
-		// TODO: need bulk deletes
 		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
 			return err
 		}
@@ -72,7 +71,7 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 
 	var toOffload []Content
 	for _, c := range conts {
-		ok, err := cm.contentIsProperlyReplicated(c.ID, 10)
+		ok, err := cm.contentIsProperlyReplicated(c.ID, c.Replication)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
