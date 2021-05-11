@@ -56,6 +56,7 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 			return err
 		}
 
+		// TODO: need bulk deletes
 		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
 			return err
 		}

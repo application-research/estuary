@@ -121,6 +121,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content.GET("/status/:id", withUser(s.handleContentStatus))
 	content.GET("/list", withUser(s.handleListContent))
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
+	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 
 	deals := e.Group("/deals")
 	content.Use(s.AuthRequired(PermLevelUser))
@@ -1005,6 +1006,43 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	}
 
 	return c.JSON(200, deals)
+}
+
+type bandwidthResponse struct {
+	TotalOut int64 `json:"totalOut"`
+}
+
+func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, cont).Error; err != nil {
+		return err
+	}
+
+	if content.UserID != u.ID {
+		return &httpError{
+			Code:    401,
+			Message: ERR_NOT_AUTHORIZED,
+		}
+	}
+
+	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
+	var bw int64
+	if err := s.DB.Model(ObjRef{}).
+		Select("SUM(size * reads)").
+		Where("obj_refs.content = ?", content.ID).
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&bw).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &bandwidthResponse{
+		TotalOut: bw,
+	})
 }
 
 func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {

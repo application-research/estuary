@@ -8,5 +8,8 @@ fi
 echo "$1"
 echo "$fname"
 
-curl -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$1" -F "name=$fname" https://api.estuary.tech/content/add
+EST_HOST="http://localhost:3004"
+#EST_HOST="https://api.estuary.tech"
+
+curl -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$1" -F "name=$fname" $EST_HOST/content/add
 
