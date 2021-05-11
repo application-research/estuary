@@ -504,6 +504,7 @@ type dealRequest struct {
 	Cid      cid.Cid        `json:"cid"`
 	Price    types.BigInt   `json:"price"`
 	Duration abi.ChainEpoch `json:"duration"`
+	Verified bool           `json:"verified"`
 }
 
 func (s *Server) handleMakeDeal(c echo.Context) error {
@@ -519,7 +520,7 @@ func (s *Server) handleMakeDeal(c echo.Context) error {
 		return err
 	}
 
-	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, 0, req.Duration)
+	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, 0, req.Duration, req.Verified)
 	if err != nil {
 		return err
 	}

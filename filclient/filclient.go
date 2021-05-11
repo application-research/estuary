@@ -259,7 +259,7 @@ func ComputePrice(askPrice types.BigInt, size abi.PaddedPieceSize, duration abi.
 	return (*abi.TokenAmount)(&cost), nil
 }
 
-func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch) (*network.Proposal, error) {
+func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data cid.Cid, price types.BigInt, minSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*network.Proposal, error) {
 	ctx, span := Tracer.Start(ctx, "makeDeal", trace.WithAttributes(
 		attribute.Stringer("miner", miner),
 		attribute.Stringer("price", price),
@@ -291,7 +291,6 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 		return nil, err
 	}
 
-	verified := false
 	collBounds, err := fc.api.StateDealProviderCollateralBounds(ctx, size.Padded(), verified, types.EmptyTSK)
 	if err != nil {
 		return nil, err
