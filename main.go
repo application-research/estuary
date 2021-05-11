@@ -326,7 +326,7 @@ func main() {
 			Node:       nd,
 			Api:        api,
 			StagingMgr: sbmgr,
-			tracer:     otel.Tracer("estuary"),
+			tracer:     otel.Tracer("api"),
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
@@ -370,7 +370,7 @@ func main() {
 		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Dht)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
-		cm.tracer = s.tracer
+		cm.tracer = otel.Tracer("replicator")
 
 		if cctx.Bool("enable-auto-retrive") {
 			nd.TrackingBlockstore.SetCidReqFunc(cm.RefreshContentForCid)

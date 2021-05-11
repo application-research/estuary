@@ -286,9 +286,11 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	if err := s.StagingMgr.CleanUp(bsid); err != nil {
-		log.Errorf("failed to clean up staging blockstore: %s", err)
-	}
+	go func() {
+		if err := s.StagingMgr.CleanUp(bsid); err != nil {
+			log.Errorf("failed to clean up staging blockstore: %s", err)
+		}
+	}()
 
 	s.CM.ToCheck <- content.ID
 
@@ -492,7 +494,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	ask, err := s.FilClient.GetAsk(context.TODO(), addr)
+	ask, err := s.FilClient.GetAsk(c.Request().Context(), addr)
 	if err != nil {
 		return err
 	}
@@ -508,7 +510,7 @@ type dealRequest struct {
 }
 
 func (s *Server) handleMakeDeal(c echo.Context) error {
-	ctx := context.TODO()
+	ctx := c.Request().Context()
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
