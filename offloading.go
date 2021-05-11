@@ -90,7 +90,7 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 
 func (cm *ContentManager) contentIsProperlyReplicated(c uint, repl int) (bool, error) {
 	var contentDeals []contentDeal
-	if err := cm.DB.Find(&contentDeals, "content = ? and not failed", c).Error; err != nil {
+	if err := cm.DB.Find(&contentDeals, "content = ? and not failed and deal_id > 0", c).Error; err != nil {
 		return false, err
 	}
 
