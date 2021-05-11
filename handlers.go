@@ -1370,7 +1370,7 @@ type getApiKeysResp struct {
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 	kval := c.Param("key")
 
-	if err := s.DB.Delete(&AuthToken{}, "auth_token.user = ? AND token = ?", u.ID, kval).Error; err != nil {
+	if err := s.DB.Delete(&AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
 		return err
 	}
 
