@@ -34,12 +34,22 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 		return err
 	}
 
-	// select * from obj_refs group by object having MIN(obj_refs.offloaded) = 1 and obj_refs.content = 1;
+	/*
+		// FIXME: this query works on sqlite, but apparently not on postgres.
+		// select * from obj_refs group by object having MIN(obj_refs.offloaded) = 1 and obj_refs.content = 1;
+		q := cm.DB.Debug().Model(&ObjRef{}).
+			Select("objects.cid").
+			Joins("left join objects on obj_refs.object = objects.id").
+			Group("object").
+			Having("obj_refs.content = ? and MIN(obj_refs.offloaded) = 1", c)
+	*/
+
+	// FIXME: this query doesnt filter down to just the content we're looking at, but at least it works?
 	q := cm.DB.Debug().Model(&ObjRef{}).
-		Select("objects.cid").
+		Select("cid").
 		Joins("left join objects on obj_refs.object = objects.id").
-		Group("object").
-		Having("obj_refs.content = ? and MIN(obj_refs.offloaded) = 1", c)
+		Group("cid").
+		Having("MIN(obj_refs.offloaded) = 1")
 
 	rows, err := q.Rows()
 	if err != nil {
