@@ -1133,7 +1133,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 		return err
 	}
 
-	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", false).Error; err != nil {
+	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
 		return err
 	}
 
