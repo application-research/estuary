@@ -40,7 +40,7 @@ func (cm *ContentManager) sortedMinerList() ([]address.Address, error) {
 
 func (cm *ContentManager) minerIsSuspended(m address.Address) (bool, error) {
 	var miner storageMiner
-	if err := cm.DB.Find(&miner, "address = ?", m.Bytes()).Error; err != nil {
+	if err := cm.DB.Find(&miner, "address = ?", m.String()).Error; err != nil {
 		return false, err
 	}
 
