@@ -30,7 +30,7 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 		return err
 	}
 
-	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", true).Error; err != nil {
+	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
 		return err
 	}
 
