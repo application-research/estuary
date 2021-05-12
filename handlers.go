@@ -1088,8 +1088,7 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 		return err
 	}
 
-	ctx := context.Background()
-	return s.CM.RefreshContent(ctx, uint(cont))
+	return s.CM.RefreshContent(c.Request().Context(), uint(cont))
 }
 
 func (s *Server) handleReadLocalContent(c echo.Context) error {

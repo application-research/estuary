@@ -1171,6 +1171,10 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 	}
 
 	defer func() {
+		cm.retrLk.Lock()
+		delete(cm.retrievalsInProgress, contentToFetch)
+		cm.retrLk.Unlock()
+
 		close(prog.wait)
 	}()
 
@@ -1239,8 +1243,8 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		}
 
 		// success
-		break
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("failed to retrieve with any miner we have deals with")
 }
