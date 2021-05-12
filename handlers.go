@@ -156,6 +156,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	admin.GET("/stats", s.handleAdminStats)
 	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
 	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
+	admin.POST("/miners/suspend/:miner", s.handleAdminSuspendMiner)
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 
@@ -797,6 +798,27 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 	return s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error
 }
 
+type suspendMinerBody struct {
+	Reason string `json:"reason"`
+}
+
+func (s *Server) handleAdminSuspendMiner(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	var body suspendMinerBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	return s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
+		"suspended":        true,
+		"suspended_reason": body.Reason,
+	}).Error
+}
+
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -954,10 +976,12 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 }
 
 type minerStatsResp struct {
-	Miner         address.Address `json:"miner"`
-	UsedByEstuary bool            `json:"usedByEstuary"`
-	DealCount     int64           `json:"dealCount"`
-	ErrorCount    int64           `json:"errorCount"`
+	Miner           address.Address `json:"miner"`
+	UsedByEstuary   bool            `json:"usedByEstuary"`
+	DealCount       int64           `json:"dealCount"`
+	ErrorCount      int64           `json:"errorCount"`
+	Suspended       bool            `json:"suspended"`
+	SuspendedReason string          `json:"suspendedReason"`
 }
 
 func (s *Server) handleGetMinerStats(c echo.Context) error {
@@ -988,10 +1012,12 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	}
 
 	return c.JSON(200, &minerStatsResp{
-		Miner:         maddr,
-		UsedByEstuary: true,
-		DealCount:     dealscount,
-		ErrorCount:    errorcount,
+		Miner:           maddr,
+		UsedByEstuary:   true,
+		DealCount:       dealscount,
+		ErrorCount:      errorcount,
+		Suspended:       m.Suspended,
+		SuspendedReason: m.SuspendedReason,
 	})
 }
 

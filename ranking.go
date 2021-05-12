@@ -21,14 +21,30 @@ func (cm *ContentManager) sortedMinerList() ([]address.Address, error) {
 		return nil, err
 	}
 
-	sortedAddrs := make([]address.Address, len(sml))
-	for i, m := range sml {
-		sortedAddrs[i] = m.Miner
+	sortedAddrs := make([]address.Address, 0, len(sml))
+	for _, m := range sml {
+		sus, err := cm.minerIsSuspended(m.Miner)
+		if err != nil {
+			return nil, err
+		}
+
+		if !sus {
+			sortedAddrs = append(sortedAddrs, m.Miner)
+		}
 	}
 
 	cm.lastComputed = time.Now()
 	cm.sortedMiners = sortedAddrs
 	return sortedAddrs, nil
+}
+
+func (cm *ContentManager) minerIsSuspended(m address.Address) (bool, error) {
+	var miner storageMiner
+	if err := cm.DB.Find(&miner, "address = ?", m.Bytes()).Error; err != nil {
+		return false, err
+	}
+
+	return miner.Suspended, nil
 }
 
 type minerDealStats struct {
