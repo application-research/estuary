@@ -946,7 +946,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	}
 
 	var merrs []dfeRecord
-	if err := s.DB.Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
+	if err := s.DB.Find(&merrs, "miner = ?", maddr.String()).Order("created_at desc").Limit(1000).Error; err != nil {
 		return err
 	}
 
@@ -1075,9 +1075,11 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	ctx := context.Background()
-	s.CM.OffloadContent(ctx, uint(cont))
-	return nil
+	if err := s.CM.OffloadContent(c.Request().Context(), uint(cont)); err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]interface{}{})
 }
 
 func (s *Server) handleRefreshContent(c echo.Context) error {

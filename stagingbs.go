@@ -38,7 +38,8 @@ func (sbmgr *StagingBSMgr) AllocNew() (BSID, blockstore.Blockstore, error) {
 	}
 
 	bstore, err := lmdb.Open(&lmdb.Options{
-		Path: dir,
+		Path:   dir,
+		NoSync: true,
 	})
 	if err != nil {
 		return "", nil, err

@@ -110,7 +110,8 @@ func init() {
 
 type storageMiner struct {
 	gorm.Model
-	Address dbAddr `gorm:"unique"`
+	Address   dbAddr `gorm:"unique"`
+	Suspended bool
 }
 
 type dbAddr struct {
