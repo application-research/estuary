@@ -763,7 +763,9 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 }
 
 type minerResp struct {
-	Addr address.Address
+	Addr            address.Address `json:"addr"`
+	Suspended       bool            `json:"suspended"`
+	SuspendedReason string          `json:"suspendedReason"`
 }
 
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
@@ -775,6 +777,8 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	out := make([]minerResp, len(miners))
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
+		out[i].Suspended = m.Suspended
+		out[i].SuspendedReason = m.SuspendedReason
 	}
 
 	return c.JSON(200, out)
@@ -968,7 +972,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	}
 
 	var merrs []dfeRecord
-	if err := s.DB.Find(&merrs, "miner = ?", maddr.String()).Order("created_at desc").Limit(1000).Error; err != nil {
+	if err := s.DB.Limit(1000).Find(&merrs, "miner = ?", maddr.String()).Order("created_at desc").Error; err != nil {
 		return err
 	}
 

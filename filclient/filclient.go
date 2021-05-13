@@ -804,6 +804,9 @@ type RetrievalStats struct {
 }
 
 func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) (*RetrievalStats, error) {
+	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
+	defer span.End()
+
 	start := time.Now()
 	log.Infof("attempting retrieval with miner: %s", miner)
 	mpid, err := fc.minerPeer(ctx, miner)
