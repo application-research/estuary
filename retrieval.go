@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
@@ -129,16 +130,19 @@ func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address
 }
 
 type retrievalSuccessRecord struct {
-	PropCid dbCID
-	Miner   string
+	ID        uint      `gorm:"primarykey" json:"-"`
+	CreatedAt time.Time `json:"createdAt"`
 
-	Peer         string
-	Size         uint64
-	DurationMs   int64
-	AverageSpeed uint64
-	TotalPayment string
-	NumPayments  int
-	AskPrice     string
+	PropCid dbCID  `json:"propCid"`
+	Miner   string `json:"miner"`
+
+	Peer         string `json:"peer"`
+	Size         uint64 `json:"size"`
+	DurationMs   int64  `json:"durationMs"`
+	AverageSpeed uint64 `json:"averageSpeed"`
+	TotalPayment string `json:"totalPayment"`
+	NumPayments  int    `json:"numPayments"`
+	AskPrice     string `json:"askPrice"`
 }
 
 func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {

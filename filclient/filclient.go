@@ -900,11 +900,13 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	}
 
 	took := time.Since(start)
-	speed := uint64(float64(st.TotalSize()) / took.Seconds())
+	speed := uint64(float64(st.Received()) / took.Seconds())
+
+	st.Received()
 
 	return &RetrievalStats{
 		Peer:         st.OtherPeer(),
-		Size:         st.TotalSize(),
+		Size:         st.Received(),
 		Duration:     took,
 		AverageSpeed: speed,
 		TotalPayment: total,

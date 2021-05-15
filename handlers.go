@@ -144,9 +144,6 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	miners.GET("/stats/:miner", s.handleGetMinerStats)
 	miners.GET("/storage/query/:miner", s.handleQueryAsk)
 
-	// should probably remove this
-	e.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
-
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(PermLevelAdmin))
 	admin.GET("/balance", s.handleAdminBalance)
@@ -164,6 +161,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
+
+	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
+	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
 
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
 	admin.GET("/invites", s.handleAdminGetInvites)
@@ -765,7 +765,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 type minerResp struct {
 	Addr            address.Address `json:"addr"`
 	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason"`
+	SuspendedReason string          `json:"suspendedReason,omitempty"`
 }
 
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
@@ -910,8 +910,17 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	})
 }
 
+func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
+	var infos []retrievalSuccessRecord
+	if err := s.DB.Find(&infos).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, infos)
+}
+
 func (s *Server) handleRetrievalCheck(c echo.Context) error {
-	ctx := context.TODO()
+	ctx := c.Request().Context()
 	contid, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
