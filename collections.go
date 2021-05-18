@@ -3,7 +3,7 @@ package main
 import "time"
 
 type Collection struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
+	ID        uint      `gorm:"primarykey" json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 
 	UUID string `gorm:"index" json:"uuid"`

@@ -106,6 +106,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
 
+	e.GET("/test-error", s.handleTestError)
+
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(PermLevelUser))
 
 	user := e.Group("/user")
@@ -134,6 +136,11 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
+
+	cols := e.Group("/collections")
+	cols.GET("/list", withUser(s.handleListCollections))
+	cols.POST("/create", withUser(s.handleCreateCollection))
+	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -204,6 +211,11 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 		return f(c, u)
 	}
+}
+
+// TODO: delete me when debugging done
+func (s *Server) handleTestError(c echo.Context) error {
+	return fmt.Errorf("i am a scary error, log me please")
 }
 
 func (s *Server) handleStats(c echo.Context, u *User) error {
@@ -829,10 +841,14 @@ func (s *Server) handleAdminSuspendMiner(c echo.Context) error {
 		return err
 	}
 
-	return s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
+	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
 		"suspended":        true,
 		"suspended_reason": body.Reason,
-	}).Error
+	}).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) handleAdminUnsuspendMiner(c echo.Context) error {
@@ -841,7 +857,11 @@ func (s *Server) handleAdminUnsuspendMiner(c echo.Context) error {
 		return err
 	}
 
-	return s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error
+	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -850,7 +870,11 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 		return err
 	}
 
-	return s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: dbAddr{m}}).Error
+	if err := s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: dbAddr{m}}).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 type contentDealStats struct {
@@ -1496,13 +1520,56 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleListCollections(c echo.Context, u *User) error {
-
 	var cols []Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
 	return c.JSON(200, cols)
+}
+
+type addContentToCollectionParams struct {
+	Contents   []uint `json:"contents"`
+	Collection string `json:"collection"`
+}
+
+func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
+	var params addContentToCollectionParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	if len(params.Contents) > 128 {
+		return fmt.Errorf("too many contents specified: %d (max 128)", len(params.Contents))
+	}
+
+	var col Collection
+	if err := s.DB.First(&col, "user_id = ?", u.ID).Error; err != nil {
+		return err
+	}
+
+	var contents []Content
+	if err := s.DB.Find(&contents, "id in ? and user_id = ?", params.Contents, u.ID).Error; err != nil {
+		return err
+	}
+
+	if len(contents) != len(params.Contents) {
+		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(params.Contents)-len(contents))
+	}
+
+	var colrefs []CollectionRef
+	for _, cont := range contents {
+		colrefs = append(colrefs, CollectionRef{
+			Collection: col.ID,
+			Content:    cont.ID,
+		})
+	}
+
+	if err := s.DB.Create(colrefs).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -1527,6 +1594,7 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			span.SetStatus(codes.Error, err.Error())
 			span.RecordError(err)
 			c.Error(err)
+			fmt.Println("called c.Error and RecordError")
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}

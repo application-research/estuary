@@ -113,6 +113,7 @@ type storageMiner struct {
 	Address         dbAddr `gorm:"unique"`
 	Suspended       bool
 	SuspendedReason string
+	Name            string
 }
 
 type dbAddr struct {
