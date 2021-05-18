@@ -784,7 +784,14 @@ func init() {
 	priceMax = abi.TokenAmount(max)
 }
 
-func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
+func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) bool {
+	if verified {
+		if types.BigCmp(price, abi.NewTokenAmount(0)) > 0 {
+			return true
+		}
+		return false
+	}
+
 	if types.BigCmp(price, priceMax) > 0 {
 		return true
 	}
@@ -834,12 +841,17 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		if cm.priceIsTooHigh(ask.Ask.Ask.Price) {
-			log.Infow("miners price is too high", "miner", m, "price", ask.Ask.Ask.Price)
+		price := ask.Ask.Ask.Price
+		if verified {
+			price = ask.Ask.Ask.VerifiedPrice
+		}
+
+		if cm.priceIsTooHigh(price, verified) {
+			log.Infow("miners price is too high", "miner", m, "price", price)
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   m,
 				Phase:   "miner-search",
-				Message: fmt.Sprintf("miners price is too high: %s", types.FIL(ask.Ask.Ask.Price)),
+				Message: fmt.Sprintf("miners price is too high: %s (verified = %v)", types.FIL(price), verified),
 				Content: content.ID,
 			})
 			continue

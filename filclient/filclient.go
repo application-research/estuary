@@ -299,7 +299,8 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	// set provider collateral 10% above minimum to avoid fluctuations causing deal failure
 	provCol := big.Div(big.Mul(collBounds.Min, big.NewInt(11)), big.NewInt(10))
 
-	dealStart := head.Height() + (epochsPerHour * 50)
+	// give miners a week to seal and commit the sector
+	dealStart := head.Height() + (epochsPerHour * 24 * 7)
 
 	end := dealStart + duration
 
@@ -959,7 +960,7 @@ func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfe
 
 const noDataTimeout = time.Second * 20
 
-const pollingDelay = time.Millisecond * 200
+const pollingDelay = time.Millisecond * 150
 
 func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransfer.ChannelID, curcount int) (*abi.TokenAmount, int, bool, error) {
 

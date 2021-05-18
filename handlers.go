@@ -9,6 +9,7 @@ import (
 	"net/http/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -154,6 +155,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
 	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
 	admin.POST("/miners/suspend/:miner", s.handleAdminSuspendMiner)
+	admin.PUT("/miners/unsuspend/:miner", s.handleAdminUnsuspendMiner)
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 
@@ -449,33 +451,43 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	var ds []dealStatus
-	for _, d := range deals {
-		dstatus := dealStatus{
-			Deal: d,
-		}
+	ds := make([]dealStatus, len(deals))
+	var wg sync.WaitGroup
+	for i := range deals {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			d := deals[i]
+			dstatus := dealStatus{
+				Deal: d,
+			}
 
-		chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID)
-		if err != nil {
-			return err
-		}
-		dstatus.TransferStatus = chanst
-
-		if d.DealID > 0 {
-			markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(d.DealID), types.EmptyTSK)
+			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID)
 			if err != nil {
-				log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
-			} else {
-				dstatus.OnChainState = &onChainDealState{
-					SectorStartEpoch: markDeal.State.SectorStartEpoch,
-					LastUpdatedEpoch: markDeal.State.LastUpdatedEpoch,
-					SlashEpoch:       markDeal.State.SlashEpoch,
+				log.Errorf("failed to get transfer status: %s", err)
+				return
+			}
+
+			dstatus.TransferStatus = chanst
+
+			if d.DealID > 0 {
+				markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(d.DealID), types.EmptyTSK)
+				if err != nil {
+					log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
+				} else {
+					dstatus.OnChainState = &onChainDealState{
+						SectorStartEpoch: markDeal.State.SectorStartEpoch,
+						LastUpdatedEpoch: markDeal.State.LastUpdatedEpoch,
+						SlashEpoch:       markDeal.State.SlashEpoch,
+					}
 				}
 			}
-		}
 
-		ds = append(ds, dstatus)
+			ds[i] = dstatus
+		}(i)
 	}
+
+	wg.Wait()
 
 	var failCount int64
 	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
@@ -821,6 +833,15 @@ func (s *Server) handleAdminSuspendMiner(c echo.Context) error {
 		"suspended":        true,
 		"suspended_reason": body.Reason,
 	}).Error
+}
+
+func (s *Server) handleAdminUnsuspendMiner(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	return s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -1447,6 +1468,41 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+type createCollectionBody struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
+	var body createCollectionBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	col := &Collection{
+		UUID:        uuid.New().String(),
+		Name:        body.Name,
+		Description: body.Description,
+		UserID:      u.ID,
+	}
+
+	if err := s.DB.Create(col).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, col)
+}
+
+func (s *Server) handleListCollections(c echo.Context, u *User) error {
+
+	var cols []Collection
+	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, cols)
 }
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {

@@ -416,6 +416,8 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&Content{})
 	db.AutoMigrate(&Object{})
 	db.AutoMigrate(&ObjRef{})
+	db.AutoMigrate(&Collection{})
+	db.AutoMigrate(&CollectionRef{})
 
 	db.AutoMigrate(&contentDeal{})
 	db.AutoMigrate(&dfeRecord{})
