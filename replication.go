@@ -335,7 +335,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.Padded
 
 func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
 	var dbminers []storageMiner
-	if err := cm.DB.Debug().Find(&dbminers, "not suspended").Error; err != nil {
+	if err := cm.DB.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
 	}
 
