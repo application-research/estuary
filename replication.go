@@ -302,6 +302,14 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.Padded
 		return nil, err
 	}
 
+	if len(sortedminers) > 10 {
+		sortedminers = sortedminers[:10]
+	}
+
+	rand.Shuffle(len(sortedminers), func(i, j int) {
+		sortedminers[i], sortedminers[j] = sortedminers[j], sortedminers[i]
+	})
+
 	for _, m := range sortedminers {
 		if len(out) >= n {
 			break
