@@ -1024,7 +1024,8 @@ type priceEstimateResponse struct {
 }
 
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
-	ctx := context.TODO()
+	ctx := c.Request().Context()
+
 	var body estimateDealBody
 	if err := c.Bind(&body); err != nil {
 		return err

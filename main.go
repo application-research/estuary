@@ -195,6 +195,8 @@ type Content struct {
 	Active      bool   `json:"active"`
 	Offloaded   bool   `json:"offloaded"`
 	Replication int    `json:"replication"`
+
+	AggregatedIn uint `json:"aggregatedIn"`
 }
 
 type Object struct {

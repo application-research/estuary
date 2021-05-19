@@ -57,6 +57,35 @@ type ContentManager struct {
 	minerLk      sync.Mutex
 	sortedMiners []address.Address
 	lastComputed time.Time
+
+	// deal bucketing stuff
+	bucketLk sync.Mutex
+	buckets  map[uint][]*contentBucket
+}
+
+type contentBucket struct {
+	bucketOpened time.Time
+
+	contents []uint
+
+	minSize int64
+	maxSize int64
+
+	curSize int64
+
+	lk sync.Mutex
+}
+
+func (cb *contentBucket) hasContent(c Content) bool {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+
+	for _, cont := range cb.contents {
+		if cont == c.ID {
+			return true
+		}
+	}
+	return false
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, dht *dht.IpfsDHT) *ContentManager {
@@ -69,6 +98,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
+		buckets:              make(map[uint][]*contentBucket),
 	}
 }
 
@@ -297,7 +327,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.Padded
 
 func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
 	var dbminers []storageMiner
-	if err := cm.DB.Order("random()").Find(&dbminers, "not suspended").Error; err != nil {
+	if err := cm.DB.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
 	}
 
@@ -305,6 +335,10 @@ func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
 	for _, dbm := range dbminers {
 		out = append(out, dbm.Address.Addr)
 	}
+
+	rand.Shuffle(50, func(i, j int) {
+		out[i], out[j] = out[j], out[i]
+	})
 
 	return out, nil
 }
@@ -429,6 +463,24 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	}, nil
 }
 
+func (cm *ContentManager) contentInBucket(ctx context.Context, content Content) bool {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+
+	bucks, ok := cm.buckets[content.UserID]
+	if !ok {
+		return false
+	}
+
+	for _, b := range bucks {
+		if b.hasContent(content) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
@@ -436,6 +488,16 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 	defer span.End()
 
 	verified := true
+
+	if content.AggregatedIn > 0 {
+		// This content is aggregated inside another piece of content, nothing to do here
+		return nil
+	}
+
+	if cm.contentInBucket(ctx, content) {
+		// This content is already scheduled to be aggregated and is waiting in a bucket
+		return nil
+	}
 
 	// check if content has enough deals made for it
 	// if not enough deals, go make more
