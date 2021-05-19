@@ -143,7 +143,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	cols.GET("/list", withUser(s.handleListCollections))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
-	cols.GET("/content/:colid", withUser(s.handleGetCollectionContents))
+	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -1608,7 +1608,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	colid := c.Param("colid"))
+	colid := c.Param("coluuid")
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {

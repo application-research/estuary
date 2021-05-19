@@ -111,14 +111,25 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 	dtn := dtnet.NewFromLibp2pHost(h)
 
 	dtRestartConfig := dtimpl.ChannelRestartConfig(channelmonitor.Config{
+		/* old values for old stuff
 		MonitorPushChannels:    true,
 		AcceptTimeout:          time.Second * 30,
-		Interval:               time.Minute,
 		MinBytesTransferred:    4 << 10,
 		ChecksPerInterval:      20,
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 10,
 		CompleteTimeout:        time.Second * 90,
+		*/
+
+		AcceptTimeout:          time.Second * 30,
+		RestartDebounce:        time.Second * 10,
+		RestartBackoff:         time.Second * 20,
+		MaxConsecutiveRestarts: 10,
+		RestartAckTimeout:      time.Minute * 5,
+		CompleteTimeout:        time.Second * 90,
+
+		// Called when a restart completes successfully
+		//OnRestartComplete func(id datatransfer.ChannelID)
 	})
 	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, dtRestartConfig)
 	if err != nil {
