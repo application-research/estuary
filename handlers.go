@@ -112,6 +112,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(PermLevelUser))
+	user.GET("/test-error", s.handleTestError)
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
@@ -138,9 +139,11 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	deals.POST("/estimate", s.handleEstimateDealCost)
 
 	cols := e.Group("/collections")
+	cols.Use(s.AuthRequired(PermLevelUser))
 	cols.GET("/list", withUser(s.handleListCollections))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
+	cols.GET("/content/:colid", withUser(s.handleGetCollectionContents))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -176,6 +179,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
 	admin.GET("/invites", s.handleAdminGetInvites)
+
+	users := admin.Group("/users")
+	users.GET("", s.handleAdminGetUsers)
 
 	return e.Start(srv)
 }
@@ -278,6 +284,17 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
+	collection := c.FormValue("collection")
+	var col *Collection
+	if collection != "" {
+		var srchCol Collection
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", collection, u.ID).Error; err != nil {
+			return err
+		}
+
+		col = &srchCol
+	}
+
 	bsid, bs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -294,7 +311,15 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	content, err := s.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	}
 
+	if col != nil {
+		if err := s.DB.Create(&CollectionRef{
+			Collection: col.ID,
+			Content:    content.ID,
+		}).Error; err != nil {
+			log.Errorf("failed to add content to requested collection: %s", err)
+		}
 	}
 
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
@@ -1572,6 +1597,29 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{})
 }
 
+func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
+	colid, err := strconv.Atoi(c.Param("colid"))
+	if err != nil {
+		return err
+	}
+
+	var col Collection
+	if err := s.DB.First(&col, "id = ? and user_id = ?", colid, u.ID).Error; err != nil {
+		return err
+	}
+
+	var contents []Content
+	if err := s.DB.
+		Model(CollectionRef{}).
+		Where("collection = ?", col.ID).
+		Joins("left join contents on contents.id = collection_refs.collection").
+		Scan(&contents).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, contents)
+}
+
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
@@ -1594,7 +1642,6 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			span.SetStatus(codes.Error, err.Error())
 			span.RecordError(err)
 			c.Error(err)
-			fmt.Println("called c.Error and RecordError")
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}
@@ -1606,4 +1653,23 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		return nil
 	}
+}
+
+type adminUserResponse struct {
+	Id       uint   `json:"id"`
+	Username string `json:"username"`
+
+	SpaceUsed int `json:"spaceUsed"`
+	NumFiles  int `json:"numFiles"`
+}
+
+func (s *Server) handleAdminGetUsers(c echo.Context) error {
+	var resp []adminUserResponse
+	if err := s.DB.Model(Content{}).
+		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&User{}).Select("username").Where("id = user_id")).
+		Group("user_id").Scan(&resp).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, resp)
 }
