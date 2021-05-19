@@ -1063,7 +1063,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	}
 
 	var merrs []dfeRecord
-	if err := s.DB.Limit(1000).Find(&merrs, "miner = ?", maddr.String()).Order("created_at desc").Error; err != nil {
+	if err := s.DB.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
 
