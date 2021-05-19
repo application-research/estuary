@@ -118,7 +118,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		ChecksPerInterval:      20,
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 10,
-		CompleteTimeout:        time.Second * 30,
+		CompleteTimeout:        time.Second * 90,
 	})
 	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, dtRestartConfig)
 	if err != nil {
