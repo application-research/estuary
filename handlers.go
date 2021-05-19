@@ -1608,13 +1608,10 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	colid, err := strconv.Atoi(c.Param("colid"))
-	if err != nil {
-		return err
-	}
+	colid := c.Param("colid"))
 
 	var col Collection
-	if err := s.DB.First(&col, "id = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
 		return err
 	}
 
