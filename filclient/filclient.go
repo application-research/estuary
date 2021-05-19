@@ -125,7 +125,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		RestartDebounce:        time.Second * 10,
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 10,
-		RestartAckTimeout:      time.Minute * 5,
+		RestartAckTimeout:      time.Second * 30,
 		CompleteTimeout:        time.Second * 90,
 
 		// Called when a restart completes successfully

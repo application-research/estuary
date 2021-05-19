@@ -148,6 +148,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	// explicitly public, for now
 	public := e.Group("/public")
 
+	public.GET("/stats", s.handlePublicStats)
+
 	miners := public.Group("/miners")
 	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
@@ -1615,8 +1617,8 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 		return err
 	}
 
-	var contents []Content
-	if err := s.DB.
+	contents := []Content{}
+	if err := s.DB.Debug().
 		Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.collection").
@@ -1679,4 +1681,18 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	}
 
 	return c.JSON(200, resp)
+}
+
+type publicStatsResponse struct {
+	TotalStorage     int64 `json:"totalStorage"`
+	TotalFilesStored int   `json:"totalFiles"`
+}
+
+func (s *Server) handlePublicStats(c echo.Context) error {
+	var stats publicStatsResponse
+	if err := s.DB.Model(Content{}).Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, stats)
 }
