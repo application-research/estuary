@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -137,6 +139,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
+	deals.GET("/proposal/:propcid", s.handleGetProposal)
+	deals.GET("/info/:dealid", s.handleGetDealInfo)
 
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(PermLevelUser))
@@ -662,7 +666,7 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 		return err
 	}
 
-	chanid, err := s.FilClient.StartDataTransfer(context.TODO(), addr, propCid, dataCid)
+	chanid, err := s.FilClient.StartDataTransfer(c.Request().Context(), addr, propCid, dataCid)
 	if err != nil {
 		return err
 	}
@@ -671,7 +675,7 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 }
 
 func (s *Server) handleDealStatus(c echo.Context) error {
-	ctx := context.TODO()
+	ctx := c.Request().Context()
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -689,6 +693,39 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 	}
 
 	return c.JSON(200, status)
+}
+
+func (s *Server) handleGetProposal(c echo.Context) error {
+	propCid, err := cid.Decode(c.Param("propcid"))
+	if err != nil {
+		return err
+	}
+
+	var proprec proposalRecord
+	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		return err
+	}
+
+	var prop network.Proposal
+	if err := prop.UnmarshalCBOR(bytes.NewReader(proprec.Data)); err != nil {
+		return err
+	}
+
+	return c.JSON(200, prop)
+}
+
+func (s *Server) handleGetDealInfo(c echo.Context) error {
+	dealid, err := strconv.ParseInt(c.Param("dealid"), 10, 64)
+	if err != nil {
+		return err
+	}
+
+	deal, err := s.Api.StateMarketStorageDeal(c.Request().Context(), abi.DealID(dealid), types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, deal)
 }
 
 type getInvitesResp struct {
