@@ -384,11 +384,13 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 
 	nmsa := toDBAsk(netask)
 
+	nmsa.UpdatedAt = time.Now()
+
 	if err := cm.DB.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "miner"},
 		},
-		DoUpdates: clause.AssignmentColumns([]string{"price", "verified_price", "min_piece_size"}),
+		DoUpdates: clause.AssignmentColumns([]string{"price", "verified_price", "min_piece_size", "updated_at"}),
 	}).Create(nmsa).Error; err != nil {
 		span.RecordError(err)
 		return nil, err
