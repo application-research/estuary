@@ -126,7 +126,7 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		RestartBackoff:         time.Second * 20,
 		MaxConsecutiveRestarts: 10,
 		RestartAckTimeout:      time.Second * 30,
-		CompleteTimeout:        time.Second * 90,
+		CompleteTimeout:        time.Minute * 5,
 
 		// Called when a restart completes successfully
 		//OnRestartComplete func(id datatransfer.ChannelID)
