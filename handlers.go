@@ -262,6 +262,13 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
+	form, err := c.MultipartForm()
+	if err != nil {
+		return err
+	}
+
+	defer form.RemoveAll()
+
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
@@ -272,6 +279,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
+
+	defer fi.Close()
 
 	replication := defaultReplication
 	replVal := c.FormValue("replication")
