@@ -174,6 +174,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	admin.PUT("/miners/unsuspend/:miner", s.handleAdminUnsuspendMiner)
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
+	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
 
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
@@ -861,6 +862,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 
 type minerResp struct {
 	Addr            address.Address `json:"addr"`
+	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason,omitempty"`
 }
@@ -876,6 +878,7 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
+		out[i].Name = m.Name
 	}
 
 	return c.JSON(200, out)
@@ -888,6 +891,28 @@ func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
 	}
 
 	return c.JSON(200, sml)
+}
+
+type minerSetInfoParams struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) handleAdminMinersSetInfo(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	var params minerSetInfoParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
@@ -1109,6 +1134,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 
 type minerStatsResp struct {
 	Miner           address.Address `json:"miner"`
+	Name            string          `json:"name"`
 	UsedByEstuary   bool            `json:"usedByEstuary"`
 	DealCount       int64           `json:"dealCount"`
 	ErrorCount      int64           `json:"errorCount"`
@@ -1150,6 +1176,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		ErrorCount:      errorcount,
 		Suspended:       m.Suspended,
 		SuspendedReason: m.SuspendedReason,
+		Name:            m.Name,
 	})
 }
 

@@ -63,10 +63,16 @@ type ContentManager struct {
 	buckets  map[uint][]*contentBucket
 }
 
+// 90% of the unpadded data size for a 4GB piece
+// the 10% gap is to accomodate car file packing overhead, can probably do this better
+var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
+
+var bucketSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
+
 type contentBucket struct {
 	bucketOpened time.Time
 
-	contents []uint
+	contents []Content
 
 	minSize int64
 	maxSize int64
@@ -76,12 +82,40 @@ type contentBucket struct {
 	lk sync.Mutex
 }
 
+func newContentBucket() *contentBucket {
+	return &contentBucket{
+		bucketOpened: time.Now(),
+		minSize:      int64(bucketSizeLimit - (1 << 30)),
+		maxSize:      int64(bucketSizeLimit),
+	}
+}
+
+func (cb *contentBucket) hasRoomForContent(c Content) bool {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+
+	return cb.curSize+c.Size <= cb.maxSize
+}
+
+func (cb *contentBucket) tryAddContent(c Content) bool {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+	if cb.curSize+c.Size > cb.maxSize {
+		return false
+	}
+
+	cb.contents = append(cb.contents, c)
+	cb.curSize += c.Size
+
+	return true
+}
+
 func (cb *contentBucket) hasContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
 	for _, cont := range cb.contents {
-		if cont == c.ID {
+		if cont.ID == c.ID {
 			return true
 		}
 	}
@@ -491,6 +525,32 @@ func (cm *ContentManager) contentInBucket(ctx context.Context, content Content) 
 	return false
 }
 
+func (cm *ContentManager) addContentToBucket(ctx context.Context, content Content) error {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+
+	blist, ok := cm.buckets[content.UserID]
+	if !ok {
+		b := newContentBucket()
+		b.tryAddContent(content)
+		cm.buckets[content.UserID] = []*contentBucket{b}
+		return nil
+	}
+
+	for _, b := range blist {
+		if b.tryAddContent(content) {
+			return nil
+		}
+	}
+
+	b := newContentBucket()
+	b.tryAddContent(content)
+	cm.buckets[content.UserID] = append(blist, b)
+	return nil
+}
+
+const bucketingEnabled = false
+
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
@@ -507,6 +567,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 	if cm.contentInBucket(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
 		return nil
+	}
+
+	if content.Size < int64(individualDealThreshold) && bucketingEnabled {
+		// Put it in a bucket!
+		return cm.addContentToBucket(ctx, content)
 	}
 
 	// check if content has enough deals made for it
@@ -943,23 +1008,19 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, asks[i].Ask.Ask.Price, asks[i].Ask.Ask.MinPieceSize, 1000000, verified)
+		price := asks[i].Ask.Ask.Price
+		if verified {
+			price = asks[i].Ask.Ask.VerifiedPrice
+		}
+
+		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, 1000000, verified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
 
 		proposals[i] = prop
 
-		nd, err := cborutil.AsIpld(prop)
-		if err != nil {
-			return err
-		}
-		//fmt.Println("proposal cid: ", nd.Cid())
-
-		if err := cm.DB.Create(&proposalRecord{
-			PropCid: dbCID{nd.Cid()},
-			Data:    nd.RawData(),
-		}).Error; err != nil {
+		if err := cm.putProposalRecord(prop.DealProposal); err != nil {
 			return err
 		}
 	}
@@ -1062,6 +1123,23 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 
 		log.Infow("Started data transfer", "chanid", chanid)
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal) error {
+	nd, err := cborutil.AsIpld(dealprop)
+	if err != nil {
+		return err
+	}
+	//fmt.Println("proposal cid: ", nd.Cid())
+
+	if err := cm.DB.Create(&proposalRecord{
+		PropCid: dbCID{nd.Cid()},
+		Data:    nd.RawData(),
+	}).Error; err != nil {
+		return err
 	}
 
 	return nil
