@@ -128,6 +128,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content.GET("/list", withUser(s.handleListContent))
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
+	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
 
 	deals := e.Group("/deals")
 	content.Use(s.AuthRequired(PermLevelUser))
@@ -1763,5 +1764,9 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 }
 
 func (s *Server) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(200, s.CM.getBucketSnapshot(c.Request().Context()))
+	return c.JSON(200, s.CM.getStagingZoneSnapshot(c.Request().Context()))
+}
+
+func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
+	return c.JSON(200, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }

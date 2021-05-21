@@ -62,37 +62,38 @@ type ContentManager struct {
 
 	// deal bucketing stuff
 	bucketLk sync.Mutex
-	buckets  map[uint][]*contentBucket
+	buckets  map[uint][]*contentStagingZone
 }
 
 // 90% of the unpadded data size for a 4GB piece
 // the 10% gap is to accomodate car file packing overhead, can probably do this better
 var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
 
-var bucketSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
+var stagingZoneSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
 
-type contentBucket struct {
-	BucketOpened time.Time
+type contentStagingZone struct {
+	ZoneOpened time.Time `json:"zoneOpened"`
 
-	EarliestContent time.Time
+	EarliestContent time.Time `json:"earliestContent"`
 
-	Contents []Content
+	Contents []Content `json:"contents"`
 
-	minSize int64
-	maxSize int64
+	MinSize int64 `json:"minSize"`
+	MaxSize int64 `json:"maxSize"`
 
-	maxItems int64
+	MaxItems int `json:"maxItems"`
 
-	CurSize int64
+	CurSize int64 `json:"curSize"`
 
 	lk sync.Mutex
 }
 
-func newContentBucket() *contentBucket {
-	return &contentBucket{
-		BucketOpened: time.Now(),
-		minSize:      int64(bucketSizeLimit - (1 << 30)),
-		maxSize:      int64(bucketSizeLimit),
+func newContentStagingZone() *contentStagingZone {
+	return &contentStagingZone{
+		ZoneOpened: time.Now(),
+		MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
+		MaxSize:    int64(stagingZoneSizeLimit),
+		MaxItems:   maxBucketItems,
 	}
 }
 
@@ -104,13 +105,13 @@ const maxContentAge = time.Hour * 24
 
 const maxBucketItems = 10000
 
-func (cb *contentBucket) isReady() bool {
+func (cb *contentStagingZone) isReady() bool {
 	// if its above the size requirement, go right ahead
-	if cb.CurSize > cb.minSize {
+	if cb.CurSize > cb.MinSize {
 		return true
 	}
 
-	if time.Since(cb.BucketOpened) > maxBucketLifetime {
+	if time.Since(cb.ZoneOpened) > maxBucketLifetime {
 		return true
 	}
 
@@ -118,24 +119,24 @@ func (cb *contentBucket) isReady() bool {
 		return true
 	}
 
-	if len(cb.Contents) >= maxBucketItems {
+	if len(cb.Contents) >= cb.MaxItems {
 		return true
 	}
 
 	return false
 }
 
-func (cb *contentBucket) hasRoomForContent(c Content) bool {
+func (cb *contentStagingZone) hasRoomForContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
-	return cb.CurSize+c.Size <= cb.maxSize
+	return cb.CurSize+c.Size <= cb.MaxSize
 }
 
-func (cb *contentBucket) tryAddContent(c Content) bool {
+func (cb *contentStagingZone) tryAddContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
-	if cb.CurSize+c.Size > cb.maxSize {
+	if cb.CurSize+c.Size > cb.MaxSize {
 		return false
 	}
 
@@ -149,7 +150,7 @@ func (cb *contentBucket) tryAddContent(c Content) bool {
 	return true
 }
 
-func (cb *contentBucket) hasContent(c Content) bool {
+func (cb *contentStagingZone) hasContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
@@ -171,7 +172,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
-		buckets:              make(map[uint][]*contentBucket),
+		buckets:              make(map[uint][]*contentStagingZone),
 	}
 }
 
@@ -201,7 +202,7 @@ func (cm *ContentManager) ContentWatcher() {
 				continue
 			}
 
-			buckets := cm.popReadyBuckets()
+			buckets := cm.popReadyStagingZone()
 			for _, b := range buckets {
 				if err := cm.aggregateContent(context.TODO(), b); err != nil {
 					log.Errorf("content aggregation failed: %s", b)
@@ -214,11 +215,11 @@ func (cm *ContentManager) ContentWatcher() {
 	}
 }
 
-func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentBucket) error {
+func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagingZone) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
-	log.Info("aggregating contents in bucket into new content")
+	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range b.Contents {
 		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
@@ -272,7 +273,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentBucket
 	}
 
 	if err := cm.DB.Model(Content{}).Where("id in ?", ids).Update("aggregated_in", content.ID).Error; err != nil {
-		return xerrors.Errorf("failed to mark bucketed contents as part of aggregate %d: %w", content.ID, err)
+		return xerrors.Errorf("failed to mark staged contents as part of aggregate %d: %w", content.ID, err)
 	}
 
 	go func() {
@@ -623,7 +624,7 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	}, nil
 }
 
-func (cm *ContentManager) contentInBucket(ctx context.Context, content Content) bool {
+func (cm *ContentManager) contentInStagingZone(ctx context.Context, content Content) bool {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
@@ -641,13 +642,31 @@ func (cm *ContentManager) contentInBucket(ctx context.Context, content Content) 
 	return false
 }
 
-func (cm *ContentManager) getBucketSnapshot(ctx context.Context) map[uint][]*contentBucket {
+func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint) []*contentStagingZone {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
-	out := make(map[uint][]*contentBucket)
+	blist, ok := cm.buckets[user]
+	if !ok {
+		return []*contentStagingZone{}
+	}
+
+	var out []*contentStagingZone
+	for _, b := range blist {
+		cp := *b
+		out = append(out, &cp)
+	}
+
+	return out
+}
+
+func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][]*contentStagingZone {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+
+	out := make(map[uint][]*contentStagingZone)
 	for u, blist := range cm.buckets {
-		var copylist []*contentBucket
+		var copylist []*contentStagingZone
 
 		for _, b := range blist {
 			cp := *b
@@ -659,16 +678,19 @@ func (cm *ContentManager) getBucketSnapshot(ctx context.Context) map[uint][]*con
 	return out
 }
 
-func (cm *ContentManager) addContentToBucket(ctx context.Context, content Content) error {
-	log.Infof("adding content to bucket: ", content.ID)
+func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content Content) error {
+	ctx, span := cm.tracer.Start(ctx, "stageContent")
+	defer span.End()
+
+	log.Infof("adding content to staging zone: ", content.ID)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
 	blist, ok := cm.buckets[content.UserID]
 	if !ok {
-		b := newContentBucket()
+		b := newContentStagingZone()
 		b.tryAddContent(content)
-		cm.buckets[content.UserID] = []*contentBucket{b}
+		cm.buckets[content.UserID] = []*contentStagingZone{b}
 		return nil
 	}
 
@@ -678,19 +700,19 @@ func (cm *ContentManager) addContentToBucket(ctx context.Context, content Conten
 		}
 	}
 
-	b := newContentBucket()
+	b := newContentStagingZone()
 	b.tryAddContent(content)
 	cm.buckets[content.UserID] = append(blist, b)
 	return nil
 }
 
-func (cm *ContentManager) popReadyBuckets() []*contentBucket {
+func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
-	var out []*contentBucket
+	var out []*contentStagingZone
 	for uid, blist := range cm.buckets {
-		var keep []*contentBucket
+		var keep []*contentStagingZone
 		for _, b := range blist {
 			if b.isReady() {
 				out = append(out, b)
@@ -719,7 +741,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		return nil
 	}
 
-	if cm.contentInBucket(ctx, content) {
+	if cm.contentInStagingZone(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
 		return nil
 	}
@@ -747,7 +769,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		!content.Aggregate &&
 		bucketingEnabled {
 		// Put it in a bucket!
-		return cm.addContentToBucket(ctx, content)
+		return cm.addContentToStagingZone(ctx, content)
 	}
 
 	replicationFactor := defaultReplication
