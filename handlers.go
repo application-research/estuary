@@ -1525,6 +1525,9 @@ type userSettings struct {
 	Replication  int  `json:"replication"`
 	Verified     bool `json:"verified"`
 	DealDuration int  `json:"dealDuration"`
+
+	MaxStagingWait       time.Duration `json:"maxStagingWait"`
+	FileStagingThreshold int64         `json:"fileStagingThreshold"`
 }
 
 type viewerResponse struct {
@@ -1540,9 +1543,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Username: u.Username,
 		Perms:    u.Perm,
 		Settings: userSettings{
-			Replication:  6,
-			Verified:     true,
-			DealDuration: 2880 * 365,
+			Replication:          6,
+			Verified:             true,
+			DealDuration:         2880 * 365,
+			MaxStagingWait:       maxBucketLifetime,
+			FileStagingThreshold: int64(individualDealThreshold),
 		},
 	})
 }
