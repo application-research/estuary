@@ -180,6 +180,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
+	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 
 	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
@@ -1759,4 +1760,8 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	}
 
 	return c.JSON(200, stats)
+}
+
+func (s *Server) handleGetBucketDiag(c echo.Context) error {
+	return c.JSON(200, s.CM.getBucketSnapshot(c.Request().Context()))
 }

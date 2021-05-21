@@ -197,6 +197,7 @@ type Content struct {
 	Replication int    `json:"replication"`
 
 	AggregatedIn uint `json:"aggregatedIn"`
+	Aggregate    bool `json:"aggregate"`
 }
 
 type Object struct {

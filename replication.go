@@ -23,6 +23,8 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/ipfs/go-unixfs"
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/whyrusleeping/estuary/filclient"
@@ -70,42 +72,79 @@ var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
 var bucketSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
 
 type contentBucket struct {
-	bucketOpened time.Time
+	BucketOpened time.Time
 
-	contents []Content
+	EarliestContent time.Time
+
+	Contents []Content
 
 	minSize int64
 	maxSize int64
 
-	curSize int64
+	maxItems int64
+
+	CurSize int64
 
 	lk sync.Mutex
 }
 
 func newContentBucket() *contentBucket {
 	return &contentBucket{
-		bucketOpened: time.Now(),
+		BucketOpened: time.Now(),
 		minSize:      int64(bucketSizeLimit - (1 << 30)),
 		maxSize:      int64(bucketSizeLimit),
 	}
+}
+
+// maximum amount of time a bucket will remain open before we aggregate it into a piece of content
+const maxBucketLifetime = time.Hour * 4
+
+// maximum amount of time a piece of content will go without either being aggregated or having a deal made for it
+const maxContentAge = time.Hour * 24
+
+const maxBucketItems = 10000
+
+func (cb *contentBucket) isReady() bool {
+	// if its above the size requirement, go right ahead
+	if cb.CurSize > cb.minSize {
+		return true
+	}
+
+	if time.Since(cb.BucketOpened) > maxBucketLifetime {
+		return true
+	}
+
+	if time.Since(cb.EarliestContent) > maxContentAge {
+		return true
+	}
+
+	if len(cb.Contents) >= maxBucketItems {
+		return true
+	}
+
+	return false
 }
 
 func (cb *contentBucket) hasRoomForContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
-	return cb.curSize+c.Size <= cb.maxSize
+	return cb.CurSize+c.Size <= cb.maxSize
 }
 
 func (cb *contentBucket) tryAddContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
-	if cb.curSize+c.Size > cb.maxSize {
+	if cb.CurSize+c.Size > cb.maxSize {
 		return false
 	}
 
-	cb.contents = append(cb.contents, c)
-	cb.curSize += c.Size
+	if len(cb.Contents) == 0 || c.CreatedAt.Before(cb.EarliestContent) {
+		cb.EarliestContent = c.CreatedAt
+	}
+
+	cb.Contents = append(cb.Contents, c)
+	cb.CurSize += c.Size
 
 	return true
 }
@@ -114,7 +153,7 @@ func (cb *contentBucket) hasContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
-	for _, cont := range cb.contents {
+	for _, cont := range cb.Contents {
 		if cont.ID == c.ID {
 			return true
 		}
@@ -161,9 +200,86 @@ func (cm *ContentManager) ContentWatcher() {
 				log.Errorf("rechecking content: %s", err)
 				continue
 			}
+
+			buckets := cm.popReadyBuckets()
+			for _, b := range buckets {
+				if err := cm.aggregateContent(context.TODO(), b); err != nil {
+					log.Errorf("content aggregation failed: %s", b)
+					continue
+				}
+			}
+
 			timer.Reset(time.Minute * 5)
 		}
 	}
+}
+
+func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentBucket) error {
+	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
+	defer span.End()
+
+	log.Info("aggregating contents in bucket into new content")
+	dir := unixfs.EmptyDirNode()
+	for _, c := range b.Contents {
+		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
+			Size: uint64(c.Size),
+			Cid:  c.Cid.CID,
+		})
+	}
+
+	ncid := dir.Cid()
+	size, err := dir.Size()
+	if err != nil {
+		return err
+	}
+
+	obj := &Object{
+		Cid:  dbCID{ncid},
+		Size: int(size),
+	}
+	if err := cm.DB.Create(obj).Error; err != nil {
+		return err
+	}
+
+	content := &Content{
+		Cid:         dbCID{ncid},
+		Size:        int64(size) + b.CurSize,
+		Name:        "aggregate",
+		Active:      true,
+		UserID:      b.Contents[0].UserID,
+		Replication: defaultReplication,
+		Aggregate:   true,
+	}
+
+	if err := cm.DB.Create(content).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Create(&ObjRef{
+		Content: content.ID,
+		Object:  obj.ID,
+	}).Error; err != nil {
+		return err
+	}
+
+	if err := cm.Blockstore.Put(dir); err != nil {
+		return err
+	}
+
+	var ids []uint
+	for _, c := range b.Contents {
+		ids = append(ids, c.ID)
+	}
+
+	if err := cm.DB.Model(Content{}).Where("id in ?", ids).Update("aggregated_in", content.ID).Error; err != nil {
+		return xerrors.Errorf("failed to mark bucketed contents as part of aggregate %d: %w", content.ID, err)
+	}
+
+	go func() {
+		cm.ToCheck <- content.ID
+	}()
+
+	return nil
 }
 
 func (cm *ContentManager) startup() error {
@@ -525,7 +641,26 @@ func (cm *ContentManager) contentInBucket(ctx context.Context, content Content) 
 	return false
 }
 
+func (cm *ContentManager) getBucketSnapshot(ctx context.Context) map[uint][]*contentBucket {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+
+	out := make(map[uint][]*contentBucket)
+	for u, blist := range cm.buckets {
+		var copylist []*contentBucket
+
+		for _, b := range blist {
+			cp := *b
+			copylist = append(copylist, &cp)
+		}
+
+		out[u] = copylist
+	}
+	return out
+}
+
 func (cm *ContentManager) addContentToBucket(ctx context.Context, content Content) error {
+	log.Infof("adding content to bucket: ", content.ID)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
@@ -549,7 +684,27 @@ func (cm *ContentManager) addContentToBucket(ctx context.Context, content Conten
 	return nil
 }
 
-const bucketingEnabled = false
+func (cm *ContentManager) popReadyBuckets() []*contentBucket {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+
+	var out []*contentBucket
+	for uid, blist := range cm.buckets {
+		var keep []*contentBucket
+		for _, b := range blist {
+			if b.isReady() {
+				out = append(out, b)
+			} else {
+				keep = append(keep, b)
+			}
+		}
+		cm.buckets[uid] = keep
+	}
+
+	return out
+}
+
+const bucketingEnabled = true
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
@@ -569,11 +724,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		return nil
 	}
 
-	if content.Size < int64(individualDealThreshold) && bucketingEnabled {
-		// Put it in a bucket!
-		return cm.addContentToBucket(ctx, content)
-	}
-
 	// check if content has enough deals made for it
 	// if not enough deals, go make more
 	// check all existing deals, ensure they are still active
@@ -584,6 +734,20 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+	}
+
+	var user User
+	if err := cm.DB.First(&user, "id = ?", content.UserID).Error; err != nil {
+		return err
+	}
+
+	if len(deals) == 0 &&
+		user.BucketingEnabled() &&
+		content.Size < int64(individualDealThreshold) &&
+		!content.Aggregate &&
+		bucketingEnabled {
+		// Put it in a bucket!
+		return cm.addContentToBucket(ctx, content)
 	}
 
 	replicationFactor := defaultReplication

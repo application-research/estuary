@@ -14,7 +14,12 @@ type User struct {
 
 	UserEmail string
 
-	Perm int
+	Perm  int
+	Flags int
+}
+
+func (u *User) BucketingEnabled() bool {
+	return u.Flags&1 != 0
 }
 
 type AuthToken struct {
