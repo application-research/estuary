@@ -118,6 +118,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
+	user.GET("/export", withUser(s.handleUserExportData))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
@@ -1774,4 +1775,13 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 	return c.JSON(200, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
+}
+
+func (s *Server) handleUserExportData(c echo.Context, u *User) error {
+	export, err := s.exportUserData(u.ID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, export)
 }
