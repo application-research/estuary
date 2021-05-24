@@ -486,9 +486,9 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 	}
 
 	out := make([]Content, 0, len(contents))
-	for _, c := range contents {
-		if !s.CM.contentInStagingZone(c.Request().Context(), c) {
-			out = append(out, c)
+	for _, cont := range contents {
+		if !s.CM.contentInStagingZone(c.Request().Context(), cont) {
+			out = append(out, cont)
 		}
 	}
 
