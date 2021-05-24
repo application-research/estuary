@@ -15,10 +15,10 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
@@ -710,7 +710,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 		return err
 	}
 
-	var prop network.Proposal
+	var prop market.ClientDealProposal
 	if err := prop.UnmarshalCBOR(bytes.NewReader(proprec.Data)); err != nil {
 		return err
 	}
