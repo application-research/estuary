@@ -950,6 +950,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 			Message: fmt.Sprintf("transfer cancelled: %s", status.Message),
 			Content: content.ID,
 		})
+	case datatransfer.Failing:
+		// I guess we just wait until its failed all the way?
 	case datatransfer.Requested:
 		//fmt.Println("transfer is requested, hasnt started yet")
 		// probably okay

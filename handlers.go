@@ -127,6 +127,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
 	content.GET("/list", withUser(s.handleListContent))
+	content.GET("/deals", withUser(s.handleListContentWithDeals))
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
@@ -476,6 +477,22 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, contents)
+}
+
+func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
+	var contents []Content
+	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
+		return err
+	}
+
+	out := make([]Content, 0, len(contents))
+	for _, c := range contents {
+		if !s.CM.contentInStagingZone(c.Request().Context(), c) {
+			out = append(out, c)
+		}
+	}
+
+	return c.JSON(200, out)
 }
 
 type onChainDealState struct {
