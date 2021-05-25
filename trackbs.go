@@ -203,9 +203,13 @@ func (tbs *TrackingBlockstore) HashOnRead(hashOnRead bool) {
 }
 
 func (tbs *TrackingBlockstore) Put(blk blocks.Block) error {
-	return fmt.Errorf("should not be writing blocks through this blockstore")
+	// TODO:
+	// return fmt.Errorf("should not be writing blocks through this blockstore")
+	return tbs.bs.Put(blk)
 }
 
 func (tbs *TrackingBlockstore) PutMany(blks []blocks.Block) error {
-	return fmt.Errorf("should not be writing blocks through this blockstore")
+	// TODO:
+	// return fmt.Errorf("should not be writing blocks through this blockstore")
+	return tbs.bs.PutMany(blks)
 }

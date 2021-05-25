@@ -34,7 +34,7 @@ require (
 	github.com/labstack/echo/v4 v4.2.0
 	github.com/libp2p/go-libp2p v0.13.0
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
-	github.com/libp2p/go-libp2p-core v0.8.0
+	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
 	github.com/libp2p/go-libp2p-crypto v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.11.1
 	github.com/libp2p/go-libp2p-protocol v0.1.0

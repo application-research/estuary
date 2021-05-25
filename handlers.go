@@ -20,6 +20,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/google/uuid"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -31,6 +32,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/sys/unix"
@@ -123,6 +125,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -270,6 +273,115 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	return c.JSON(200, out)
 }
 
+type addFromIpfsParams struct {
+	Root       string   `json:"root"`
+	Name       string   `json:"name"`
+	Collection string   `json:"collection"`
+	Peers      []string `json:"peers"`
+}
+
+func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+	if !u.IpfsAddEnabled() {
+		return &httpError{
+			Code:    http.StatusUnauthorized,
+			Message: "add via ipfs not allowed for user",
+		}
+	}
+
+	var params addFromIpfsParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	var col *Collection
+	if params.Collection != "" {
+		var srchCol Collection
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+			return err
+		}
+
+		col = &srchCol
+	}
+
+	var addrInfos []peer.AddrInfo
+	for _, p := range params.Peers {
+		ai, err := peer.AddrInfoFromString(p)
+		if err != nil {
+			return err
+		}
+
+		addrInfos = append(addrInfos, *ai)
+	}
+
+	rcid, err := cid.Decode(params.Root)
+	if err != nil {
+		return err
+	}
+
+	for _, ai := range addrInfos {
+		if err := s.Node.Host.Connect(ctx, ai); err != nil {
+			log.Warnf("failed to connect to requested peer: %s", err)
+		}
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+
+	dsess := merkledag.NewSession(ctx, dserv)
+
+	cont, err := s.addDatabaseTracking(ctx, u, dsess, s.Node.Blockstore, rcid, params.Name, defaultReplication)
+	if err != nil {
+		return err
+	}
+
+	if col != nil {
+		if err := s.DB.Create(&CollectionRef{
+			Collection: col.ID,
+			Content:    cont.ID,
+		}).Error; err != nil {
+			log.Errorf("failed to add content to requested collection: %s", err)
+		}
+	}
+
+	s.CM.ToCheck <- cont.ID
+
+	go func() {
+		if err := s.Node.Dht.Provide(context.TODO(), rcid, true); err != nil {
+			fmt.Println("providing failed: ", err)
+		}
+		fmt.Println("providing complete")
+	}()
+	return c.JSON(200, map[string]interface{}{"content": cont})
+}
+
+type sessionDagServ struct {
+	ipld.NodeGetter
+
+	objCb func(blk blocks.Block)
+}
+
+func (ds *sessionDagServ) GetLinks(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+	if c.Type() == cid.Raw {
+		return nil, nil
+	}
+	node, err := ds.Get(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	if ds.objCb != nil {
+		ds.objCb(node)
+	}
+	return node.Links(), nil
+}
+
+func (s *Server) handleAddCar(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+	_ = ctx
+
+	return nil
+}
+
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -371,29 +483,32 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
-func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.LinkGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
+func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
 	ctx, span := s.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	var objects []*Object
 	var totalSize int64
 	cset := cid.NewSet()
-	err := merkledag.Walk(ctx, dserv.GetLinks, root, func(c cid.Cid) bool {
-		if cset.Visit(c) {
-			size, err := bs.GetSize(c)
-			if err != nil {
-				log.Errorf("failed to get object size in walk %s: %s", c, err)
-			}
-			objects = append(objects, &Object{
-				Cid:  dbCID{c},
-				Size: size,
-			})
-			totalSize += int64(size)
 
-			return true
+	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		if c.Type() == cid.Raw {
+			return nil, nil
 		}
-		return false
-	})
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		objects = append(objects, &Object{
+			Cid:  dbCID{c},
+			Size: len(node.RawData()),
+		})
+
+		totalSize += int64(len(node.RawData()))
+
+		return node.Links(), nil
+	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
 		return nil, err
 	}
@@ -1207,7 +1322,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	}
 
 	var deals []contentDeal
-	if err := s.DB.Find(&deals, "miner = ?", maddr.String()).Error; err != nil {
+	if err := s.DB.Order("created_at desc").Find(&deals, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
 
