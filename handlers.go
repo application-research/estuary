@@ -470,9 +470,6 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.No
 	cset := cid.NewSet()
 
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
@@ -484,6 +481,10 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.No
 		})
 
 		totalSize += int64(len(node.RawData()))
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
 
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
