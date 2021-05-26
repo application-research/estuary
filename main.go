@@ -555,7 +555,8 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 	}
 
 	bstore, err := lmdb.Open(&lmdb.Options{
-		Path: cfg.Blockstore,
+		Path:   cfg.Blockstore,
+		NoSync: true,
 	})
 	if err != nil {
 		return nil, err

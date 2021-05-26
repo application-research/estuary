@@ -18,14 +18,6 @@ type User struct {
 	Flags int
 }
 
-func (u *User) BucketingEnabled() bool {
-	return u.Flags&1 != 0
-}
-
-func (u *User) IpfsAddEnabled() bool {
-	return u.Flags&2 != 0
-}
-
 type AuthToken struct {
 	gorm.Model
 	Token  string `gorm:"unique"`

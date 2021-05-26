@@ -20,7 +20,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/google/uuid"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -282,12 +281,6 @@ type addFromIpfsParams struct {
 
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
-	if !u.IpfsAddEnabled() {
-		return &httpError{
-			Code:    http.StatusUnauthorized,
-			Message: "add via ipfs not allowed for user",
-		}
-	}
 
 	var params addFromIpfsParams
 	if err := c.Bind(&params); err != nil {
@@ -325,12 +318,17 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
+	filename := params.Name
+	if filename == "" {
+		filename = params.Root
+	}
+
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	cont, err := s.addDatabaseTracking(ctx, u, dsess, s.Node.Blockstore, rcid, params.Name, defaultReplication)
+	cont, err := s.addDatabaseTracking(ctx, u, dsess, s.Node.Blockstore, rcid, filename, defaultReplication)
 	if err != nil {
 		return err
 	}
@@ -353,26 +351,6 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		fmt.Println("providing complete")
 	}()
 	return c.JSON(200, map[string]interface{}{"content": cont})
-}
-
-type sessionDagServ struct {
-	ipld.NodeGetter
-
-	objCb func(blk blocks.Block)
-}
-
-func (ds *sessionDagServ) GetLinks(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-	if c.Type() == cid.Raw {
-		return nil, nil
-	}
-	node, err := ds.Get(ctx, c)
-	if err != nil {
-		return nil, err
-	}
-	if ds.objCb != nil {
-		ds.objCb(node)
-	}
-	return node.Links(), nil
 }
 
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
@@ -1679,7 +1657,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			Replication:          6,
 			Verified:             true,
 			DealDuration:         2880 * 365,
-			MaxStagingWait:       maxBucketLifetime,
+			MaxStagingWait:       maxStagingZoneLifetime,
 			FileStagingThreshold: int64(individualDealThreshold),
 		},
 	})

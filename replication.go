@@ -75,6 +75,7 @@ type contentStagingZone struct {
 	ZoneOpened time.Time `json:"zoneOpened"`
 
 	EarliestContent time.Time `json:"earliestContent"`
+	CloseTime       time.Time `json:"closeTime"`
 
 	Contents []Content `json:"contents"`
 
@@ -91,17 +92,21 @@ type contentStagingZone struct {
 func newContentStagingZone() *contentStagingZone {
 	return &contentStagingZone{
 		ZoneOpened: time.Now(),
+		CloseTime:  time.Now().Add(maxStagingZoneLifetime),
 		MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
 		MaxSize:    int64(stagingZoneSizeLimit),
 		MaxItems:   maxBucketItems,
 	}
 }
 
-// maximum amount of time a bucket will remain open before we aggregate it into a piece of content
-const maxBucketLifetime = time.Hour * 4
+// amount of time a staging zone will remain open before we aggregate it into a piece of content
+const maxStagingZoneLifetime = time.Hour * 4
 
 // maximum amount of time a piece of content will go without either being aggregated or having a deal made for it
 const maxContentAge = time.Hour * 24
+
+// staging zones will remain open for at least this long after the last piece of content is added to them (unless they are full)
+const stagingZoneKeepalive = time.Minute * 20
 
 const maxBucketItems = 10000
 
@@ -111,7 +116,7 @@ func (cb *contentStagingZone) isReady() bool {
 		return true
 	}
 
-	if time.Since(cb.ZoneOpened) > maxBucketLifetime {
+	if time.Now().After(cb.CloseTime) {
 		return true
 	}
 
@@ -146,6 +151,11 @@ func (cb *contentStagingZone) tryAddContent(c Content) bool {
 
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
+
+	nowPlus := time.Now().Add(stagingZoneKeepalive)
+	if cb.CloseTime.Before(nowPlus) {
+		cb.CloseTime = nowPlus
+	}
 
 	return true
 }
@@ -291,7 +301,7 @@ func (cm *ContentManager) startup() error {
 
 func (cm *ContentManager) queueAllContent() error {
 	var allcontent []Content
-	if err := cm.DB.Find(&allcontent, "active").Error; err != nil {
+	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
 
@@ -682,7 +692,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 	ctx, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
 
-	log.Infof("adding content to staging zone: ", content.ID)
+	log.Infof("adding content to staging zone: %d", content.ID)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
@@ -764,7 +774,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 	}
 
 	if len(deals) == 0 &&
-		user.BucketingEnabled() &&
 		content.Size < int64(individualDealThreshold) &&
 		!content.Aggregate &&
 		bucketingEnabled {
