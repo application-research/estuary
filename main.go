@@ -114,6 +114,7 @@ type storageMiner struct {
 	Suspended       bool
 	SuspendedReason string
 	Name            string
+	Version         string
 }
 
 type dbAddr struct {

@@ -693,6 +693,10 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
+	if err := s.CM.updateMinerVersion(c.Request().Context(), addr); err != nil {
+		return err
+	}
+
 	return c.JSON(200, toDBAsk(ask))
 }
 
@@ -993,6 +997,7 @@ type minerResp struct {
 	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason,omitempty"`
+	Version         string          `json:"version"`
 }
 
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
@@ -1007,6 +1012,7 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
+		out[i].Version = m.Version
 	}
 
 	return c.JSON(200, out)
@@ -1263,6 +1269,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 type minerStatsResp struct {
 	Miner           address.Address `json:"miner"`
 	Name            string          `json:"name"`
+	Version         string          `json:"version"`
 	UsedByEstuary   bool            `json:"usedByEstuary"`
 	DealCount       int64           `json:"dealCount"`
 	ErrorCount      int64           `json:"errorCount"`
@@ -1305,6 +1312,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		Suspended:       m.Suspended,
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
+		Version:         m.Version,
 	})
 }
 

@@ -543,6 +543,10 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 		return nil, err
 	}
 
+	if err := cm.updateMinerVersion(ctx, m); err != nil {
+		log.Warnf("failed to update miner version: %s", err)
+	}
+
 	nmsa := toDBAsk(netask)
 
 	nmsa.UpdatedAt = time.Now()
@@ -558,6 +562,28 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 	}
 
 	return nmsa, nil
+}
+
+func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Address) error {
+	vers, err := cm.FilClient.GetMinerVersion(ctx, m)
+	if err != nil {
+		return err
+	}
+
+	var sm storageMiner
+	if err := cm.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		return err
+	}
+
+	if sm.Version == vers {
+		return nil
+	}
+
+	if err := cm.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bool {
@@ -594,6 +620,9 @@ type contentDeal struct {
 	Verified bool      `json:"verified"`
 	FailedAt time.Time `json:"failedAt,omitempty"`
 	DTChan   string    `json:"dtChan"`
+
+	OnChainAt time.Time `json:"onChainAt"`
+	SealedAt  time.Time `json:"sealedAt"`
 }
 
 func (cd contentDeal) MinerAddr() (address.Address, error) {
@@ -852,7 +881,32 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 	}
 
 	if d.DealID != 0 {
-		return cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
+		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
+		if err != nil {
+			return false, err
+		}
+		if !ok {
+			return false, nil
+		}
+
+		if deal.State.SlashEpoch > 0 {
+			// Deal slashed!
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   maddr,
+				Phase:   "check-chain-deal",
+				Message: fmt.Sprintf("deal %d was slashed at epoch %d", d.DealID, deal.State.SlashEpoch),
+			})
+			return false, nil
+		}
+
+		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
+			d.SealedAt = time.Now()
+			if err := cm.DB.Save(d).Error; err != nil {
+				return false, err
+			}
+		}
+
+		return true, nil
 	}
 
 	// case where deal isnt yet on chain...
@@ -921,6 +975,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 
 		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 		d.DealID = int64(id)
+		d.OnChainAt = time.Now()
 		if err := cm.DB.Save(&d).Error; err != nil {
 			return false, xerrors.Errorf("failed to update database entry: %w", err)
 		}

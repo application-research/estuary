@@ -236,6 +236,20 @@ func (fc *FilClient) connectToMiner(ctx context.Context, maddr address.Address) 
 	return *minfo.PeerId, nil
 }
 
+func (fc *FilClient) GetMinerVersion(ctx context.Context, maddr address.Address) (string, error) {
+	pid, err := fc.connectToMiner(ctx, maddr)
+	if err != nil {
+		return "", err
+	}
+
+	agent, err := fc.host.Peerstore().Get(pid, "AgentVersion")
+	if err != nil {
+		return "", nil
+	}
+
+	return agent.(string), nil
+}
+
 func (fc *FilClient) GetAsk(ctx context.Context, maddr address.Address) (*network.AskResponse, error) {
 	ctx, span := Tracer.Start(ctx, "doGetAsk", trace.WithAttributes(
 		attribute.Stringer("miner", maddr),
@@ -698,22 +712,18 @@ func (fc *FilClient) LockMarketFunds(ctx context.Context, amt types.FIL) (*LockF
 	}, nil
 }
 
-func (fc *FilClient) CheckChainDeal(ctx context.Context, dealid abi.DealID) (bool, error) {
+func (fc *FilClient) CheckChainDeal(ctx context.Context, dealid abi.DealID) (bool, *api.MarketDeal, error) {
 	deal, err := fc.api.StateMarketStorageDeal(ctx, dealid, types.EmptyTSK)
 	if err != nil {
 		nfs := fmt.Sprintf("deal %d not found", dealid)
 		if strings.Contains(err.Error(), nfs) {
-			return false, nil
+			return false, nil, nil
 		}
 
-		return false, err
+		return false, nil, err
 	}
 
-	if deal.State.SlashEpoch > 0 {
-		return false, nil
-	}
-
-	return true, nil
+	return true, deal, nil
 }
 
 func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Address, st *ChannelState) (outerr error) {
