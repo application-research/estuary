@@ -126,6 +126,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	content.GET("/by-cid/:cid", withUser(s.handleGetContentByCid))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -135,14 +136,17 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
 
+	// TODO: the commented out routes here are still fairly useful, but maybe
+	// need to have some sort of 'super user' permission level in order to use
+	// them? Can easily cause harm using them
 	deals := e.Group("/deals")
 	content.Use(s.AuthRequired(PermLevelUser))
 	deals.GET("/query/:miner", s.handleQueryAsk)
-	deals.POST("/make/:miner", s.handleMakeDeal)
-	deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	//deals.POST("/make/:miner", s.handleMakeDeal)
+	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
-	deals.POST("/transfer/restart", s.handleTransferRestart)
+	//deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
@@ -311,6 +315,16 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	rcid, err := cid.Decode(params.Root)
 	if err != nil {
 		return err
+	}
+
+	if c.QueryParam("ignore-dupes") == "true" {
+		var count int64
+		if err := s.DB.Model(Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
+		}
 	}
 
 	for _, ai := range addrInfos {
@@ -680,6 +694,43 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		"deals":         ds,
 		"failuresCount": failCount,
 	})
+}
+
+type getContentResponse struct {
+	Content      *Content `json:"content"`
+	AggregatedIn *Content `json:"aggregatedIn,omitempty"`
+}
+
+func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
+	obj, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+
+	var contents []Content
+	if err := s.DB.Find(&contents, "cid = ? and user_id = ?", obj.Bytes(), u.ID).Error; err != nil {
+		return err
+	}
+
+	var out []getContentResponse
+	for i, cont := range contents {
+		resp := getContentResponse{
+			Content: &contents[i],
+		}
+
+		if cont.AggregatedIn > 0 {
+			var aggr Content
+			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
+				return err
+			}
+
+			resp.AggregatedIn = &aggr
+		}
+
+		out = append(out, resp)
+	}
+
+	return c.JSON(200, out)
 }
 
 func (s *Server) handleQueryAsk(c echo.Context) error {
