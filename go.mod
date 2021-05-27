@@ -9,7 +9,7 @@ require (
 	github.com/filecoin-project/go-bs-lmdb v1.0.3
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.1-0.20210427191551-70bf140d31c7
-	github.com/filecoin-project/go-data-transfer v1.5.0
+	github.com/filecoin-project/go-data-transfer v1.5.1-0.20210526154520-fa3f7aee6c07
 	github.com/filecoin-project/go-fil-markets v1.3.0
 	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
 	github.com/filecoin-project/go-state-types v0.1.0

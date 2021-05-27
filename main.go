@@ -253,6 +253,10 @@ func main() {
 	logging.SetLogLevel("estuary", "debug")
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
+	logging.SetLogLevel("dt_graphsync", "debug")
+	logging.SetLogLevel("dt-chanmon", "debug")
+	logging.SetLogLevel("markets", "debug")
+	logging.SetLogLevel("data_transfer_network", "debug")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
