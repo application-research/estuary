@@ -20,6 +20,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/google/uuid"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -533,13 +534,26 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 		return err
 	}
 
+	var batch []blocks.Block
+
 	for k := range keys {
 		blk, err := from.Get(k)
 		if err != nil {
 			return err
 		}
 
-		if err := to.Put(blk); err != nil {
+		batch = append(batch, blk)
+
+		if len(batch) > 500 {
+			if err := to.PutMany(batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := to.PutMany(batch); err != nil {
 			return err
 		}
 	}
@@ -1530,8 +1544,10 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
+	username := strings.ToLower(reg.Username)
+
 	var exist User
-	if err := s.DB.First(&exist, "username = ?", reg.Username).Error; err == nil {
+	if err := s.DB.First(&exist, "username = ?", username).Error; err == nil {
 		return &httpError{
 			Code:    http.StatusForbidden,
 			Message: ERR_USERNAME_TAKEN,
@@ -1539,7 +1555,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	}
 
 	newUser := &User{
-		Username: reg.Username,
+		Username: username,
 		UUID:     uuid.New().String(),
 		PassHash: reg.PasswordHash,
 		Perm:     PermLevelUser,
@@ -1591,7 +1607,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	}
 
 	var user User
-	if err := s.DB.First(&user, "username = ?", body.Username).Error; err != nil {
+	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &httpError{
 				Code:    http.StatusForbidden,
@@ -1617,6 +1633,23 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
 	})
+}
+
+type changePasswordParams struct {
+	NewPassHash string `json:"newPasswordHash"`
+}
+
+func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
+	var params changePasswordParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("pass_hash", params.NewPassHash).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
