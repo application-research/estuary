@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"container/heap"
 	"context"
 	"fmt"
 	"math/rand"
@@ -48,7 +49,8 @@ type ContentManager struct {
 	Blockstore blockstore.Blockstore
 	Tracker    *TrackingBlockstore
 
-	ToCheck chan uint
+	ToCheck  chan uint
+	queueMgr *queueManager
 
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*retrievalProgress
@@ -173,7 +175,7 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, dht *dht.IpfsDHT) *ContentManager {
-	return &ContentManager{
+	cm := &ContentManager{
 		Dht:                  dht,
 		DB:                   db,
 		Api:                  api,
@@ -184,6 +186,12 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
 		buckets:              make(map[uint][]*contentStagingZone),
 	}
+	qm := newQueueManager(func(c uint) {
+		cm.ToCheck <- c
+	})
+
+	cm.queueMgr = qm
+	return cm
 }
 
 func (cm *ContentManager) ContentWatcher() {
@@ -202,15 +210,23 @@ func (cm *ContentManager) ContentWatcher() {
 				continue
 			}
 
-			if err := cm.ensureStorage(context.TODO(), content); err != nil {
+			nextCheck, err := cm.ensureStorage(context.TODO(), content)
+			if err != nil {
 				log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
 				continue
 			}
-		case <-timer.C:
-			if err := cm.queueAllContent(); err != nil {
-				log.Errorf("rechecking content: %s", err)
-				continue
+
+			if nextCheck > 0 {
+				cm.queueMgr.add(content.ID, nextCheck)
+
 			}
+		case <-timer.C:
+			/*
+				if err := cm.queueAllContent(); err != nil {
+					log.Errorf("rechecking content: %s", err)
+					continue
+				}
+			*/
 
 			buckets := cm.popReadyStagingZone()
 			for _, b := range buckets {
@@ -221,6 +237,99 @@ func (cm *ContentManager) ContentWatcher() {
 			}
 
 			timer.Reset(time.Minute * 5)
+		}
+	}
+}
+
+type queueEntry struct {
+	content   uint
+	checkTime time.Time
+}
+
+type entryQueue struct {
+	elems []*queueEntry
+}
+
+func (eq *entryQueue) Len() int {
+	return len(eq.elems)
+}
+
+func (eq *entryQueue) Less(i, j int) bool {
+	return eq.elems[i].checkTime.Before(eq.elems[j].checkTime)
+}
+
+func (eq *entryQueue) Swap(i, j int) {
+	eq.elems[i], eq.elems[j] = eq.elems[j], eq.elems[i]
+}
+
+func (eq *entryQueue) Push(e interface{}) {
+	eq.elems = append(eq.elems, e.(*queueEntry))
+}
+
+func (eq *entryQueue) Pop() interface{} {
+	out := eq.elems[len(eq.elems)-1]
+	eq.elems = eq.elems[:len(eq.elems)-1]
+	return out
+}
+
+func (eq *entryQueue) PopEntry() *queueEntry {
+	return heap.Pop(eq).(*queueEntry)
+}
+
+type queueManager struct {
+	queue *entryQueue
+	cb    func(uint)
+	qlk   sync.Mutex
+
+	nextEvent time.Time
+	evtTimer  *time.Timer
+}
+
+func newQueueManager(cb func(c uint)) *queueManager {
+	qm := &queueManager{
+		queue: new(entryQueue),
+		cb:    cb,
+	}
+
+	heap.Init(qm.queue)
+	return qm
+}
+
+func (qm *queueManager) add(content uint, wait time.Duration) {
+	qm.qlk.Lock()
+	defer qm.qlk.Unlock()
+
+	at := time.Now().Add(wait)
+
+	heap.Push(qm.queue, &queueEntry{
+		content:   content,
+		checkTime: at,
+	})
+
+	if qm.nextEvent.IsZero() || at.Before(qm.nextEvent) {
+		qm.nextEvent = at
+		if qm.evtTimer != nil {
+			qm.evtTimer.Reset(wait)
+		} else {
+			qm.evtTimer = time.AfterFunc(wait, func() {
+				qm.processQueue()
+			})
+		}
+	}
+}
+
+func (qm *queueManager) processQueue() {
+	qm.qlk.Lock()
+	defer qm.qlk.Unlock()
+
+	for qm.queue.Len() > 0 {
+		qe := qm.queue.PopEntry()
+		if time.Now().After(qe.checkTime) {
+			go qm.cb(qe.content)
+		} else {
+			heap.Push(qm.queue, qe)
+			qm.evtTimer.Reset(time.Now().Sub(qe.checkTime))
+			return
 		}
 	}
 }
@@ -304,6 +413,8 @@ func (cm *ContentManager) queueAllContent() error {
 	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
+
+	log.Infof("queueing all content for checking: %d", len(allcontent))
 
 	go func() {
 		for _, c := range allcontent {
@@ -767,7 +878,9 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 
 const bucketingEnabled = true
 
-func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) error {
+const errDelay = time.Minute * 5
+
+func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (time.Duration, error) {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
 	))
@@ -777,12 +890,12 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 
 	if content.AggregatedIn > 0 {
 		// This content is aggregated inside another piece of content, nothing to do here
-		return nil
+		return -1, nil
 	}
 
 	if cm.contentInStagingZone(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
-		return nil
+		return -1, nil
 	}
 
 	// check if content has enough deals made for it
@@ -793,13 +906,13 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 	var deals []contentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return errDelay, err
 		}
 	}
 
 	var user User
 	if err := cm.DB.First(&user, "id = ?", content.UserID).Error; err != nil {
-		return err
+		return errDelay, err
 	}
 
 	if len(deals) == 0 &&
@@ -807,7 +920,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		!content.Aggregate &&
 		bucketingEnabled {
 		// Put it in a bucket!
-		return cm.addContentToStagingZone(ctx, content)
+		if err := cm.addContentToStagingZone(ctx, content); err != nil {
+			return errDelay, err
+		}
+		return -1, nil
 	}
 
 	replicationFactor := defaultReplication
@@ -824,7 +940,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		}
 		maddr, err := d.MinerAddr()
 		if err != nil {
-			return err
+			return errDelay, err
 		}
 		minersAlready[maddr] = true
 	}
@@ -833,31 +949,44 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) er
 		// make some more deals!
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
-			return err
+			return errDelay, err
 		}
 	}
 
 	// check on each of the existing deals, see if they need fixing
+	var numSealed, numPublished int
 	for _, d := range deals {
-		ok, err := cm.checkDeal(ctx, &d)
+		status, err := cm.checkDeal(ctx, &d)
 		if err != nil {
 			var dfe *DealFailureError
 			if xerrors.As(err, &dfe) {
 				cm.recordDealFailure(dfe)
 				continue
 			} else {
-				return err
+				return errDelay, err
 			}
 		}
 
-		if !ok {
+		switch status {
+		case DEAL_CHECK_UNKNOWN:
 			if err := cm.repairDeal(&d); err != nil {
-				return xerrors.Errorf("repairing deal failed: %w", err)
+				return errDelay, xerrors.Errorf("repairing deal failed: %w", err)
 			}
+		case DEAL_CHECK_SECTOR_ON_CHAIN:
+			numSealed++
+		case DEAL_CHECK_DEALID_ON_CHAIN:
+			numPublished++
 		}
 	}
 
-	return nil
+	checkDelay := time.Minute * 10
+	if numSealed >= replicationFactor {
+		checkDelay = time.Hour * 24
+	} else if numSealed+numPublished >= replicationFactor {
+		checkDelay = time.Hour
+	}
+
+	return checkDelay, nil
 }
 
 func (cm *ContentManager) getContent(id uint) (*Content, error) {
@@ -868,7 +997,14 @@ func (cm *ContentManager) getContent(id uint) (*Content, error) {
 	return &content, nil
 }
 
-func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, error) {
+const (
+	DEAL_CHECK_UNKNOWN = iota
+	DEAL_CHECK_PROGRESS
+	DEAL_CHECK_DEALID_ON_CHAIN
+	DEAL_CHECK_SECTOR_ON_CHAIN
+)
+
+func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
 	ctx, span := cm.tracer.Start(ctx, "checkDeal", trace.WithAttributes(
 		attribute.Int("deal", int(d.ID)),
 	))
@@ -877,16 +1013,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 
 	maddr, err := d.MinerAddr()
 	if err != nil {
-		return false, err
+		return DEAL_CHECK_UNKNOWN, err
 	}
 
 	if d.DealID != 0 {
 		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
 		if err != nil {
-			return false, err
+			return DEAL_CHECK_UNKNOWN, err
 		}
 		if !ok {
-			return false, nil
+			return DEAL_CHECK_UNKNOWN, nil
 		}
 
 		if deal.State.SlashEpoch > 0 {
@@ -896,17 +1032,18 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 				Phase:   "check-chain-deal",
 				Message: fmt.Sprintf("deal %d was slashed at epoch %d", d.DealID, deal.State.SlashEpoch),
 			})
-			return false, nil
+			return DEAL_CHECK_UNKNOWN, nil
 		}
 
 		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
 			d.SealedAt = time.Now()
 			if err := cm.DB.Save(d).Error; err != nil {
-				return false, err
+				return DEAL_CHECK_UNKNOWN, err
 			}
+			return DEAL_CHECK_SECTOR_ON_CHAIN, nil
 		}
 
-		return true, nil
+		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
 	// case where deal isnt yet on chain...
@@ -915,17 +1052,17 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
-		return false, xerrors.Errorf("checking deal status through client failed: %w", err)
+		return DEAL_CHECK_UNKNOWN, xerrors.Errorf("checking deal status through client failed: %w", err)
 	}
 
 	content, err := cm.getContent(d.Content)
 	if err != nil {
-		return false, err
+		return DEAL_CHECK_UNKNOWN, err
 	}
 
 	head, err := cm.Api.ChainHead(ctx)
 	if err != nil {
-		return false, err
+		return DEAL_CHECK_UNKNOWN, err
 	}
 
 	if provds.PublishCid != nil {
@@ -939,21 +1076,22 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 					if err == nil {
 						pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
 						if err != nil {
-							return false, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
+							return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
 						}
 
 						if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
 							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
-							return false, fmt.Errorf("deal checking issue")
+							return DEAL_CHECK_UNKNOWN, fmt.Errorf("deal checking issue")
 						}
 
 						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 						d.DealID = int64(provds.DealID)
+						d.OnChainAt = time.Now()
 						if err := cm.DB.Save(&d).Error; err != nil {
-							return false, xerrors.Errorf("failed to update database entry: %w", err)
+							return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to update database entry: %w", err)
 						}
 
-						return true, nil
+						return DEAL_CHECK_DEALID_ON_CHAIN, nil
 					}
 				}
 
@@ -966,20 +1104,20 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 						Message: "deal did not make it on chain in time (but has publish deal cid set)",
 						Content: d.Content,
 					})
-					return false, nil
+					return DEAL_CHECK_UNKNOWN, nil
 				}
-				return true, nil
+				return DEAL_CHECK_PROGRESS, nil
 			}
-			return false, xerrors.Errorf("failed to check deal id: %w", err)
+			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to check deal id: %w", err)
 		}
 
 		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 		d.DealID = int64(id)
 		d.OnChainAt = time.Now()
 		if err := cm.DB.Save(&d).Error; err != nil {
-			return false, xerrors.Errorf("failed to update database entry: %w", err)
+			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to update database entry: %w", err)
 		}
-		return true, nil
+		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
 	if provds.Proposal.StartEpoch < head.Height() {
@@ -990,13 +1128,13 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 			Message: "deal did not make it on chain in time",
 			Content: d.Content,
 		})
-		return false, nil
+		return DEAL_CHECK_UNKNOWN, nil
 	}
 	// miner still has time...
 
 	status, err := cm.GetTransferStatus(ctx, d, content.Cid.CID)
 	if err != nil {
-		return false, err
+		return DEAL_CHECK_UNKNOWN, err
 	}
 
 	switch status.Status {
@@ -1031,14 +1169,14 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (bool, 
 				Message: fmt.Sprintf("error while checking transfer: %s", err),
 				Content: content.ID,
 			})
-			return false, nil // TODO: returning false here feels excessive
+			return DEAL_CHECK_UNKNOWN, nil // TODO: returning unknown==error here feels excessive
 		}
 		// expected, this is fine
 	default:
 		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", status.Status, status.Message)
 	}
 
-	return true, nil
+	return DEAL_CHECK_PROGRESS, nil
 }
 
 func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, ccid cid.Cid) (*filclient.ChannelState, error) {
