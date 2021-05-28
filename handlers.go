@@ -141,6 +141,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	// them? Can easily cause harm using them
 	deals := e.Group("/deals")
 	content.Use(s.AuthRequired(PermLevelUser))
+	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	//deals.POST("/make/:miner", s.handleMakeDeal)
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
@@ -699,6 +700,50 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		"deals":         ds,
 		"failuresCount": failCount,
 	})
+}
+
+func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
+	val, err := strconv.Atoi(c.Param("deal"))
+	if err != nil {
+		return err
+	}
+
+	var deal contentDeal
+	if err := s.DB.First(&deal, "id = ?", val).Error; err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID)
+	if err != nil {
+		log.Errorf("failed to get transfer status: %s", err)
+	}
+
+	dstatus := dealStatus{
+		Deal:           deal,
+		TransferStatus: chanst,
+	}
+
+	if deal.DealID > 0 {
+		markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(deal.DealID), types.EmptyTSK)
+		if err != nil {
+			log.Warnw("failed to get deal info from market actor", "dealID", deal.DealID, "error", err)
+		} else {
+			dstatus.OnChainState = &onChainDealState{
+				SectorStartEpoch: markDeal.State.SectorStartEpoch,
+				LastUpdatedEpoch: markDeal.State.LastUpdatedEpoch,
+				SlashEpoch:       markDeal.State.SlashEpoch,
+			}
+		}
+	}
+
+	return c.JSON(200, dstatus)
 }
 
 type getContentResponse struct {
