@@ -140,7 +140,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	// need to have some sort of 'super user' permission level in order to use
 	// them? Can easily cause harm using them
 	deals := e.Group("/deals")
-	content.Use(s.AuthRequired(PermLevelUser))
+	deals.Use(s.AuthRequired(PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	//deals.POST("/make/:miner", s.handleMakeDeal)
