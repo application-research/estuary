@@ -1068,7 +1068,9 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	// case where deal isnt yet on chain...
 
 	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
-	provds, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID)
+	subctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	defer cancel()
+	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
@@ -1322,7 +1324,7 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 			Content: d.Content,
 		})
 	}
-	log.Infof("repair deal: ", d.PropCid.CID, d.Miner, d.Content)
+	log.Infow("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
 	d.Failed = true
 	d.FailedAt = time.Now()
 	if err := cm.DB.Save(d).Error; err != nil {
