@@ -1142,6 +1142,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
+	if provds.Proposal == nil {
+		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID)
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner for deal status check")
+	}
+
 	if provds.Proposal.StartEpoch < head.Height() {
 		// deal expired, miner didnt start it in time
 		cm.recordDealFailure(&DealFailureError{
