@@ -114,12 +114,14 @@ func (tbs *TrackingBlockstore) coalescer() {
 
 func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
 	for c, acc := range buf {
-		err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
-			"reads":       gorm.Expr("reads + ?", acc.Get),
-			"last_access": acc.Last,
-		}).Error
-		if err != nil {
-			log.Errorf("failed to update object in db: %s", err)
+		if acc.Get > 0 {
+			err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
+				"reads":       gorm.Expr("reads + ?", acc.Get),
+				"last_access": acc.Last,
+			}).Error
+			if err != nil {
+				log.Errorf("failed to update object in db: %s", err)
+			}
 		}
 	}
 }

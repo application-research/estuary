@@ -357,7 +357,10 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	s.CM.ToCheck <- cont.ID
+	go func() {
+		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
+		s.CM.ToCheck <- cont.ID
+	}()
 
 	go func() {
 		if err := s.Node.Dht.Provide(context.TODO(), rcid, true); err != nil {
@@ -457,7 +460,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
-	s.CM.ToCheck <- content.ID
+	go func() {
+		s.CM.ToCheck <- content.ID
+	}()
 
 	go func() {
 		if err := s.Node.Dht.Provide(context.TODO(), nd.Cid(), true); err != nil {

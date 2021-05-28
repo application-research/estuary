@@ -202,8 +202,8 @@ type Content struct {
 }
 
 type Object struct {
-	ID         uint `gorm:"primarykey"`
-	Cid        dbCID
+	ID         uint  `gorm:"primarykey"`
+	Cid        dbCID `gorm:"index"`
 	Size       int
 	Reads      int
 	LastAccess time.Time

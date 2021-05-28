@@ -218,7 +218,6 @@ func (cm *ContentManager) ContentWatcher() {
 
 			if nextCheck > 0 {
 				cm.queueMgr.add(content.ID, nextCheck)
-
 			}
 		case <-timer.C:
 			/*
@@ -723,14 +722,16 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 
 type contentDeal struct {
 	gorm.Model
-	Content  uint      `json:"content"`
-	PropCid  dbCID     `json:"propCid"`
-	Miner    string    `json:"miner"`
-	DealID   int64     `json:"dealId"`
-	Failed   bool      `json:"failed"`
-	Verified bool      `json:"verified"`
-	FailedAt time.Time `json:"failedAt,omitempty"`
-	DTChan   string    `json:"dtChan"`
+	Content          uint      `json:"content"`
+	PropCid          dbCID     `json:"propCid"`
+	Miner            string    `json:"miner"`
+	DealID           int64     `json:"dealId"`
+	Failed           bool      `json:"failed"`
+	Verified         bool      `json:"verified"`
+	FailedAt         time.Time `json:"failedAt,omitempty"`
+	DTChan           string    `json:"dtChan"`
+	TransferStarted  time.Time `json:"transferStarted"`
+	TransferFinished time.Time `json:"transferFinished"`
 
 	OnChainAt time.Time `json:"onChainAt"`
 	SealedAt  time.Time `json:"sealedAt"`
@@ -946,6 +947,24 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 	}
 
 	if len(deals) < replicationFactor {
+		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
+		if err != nil {
+			return errDelay, err
+		}
+
+		if pc == nil {
+			// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
+			go func() {
+				sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
+				_, _, err := cm.getPieceCommitment(context.Background(), sealType, content.Cid.CID, cm.Blockstore)
+				if err != nil {
+					log.Errorf("failed to compute piece commitment for content: %s", err)
+				}
+			}()
+
+			return time.Minute * 10, nil
+		}
+
 		// make some more deals!
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
@@ -1158,6 +1177,13 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		//fmt.Println("transfer is requested, hasnt started yet")
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
+		if d.TransferFinished.IsZero() {
+			d.TransferFinished = time.Now()
+			if err := cm.DB.Save(d).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+		}
+
 		// these are all okay
 		//fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
@@ -1507,6 +1533,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 
 		cd.DTChan = chanid.String()
+		cd.TransferStarted = time.Now()
+		cd.TransferFinished = time.Time{}
 
 		if err := cm.DB.Save(cd).Error; err != nil {
 			return xerrors.Errorf("failed to update deal with channel ID: %w", err)
