@@ -1200,6 +1200,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		//fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
 		//fmt.Println("transfer status is ongoing!")
+		/* For now, dont call restart?
 		if err := cm.FilClient.CheckOngoingTransfer(ctx, maddr, status); err != nil {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
@@ -1209,6 +1210,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			})
 			return DEAL_CHECK_UNKNOWN, nil // TODO: returning unknown==error here feels excessive
 		}
+		*/
 		// expected, this is fine
 	default:
 		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", status.Status, status.Message)
