@@ -1165,6 +1165,17 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			Message: fmt.Sprintf("transfer failed: %s", status.Message),
 			Content: content.ID,
 		})
+
+		// attempt to restart it...
+		if err := cm.FilClient.CheckOngoingTransfer(ctx, maddr, status); err != nil {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   maddr,
+				Phase:   "data-transfer",
+				Message: fmt.Sprintf("error while checking failed transfer: %s", err),
+				Content: content.ID,
+			})
+			return DEAL_CHECK_UNKNOWN, nil // TODO: returning unknown==error here feels excessive
+		}
 	case datatransfer.Cancelled:
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
