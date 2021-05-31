@@ -2,48 +2,39 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/filecoin-project/go-address"
-	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
-	"github.com/ipfs/go-bitswap"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-blockservice"
-	"github.com/ipfs/go-datastore"
-	levelds "github.com/ipfs/go-ds-leveldb"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
-	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/metrics"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
-	"github.com/whyrusleeping/estuary/filclient"
-	"github.com/whyrusleeping/estuary/keystore"
 	"golang.org/x/xerrors"
 )
 
 func main() {
+	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
+	logging.SetLogLevel("dt-impl", "debug")
+	logging.SetLogLevel("dt-chanmon", "debug")
+	logging.SetLogLevel("dt_graphsync", "debug")
+	logging.SetLogLevel("data_transfer_network", "debug")
 	app := cli.NewApp()
 
 	app.Commands = []*cli.Command{
 		makeDealCmd,
 		getAskCmd,
 		infoCmd,
+		listDealsCmd,
 	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -159,7 +150,7 @@ var makeDealCmd = &cli.Command{
 		default:
 			return fmt.Errorf("unrecognized response from miner: %d %s", resp.Response.State, resp.Response.Message)
 		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-			fmt.Println("miner accepted the deal!")
+			tpr("miner accepted the deal!")
 		}
 
 		tpr("starting data transfer... %s", resp.Response.Proposal)
@@ -170,6 +161,7 @@ var makeDealCmd = &cli.Command{
 		}
 
 		var lastStatus datatransfer.Status
+	loop:
 		for {
 			status, err := fc.TransferStatus(ctx, chanid)
 			if err != nil {
@@ -191,11 +183,14 @@ var makeDealCmd = &cli.Command{
 				//fmt.Println("transfer is requested, hasnt started yet")
 				// probably okay
 			case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing:
+				if lastStatus != status.Status {
+					tpr("current state: %s", status.StatusStr)
+				}
 			case datatransfer.Completed:
 				tpr("transfer complete!")
-				break
+				break loop
 			case datatransfer.Ongoing:
-				tpr("transfer progress: %d", status.Sent)
+				fmt.Printf("[%s] transfer progress: %d      \n", time.Now().Format("15:04:05"), status.Sent)
 			default:
 				tpr("Unexpected data transfer state: %d (msg = %s)", status.Status, status.Message)
 			}
@@ -295,140 +290,23 @@ var getAskCmd = &cli.Command{
 	},
 }
 
-func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClient, func(), error) {
-	api, closer, err := lcli.GetGatewayAPI(cctx)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	addr, err := nd.Wallet.GetDefault()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, dir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return fc, closer, nil
-}
-
-func getClient(cctx *cli.Context, dir string) (*filclient.FilClient, func(), error) {
-	nd, err := setup(context.Background(), dir)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return clientFromNode(cctx, nd, dir)
-}
-
-type Node struct {
-	Host host.Host
-
-	Datastore datastore.Batching
-
-	Blockstore blockstore.Blockstore
-	Bitswap    *bitswap.Bitswap
-
-	Wallet *wallet.LocalWallet
-}
-
-func setup(ctx context.Context, cfgdir string) (*Node, error) {
-	peerkey, err := loadOrInitPeerKey(filepath.Join(cfgdir, "libp2p.key"))
-	if err != nil {
-		return nil, err
-	}
-
-	bwc := metrics.NewBandwidthCounter()
-
-	h, err := libp2p.New(ctx,
-		//libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
-		libp2p.Identity(peerkey),
-		libp2p.BandwidthReporter(bwc),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	bstore, err := lmdb.Open(&lmdb.Options{
-		Path:   filepath.Join(cfgdir, "blockstore"),
-		NoSync: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ds, err := levelds.NewDatastore(filepath.Join(cfgdir, "datastore"), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	bsnet := bsnet.NewFromIpfsHost(h, nil)
-	bswap := bitswap.New(ctx, bsnet, bstore)
-
-	wallet, err := setupWallet(filepath.Join(cfgdir, "wallet"))
-	if err != nil {
-		return nil, err
-	}
-
-	return &Node{
-		Host:       h,
-		Blockstore: bstore,
-		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
-		Wallet:     wallet,
-	}, nil
-}
-
-func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
-	data, err := ioutil.ReadFile(kf)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		k, _, err := crypto.GenerateEd25519Key(crand.Reader)
+var listDealsCmd = &cli.Command{
+	Name: "list",
+	Action: func(cctx *cli.Context) error {
+		ddir, err := homedir.Expand("~/.filc")
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		data, err := crypto.MarshalPrivateKey(k)
+		deals, err := listDeals(ddir)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		if err := ioutil.WriteFile(kf, data, 0600); err != nil {
-			return nil, err
+		for _, dcid := range deals {
+			fmt.Println(dcid)
 		}
 
-		return k, nil
-	}
-	return crypto.UnmarshalPrivateKey(data)
-}
-
-func setupWallet(dir string) (*wallet.LocalWallet, error) {
-	kstore, err := keystore.OpenOrInitKeystore(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	wallet, err := wallet.NewWallet(kstore)
-	if err != nil {
-		return nil, err
-	}
-
-	addrs, err := wallet.WalletList(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	if len(addrs) == 0 {
-		_, err := wallet.WalletNew(context.TODO(), types.KTBLS)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return wallet, nil
+		return nil
+	},
 }
