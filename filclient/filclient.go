@@ -161,14 +161,15 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 	}
 
 	return &FilClient{
-		host:         h,
-		api:          api,
-		wallet:       w,
-		ClientAddr:   addr,
-		blockstore:   bs,
-		dataTransfer: mgr,
-		pchmgr:       pchmgr,
-		mpusher:      mpusher,
+		host:             h,
+		api:              api,
+		wallet:           w,
+		ClientAddr:       addr,
+		blockstore:       bs,
+		dataTransfer:     mgr,
+		pchmgr:           pchmgr,
+		mpusher:          mpusher,
+		computePieceComm: GeneratePieceCommitment,
 	}, nil
 }
 
@@ -184,7 +185,7 @@ func (fc *FilClient) streamToMiner(ctx context.Context, maddr address.Address, p
 
 	mpid, err := fc.connectToMiner(ctx, maddr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to miner: %s", err)
 	}
 
 	s, err := fc.host.NewStream(ctx, mpid, protocol)
@@ -397,7 +398,7 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 	return &resp, nil
 }
 
-func GeneratePieceCommitment(rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	cario := cario.NewCarIO()
 	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
 	if err != nil {

@@ -256,21 +256,23 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 			File: c.Name,
 		}
 
-		var res struct {
-			Bw         int64
-			TotalReads int64
-		}
+		if false {
+			var res struct {
+				Bw         int64
+				TotalReads int64
+			}
 
-		if err := s.DB.Model(ObjRef{}).
-			Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
-			Where("obj_refs.content = ?", c.ID).
-			Joins("left join objects on obj_refs.object = objects.id").
-			Scan(&res).Error; err != nil {
-			return err
-		}
+			if err := s.DB.Model(ObjRef{}).
+				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
+				Where("obj_refs.content = ?", c.ID).
+				Joins("left join objects on obj_refs.object = objects.id").
+				Scan(&res).Error; err != nil {
+				return err
+			}
 
-		st.TotalRequests = res.TotalReads
-		st.BWUsed = res.Bw
+			st.TotalRequests = res.TotalReads
+			st.BWUsed = res.Bw
+		}
 
 		out = append(out, st)
 	}

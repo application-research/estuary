@@ -1655,7 +1655,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, rt abi.Registe
 	}
 
 	log.Infow("computing piece commitment", "data", data)
-	pc, size, err := filclient.GeneratePieceCommitment(rt, data, bs)
+	pc, size, err := filclient.GeneratePieceCommitment(ctx, rt, data, bs)
 	if err != nil {
 		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
 	}

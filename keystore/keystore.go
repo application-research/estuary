@@ -1,4 +1,4 @@
-package main
+package keystore
 
 import (
 	"encoding/json"

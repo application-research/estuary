@@ -41,6 +41,7 @@ require (
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.18.0
 	github.com/minio/sha256-simd v1.0.0 // indirect
+	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc

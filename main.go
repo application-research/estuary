@@ -30,6 +30,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
+	"github.com/whyrusleeping/estuary/keystore"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -217,7 +218,7 @@ type ObjRef struct {
 }
 
 func setupWallet(dir string) (*wallet.LocalWallet, error) {
-	kstore, err := OpenOrInitKeystore(dir)
+	kstore, err := keystore.OpenOrInitKeystore(dir)
 	if err != nil {
 		return nil, err
 	}
