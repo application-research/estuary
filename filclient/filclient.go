@@ -160,10 +160,12 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		return nil, err
 	}
 
-	mgr.SubscribeToEvents(func(event datatransfer.Event, channelState datatransfer.ChannelState) {
-		fmt.Printf("[%s] event: %s %d %s %s\n", time.Now().Format("15:04:05"), event.Message, event.Code, datatransfer.Events[event.Code], event.Timestamp.Format("15:04:05"))
-		fmt.Printf("channelstate: %s %s\n", datatransfer.Statuses[channelState.Status()], channelState.Message())
-	})
+	/*
+		mgr.SubscribeToEvents(func(event datatransfer.Event, channelState datatransfer.ChannelState) {
+			fmt.Printf("[%s] event: %s %d %s %s\n", time.Now().Format("15:04:05"), event.Message, event.Code, datatransfer.Events[event.Code], event.Timestamp.Format("15:04:05"))
+			fmt.Printf("channelstate: %s %s\n", datatransfer.Statuses[channelState.Status()], channelState.Message())
+		})
+	*/
 
 	return &FilClient{
 		host:             h,
