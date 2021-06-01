@@ -398,7 +398,7 @@ func main() {
 
 		s.CM = cm
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("http-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
