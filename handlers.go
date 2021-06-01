@@ -206,6 +206,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
 	admin.GET("/invites", s.handleAdminGetInvites)
 
+	netw := admin.Group("/net")
+	netw.GET("/peers", s.handleNetPeers)
+	netw.GET("/addrs", s.handleNetAddrs)
+
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
 
@@ -2050,4 +2054,18 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, export)
+}
+
+func (s *Server) handleNetPeers(c echo.Context) error {
+	return c.JSON(200, s.Node.Host.Network().Peers())
+}
+
+func (s *Server) handleNetAddrs(c echo.Context) error {
+	id := s.Node.Host.ID()
+	addrs := s.Node.Host.Addrs()
+
+	return c.JSON(200, map[string]interface{}{
+		"id":        id,
+		"addresses": addrs,
+	})
 }

@@ -267,18 +267,21 @@ func main() {
 			Value: "~/.lotus",
 		},
 		&cli.StringFlag{
-			Name:  "database",
-			Value: "sqlite=estuary.db",
+			Name:    "database",
+			Value:   "sqlite=estuary.db",
+			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
-			Name:  "apilisten",
-			Usage: "address for the api server to listen on",
-			Value: ":3004",
+			Name:    "apilisten",
+			Usage:   "address for the api server to listen on",
+			Value:   ":3004",
+			EnvVars: []string{"ESTUARY_API_LISTEN"},
 		},
 		&cli.StringFlag{
-			Name:  "datadir",
-			Usage: "directory to store data in",
-			Value: ".",
+			Name:    "datadir",
+			Usage:   "directory to store data in",
+			Value:   ".",
+			EnvVars: []string{"ESTUARY_DATADIR"},
 		},
 		&cli.BoolFlag{
 			Name: "no-storage-cron",
@@ -290,8 +293,9 @@ func main() {
 			Name: "enable-auto-retrieve",
 		},
 		&cli.StringFlag{
-			Name:  "lightstep-token",
-			Usage: "specify lightstep access token for enabling trace exports",
+			Name:    "lightstep-token",
+			Usage:   "specify lightstep access token for enabling trace exports",
+			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
 		},
 		&cli.StringFlag{
 			Name:  "https-domain",
