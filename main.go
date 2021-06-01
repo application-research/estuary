@@ -191,7 +191,7 @@ type Content struct {
 
 	Cid         dbCID  `json:"cid"`
 	Name        string `json:"name"`
-	UserID      uint   `json:"userId"`
+	UserID      uint   `json:"userId" gorm:"index"`
 	Description string `json:"description"`
 	Size        int64  `json:"size"`
 	Active      bool   `json:"active"`

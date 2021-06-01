@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -706,6 +707,10 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	}
 
 	wg.Wait()
+
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Deal.CreatedAt.Before(ds[j].Deal.CreatedAt)
+	})
 
 	var failCount int64
 	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
