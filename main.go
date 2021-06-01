@@ -301,6 +301,9 @@ func main() {
 			Name:  "https-domain",
 			Usage: "specify domain name to run ssl for",
 		},
+		&cli.BoolFlag{
+			Name: "fail-deals-on-transfer-failure",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -389,6 +392,8 @@ func main() {
 
 		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Dht)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
+
+		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 
 		cm.tracer = otel.Tracer("replicator")
 

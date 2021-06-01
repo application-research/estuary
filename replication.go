@@ -65,6 +65,9 @@ type ContentManager struct {
 	// deal bucketing stuff
 	bucketLk sync.Mutex
 	buckets  map[uint][]*contentStagingZone
+
+	// some behavior flags
+	FailDealOnTransferFailure bool
 }
 
 // 90% of the unpadded data size for a 4GB piece
@@ -1175,7 +1178,9 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 		// TODO: returning unknown==error here feels excessive
 		// but since 'Failed' is a terminal state, we kinda just have to make a new deal altogether
-		//return DEAL_CHECK_UNKNOWN, nil
+		if cm.FailDealOnTransferFailure {
+			return DEAL_CHECK_UNKNOWN, nil
+		}
 	case datatransfer.Cancelled:
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
