@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/pprof"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -35,6 +36,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/whyrusleeping/estuary/filclient"
+	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -65,7 +67,7 @@ const (
 	PermLevelAdmin = 10
 )
 
-func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
+func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok string, cachedir string) error {
 	if lsteptok != "" {
 		ls := launcher.ConfigureOpentelemetry(
 			launcher.WithServiceName("estuary-api"),
@@ -76,6 +78,11 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	}
 
 	e := echo.New()
+
+	if domain != "" {
+		e.AutoTLSManager.Cache = autocert.DirCache(filepath.Join(cachedir, "certs"))
+		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(domain)
+	}
 
 	e.Use(s.tracingMiddleware)
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
@@ -202,7 +209,11 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string) error {
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
 
-	return e.Start(srv)
+	if domain != "" {
+		return e.StartAutoTLS(srv)
+	} else {
+		return e.Start(srv)
+	}
 }
 
 type httpError struct {

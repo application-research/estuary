@@ -136,12 +136,16 @@ var makeDealCmd = &cli.Command{
 
 		tpr("proposal cid: %s", propnd.Cid())
 
+		if err := saveDealProposal(ddir, propnd.Cid(), proposal.DealProposal); err != nil {
+			return err
+		}
+
 		resp, err := fc.SendProposal(ctx, proposal)
 		if err != nil {
 			return err
 		}
 
-		tpr("response state: %s", resp.Response.State)
+		tpr("response state: %d", resp.Response.State)
 		switch resp.Response.State {
 		case storagemarket.StorageDealError:
 			return fmt.Errorf("error response from miner: %s", resp.Response.Message)

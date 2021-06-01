@@ -47,6 +47,7 @@ require (
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
 	go.opentelemetry.io/otel v0.18.0
 	go.opentelemetry.io/otel/trace v0.18.0
+	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
 	golang.org/x/sys v0.0.0-20210426080607-c94f62235c83
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 	gorm.io/driver/postgres v1.0.8

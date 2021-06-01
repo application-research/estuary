@@ -293,6 +293,10 @@ func main() {
 			Name:  "lightstep-token",
 			Usage: "specify lightstep access token for enabling trace exports",
 		},
+		&cli.StringFlag{
+			Name:  "https-domain",
+			Usage: "specify domain name to run ssl for",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -394,7 +398,7 @@ func main() {
 
 		s.CM = cm
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("http-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
