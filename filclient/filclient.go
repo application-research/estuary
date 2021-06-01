@@ -106,7 +106,13 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		return nil, err
 	}
 
-	gse := graphsync.New(context.Background(), gsnet.NewFromLibp2pHost(h), storeutil.LoaderForBlockstore(bs), storeutil.StorerForBlockstore(bs))
+	gse := graphsync.New(context.Background(),
+		gsnet.NewFromLibp2pHost(h),
+		storeutil.LoaderForBlockstore(bs),
+		storeutil.StorerForBlockstore(bs),
+		graphsync.MaxInProgressRequests(200),
+	)
+
 	tpt := gst.NewTransport(h.ID(), gse)
 	dtn := dtnet.NewFromLibp2pHost(h)
 
