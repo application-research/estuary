@@ -129,6 +129,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
+	user.PUT("/password", withUser(s.handleUserChangePassword))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))

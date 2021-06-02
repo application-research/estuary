@@ -24,10 +24,10 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	batched "github.com/ipfs/go-ipfs-provider/batched"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-unixfs"
 	"github.com/libp2p/go-libp2p-core/peer"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/whyrusleeping/estuary/filclient"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -42,7 +42,7 @@ type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
 	FilClient *filclient.FilClient
-	Dht       *dht.IpfsDHT
+	Provider  *batched.BatchProvidingSystem
 
 	tracer trace.Tracer
 
@@ -177,9 +177,9 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, dht *dht.IpfsDHT) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
 	cm := &ContentManager{
-		Dht:                  dht,
+		Provider:             prov,
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
@@ -405,8 +405,6 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 }
 
 func (cm *ContentManager) startup() error {
-	go cm.RunReprovider()
-
 	return cm.queueAllContent()
 }
 

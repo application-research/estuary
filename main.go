@@ -20,6 +20,8 @@ import (
 	"github.com/ipfs/go-datastore"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	batched "github.com/ipfs/go-ipfs-provider/batched"
+	queue "github.com/ipfs/go-ipfs-provider/queue"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
@@ -28,6 +30,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
+	fullrt "github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/keystore"
@@ -390,7 +393,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Dht)
+		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Provider)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
@@ -521,8 +524,9 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 }
 
 type Node struct {
-	Dht  *dht.IpfsDHT
-	Host host.Host
+	Dht      *dht.IpfsDHT
+	Provider *batched.BatchProvidingSystem
+	Host     host.Host
 
 	Datastore datastore.Batching
 
@@ -568,6 +572,11 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		return nil, err
 	}
 
+	frt, err := fullrt.NewFullRT(h, dht.ProtocolDHT)
+	if err != nil {
+		return nil, err
+	}
+
 	dht, err := dht.New(ctx, h)
 	if err != nil {
 		return nil, err
@@ -588,7 +597,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 
 	tbs := NewTrackingBlockstore(bstore, db)
 
-	bsnet := bsnet.NewFromIpfsHost(h, dht)
+	bsnet := bsnet.NewFromIpfsHost(h, frt)
 	bswap := bitswap.New(ctx, bsnet, tbs)
 
 	wallet, err := setupWallet(cfg.WalletDir)
@@ -596,8 +605,42 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		return nil, err
 	}
 
+	provq, err := queue.NewQueue(context.Background(), "provq", ds)
+	if err != nil {
+		return nil, err
+	}
+
+	kprov := batched.KeyProvider(func(rpctx context.Context) (<-chan cid.Cid, error) {
+		out := make(chan cid.Cid)
+		go func() {
+			defer close(out)
+
+			var contents []Content
+			if err := db.Find(&contents, "active").Error; err != nil {
+				log.Errorf("failed to load contents for reproviding: %s", err)
+				return
+			}
+
+			for _, c := range contents {
+				select {
+				case out <- c.Cid.CID:
+				case <-rpctx.Done():
+					return
+				}
+			}
+
+		}()
+		return out, nil
+	})
+
+	prov, err := batched.New(frt, provq, kprov)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Node{
 		Dht:                dht,
+		Provider:           prov,
 		Host:               h,
 		Blockstore:         bstore,
 		Datastore:          ds,
