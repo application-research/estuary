@@ -261,12 +261,36 @@ func (s *Server) handleTestError(c echo.Context) error {
 }
 
 func (s *Server) handleStats(c echo.Context, u *User) error {
+	limit := 500
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		nlim, err := strconv.Atoi(limstr)
+		if err != nil {
+			return err
+		}
+
+		if nlim > 0 {
+			limit = nlim
+		}
+	}
+
+	offset := 0
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		noff, err := strconv.Atoi(offstr)
+		if err != nil {
+			return err
+		}
+
+		if noff > 0 {
+			offset = noff
+		}
+	}
+
 	var contents []Content
-	if err := s.DB.Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Find(&contents, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
-	out := []statsResp{}
+	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
 			Cid:  c.Cid.CID,
