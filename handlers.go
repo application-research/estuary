@@ -173,6 +173,8 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public := e.Group("/public")
 
 	public.GET("/stats", s.handlePublicStats)
+	metrics := public.Group("/metrics")
+	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
 
 	miners := public.Group("/miners")
 	miners.GET("", s.handleAdminGetMiners)
@@ -652,7 +654,7 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 	var contents []Content
-	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -2058,11 +2060,16 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 type publicStatsResponse struct {
 	TotalStorage     int64 `json:"totalStorage"`
 	TotalFilesStored int   `json:"totalFiles"`
+	DealsOnChain     int64 `json:"dealsOnChain"`
 }
 
 func (s *Server) handlePublicStats(c echo.Context) error {
 	var stats publicStatsResponse
 	if err := s.DB.Model(Content{}).Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain).Error; err != nil {
 		return err
 	}
 
@@ -2098,4 +2105,33 @@ func (s *Server) handleNetAddrs(c echo.Context) error {
 		"id":        id,
 		"addresses": addrs,
 	})
+}
+
+type dealMetricsInfo struct {
+	Time      time.Time `json:"time"`
+	DealCount int       `json:"dealCount"`
+}
+
+func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "not failed and deal_id > 0").Error; err != nil {
+		return err
+	}
+
+	buckets := make(map[time.Time][]contentDeal)
+	for _, d := range deals {
+		btime := d.OnChainAt.Round(time.Hour * 24)
+		buckets[btime] = append(buckets[btime], d)
+	}
+
+	var out []dealMetricsInfo
+	for bt, deals := range buckets {
+		dmi := dealMetricsInfo{
+			Time:      bt,
+			DealCount: len(deals),
+		}
+		out = append(out, dmi)
+	}
+
+	return c.JSON(200, out)
 }
