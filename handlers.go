@@ -842,7 +842,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 
 	ask, err := s.FilClient.GetAsk(c.Request().Context(), addr)
 	if err != nil {
-		return err
+		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
 	if err := s.CM.updateMinerVersion(c.Request().Context(), addr); err != nil {
