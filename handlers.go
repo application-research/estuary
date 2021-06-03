@@ -261,7 +261,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 // TODO: delete me when debugging done
 func (s *Server) handleTestError(c echo.Context) error {
-	return fmt.Errorf("i am a scary error, log me please")
+	return fmt.Errorf("i am a scary error, log me please more")
 }
 
 func (s *Server) handleStats(c echo.Context, u *User) error {
@@ -2051,8 +2051,9 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		err := next(c)
 		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			span.RecordError(err)
+			log.Warn("setting span errors")
+			//span.SetStatus(codes.Error, err.Error())
+			//span.RecordError(err)
 			span.SetAttributes(
 				attribute.Key("error").Bool(true),
 				attribute.Key("errmsg").String(err.Error()),
@@ -2065,6 +2066,7 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		span.SetAttributes(
 			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
 			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
+			attribute.Key("cat").String("dog"),
 		)
 
 		return nil
