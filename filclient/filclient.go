@@ -10,13 +10,13 @@ import (
 	ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
-	"github.com/filecoin-project/go-commp-utils/writer"
 	"github.com/filecoin-project/go-commp-utils/zerocomm"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
 	dtnet "github.com/filecoin-project/go-data-transfer/network"
 	gst "github.com/filecoin-project/go-data-transfer/transport/graphsync"
+	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
@@ -50,6 +50,8 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
+
+	commp "github.com/filecoin-project/go-fil-commp-hashhash"
 
 	cborutil "github.com/filecoin-project/go-cbor-util"
 )
@@ -418,18 +420,23 @@ func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, pa
 		return cid.Undef, 0, err
 	}
 
-	commpWriter := &writer.Writer{}
-	err = preparedCar.Dump(commpWriter)
+	writer := new(commp.Calc)
+	err = preparedCar.Dump(writer)
 	if err != nil {
 		return cid.Undef, 0, err
 	}
 
-	dataCIDSize, err := commpWriter.Sum()
+	commpc, size, err := writer.Digest()
 	if err != nil {
 		return cid.Undef, 0, err
 	}
 
-	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
+	commCid, err := commcid.DataCommitmentV1ToCID(commpc)
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return commCid, abi.PaddedPieceSize(size).Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
