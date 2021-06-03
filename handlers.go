@@ -43,7 +43,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -2054,10 +2053,6 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			span.SetStatus(codes.Error, err.Error())
 			span.RecordError(err)
-			span.SetAttributes(
-				attribute.Key("error").Bool(true),
-				attribute.Key("errmsg").String(err.Error()),
-			)
 			c.Error(err)
 		} else {
 			span.SetStatus(codes.Ok, "")
