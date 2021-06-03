@@ -43,6 +43,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -144,6 +145,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
+	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
@@ -1517,6 +1519,32 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 	})
 }
 
+func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+		return err
+	}
+
+	if content.UserID != u.ID {
+		return &httpError{
+			Code:    403,
+			Message: ERR_NOT_AUTHORIZED,
+		}
+	}
+
+	var sub []Content
+	if err := s.DB.Find(&sub, "aggregated_in = ?", cont).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, sub)
+}
+
 func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2021,9 +2049,14 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		r = r.WithContext(tctx)
 		c.SetRequest(r)
 
-		if err := next(c); err != nil {
+		err := next(c)
+		if err != nil {
 			span.SetStatus(codes.Error, err.Error())
 			span.RecordError(err)
+			span.SetAttributes(
+				attribute.Key("error").Bool(true),
+				attribute.Key("errmsg").String(err.Error()),
+			)
 			c.Error(err)
 		} else {
 			span.SetStatus(codes.Ok, "")
@@ -2108,34 +2141,121 @@ func (s *Server) handleNetAddrs(c echo.Context) error {
 }
 
 type dealMetricsInfo struct {
-	Time      time.Time `json:"time"`
-	DealCount int       `json:"dealCount"`
+	Time              time.Time `json:"time"`
+	DealsOnChain      int       `json:"dealsOnChain"`
+	DealsOnChainBytes int64     `json:"dealsOnChainBytes"`
+	DealsAttempted    int       `json:"dealsAttempted"`
+	DealsSealed       int       `json:"dealsSealed"`
+	DealsSealedBytes  int64     `json:"dealsSealedBytes"`
+	DealsFailed       int       `json:"dealsFailed"`
+}
+
+type metricsDealJoin struct {
+	CreatedAt        time.Time
+	Failed           bool
+	FailedAt         time.Time
+	DealID           int64
+	Size             int64
+	TransferStarted  time.Time `json:"transferStarted"`
+	TransferFinished time.Time `json:"transferFinished"`
+
+	OnChainAt time.Time `json:"onChainAt"`
+	SealedAt  time.Time `json:"sealedAt"`
 }
 
 func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
-	var deals []contentDeal
-	if err := s.DB.Find(&deals, "not failed and deal_id > 0").Error; err != nil {
+	var deals []*metricsDealJoin
+	if err := s.DB.Model(contentDeal{}).
+		Joins("left join contents on content_deals.content = contents.id").
+		Select("failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
+		Scan(&deals).Error; err != nil {
 		return err
 	}
 
-	buckets := make(map[time.Time][]contentDeal)
+	coll := make(map[time.Time]*dealMetricsInfo)
+	onchainbuckets := make(map[time.Time][]*metricsDealJoin)
+	attempts := make(map[time.Time][]*metricsDealJoin)
+	sealed := make(map[time.Time][]*metricsDealJoin)
 	beginning := time.Now().Add(time.Hour * -100000)
+	failed := make(map[time.Time][]*metricsDealJoin)
 
 	for _, d := range deals {
-		if d.OnChainAt.Before(beginning) {
-			d.OnChainAt = time.Time{}
+		created := d.CreatedAt.Round(time.Hour * 24)
+		attempts[created] = append(attempts[created], d)
+
+		if !(d.DealID == 0 || d.Failed) {
+			if d.OnChainAt.Before(beginning) {
+				d.OnChainAt = time.Time{}
+			}
+
+			btime := d.OnChainAt.Round(time.Hour * 24)
+			onchainbuckets[btime] = append(onchainbuckets[btime], d)
 		}
 
-		btime := d.OnChainAt.Round(time.Hour * 24)
-		buckets[btime] = append(buckets[btime], d)
+		if d.SealedAt.After(beginning) {
+			sbuck := d.SealedAt.Round(time.Hour * 24)
+			sealed[sbuck] = append(sealed[sbuck], d)
+		}
+
+		if d.Failed {
+			fbuck := d.FailedAt.Round(time.Hour * 24)
+			failed[fbuck] = append(failed[fbuck], d)
+		}
 	}
 
-	var out []dealMetricsInfo
-	for bt, deals := range buckets {
-		dmi := dealMetricsInfo{
-			Time:      bt,
-			DealCount: len(deals),
+	for bt, deals := range onchainbuckets {
+		dmi := &dealMetricsInfo{
+			Time:         bt,
+			DealsOnChain: len(deals),
 		}
+		for _, d := range deals {
+			dmi.DealsOnChainBytes += d.Size
+		}
+
+		coll[bt] = dmi
+	}
+
+	for bt, deals := range attempts {
+		dmi, ok := coll[bt]
+		if !ok {
+			dmi = &dealMetricsInfo{
+				Time: bt,
+			}
+			coll[bt] = dmi
+		}
+
+		dmi.DealsAttempted = len(deals)
+	}
+
+	for bt, deals := range sealed {
+		dmi, ok := coll[bt]
+		if !ok {
+			dmi = &dealMetricsInfo{
+				Time: bt,
+			}
+			coll[bt] = dmi
+		}
+
+		dmi.DealsSealed = len(deals)
+		for _, d := range deals {
+			dmi.DealsSealedBytes += d.Size
+		}
+	}
+
+	for bt, deals := range failed {
+		dmi, ok := coll[bt]
+		if !ok {
+			dmi = &dealMetricsInfo{
+				Time: bt,
+			}
+			coll[bt] = dmi
+		}
+
+		dmi.DealsFailed = len(deals)
+	}
+
+	var out []*dealMetricsInfo
+	for _, dmi := range coll {
 		out = append(out, dmi)
 	}
 
