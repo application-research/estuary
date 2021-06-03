@@ -2053,7 +2053,6 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		if err != nil {
 			span.SetStatus(codes.Error, err.Error())
 			span.RecordError(err)
-			c.Error(err)
 		} else {
 			span.SetStatus(codes.Ok, "")
 		}
