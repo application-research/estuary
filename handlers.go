@@ -2119,7 +2119,13 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	}
 
 	buckets := make(map[time.Time][]contentDeal)
+	beginning := time.Now().Add(time.Hour * -100000)
+
 	for _, d := range deals {
+		if d.OnChainAt.Before(beginning) {
+			d.OnChainAt = time.Time{}
+		}
+
 		btime := d.OnChainAt.Round(time.Hour * 24)
 		buckets[btime] = append(buckets[btime], d)
 	}
@@ -2132,6 +2138,10 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 		}
 		out = append(out, dmi)
 	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Time.Before(out[j].Time)
+	})
 
 	return c.JSON(200, out)
 }
