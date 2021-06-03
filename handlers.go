@@ -86,6 +86,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(domain)
 	}
 
+	if logging {
+		e.Use(middleware.Logger())
+	}
+
 	e.Use(s.tracingMiddleware)
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
@@ -110,9 +114,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 
-	if logging {
-		e.Use(middleware.Logger())
-	}
 	e.Use(middleware.CORS())
 
 	e.POST("/register", s.handleRegisterUser)
@@ -2051,9 +2052,8 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 		err := next(c)
 		if err != nil {
-			log.Warn("setting span errors")
-			//span.SetStatus(codes.Error, err.Error())
-			//span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			span.SetAttributes(
 				attribute.Key("error").Bool(true),
 				attribute.Key("errmsg").String(err.Error()),
@@ -2066,10 +2066,9 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		span.SetAttributes(
 			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
 			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
-			attribute.Key("cat").String("dog"),
 		)
 
-		return nil
+		return err
 	}
 }
 
