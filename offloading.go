@@ -75,7 +75,7 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 
 func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 	var conts []Content
-	if err := cm.DB.Find(&conts, "active and not offloaded").Error; err != nil {
+	if err := cm.DB.Find(&conts, "active and not offloaded and (aggregate or not aggregated_in > 0)").Error; err != nil {
 		return nil, err
 	}
 
