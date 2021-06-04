@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	ffi "github.com/filecoin-project/filecoin-ffi"
+	//ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
-	"github.com/filecoin-project/go-commp-utils/zerocomm"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
@@ -440,31 +439,34 @@ func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, pa
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
+	return cid.Undef, fmt.Errorf("zero padding not set up")
 
-	cur := c
-	for curSize < toSize {
+	/*
+		cur := c
+		for curSize < toSize {
 
-		zc := zerocomm.ZeroPieceCommitment(curSize)
+			zc := zerocomm.ZeroPieceCommitment(curSize)
 
-		p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
-			abi.PieceInfo{
-				Size:     curSize.Padded(),
-				PieceCID: cur,
-			},
-			abi.PieceInfo{
-				Size:     curSize.Padded(),
-				PieceCID: zc,
-			},
-		})
-		if err != nil {
-			return cid.Undef, err
+			p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
+				abi.PieceInfo{
+					Size:     curSize.Padded(),
+					PieceCID: cur,
+				},
+				abi.PieceInfo{
+					Size:     curSize.Padded(),
+					PieceCID: zc,
+				},
+			})
+			if err != nil {
+				return cid.Undef, err
+			}
+
+			cur = p
+			curSize = curSize * 2
 		}
 
-		cur = p
-		curSize = curSize * 2
-	}
-
-	return cur, nil
+		return cur, nil
+	*/
 }
 
 func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {

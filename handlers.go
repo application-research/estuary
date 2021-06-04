@@ -32,6 +32,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	uio "github.com/ipfs/go-unixfs/io"
+	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -241,11 +242,12 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	Cid           cid.Cid `json:"cid"`
-	File          string  `json:"file"`
-	BWUsed        int64   `json:"bwUsed"`
-	TotalRequests int64   `json:"totalRequests"`
-	Offloaded     bool    `json:"offloaded"`
+	Cid             cid.Cid `json:"cid"`
+	File            string  `json:"file"`
+	BWUsed          int64   `json:"bwUsed"`
+	TotalRequests   int64   `json:"totalRequests"`
+	Offloaded       bool    `json:"offloaded"`
+	AggregatedFiles int64   `json:"aggregatedFiles"`
 }
 
 func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
@@ -290,7 +292,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	}
 
 	var contents []Content
-	if err := s.DB.Limit(limit).Offset(offset).Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -317,6 +319,13 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 
 			st.TotalRequests = res.TotalReads
 			st.BWUsed = res.Bw
+
+		}
+
+		if c.Aggregate {
+			if err := s.DB.Model(Content{}).Where("aggregated_in = ?", c.ID).Count(&st.AggregatedFiles).Error; err != nil {
+				return err
+			}
 		}
 
 		out = append(out, st)
@@ -421,7 +430,29 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
-	_ = ctx
+
+	r, err := car.NewCarReader(c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	if len(r.Header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+	}
+
+	bsid, sbs, err := s.StagingMgr.AllocNew()
+	if err != nil {
+		return err
+	}
+
+	for {
+		blk, err := r.Next()
+		if err != nil {
+			return err
+		}
+
+	}
 
 	return nil
 }
