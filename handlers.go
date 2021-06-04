@@ -7,8 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/pprof"
+	httpprof "net/http/pprof"
 	"path/filepath"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -37,6 +38,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/sys/unix"
@@ -113,6 +115,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	}
 
 	e.GET("/debug/pprof/:prof", serveProfile)
+	e.GET("/debug/cpuprofile", serveCpuProfile)
 
 	e.Use(middleware.CORS())
 
@@ -137,6 +140,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.Use(s.AuthRequired(PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/by-cid/:cid", withUser(s.handleGetContentByCid))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
@@ -236,8 +240,24 @@ func (he httpError) Error() string {
 	return he.Message
 }
 
+func serveCpuProfile(c echo.Context) error {
+	if err := pprof.StartCPUProfile(c.Response()); err != nil {
+		return err
+	}
+
+	defer pprof.StopCPUProfile()
+
+	select {
+	case <-c.Request().Context().Done():
+		return c.Request().Context().Err()
+	case <-time.After(time.Second * 30):
+	}
+
+	return nil
+}
+
 func serveProfile(c echo.Context) error {
-	pprof.Handler(c.Param("prof")).ServeHTTP(c.Response().Writer, c.Request())
+	httpprof.Handler(c.Param("prof")).ServeHTTP(c.Response().Writer, c.Request())
 	return nil
 }
 
@@ -420,7 +440,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	}()
 
 	go func() {
-		if err := s.Node.Dht.Provide(context.TODO(), rcid, true); err != nil {
+		if err := s.Node.Provider.Provide(rcid); err != nil {
 			fmt.Println("providing failed: ", err)
 		}
 		fmt.Println("providing complete")
@@ -431,30 +451,64 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	r, err := car.NewCarReader(c.Request().Body)
-	if err != nil {
-		return err
-	}
-
-	if len(r.Header.Roots) != 1 {
-		// if someone wants this feature, let me know
-		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
-	}
-
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
 	}
 
-	for {
-		blk, err := r.Next()
-		if err != nil {
-			return err
-		}
-
+	defer c.Request().Body.Close()
+	header, err := s.loadCar(ctx, sbs, c.Request().Body)
+	if err != nil {
+		return err
 	}
 
+	if len(header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+	}
+
+	// TODO: how to specify filename?
+	filename := header.Roots[0].String()
+
+	bserv := blockservice.New(sbs, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	cont, err := s.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
+	if err != nil {
+		return err
+	}
+
+	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	go func() {
+		if err := s.StagingMgr.CleanUp(bsid); err != nil {
+			log.Errorf("failed to clean up staging blockstore: %s", err)
+		}
+	}()
+
+	go func() {
+		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
+		s.CM.ToCheck <- cont.ID
+	}()
+
+	go func() {
+		if err := s.Node.Provider.Provide(header.Roots[0]); err != nil {
+			fmt.Println("providing failed: ", err)
+		}
+		fmt.Println("providing complete")
+	}()
+	return c.JSON(200, map[string]interface{}{"content": cont})
+
 	return nil
+}
+
+func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
+	_, span := s.tracer.Start(ctx, "loadCar")
+	defer span.End()
+
+	return car.LoadCar(bs, r)
 }
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
@@ -544,7 +598,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}()
 
 	go func() {
-		if err := s.Node.Dht.Provide(context.TODO(), nd.Cid(), true); err != nil {
+		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
 			fmt.Println("providing failed: ", err)
 		}
 		fmt.Println("providing complete")
@@ -1458,12 +1512,46 @@ type minerStatsResp struct {
 	ErrorCount      int64           `json:"errorCount"`
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
+
+	ChainInfo *minerChainInfo `json:"chainInfo"`
+}
+
+type minerChainInfo struct {
+	PeerID    string   `json:"peerId"`
+	Addresses []string `json:"addresses"`
+
+	Owner  string `json:"owner"`
+	Worker string `json:"worker"`
 }
 
 func (s *Server) handleGetMinerStats(c echo.Context) error {
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
+	defer span.End()
+
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
+	}
+
+	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	ci := minerChainInfo{
+		Owner:  minfo.Owner.String(),
+		Worker: minfo.Worker.String(),
+	}
+
+	if minfo.PeerId != nil {
+		ci.PeerID = minfo.PeerId.String()
+	}
+	for _, a := range minfo.Multiaddrs {
+		ma, err := multiaddr.NewMultiaddrBytes(a)
+		if err != nil {
+			return err
+		}
+		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	var m storageMiner
@@ -1496,6 +1584,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
+		ChainInfo:       &ci,
 	})
 }
 

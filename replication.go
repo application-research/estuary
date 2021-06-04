@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -339,6 +340,10 @@ func (qm *queueManager) processQueue() {
 func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagingZone) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
+
+	sort.Slice(b.Contents, func(i, j int) bool {
+		return b.Contents[i].ID < b.Contents[j].ID
+	})
 
 	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
