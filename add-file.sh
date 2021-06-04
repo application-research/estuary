@@ -8,9 +8,9 @@ fi
 echo "$1"
 echo "$fname"
 
-ESTUARY_TOKEN="whysaccesstoken3"
-EST_HOST="http://localhost:3004"
-#EST_HOST="https://api.estuary.tech"
+#ESTUARY_TOKEN="whysaccesstoken3"
+#EST_HOST="http://localhost:3004"
+EST_HOST="https://api.estuary.tech"
 
 curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$1" -F "name=$fname" $EST_HOST/content/add
 

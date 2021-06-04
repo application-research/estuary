@@ -35,6 +35,7 @@ require (
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/labstack/echo/v4 v4.2.0
+	github.com/ledgerwatch/lmdb-go v1.18.2 // indirect
 	github.com/libp2p/go-libp2p v0.14.0
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
 	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
