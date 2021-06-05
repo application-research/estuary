@@ -746,7 +746,7 @@ type expandedContent struct {
 
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 	var contents []Content
-	if err := s.DB.Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	if err := s.DB.Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
 
