@@ -739,16 +739,30 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 	return c.JSON(200, contents)
 }
 
+type expandedContent struct {
+	Content
+	AggregatedFiles int64 `json:"aggregatedFiles"`
+}
+
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 	var contents []Content
 	if err := s.DB.Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
 
-	out := make([]Content, 0, len(contents))
+	out := make([]expandedContent, 0, len(contents))
 	for _, cont := range contents {
 		if !s.CM.contentInStagingZone(c.Request().Context(), cont) {
-			out = append(out, cont)
+			ec := expandedContent{
+				Content: cont,
+			}
+			if cont.Aggregate {
+				if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+					return err
+				}
+
+			}
+			out = append(out, ec)
 		}
 	}
 

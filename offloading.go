@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"golang.org/x/xerrors"
 )
@@ -19,11 +20,18 @@ type refResult struct {
 }
 
 func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
+	ctx, span := cm.tracer.Start(ctx, "OffloadContent")
+	defer span.End()
+
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 		return err
+	}
+
+	if cont.AggregatedIn > 0 {
+		return fmt.Errorf("cannot offload aggregated content")
 	}
 
 	if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
