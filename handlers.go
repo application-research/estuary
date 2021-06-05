@@ -2451,7 +2451,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 		var dp dealPairs
 		if deals[0].Aggregate {
 			var conts []Content
-			if err := s.DB.Find(&conts, "aggregated_in = ?", cont).Error; err != nil {
+			if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont).Select("cid").Scan(&conts).Error; err != nil {
 				return err
 			}
 
