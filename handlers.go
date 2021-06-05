@@ -2434,7 +2434,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 
 	var deals []dealQuery
 	if err := s.DB.Model(contentDeal{}).
-		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?))", all, begin, begin.Add(duration)).
+		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND user_id = ?", all, begin, begin.Add(duration), u.ID).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("deal_id, contents.id as contentid, cid, aggregate").
 		Scan(&deals).Error; err != nil {
