@@ -1856,7 +1856,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 func (s *Server) handleFixupDeals(c echo.Context) error {
 	ctx := context.Background()
 	var deals []contentDeal
-	if err := s.DB.Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
+	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
 		return err
 	}
 
@@ -1869,39 +1869,54 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	for _, d := range deals {
-		miner, err := d.MinerAddr()
-		if err != nil {
-			return err
-		}
 
-		provds, err := s.CM.FilClient.DealStatus(ctx, miner, d.PropCid.CID)
-		if err != nil {
-			log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
-			continue
-		}
+	sem := make(chan struct{}, 50)
+	for _, dll := range deals {
+		sem <- struct{}{}
+		go func(d contentDeal) {
+			defer func() {
+				<-sem
+			}()
+			miner, err := d.MinerAddr()
+			if err != nil {
+				log.Error(err)
+				return
+			}
 
-		if provds.PublishCid == nil {
-			log.Errorf("no publish cid for deal: %d", d.DealID)
-			continue
-		}
+			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
 
-		wait, err := s.Api.StateSearchMsg(ctx, head.Key(), *provds.PublishCid, 100000, true)
-		if err != nil {
-			log.Errorf("failed to search message: %s", err)
-			continue
-		}
+			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID)
+			if err != nil {
+				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+				return
+			}
 
-		if wait == nil {
-			log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
-			continue
-		}
+			if provds.PublishCid == nil {
+				log.Errorf("no publish cid for deal: %d", d.DealID)
+				return
+			}
 
-		ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
-		log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
-		if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
-			return err
-		}
+			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
+			defer cancel2()
+			wait, err := s.Api.StateSearchMsg(subctx2, head.Key(), *provds.PublishCid, 100000, true)
+			if err != nil {
+				log.Errorf("failed to search message: %s", err)
+				return
+			}
+
+			if wait == nil {
+				log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+				return
+			}
+
+			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
+			log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+				log.Error(err)
+				return
+			}
+		}(dll)
 	}
 
 	return nil
