@@ -1854,7 +1854,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 }
 
 func (s *Server) handleFixupDeals(c echo.Context) error {
-	ctx := c.Request().Context()
+	ctx := context.Background()
 	var deals []contentDeal
 	if err := s.DB.Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
 		return err
