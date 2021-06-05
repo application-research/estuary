@@ -1892,6 +1892,11 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			continue
 		}
 
+		if wait == nil {
+			log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+			continue
+		}
+
 		ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
 		log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
 		if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
