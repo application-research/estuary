@@ -218,6 +218,8 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
 	admin.GET("/invites", s.handleAdminGetInvites)
 
+	admin.GET("/fixdeals", s.handleFixupDeals)
+
 	netw := admin.Group("/net")
 	netw.GET("/peers", s.handleNetPeers)
 	netw.GET("/addrs", s.handleNetAddrs)

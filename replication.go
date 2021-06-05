@@ -28,6 +28,7 @@ import (
 	batched "github.com/ipfs/go-ipfs-provider/batched"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-unixfs"
+	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
 	"go.opentelemetry.io/otel/attribute"
@@ -1850,4 +1851,53 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	}
 
 	return fmt.Errorf("failed to retrieve with any miner we have deals with")
+}
+
+func (s *Server) handleFixupDeals(c echo.Context) error {
+	ctx := c.Request().Context()
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
+		return err
+	}
+
+	gentime, err := time.Parse("2006-01-02 15:04:05", "2020-08-24 15:00:00")
+	if err != nil {
+		return err
+	}
+
+	head, err := s.Api.ChainHead(ctx)
+	if err != nil {
+		return err
+	}
+	for _, d := range deals {
+		miner, err := d.MinerAddr()
+		if err != nil {
+			return err
+		}
+
+		provds, err := s.CM.FilClient.DealStatus(ctx, miner, d.PropCid.CID)
+		if err != nil {
+			log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+			continue
+		}
+
+		if provds.PublishCid == nil {
+			log.Errorf("no publish cid for deal: %d", d.DealID)
+			continue
+		}
+
+		wait, err := s.Api.StateSearchMsg(ctx, head.Key(), *provds.PublishCid, 100000, true)
+		if err != nil {
+			log.Errorf("failed to search message: %s", err)
+			continue
+		}
+
+		ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
+		log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+		if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
