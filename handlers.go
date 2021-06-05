@@ -151,6 +151,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
+	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
@@ -2391,6 +2392,79 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	sort.Slice(out, func(i, j int) bool {
 		return out[i].Time.Before(out[j].Time)
 	})
+
+	return c.JSON(200, out)
+}
+
+type dealQuery struct {
+	DealID    int64
+	Contentid uint
+	Cid       dbCID
+	Aggregate bool
+}
+
+type dealPairs struct {
+	Deals []int64   `json:"deals"`
+	Cids  []cid.Cid `json:"cids"`
+}
+
+func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
+
+	begin := time.Now().Add(time.Hour * 24)
+	duration := time.Hour * 24
+
+	if beg := c.Param("begin"); beg != "" {
+		ts, err := time.Parse("2006-01-02T15:04", beg)
+		if err != nil {
+			return err
+		}
+		begin = ts
+	}
+
+	if dur := c.Param("duration"); dur != "" {
+		dur, err := time.ParseDuration(dur)
+		if err != nil {
+			return err
+		}
+
+		duration = dur
+	}
+
+	var deals []dealQuery
+	if err := s.DB.Model(contentDeal{}).
+		Where("deal_id > 0 AND on_chain_at > ? AND on_chain_at <= ?", begin, begin.Add(duration)).
+		Joins("left join contents on content_deals.content = contents.id").
+		Select("deal_id, contents.id as contentid, cid, aggregate").
+		Scan(&deals).Error; err != nil {
+		return err
+	}
+
+	contmap := make(map[uint][]dealQuery)
+	for _, d := range deals {
+		contmap[d.Contentid] = append(contmap[d.Contentid], d)
+	}
+
+	var out []dealPairs
+	for cont, deals := range contmap {
+		var dp dealPairs
+		if deals[0].Aggregate {
+			var conts []Content
+			if err := s.DB.Find(&conts, "aggregated_in = ?", cont).Error; err != nil {
+				return err
+			}
+
+			for _, c := range conts {
+				dp.Cids = append(dp.Cids, c.Cid.CID)
+			}
+		} else {
+			dp.Cids = []cid.Cid{deals[0].Cid.CID}
+		}
+
+		for _, d := range deals {
+			dp.Deals = append(dp.Deals, d.DealID)
+		}
+		out = append(out, dp)
+	}
 
 	return c.JSON(200, out)
 }
