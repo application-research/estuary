@@ -2413,7 +2413,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 	begin := time.Now().Add(time.Hour * 24)
 	duration := time.Hour * 24
 
-	if beg := c.Param("begin"); beg != "" {
+	if beg := c.QueryParam("begin"); beg != "" {
 		ts, err := time.Parse("2006-01-02T15:04", beg)
 		if err != nil {
 			return err
@@ -2421,7 +2421,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 		begin = ts
 	}
 
-	if dur := c.Param("duration"); dur != "" {
+	if dur := c.QueryParam("duration"); dur != "" {
 		dur, err := time.ParseDuration(dur)
 		if err != nil {
 			return err
