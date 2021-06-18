@@ -1116,8 +1116,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 						d.DealID = int64(provds.DealID)
 						d.OnChainAt = time.Now()
-						if err := cm.DB.Save(&d).Error; err != nil {
-							return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to update database entry: %w", err)
+						if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+							"deal_id":     d.DealID,
+							"on_chain_at": d.OnChainAt,
+						}).Error; err != nil {
+							return DEAL_CHECK_UNKNOWN, err
 						}
 
 						return DEAL_CHECK_DEALID_ON_CHAIN, nil
@@ -1143,8 +1146,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 		d.DealID = int64(id)
 		d.OnChainAt = time.Now()
-		if err := cm.DB.Save(&d).Error; err != nil {
-			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to update database entry: %w", err)
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+			"deal_id":     d.DealID,
+			"on_chain_at": d.OnChainAt,
+		}).Error; err != nil {
+			return DEAL_CHECK_UNKNOWN, err
 		}
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
@@ -1199,7 +1205,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
-			d.TransferFinished = time.Now()
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+				"transfer_finished": time.Now(),
+			}).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
 			if err := cm.DB.Save(d).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
