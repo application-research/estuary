@@ -331,11 +331,12 @@ func (qm *queueManager) processQueue() {
 	log.Infof("process queue: ", qm.queue.Len())
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
+		fmt.Println("top entry check time: ", qe.checkTime)
 		if time.Now().After(qe.checkTime) {
 			go qm.cb(qe.content)
 		} else {
 			heap.Push(qm.queue, qe)
-			qm.evtTimer.Reset(time.Now().Sub(qe.checkTime))
+			qm.evtTimer.Reset(qe.checkTime.Sub(time.Now()))
 			return
 		}
 	}
