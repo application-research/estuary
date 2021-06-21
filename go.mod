@@ -4,7 +4,6 @@ go 1.15
 
 require (
 	github.com/cheggaaa/pb/v3 v3.0.6
-	github.com/filecoin-project/filecoin-ffi v0.30.4-0.20200910194244-f640612a1a1f
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.3
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
@@ -26,7 +25,7 @@ require (
 	github.com/ipfs/go-datastore v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
 	github.com/ipfs/go-graphsync v0.6.3
-	github.com/ipfs/go-ipfs-blockstore v1.0.3
+	github.com/ipfs/go-ipfs-blockstore v1.0.4
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-ipfs-provider v0.5.1
@@ -49,6 +48,7 @@ require (
 	github.com/multiformats/go-multiaddr v0.3.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
+	github.com/whyrusleeping/go-bs-measure v0.0.0-20210621165307-7143c5de1e39
 	go.opentelemetry.io/otel v0.18.0
 	go.opentelemetry.io/otel/trace v0.18.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2

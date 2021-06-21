@@ -34,7 +34,10 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/keystore"
+	bsm "github.com/whyrusleeping/go-bs-measure"
 	"go.opentelemetry.io/otel"
+
+	//_ "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
@@ -590,12 +593,14 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		return nil, err
 	}
 
+	mbs := bsm.New("estuary", bstore)
+
 	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	tbs := NewTrackingBlockstore(bstore, db)
+	tbs := NewTrackingBlockstore(mbs, db)
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 	bswap := bitswap.New(ctx, bsnet, tbs)
@@ -642,7 +647,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		Dht:                dht,
 		Provider:           prov,
 		Host:               h,
-		Blockstore:         bstore,
+		Blockstore:         mbs,
 		Datastore:          ds,
 		Bitswap:            bswap.(*bitswap.Bitswap),
 		TrackingBlockstore: tbs,

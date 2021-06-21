@@ -225,6 +225,8 @@ func (cm *ContentManager) ContentWatcher() {
 				cm.queueMgr.add(content.ID, nextCheck)
 			}
 		case <-timer.C:
+			log.Infow("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
+
 			/*
 				if err := cm.queueAllContent(); err != nil {
 					log.Errorf("rechecking content: %s", err)
@@ -326,6 +328,7 @@ func (qm *queueManager) processQueue() {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
+	log.Infof("process queue: ", qm.queue.Len())
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
 		if time.Now().After(qe.checkTime) {
