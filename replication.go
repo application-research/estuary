@@ -215,10 +215,10 @@ func (cm *ContentManager) ContentWatcher() {
 				continue
 			}
 
+			log.Infof("checking content: %d", content.ID)
 			nextCheck, err := cm.ensureStorage(context.TODO(), content)
 			if err != nil {
 				log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
-				continue
 			}
 
 			if nextCheck > 0 {
@@ -328,7 +328,7 @@ func (qm *queueManager) processQueue() {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
-	log.Infof("process queue: ", qm.queue.Len())
+	log.Infof("process queue: %d", qm.queue.Len())
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
 		fmt.Println("top entry check time: ", qe.checkTime)
@@ -935,6 +935,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		if err := cm.addContentToStagingZone(ctx, content); err != nil {
 			return errDelay, err
 		}
+		log.Infof("content placed into staging zone: %d", content.ID)
 		return -1, nil
 	}
 

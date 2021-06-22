@@ -7,6 +7,8 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const cacheThreshold = 0.50
+
 func (cm *ContentManager) ClearUnused() error {
 	// first, gather candidates for removal
 	// that is any content we have made the correct number of deals for, that

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -356,6 +357,7 @@ func main() {
 			Api:        api,
 			StagingMgr: sbmgr,
 			tracer:     otel.Tracer("api"),
+			quickCache: make(map[string]endpointCache),
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
@@ -485,6 +487,39 @@ type Server struct {
 	Api        api.Gateway
 	CM         *ContentManager
 	StagingMgr *StagingBSMgr
+
+	cacheLk    sync.Mutex
+	quickCache map[string]endpointCache
+}
+
+type endpointCache struct {
+	lastComputed time.Time
+	val          interface{}
+}
+
+func (s *Server) checkCache(endpoint string, ttl time.Duration) (interface{}, bool) {
+	s.cacheLk.Lock()
+	defer s.cacheLk.Unlock()
+
+	ec, ok := s.quickCache[endpoint]
+	if !ok {
+		return nil, false
+	}
+
+	if time.Since(ec.lastComputed) < ttl {
+		return ec.val, true
+	}
+
+	return nil, false
+}
+
+func (s *Server) setCache(endpoint string, val interface{}) {
+	s.cacheLk.Lock()
+	defer s.cacheLk.Unlock()
+	s.quickCache[endpoint] = endpointCache{
+		lastComputed: time.Now(),
+		val:          val,
+	}
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {

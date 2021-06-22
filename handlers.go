@@ -2229,6 +2229,11 @@ type publicStatsResponse struct {
 }
 
 func (s *Server) handlePublicStats(c echo.Context) error {
+	val, ok := s.checkCache("public/stats", time.Minute)
+	if ok {
+		return c.JSON(200, val)
+	}
+
 	var stats publicStatsResponse
 	if err := s.DB.Model(Content{}).Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
 		return err
@@ -2238,6 +2243,7 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 		return err
 	}
 
+	s.setCache("public/stats", stats)
 	return c.JSON(200, stats)
 }
 

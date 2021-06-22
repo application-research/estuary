@@ -11,7 +11,7 @@ require (
 	github.com/filecoin-project/go-data-transfer v1.6.0
 	github.com/filecoin-project/go-fil-commcid v0.0.0-20201016201715-d41df56b4f6a
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
-	github.com/filecoin-project/go-fil-markets v1.4.0
+	github.com/filecoin-project/go-fil-markets v1.5.0
 	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210506134452-99b279731c48
 	github.com/filecoin-project/lotus v1.5.3-rc1.0.20210315003656-a54c6bfb057d
@@ -36,7 +36,7 @@ require (
 	github.com/ipld/go-car v0.1.1-0.20201119040415-11b6074b6d4d
 	github.com/labstack/echo/v4 v4.2.0
 	github.com/ledgerwatch/lmdb-go v1.18.2 // indirect
-	github.com/libp2p/go-libp2p v0.14.0
+	github.com/libp2p/go-libp2p v0.14.2
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
 	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
 	github.com/libp2p/go-libp2p-crypto v0.1.0
