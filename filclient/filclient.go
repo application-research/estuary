@@ -393,6 +393,9 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 }
 
 func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal) (*network.SignedResponse, error) {
+	ctx, span := Tracer.Start(ctx, "sendProposal")
+	defer span.End()
+
 	s, err := fc.streamToMiner(ctx, netprop.DealProposal.Proposal.Provider, DealProtocol)
 	if err != nil {
 		return nil, xerrors.Errorf("opening stream to miner: %w", err)
@@ -641,6 +644,9 @@ func (fc *FilClient) RestartTransfer(ctx context.Context, chanid *datatransfer.C
 }
 
 func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Address, propCid cid.Cid, dataCid cid.Cid) (*datatransfer.ChannelID, error) {
+	ctx, span := Tracer.Start(ctx, "startDataTransfer")
+	defer span.End()
+
 	mpid, err := fc.minerPeer(ctx, miner)
 	if err != nil {
 		return nil, xerrors.Errorf("getting miner peer: %w", err)

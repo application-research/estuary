@@ -83,6 +83,13 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 	return nil
 }
 
+type removalCandidateInfo struct {
+	Content
+	TotalDeals      int `json:"totalDeals"`
+	ActiveDeals     int `json:"activeDeals"`
+	InProgressDeals int `json:"inProgressDeals"`
+}
+
 func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 	var conts []Content
 	if err := cm.DB.Find(&conts, "active and not offloaded and (aggregate or not aggregated_in > 0)").Error; err != nil {
@@ -110,11 +117,18 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 
 func (cm *ContentManager) contentIsProperlyReplicated(c uint, repl int) (bool, error) {
 	var contentDeals []contentDeal
-	if err := cm.DB.Find(&contentDeals, "content = ? and not failed and deal_id > 0", c).Error; err != nil {
+	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return false, err
 	}
 
-	if len(contentDeals) >= repl {
+	var goodCount int
+	for _, d := range contentDeals {
+		if !d.Failed && d.DealID > 0 {
+			goodCount++
+		}
+	}
+
+	if goodCount >= repl {
 		return true, nil
 	}
 

@@ -1203,6 +1203,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			Message: fmt.Sprintf("transfer cancelled: %s", status.Message),
 			Content: content.ID,
 		})
+		return DEAL_CHECK_UNKNOWN, nil
 	case datatransfer.Failing:
 		// I guess we just wait until its failed all the way?
 	case datatransfer.Requested:
