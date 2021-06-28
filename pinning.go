@@ -1,19 +1,176 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
-	ma "github.com/multiformats/go-multiaddr"
+	"github.com/libp2p/go-libp2p-core/peer"
 )
 
-func (s *Server) pinContent(obj cid.Cid, name string, cols []*Collection, peers []ma.Multiaddr) (uint, error) {
-	panic("NYI")
+type pinningOperation struct {
+	obj   cid.Cid
+	name  string
+	cols  []*Collection
+	peers []peer.AddrInfo
 
+	status string
+
+	contId uint
+
+	started     time.Time
+	numFetched  int
+	sizeFetched int64
+	fetchErr    error
+	endTime     time.Time
+
+	lk sync.Mutex
+}
+
+func (po *pinningOperation) fail(err error) {
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	po.fetchErr = err
+	po.endTime = time.Now()
+	po.status = "failed"
+}
+
+func (po *pinningOperation) complete() {
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	po.endTime = time.Now()
+	po.status = "pinned"
+}
+
+func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
+	s.pinLk.Lock()
+	po, ok := s.pinJobs[cont]
+	s.pinLk.Unlock()
+	if !ok {
+		var content Content
+		if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+			return nil, err
+		}
+
+		ps := &ipfsPinStatus{
+			Requestid: fmt.Sprint(cont),
+			Status:    "pinning",
+			Created:   content.CreatedAt,
+			Pin: ipfsPin{
+				Cid:  content.Cid.CID,
+				Name: content.Name,
+			},
+			Delegates: s.pinDelegatesForContent(content),
+			Info:      nil, // TODO: all sorts of extra info we could add...
+		}
+
+		if content.Active {
+			ps.Status = "pinned"
+		}
+
+		return ps, nil
+	}
+
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	return &ipfsPinStatus{
+		Requestid: fmt.Sprint(cont),
+		Status:    po.status,
+		Created:   po.started,
+		Pin: ipfsPin{
+			Cid:  po.obj,
+			Name: po.name,
+		},
+		Delegates: []string{},
+		Info:      nil,
+	}, nil
+}
+
+func (s *Server) pinDelegatesForContent(cont Content) []string {
+	var out []string
+	for _, a := range s.Node.Host.Addrs() {
+		out = append(out, fmt.Sprintf("%s/p2p/%s", a, s.Node.Host.ID()))
+	}
+
+	return out
+}
+
+func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint) (*ipfsPinStatus, error) {
+
+	cont := Content{
+		Cid: dbCID{obj},
+
+		Name:        name,
+		UserID:      user,
+		Active:      false,
+		Replication: defaultReplication,
+
+		/*
+			Size        int64  `json:"size"`
+			Offloaded   bool   `json:"offloaded"`
+		*/
+
+	}
+	if err := s.DB.Create(&cont).Error; err != nil {
+		return nil, err
+	}
+
+	// TODO: persist pin jobs across process restarts
+	op := &pinningOperation{
+		obj:     obj,
+		name:    name,
+		cols:    cols,
+		peers:   peers,
+		started: cont.CreatedAt,
+	}
+
+	s.pinLk.Lock()
+	s.pinJobs[cont.ID] = op
+	s.pinLk.Unlock()
+	go func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		for _, pi := range peers {
+			if err := s.Node.Host.Connect(ctx, pi); err != nil {
+				log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+			}
+		}
+
+		bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+		dserv := merkledag.NewDAGService(bserv)
+
+		dsess := merkledag.NewSession(ctx, dserv)
+
+		if err := s.addDatabaseTrackingToContent(ctx, cont.ID, dsess, s.Node.Blockstore, obj); err != nil {
+			op.fail(err)
+			return
+		}
+
+		op.complete()
+
+		s.CM.ToCheck <- cont.ID
+
+		if err := s.Node.Provider.Provide(obj); err != nil {
+			log.Infof("providing failed: %s", err)
+		}
+
+		if err := s.CM.RemoveContent(ctx, replace, true); err != nil {
+			log.Infof("failed to remove content in replacement: %d", replace)
+		}
+	}()
+
+	return s.pinStatus(cont.ID)
 }
 
 type ipfsPin struct {
@@ -159,6 +316,112 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	var pin ipfsPin
 	if err := e.Bind(&pin); err != nil {
+		return err
+	}
+
+	/*
+		var col *Collection
+		if params.Collection != "" {
+			var srchCol Collection
+			if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+				return err
+			}
+
+			col = &srchCol
+		}
+	*/
+
+	var addrInfos []peer.AddrInfo
+	for _, p := range pin.Origins {
+		ai, err := peer.AddrInfoFromString(p)
+		if err != nil {
+			return err
+		}
+
+		addrInfos = append(addrInfos, *ai)
+	}
+
+	status, err := s.pinContent(u.ID, pin.Cid, pin.Name, nil, addrInfos, 0)
+	if err != nil {
+		return err
+	}
+
+	return e.JSON(200, status)
+}
+
+func (s *Server) handleGetPin(e echo.Context, u *User) error {
+	id, err := strconv.Atoi(e.Param("requestid"))
+	if err != nil {
+		return err
+	}
+
+	st, err := s.pinStatus(uint(id))
+	if err != nil {
+		return err
+	}
+
+	return e.JSON(200, st)
+}
+
+func (s *Server) handleReplacePin(e echo.Context, u *User) error {
+	id, err := strconv.Atoi(e.Param("requestid"))
+	if err != nil {
+		return err
+	}
+
+	var pin ipfsPin
+	if err := e.Bind(&pin); err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
+		return err
+	}
+	if content.UserID != u.ID {
+		return &httpError{
+			Code:    401,
+			Message: ERR_NOT_AUTHORIZED,
+		}
+	}
+
+	var addrInfos []peer.AddrInfo
+	for _, p := range pin.Origins {
+		ai, err := peer.AddrInfoFromString(p)
+		if err != nil {
+			return err
+		}
+
+		addrInfos = append(addrInfos, *ai)
+	}
+
+	status, err := s.pinContent(u.ID, pin.Cid, pin.Name, nil, addrInfos, uint(id))
+	if err != nil {
+		return err
+	}
+
+	return e.JSON(200, status)
+}
+
+func (s *Server) handleDeletePin(e echo.Context, u *User) error {
+	ctx := e.Request().Context()
+	id, err := strconv.Atoi(e.Param("requestid"))
+	if err != nil {
+		return err
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
+		return err
+	}
+	if content.UserID != u.ID {
+		return &httpError{
+			Code:    401,
+			Message: ERR_NOT_AUTHORIZED,
+		}
+	}
+
+	if err := s.CM.RemoveContent(ctx, uint(id), true); err != nil {
 		return err
 	}
 

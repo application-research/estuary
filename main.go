@@ -493,7 +493,7 @@ type Server struct {
 	quickCache map[string]endpointCache
 
 	pinLk   sync.Mutex
-	pinJobs map[uint]string
+	pinJobs map[uint]*pinningOperation
 }
 
 type endpointCache struct {

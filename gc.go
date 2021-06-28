@@ -61,7 +61,10 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	return count > 0, nil
 }
 
-func (cm *ContentManager) RemoveContent(c uint, now bool) error {
+func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) error {
+	ctx, span := cm.tracer.Start(ctx, "RemoveContent")
+	defer span.End()
+
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
@@ -99,6 +102,33 @@ func (cm *ContentManager) RemoveContent(c uint, now bool) error {
 
 		subq := cm.DB.Table("obj_refs").Select("1").Where("obj_refs.object = objects.id")
 		if err := cm.DB.Where("id IN ? and not exists (?)", slice, subq).Delete(&Object{}).Error; err != nil {
+			return err
+		}
+	}
+
+	if !now {
+		return nil
+	}
+
+	// TODO: copied from the offloading method, need to refactor this into something better
+	q := cm.DB.Debug().Model(&ObjRef{}).
+		Select("cid").
+		Joins("left join objects on obj_refs.object = objects.id").
+		Group("cid").
+		Having("MIN(obj_refs.offloaded) = 1")
+
+	rows, err := q.Rows()
+	if err != nil {
+		return err
+	}
+
+	for rows.Next() {
+		var dbc dbCID
+		if err := rows.Scan(&dbc); err != nil {
+			return err
+		}
+
+		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
 			return err
 		}
 	}

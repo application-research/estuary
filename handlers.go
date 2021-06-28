@@ -177,6 +177,14 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
 
+	pinning := e.Group("/pinning")
+	pinning.Use(s.AuthRequired(PermLevelUser))
+	pinning.GET("/pins", withUser(s.handleListPins))
+	pinning.POST("/pins", withUser(s.handleAddPin))
+	pinning.GET("/pins/:requestid", withUser(s.handleGetPin))
+	pinning.POST("/pins/:requestid", withUser(s.handleReplacePin))
+	pinning.DELETE("/pins/:requestid", withUser(s.handleDeletePin))
+
 	// explicitly public, for now
 	public := e.Group("/public")
 
@@ -615,6 +623,61 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 
 	spl := chunker.DefaultSplitter(fi)
 	return importer.BuildDagFromReader(dserv, spl)
+}
+
+func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+	ctx, span := s.tracer.Start(ctx, "computeObjRefsUpdate")
+	defer span.End()
+
+	var objects []*Object
+	var totalSize int64
+	cset := cid.NewSet()
+
+	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		objects = append(objects, &Object{
+			Cid:  dbCID{c},
+			Size: len(node.RawData()),
+		})
+
+		totalSize += int64(len(node.RawData()))
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
+		return node.Links(), nil
+	}, root, cset.Visit, merkledag.Concurrent())
+	if err != nil {
+		return err
+	}
+
+	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
+		return xerrors.Errorf("failed to create objects in db: %w", err)
+	}
+
+	if err := s.DB.Model(Content{}).Where("id = ?", cont).UpdateColumns(map[string]interface{}{
+		"active": true,
+		"size":   totalSize,
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update content in database: %w", err)
+	}
+
+	refs := make([]ObjRef, len(objects))
+	for i := range refs {
+		refs[i].Content = cont
+		refs[i].Object = objects[i].ID
+	}
+
+	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
+		return xerrors.Errorf("failed to create refs: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
