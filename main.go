@@ -266,6 +266,7 @@ func main() {
 	logging.SetLogLevel("dt-chanmon", "debug")
 	logging.SetLogLevel("markets", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
+	logging.SetLogLevel("rpc", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -490,6 +491,9 @@ type Server struct {
 
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
+
+	pinLk   sync.Mutex
+	pinJobs map[uint]string
 }
 
 type endpointCache struct {
