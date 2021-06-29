@@ -51,6 +51,13 @@ func (po *pinningOperation) complete() {
 	po.status = "pinned"
 }
 
+func (po *pinningOperation) setStatus(st string) {
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	po.status = st
+}
+
 func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 	s.pinLk.Lock()
 	po, ok := s.pinJobs[cont]
@@ -66,7 +73,7 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 			Status:    "pinning",
 			Created:   content.CreatedAt,
 			Pin: ipfsPin{
-				Cid:  content.Cid.CID,
+				Cid:  content.Cid.CID.String(),
 				Name: content.Name,
 			},
 			Delegates: s.pinDelegatesForContent(content),
@@ -88,7 +95,7 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 		Status:    po.status,
 		Created:   po.started,
 		Pin: ipfsPin{
-			Cid:  po.obj,
+			Cid:  po.obj.String(),
 			Name: po.name,
 		},
 		Delegates: []string{},
@@ -132,6 +139,7 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 		cols:    cols,
 		peers:   peers,
 		started: cont.CreatedAt,
+		status:  "queued",
 	}
 
 	s.pinLk.Lock()
@@ -152,6 +160,7 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 
 		dsess := merkledag.NewSession(ctx, dserv)
 
+		op.setStatus("pinning")
 		if err := s.addDatabaseTrackingToContent(ctx, cont.ID, dsess, s.Node.Blockstore, obj); err != nil {
 			op.fail(err)
 			return
@@ -165,8 +174,10 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 			log.Infof("providing failed: %s", err)
 		}
 
-		if err := s.CM.RemoveContent(ctx, replace, true); err != nil {
-			log.Infof("failed to remove content in replacement: %d", replace)
+		if replace > 0 {
+			if err := s.CM.RemoveContent(ctx, replace, true); err != nil {
+				log.Infof("failed to remove content in replacement: %d", replace)
+			}
 		}
 	}()
 
@@ -174,7 +185,7 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 }
 
 type ipfsPin struct {
-	Cid     cid.Cid                `json:"cid"`
+	Cid     string                 `json:"cid"`
 	Name    string                 `json:"name"`
 	Origins []string               `json:"origins"`
 	Meta    map[string]interface{} `json:"meta"`
@@ -201,7 +212,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qafter := e.QueryParam("after")
 	qlimit := e.QueryParam("limit")
 
-	q := s.DB.Model(Content{})
+	q := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []cid.Cid
@@ -238,12 +249,13 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		q = q.Where("createdAt > ?", aftime)
 	}
 
+	var lim int
 	if qlimit != "" {
 		limit, err := strconv.Atoi(qlimit)
 		if err != nil {
 			return err
 		}
-		q = q.Limit(limit)
+		lim = limit
 	}
 
 	var contents []Content
@@ -251,7 +263,10 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		return err
 	}
 
+	var allowed map[string]bool
+
 	if qstatus != "" {
+		allowed = make(map[string]bool)
 		/*
 		   - queued     # pinning operation is waiting in the queue; additional info can be returned in info[status_details]
 		   - pinning    # pinning in progress; additional info can be returned in info[status_details]
@@ -262,27 +277,27 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		for _, s := range statuses {
 			switch s {
 			case "queued", "pinning", "pinned", "failed":
+				allowed[s] = true
 			default:
 				return fmt.Errorf("unrecognized pin status in query: %q", s)
 			}
 		}
 
-		return fmt.Errorf("filtering pins by status not yet supported, please bother whyrusleeping")
 	}
 
-	var out []ipfsPinStatus
+	var out []*ipfsPinStatus
 	for _, c := range contents {
-		st := ipfsPinStatus{
-			Pin: ipfsPin{
-				Cid:  c.Cid.CID,
-				Name: c.Name,
-			},
-			Requestid: fmt.Sprint(c.ID),
-			Status:    "pinned",
-			Created:   c.CreatedAt,
+		if lim > 0 && len(out) >= lim {
+			break
 		}
 
-		out = append(out, st)
+		st, err := s.pinStatus(c.ID)
+		if err != nil {
+			return err
+		}
+		if allowed == nil || allowed[st.Status] {
+			out = append(out, st)
+		}
 	}
 
 	return e.JSON(200, map[string]interface{}{
@@ -341,12 +356,19 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		addrInfos = append(addrInfos, *ai)
 	}
 
-	status, err := s.pinContent(u.ID, pin.Cid, pin.Name, nil, addrInfos, 0)
+	obj, err := cid.Decode(pin.Cid)
 	if err != nil {
 		return err
 	}
 
-	return e.JSON(200, status)
+	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, 0)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("status: %#v\n", status)
+
+	return e.JSON(202, status)
 }
 
 func (s *Server) handleGetPin(e echo.Context, u *User) error {
@@ -395,7 +417,12 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		addrInfos = append(addrInfos, *ai)
 	}
 
-	status, err := s.pinContent(u.ID, pin.Cid, pin.Name, nil, addrInfos, uint(id))
+	obj, err := cid.Decode(pin.Cid)
+	if err != nil {
+		return err
+	}
+
+	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, uint(id))
 	if err != nil {
 		return err
 	}

@@ -359,6 +359,7 @@ func main() {
 			StagingMgr: sbmgr,
 			tracer:     otel.Tracer("api"),
 			quickCache: make(map[string]endpointCache),
+			pinJobs:    make(map[uint]*pinningOperation),
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
