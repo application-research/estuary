@@ -14,6 +14,12 @@ func (cm *ContentManager) ClearUnused() error {
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
+	candidates, err := cm.getRemovalCandidates(context.TODO())
+	if err != nil {
+		return err
+	}
+	_ = candidates
+
 	return nil
 }
 
@@ -90,7 +96,10 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
+func (cm *ContentManager) getRemovalCandidates(ctx context.Context) ([]Content, error) {
+	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
+	defer span.End()
+
 	var conts []Content
 	if err := cm.DB.Find(&conts, "active and not offloaded and (aggregate or not aggregated_in > 0)").Error; err != nil {
 		return nil, err
@@ -98,7 +107,7 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 
 	var toOffload []Content
 	for _, c := range conts {
-		ok, err := cm.contentIsProperlyReplicated(c.ID, c.Replication)
+		ok, err := cm.contentIsProperlyReplicated(ctx, c.ID, c.Replication)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
@@ -115,7 +124,7 @@ func (cm *ContentManager) getRemovalCandidates() ([]Content, error) {
 	return toOffload, nil
 }
 
-func (cm *ContentManager) contentIsProperlyReplicated(c uint, repl int) (bool, error) {
+func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint, repl int) (bool, error) {
 	var contentDeals []contentDeal
 	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return false, err

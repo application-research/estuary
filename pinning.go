@@ -237,7 +237,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			return err
 		}
 
-		q = q.Where("createdAt <= ?", beftime)
+		q = q.Where("created_at <= ?", beftime)
 	}
 
 	if qafter != "" {
@@ -246,7 +246,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			return err
 		}
 
-		q = q.Where("createdAt > ?", aftime)
+		q = q.Where("created_at > ?", aftime)
 	}
 
 	var lim int

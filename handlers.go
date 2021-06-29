@@ -1760,7 +1760,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates()
+	conts, err := s.CM.getRemovalCandidates(c.Request().Context())
 	if err != nil {
 		return err
 	}
