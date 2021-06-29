@@ -301,7 +301,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	}
 
 	return e.JSON(200, map[string]interface{}{
-		"count":   len(out),
+		"count":   len(contents),
 		"results": out,
 	})
 }
