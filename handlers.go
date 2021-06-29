@@ -1510,7 +1510,15 @@ func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, infos)
+	var failures []retrievalFailureRecord
+	if err := s.DB.Find(&failures).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"records":  infos,
+		"failures": failures,
+	})
 }
 
 func (s *Server) handleRetrievalCheck(c echo.Context) error {
@@ -2042,7 +2050,7 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 	authToken := &AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 7),
+		Expiry: time.Now().Add(time.Hour * 24 * 30),
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
