@@ -22,6 +22,7 @@ type collectionResult struct {
 
 	ContentsFreed        []offloadCandidate `json:"contentsFreed"`
 	CandidatesConsidered int                `json:"candidatesConsidered"`
+	BlocksRemoved        int                `json:"blocksRemoved"`
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, dryrun bool) (*collectionResult, error) {
@@ -73,17 +74,22 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 		CandidatesConsidered: len(candidates),
 	}
 
-	// go offload them all
 	if dryrun {
 		return result, nil
 	}
 
+	// go offload them all
+	var blocksRemoved int
 	for _, c := range toRemove {
 		// TODO: a bulk content offloading function seems like it would be pretty efficient
-		if err := cm.OffloadContent(ctx, c.ID); err != nil {
+		rem, err := cm.OffloadContent(ctx, c.ID)
+		if err != nil {
 			log.Warnf("failed to offload content %d: %s", c.ID, err)
 		}
+		blocksRemoved += rem
 	}
+
+	result.BlocksRemoved = blocksRemoved
 
 	return result, nil
 }
@@ -103,7 +109,7 @@ type refResult struct {
 	Cid dbCID
 }
 
-func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
+func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) (int, error) {
 	ctx, span := cm.tracer.Start(ctx, "OffloadContent")
 	defer span.End()
 
@@ -111,19 +117,19 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 	defer cm.contentLk.Unlock()
 	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
-		return err
+		return 0, err
 	}
 
 	if cont.AggregatedIn > 0 {
-		return fmt.Errorf("cannot offload aggregated content")
+		return 0, fmt.Errorf("cannot offload aggregated content")
 	}
 
 	if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
-		return err
+		return 0, err
 	}
 
 	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
-		return err
+		return 0, err
 	}
 
 	/*
@@ -145,24 +151,26 @@ func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) error {
 
 	rows, err := q.Rows()
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// TODO: I believe that we need to hold a lock for the entire period that
 	// we are deleting objects from the blockstore, otherwise a new file could
 	// come in that has overlapping blocks, and have its blocks deleted by this
 	// process.
+	var deleteCount int
 	for rows.Next() {
 		var dbc dbCID
 		if err := rows.Scan(&dbc); err != nil {
-			return err
+			return deleteCount, err
 		}
 
 		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
-			return err
+			return deleteCount, err
 		}
+		deleteCount++
 	}
-	return nil
+	return deleteCount, nil
 }
 
 type removalCandidateInfo struct {

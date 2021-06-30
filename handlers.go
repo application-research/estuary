@@ -1824,11 +1824,14 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.OffloadContent(c.Request().Context(), uint(cont)); err != nil {
+	removed, err := s.CM.OffloadContent(c.Request().Context(), uint(cont))
+	if err != nil {
 		return err
 	}
 
-	return c.JSON(200, map[string]interface{}{})
+	return c.JSON(200, map[string]interface{}{
+		"blocksRemoved": removed,
+	})
 }
 
 func (s *Server) handleRefreshContent(c echo.Context) error {
