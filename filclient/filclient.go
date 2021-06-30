@@ -852,6 +852,9 @@ type RetrievalStats struct {
 	TotalPayment abi.TokenAmount
 	NumPayments  int
 	AskPrice     abi.TokenAmount
+
+	// TODO: we should be able to get this if we hook into the graphsync event stream
+	//TimeToFirstByte time.Duration
 }
 
 func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) (*RetrievalStats, error) {

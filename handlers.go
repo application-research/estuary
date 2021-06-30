@@ -217,6 +217,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
+	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 
@@ -1774,6 +1775,24 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 	}
 
 	return c.JSON(200, conts)
+}
+
+func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
+	var body struct {
+		Execute        bool  `json:"execute"`
+		SpaceRequested int64 `json:"spaceRequested"`
+	}
+
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, !body.Execute)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, res)
 }
 
 func (s *Server) handleOffloadContent(c echo.Context) error {
