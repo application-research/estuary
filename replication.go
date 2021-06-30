@@ -977,6 +977,19 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 			return time.Minute * 10, nil
 		}
 
+		if content.Offloaded {
+			go func() {
+				defer func() {
+					cm.ToCheck <- content.ID
+				}()
+				if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
+					log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
+				}
+			}()
+
+			return -1, nil
+		}
+
 		// make some more deals!
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
@@ -1402,6 +1415,10 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		attribute.Int("count", count),
 	))
 	defer span.End()
+
+	if content.Offloaded {
+		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
 
 	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
 	_, size, err := cm.getPieceCommitment(ctx, sealType, content.Cid.CID, cm.Blockstore)

@@ -571,6 +571,7 @@ type Node struct {
 	Provider *batched.BatchProvidingSystem
 	Host     host.Host
 
+	Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
 	Blockstore         blockstore.Blockstore
@@ -688,6 +689,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		Provider:           prov,
 		Host:               h,
 		Blockstore:         mbs,
+		Lmdb:               bstore,
 		Datastore:          ds,
 		Bitswap:            bswap.(*bitswap.Bitswap),
 		TrackingBlockstore: tbs,

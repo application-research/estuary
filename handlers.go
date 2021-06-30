@@ -1487,12 +1487,28 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	return c.JSON(200, sbc)
 }
 
+type lmdbStat struct {
+	PSize         uint   `json:"pSize"`
+	Depth         uint   `json:"depth"`
+	BranchPages   uint64 `json:"branchPages"`
+	LeafPages     uint64 `json:"leafPages"`
+	OverflowPages uint64 `json:"overflowPages"`
+	Entries       uint64 `json:"entries"`
+}
+
 type diskSpaceInfo struct {
 	BstoreSize uint64 `json:"bstoreSize"`
 	BstoreFree uint64 `json:"bstoreFree"`
+
+	LmdbStat lmdbStat `json:"lmdbStat"`
 }
 
 func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
+	lmst, err := s.Node.Lmdb.Stat()
+	if err != nil {
+		return err
+	}
+
 	var st unix.Statfs_t
 	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
 		return err
@@ -1500,8 +1516,15 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 
 	return c.JSON(200, &diskSpaceInfo{
 		BstoreSize: st.Blocks * uint64(st.Bsize),
-
 		BstoreFree: st.Bavail * uint64(st.Bsize),
+		LmdbStat: lmdbStat{
+			PSize:         lmst.PSize,
+			Depth:         lmst.Depth,
+			BranchPages:   lmst.BranchPages,
+			LeafPages:     lmst.LeafPages,
+			OverflowPages: lmst.OverflowPages,
+			Entries:       lmst.Entries,
+		},
 	})
 }
 

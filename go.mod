@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/filecoin-project/go-address v0.0.5
-	github.com/filecoin-project/go-bs-lmdb v1.0.3
+	github.com/filecoin-project/go-bs-lmdb v1.0.5-0.20210630201652-b5b890078bea
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.1-0.20210427191551-70bf140d31c7
 	github.com/filecoin-project/go-data-transfer v1.6.0
@@ -35,7 +35,6 @@ require (
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/ipld/go-car v0.1.1-0.20201119040415-11b6074b6d4d
 	github.com/labstack/echo/v4 v4.2.0
-	github.com/ledgerwatch/lmdb-go v1.18.2 // indirect
 	github.com/libp2p/go-libp2p v0.14.2
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
 	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
@@ -59,6 +58,8 @@ require (
 	gorm.io/driver/sqlite v1.1.4
 	gorm.io/gorm v1.20.12
 )
+
+replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1
 
 replace github.com/filecoin-project/filecoin-ffi => ../lotus/extern/filecoin-ffi
 

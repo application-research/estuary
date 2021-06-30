@@ -17,11 +17,11 @@ type offloadCandidate struct {
 }
 
 type collectionResult struct {
-	SpaceRequest int64
-	SpaceFreed   int64
+	SpaceRequest int64 `json:"spaceRequest"`
+	SpaceFreed   int64 `json:"spaceFreed"`
 
-	ContentsFreed        []offloadCandidate
-	CandidatesConsidered int
+	ContentsFreed        []offloadCandidate `json:"contentsFreed"`
+	CandidatesConsidered int                `json:"candidatesConsidered"`
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, dryrun bool) (*collectionResult, error) {
