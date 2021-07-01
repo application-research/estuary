@@ -23,7 +23,8 @@ type pinningOperation struct {
 
 	status string
 
-	contId uint
+	contId  uint
+	replace uint
 
 	started     time.Time
 	numFetched  int
@@ -76,7 +77,7 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 				Cid:  content.Cid.CID.String(),
 				Name: content.Name,
 			},
-			Delegates: s.pinDelegatesForContent(content),
+			Delegates: s.pinDelegatesForContent(cont),
 			Info:      nil, // TODO: all sorts of extra info we could add...
 		}
 
@@ -98,18 +99,64 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 			Cid:  po.obj.String(),
 			Name: po.name,
 		},
-		Delegates: []string{},
+		Delegates: s.pinDelegatesForContent(cont),
 		Info:      nil,
 	}, nil
 }
 
-func (s *Server) pinDelegatesForContent(cont Content) []string {
+func (s *Server) pinDelegatesForContent(cont uint) []string {
 	var out []string
 	for _, a := range s.Node.Host.Addrs() {
 		out = append(out, fmt.Sprintf("%s/p2p/%s", a, s.Node.Host.ID()))
 	}
 
 	return out
+}
+
+func (s *Server) doPinning(op *pinningOperation) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	for _, pi := range op.peers {
+		if err := s.Node.Host.Connect(ctx, pi); err != nil {
+			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+		}
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+
+	dsess := merkledag.NewSession(ctx, dserv)
+
+	op.setStatus("pinning")
+	if err := s.addDatabaseTrackingToContent(ctx, op.contId, dsess, s.Node.Blockstore, op.obj); err != nil {
+		op.fail(err)
+		return err
+	}
+
+	op.complete()
+
+	s.CM.ToCheck <- op.contId
+
+	if err := s.Node.Provider.Provide(op.obj); err != nil {
+		log.Infof("providing failed: %s", err)
+	}
+
+	if op.replace > 0 {
+		if err := s.CM.RemoveContent(ctx, op.replace, true); err != nil {
+			log.Infof("failed to remove content in replacement: %d", op.replace)
+		}
+	}
+
+	return nil
+}
+
+func (s *Server) pinWorker() {
+	for op := range s.pinQueue {
+		if err := s.doPinning(op); err != nil {
+			log.Errorf("pinning queue error: %s", err)
+		}
+	}
 }
 
 func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint) (*ipfsPinStatus, error) {
@@ -134,51 +181,21 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 
 	// TODO: persist pin jobs across process restarts
 	op := &pinningOperation{
+		contId:  cont.ID,
 		obj:     obj,
 		name:    name,
 		cols:    cols,
 		peers:   peers,
 		started: cont.CreatedAt,
 		status:  "queued",
+		replace: replace,
 	}
 
 	s.pinLk.Lock()
 	s.pinJobs[cont.ID] = op
 	s.pinLk.Unlock()
 	go func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		for _, pi := range peers {
-			if err := s.Node.Host.Connect(ctx, pi); err != nil {
-				log.Warnf("failed to connect to origin node for pinning operation: %s", err)
-			}
-		}
-
-		bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
-		dserv := merkledag.NewDAGService(bserv)
-
-		dsess := merkledag.NewSession(ctx, dserv)
-
-		op.setStatus("pinning")
-		if err := s.addDatabaseTrackingToContent(ctx, cont.ID, dsess, s.Node.Blockstore, obj); err != nil {
-			op.fail(err)
-			return
-		}
-
-		op.complete()
-
-		s.CM.ToCheck <- cont.ID
-
-		if err := s.Node.Provider.Provide(obj); err != nil {
-			log.Infof("providing failed: %s", err)
-		}
-
-		if replace > 0 {
-			if err := s.CM.RemoveContent(ctx, replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d", replace)
-			}
-		}
+		s.pinQueue <- op
 	}()
 
 	return s.pinStatus(cont.ID)
@@ -365,8 +382,6 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Printf("status: %#v\n", status)
 
 	return e.JSON(202, status)
 }

@@ -135,6 +135,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
+	user.GET("/stats", withUser(s.handleGetUserStats))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(PermLevelUser))
@@ -1500,6 +1501,8 @@ type diskSpaceInfo struct {
 	BstoreSize uint64 `json:"bstoreSize"`
 	BstoreFree uint64 `json:"bstoreFree"`
 
+	LmdbUsage uint64 `json:"lmdbUsage"`
+
 	LmdbStat lmdbStat `json:"lmdbStat"`
 }
 
@@ -1517,6 +1520,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	return c.JSON(200, &diskSpaceInfo{
 		BstoreSize: st.Blocks * uint64(st.Bsize),
 		BstoreFree: st.Bavail * uint64(st.Bsize),
+		LmdbUsage:  uint64(lmst.PSize) * (lmst.BranchPages + lmst.OverflowPages + lmst.LeafPages),
 		LmdbStat: lmdbStat{
 			PSize:         lmst.PSize,
 			Depth:         lmst.Depth,
@@ -1792,7 +1796,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context())
+	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true")
 	if err != nil {
 		return err
 	}
@@ -2089,6 +2093,20 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, map[string]string{})
+}
+
+/*
+type userStatsResponse struct {
+	TotalSize int64 `json:"
+}
+*/
+func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
+	/*
+		if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Select("SUM(size) as total_size,COUNT(1) as num_pins").Error; err != nil {
+			return err
+		}
+	*/
+	return nil
 }
 
 func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {

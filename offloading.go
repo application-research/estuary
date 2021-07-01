@@ -32,7 +32,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx)
+	candidates, err := cm.getRemovalCandidates(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -40,13 +40,13 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 	// sort candidates by 'last used'
 	var offs []offloadCandidate
 	for _, c := range candidates {
-		la, err := cm.getLastAccessForContent(c)
+		la, err := cm.getLastAccessForContent(c.Content)
 		if err != nil {
 			return nil, err
 		}
 
 		offs = append(offs, offloadCandidate{
-			Content:    c,
+			Content:    c.Content,
 			LastAccess: la,
 		})
 	}
@@ -180,7 +180,7 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context) ([]Content, error) {
+func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool) ([]removalCandidateInfo, error) {
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 
@@ -189,41 +189,46 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context) ([]Content, 
 		return nil, err
 	}
 
-	var toOffload []Content
+	var toOffload []removalCandidateInfo
 	for _, c := range conts {
-		ok, err := cm.contentIsProperlyReplicated(ctx, c.ID, c.Replication)
+		good, progress, failed, err := cm.contentIsProperlyReplicated(ctx, c.ID)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
 
-		if !ok {
+		if !all && good >= c.Replication {
 			// maybe kick off repairs?
 			log.Infof("content %d is in need of repairs", c.ID)
 			continue
 		}
 
-		toOffload = append(toOffload, c)
+		toOffload = append(toOffload, removalCandidateInfo{
+			Content:         c,
+			TotalDeals:      good + progress + failed,
+			ActiveDeals:     good,
+			InProgressDeals: progress,
+		})
 	}
 
 	return toOffload, nil
 }
 
-func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint, repl int) (bool, error) {
+func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint) (int, int, int, error) {
 	var contentDeals []contentDeal
 	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
-		return false, err
+		return 0, 0, 0, err
 	}
 
-	var goodCount int
+	var goodCount, inprog, failed int
 	for _, d := range contentDeals {
-		if !d.Failed && d.DealID > 0 {
+		if d.Failed {
+			failed++
+		} else if !d.Failed && d.DealID > 0 {
 			goodCount++
+		} else {
+			inprog++
 		}
 	}
 
-	if goodCount >= repl {
-		return true, nil
-	}
-
-	return false, nil
+	return goodCount, inprog, failed, nil
 }

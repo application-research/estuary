@@ -241,7 +241,7 @@ func setupWallet(dir string) (*wallet.LocalWallet, error) {
 	}
 
 	if len(addrs) == 0 {
-		_, err := wallet.WalletNew(context.TODO(), types.KTBLS)
+		_, err := wallet.WalletNew(context.TODO(), types.KTSecp256k1)
 		if err != nil {
 			return nil, err
 		}
@@ -360,6 +360,11 @@ func main() {
 			tracer:     otel.Tracer("api"),
 			quickCache: make(map[string]endpointCache),
 			pinJobs:    make(map[uint]*pinningOperation),
+			pinQueue:   make(chan *pinningOperation, 64),
+		}
+
+		for i := 0; i < 10; i++ {
+			go s.pinWorker()
 		}
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
@@ -493,8 +498,9 @@ type Server struct {
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
 
-	pinLk   sync.Mutex
-	pinJobs map[uint]*pinningOperation
+	pinLk    sync.Mutex
+	pinJobs  map[uint]*pinningOperation
+	pinQueue chan *pinningOperation
 }
 
 type endpointCache struct {
