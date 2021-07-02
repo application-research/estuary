@@ -428,9 +428,11 @@ func main() {
 
 		s.CM = cm
 
-		if err := s.refreshPinQueue(); err != nil {
-			log.Errorf("failed to refresh pin queue: %s", err)
-		}
+		go func() {
+			if err := s.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
+		}()
 
 		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}

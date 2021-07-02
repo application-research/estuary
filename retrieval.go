@@ -45,6 +45,8 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
+				Content: content.ID,
+				Cid:     content.Cid,
 			})
 			log.Errorf("failed to query miner %s: %s", maddr, err)
 			continue
@@ -58,9 +60,11 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 type retrievalFailureRecord struct {
 	gorm.Model
-	Miner   string
-	Phase   string
-	Message string
+	Miner   string `json:"miner"`
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	Content uint   `json:"content"`
+	Cid     dbCID  `json:"cid"`
 }
 
 func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
@@ -96,6 +100,8 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
+				Content: contid,
+				Cid:     content.Cid,
 			})
 			continue
 		}

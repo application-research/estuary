@@ -1863,6 +1863,8 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
+				Content: content.ID,
+				Cid:     content.Cid,
 			})
 			continue
 		}
@@ -1873,8 +1875,10 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   maddr.String(),
-				Phase:   "query",
+				Phase:   "retrieval",
 				Message: err.Error(),
+				Content: content.ID,
+				Cid:     content.Cid,
 			})
 			continue
 		}
