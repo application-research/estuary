@@ -2096,18 +2096,20 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{})
 }
 
-/*
 type userStatsResponse struct {
-	TotalSize int64 `json:"
+	TotalSize int64 `json:"totalSize"`
+	NumPins   int64 `json:"numPins"`
 }
-*/
+
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
-	/*
-		if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Select("SUM(size) as total_size,COUNT(1) as num_pins").Error; err != nil {
-			return err
-		}
-	*/
-	return nil
+	var stats userStatsResponse
+	if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).
+		Select("SUM(size) as total_size,COUNT(1) as num_pins").
+		Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, stats)
 }
 
 func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
