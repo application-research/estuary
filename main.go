@@ -207,6 +207,9 @@ type Content struct {
 
 	AggregatedIn uint `json:"aggregatedIn"`
 	Aggregate    bool `json:"aggregate"`
+
+	Pinning bool   `json:"pinning"`
+	PinMeta string `json:"pinMeta"`
 }
 
 type Object struct {

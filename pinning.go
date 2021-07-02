@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,8 +19,8 @@ import (
 type pinningOperation struct {
 	obj   cid.Cid
 	name  string
-	cols  []*Collection
 	peers []peer.AddrInfo
+	meta  map[string]interface{}
 
 	status string
 
@@ -69,6 +70,13 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 			return nil, err
 		}
 
+		var meta map[string]interface{}
+		if content.PinMeta != "" {
+			if err := json.Unmarshal([]byte(content.PinMeta), &meta); err != nil {
+				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
+			}
+		}
+
 		ps := &ipfsPinStatus{
 			Requestid: fmt.Sprint(cont),
 			Status:    "pinning",
@@ -76,6 +84,7 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 			Pin: ipfsPin{
 				Cid:  content.Cid.CID.String(),
 				Name: content.Name,
+				Meta: meta,
 			},
 			Delegates: s.pinDelegatesForContent(cont),
 			Info:      nil, // TODO: all sorts of extra info we could add...
@@ -98,6 +107,7 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 		Pin: ipfsPin{
 			Cid:  po.obj.String(),
 			Name: po.name,
+			Meta: po.meta,
 		},
 		Delegates: s.pinDelegatesForContent(cont),
 		Info:      nil,
@@ -159,7 +169,35 @@ func (s *Server) pinWorker() {
 	}
 }
 
-func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint) (*ipfsPinStatus, error) {
+func (s *Server) refreshPinQueue() error {
+	var toPin []Content
+	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+		return err
+	}
+
+	// TODO: this doesnt persist the replacement directives, so a queued
+	// replacement, if ongoing during a restart of the node, will still
+	// complete the pin when the process comes back online, but it wont delete
+	// the old pin.
+	// Need to fix this, probably best option is just to add a 'replace' field
+	// to content, could be interesting to see the graph of replacements
+	// anyways
+	for _, c := range toPin {
+		s.addPinToQueue(c, nil, 0)
+	}
+
+	return nil
+}
+
+func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*ipfsPinStatus, error) {
+	var metab string
+	if meta != nil {
+		b, err := json.Marshal(meta)
+		if err != nil {
+			return nil, err
+		}
+		metab = string(b)
+	}
 
 	cont := Content{
 		Cid: dbCID{obj},
@@ -168,6 +206,9 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 		UserID:      user,
 		Active:      false,
 		Replication: defaultReplication,
+
+		Pinning: true,
+		PinMeta: metab,
 
 		/*
 			Size        int64  `json:"size"`
@@ -179,12 +220,17 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 		return nil, err
 	}
 
-	// TODO: persist pin jobs across process restarts
+	s.addPinToQueue(cont, peers, replace)
+
+	return s.pinStatus(cont.ID)
+}
+
+// TODO: the queue needs to be a lot smarter than throwing things into a channel...
+func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
 	op := &pinningOperation{
 		contId:  cont.ID,
-		obj:     obj,
-		name:    name,
-		cols:    cols,
+		obj:     cont.Cid.CID,
+		name:    cont.Name,
 		peers:   peers,
 		started: cont.CreatedAt,
 		status:  "queued",
@@ -192,13 +238,13 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 	}
 
 	s.pinLk.Lock()
+	// TODO: check if we are overwriting anything here
 	s.pinJobs[cont.ID] = op
 	s.pinLk.Unlock()
+
 	go func() {
 		s.pinQueue <- op
 	}()
-
-	return s.pinStatus(cont.ID)
 }
 
 type ipfsPin struct {
@@ -378,7 +424,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, 0)
+	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
 	if err != nil {
 		return err
 	}
@@ -437,7 +483,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, uint(id))
+	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
 	if err != nil {
 		return err
 	}

@@ -663,8 +663,9 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 	}
 
 	if err := s.DB.Model(Content{}).Where("id = ?", cont).UpdateColumns(map[string]interface{}{
-		"active": true,
-		"size":   totalSize,
+		"active":  true,
+		"size":    totalSize,
+		"pinning": false,
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
