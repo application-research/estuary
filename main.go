@@ -357,14 +357,17 @@ func main() {
 		}
 
 		s := &Server{
-			Node:       nd,
-			Api:        api,
-			StagingMgr: sbmgr,
-			tracer:     otel.Tracer("api"),
-			quickCache: make(map[string]endpointCache),
-			pinJobs:    make(map[uint]*pinningOperation),
-			pinQueue:   make(chan *pinningOperation, 64),
+			Node:        nd,
+			Api:         api,
+			StagingMgr:  sbmgr,
+			tracer:      otel.Tracer("api"),
+			quickCache:  make(map[string]endpointCache),
+			pinJobs:     make(map[uint]*pinningOperation),
+			pinQueueIn:  make(chan *pinningOperation, 64),
+			pinQueueOut: make(chan *pinningOperation),
 		}
+
+		go s.pinQueueManager()
 
 		for i := 0; i < 10; i++ {
 			go s.pinWorker()
@@ -424,6 +427,10 @@ func main() {
 		}
 
 		s.CM = cm
+
+		if err := s.refreshPinQueue(); err != nil {
+			log.Errorf("failed to refresh pin queue: %s", err)
+		}
 
 		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
@@ -501,9 +508,13 @@ type Server struct {
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
 
-	pinLk    sync.Mutex
-	pinJobs  map[uint]*pinningOperation
-	pinQueue chan *pinningOperation
+	pinLk   sync.Mutex
+	pinJobs map[uint]*pinningOperation
+
+	pinQueueIn  chan *pinningOperation
+	pinQueueOut chan *pinningOperation
+	pinQueue    []*pinningOperation
+	pinQueueLk  sync.Mutex
 }
 
 type endpointCache struct {

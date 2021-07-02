@@ -127,6 +127,9 @@ func (s *Server) doPinning(op *pinningOperation) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	ctx, span := s.tracer.Start(ctx, "doPinning")
+	defer span.End()
+
 	for _, pi := range op.peers {
 		if err := s.Node.Host.Connect(ctx, pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
@@ -161,8 +164,43 @@ func (s *Server) doPinning(op *pinningOperation) error {
 	return nil
 }
 
+func (s *Server) pinQueueManager() {
+	var next *pinningOperation
+
+	var send chan *pinningOperation
+
+	if len(s.pinQueue) > 0 {
+		next = s.pinQueue[0]
+		s.pinQueue = s.pinQueue[1:]
+		send = s.pinQueueOut
+	}
+
+	for {
+		select {
+		case op := <-s.pinQueueIn:
+			if next == nil {
+				next = op
+				send = s.pinQueueOut
+			} else {
+				s.pinQueueLk.Lock()
+				s.pinQueue = append(s.pinQueue, op)
+				s.pinQueueLk.Unlock()
+			}
+		case send <- next:
+			if len(s.pinQueue) > 0 {
+				next = s.pinQueue[0]
+				s.pinQueue = s.pinQueue[1:]
+				send = s.pinQueueOut
+			} else {
+				next = nil
+				send = nil
+			}
+		}
+	}
+}
+
 func (s *Server) pinWorker() {
-	for op := range s.pinQueue {
+	for op := range s.pinQueueOut {
 		if err := s.doPinning(op); err != nil {
 			log.Errorf("pinning queue error: %s", err)
 		}
@@ -243,7 +281,7 @@ func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint
 	s.pinLk.Unlock()
 
 	go func() {
-		s.pinQueue <- op
+		s.pinQueueIn <- op
 	}()
 }
 
