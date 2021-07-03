@@ -107,13 +107,13 @@ func newContentStagingZone() *contentStagingZone {
 }
 
 // amount of time a staging zone will remain open before we aggregate it into a piece of content
-const maxStagingZoneLifetime = time.Hour * 4
+const maxStagingZoneLifetime = time.Hour * 8
 
 // maximum amount of time a piece of content will go without either being aggregated or having a deal made for it
-const maxContentAge = time.Hour * 24
+const maxContentAge = time.Hour * 24 * 7
 
 // staging zones will remain open for at least this long after the last piece of content is added to them (unless they are full)
-const stagingZoneKeepalive = time.Minute * 20
+const stagingZoneKeepalive = time.Minute * 40
 
 const maxBucketItems = 10000
 
@@ -1715,7 +1715,12 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, rt abi.Registe
 	return pc, size, nil
 }
 
-func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) {
+func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	ctx, span := cm.tracer.Start(ctx, "refreshForCid", trace.WithAttributes(
+		attribute.Stringer("cid", c),
+	))
+	defer span.End()
+
 	var obj Object
 	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
 		return nil, xerrors.Errorf("failed to get object from db: ", err)
@@ -1752,7 +1757,6 @@ func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) 
 		}
 	}
 
-	ctx := context.TODO()
 	if err := cm.retrieveContent(ctx, contentToFetch); err != nil {
 		return nil, xerrors.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
 	}
@@ -1766,6 +1770,9 @@ func (cm *ContentManager) RefreshContentForCid(c cid.Cid) (blocks.Block, error) 
 }
 
 func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
+	ctx, span := cm.tracer.Start(ctx, "refreshContent")
+	defer span.End()
+
 	if err := cm.DB.Model(&Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
 		return err
 	}

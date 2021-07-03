@@ -17,7 +17,7 @@ type TrackingBlockstore struct {
 
 	db *gorm.DB
 
-	cidReq func(cid.Cid) (blocks.Block, error)
+	cidReq func(context.Context, cid.Cid) (blocks.Block, error)
 
 	buffer    map[cid.Cid]accesses
 	getCh     chan cid.Cid
@@ -33,7 +33,7 @@ type accesses struct {
 }
 
 func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlockstore {
-	cidReq := func(cid.Cid) (blocks.Block, error) {
+	cidReq := func(context.Context, cid.Cid) (blocks.Block, error) {
 		return nil, blockstore.ErrNotFound
 	}
 
@@ -55,7 +55,7 @@ func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlock
 
 var _ (blockstore.Blockstore) = (*TrackingBlockstore)(nil)
 
-func (tbs *TrackingBlockstore) SetCidReqFunc(f func(cid.Cid) (blocks.Block, error)) {
+func (tbs *TrackingBlockstore) SetCidReqFunc(f func(context.Context, cid.Cid) (blocks.Block, error)) {
 	tbs.cidReq = f
 }
 
@@ -177,7 +177,9 @@ func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 
 			// TODO: this will wait for the retrieval to complete, which *might* take a while.
 			// maybe we return not found now, and get back to it later?
-			return tbs.cidReq(c)
+			return tbs.cidReq(context.TODO(), c)
+			// TODO: We should very explicitly record failures here, this is
+			// one of the most critical services estuary performs
 		}
 		return nil, err
 	}

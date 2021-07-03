@@ -123,6 +123,8 @@ type storageMiner struct {
 	SuspendedReason string
 	Name            string
 	Version         string
+	Location        string
+	Owner           uint
 }
 
 type dbAddr struct {
