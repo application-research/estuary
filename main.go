@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	autobatch "github.com/application-research/go-bs-autobatch"
 	"github.com/filecoin-project/go-address"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	"github.com/ipfs/go-bitswap"
@@ -43,6 +44,7 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
+	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -272,6 +274,7 @@ func main() {
 	logging.SetLogLevel("markets", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
 	logging.SetLogLevel("rpc", "info")
+	logging.SetLogLevel("bs-wal", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -295,6 +298,10 @@ func main() {
 			Usage:   "directory to store data in",
 			Value:   ".",
 			EnvVars: []string{"ESTUARY_DATADIR"},
+		},
+		&cli.StringFlag{
+			Name:  "write-log",
+			Usage: "enable write log blockstore in specified directory",
 		},
 		&cli.BoolFlag{
 			Name: "no-storage-cron",
@@ -328,6 +335,14 @@ func main() {
 			Libp2pKeyFile: filepath.Join(ddir, "estuary-peer.key"),
 			Datastore:     filepath.Join(ddir, "estuary-leveldb"),
 			WalletDir:     filepath.Join(ddir, "estuary-wallet"),
+		}
+
+		if wl := cctx.String("write-log"); wl != "" {
+			if wl[0] == '/' {
+				cfg.WriteLog = wl
+			} else {
+				cfg.WriteLog = filepath.Join(ddir, wl)
+			}
 		}
 
 		api, closer, err := lcli.GetGatewayAPI(cctx)
@@ -614,6 +629,8 @@ type Config struct {
 
 	Blockstore string
 
+	WriteLog string
+
 	Libp2pKeyFile string
 
 	Datastore string
@@ -650,12 +667,28 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		return nil, err
 	}
 
-	bstore, err := lmdb.Open(&lmdb.Options{
+	lmdbs, err := lmdb.Open(&lmdb.Options{
 		Path:   cfg.Blockstore,
 		NoSync: true,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	var bstore blockstore.Blockstore = lmdbs
+
+	if cfg.WriteLog != "" {
+		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
+		if err != nil {
+			return nil, err
+		}
+
+		ab, err := autobatch.NewBlockstore(bstore, writelog, 200)
+		if err != nil {
+			return nil, err
+		}
+
+		bstore = ab
 	}
 
 	mbs := bsm.New("estuary", bstore)
@@ -713,7 +746,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		Provider:           prov,
 		Host:               h,
 		Blockstore:         mbs,
-		Lmdb:               bstore,
+		Lmdb:               lmdbs,
 		Datastore:          ds,
 		Bitswap:            bswap.(*bitswap.Bitswap),
 		TrackingBlockstore: tbs,
