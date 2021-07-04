@@ -2116,7 +2116,7 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 	authToken := &AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 30),
+		Expiry: time.Now().Add(time.Hour * 24 * 365),
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {

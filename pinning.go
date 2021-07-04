@@ -24,6 +24,7 @@ type pinningOperation struct {
 
 	status string
 
+	userId  uint
 	contId  uint
 	replace uint
 
@@ -164,14 +165,52 @@ func (s *Server) doPinning(op *pinningOperation) error {
 	return nil
 }
 
+const maxActivePerUser = 10
+
+func (s *Server) popNextPinOp() *pinningOperation {
+	if len(s.pinQueue) == 0 {
+		return nil
+	}
+
+	var minCount int = 10000
+	var user uint
+	for u := range s.pinQueue {
+		active := s.activePins[u]
+		if active < minCount {
+			minCount = active
+			user = u
+		}
+	}
+
+	if minCount >= maxActivePerUser {
+		return nil
+	}
+
+	pq := s.pinQueue[user]
+
+	next := pq[0]
+
+	if len(pq) == 1 {
+		delete(s.pinQueue, user)
+	} else {
+		s.pinQueue[user] = pq[1:]
+	}
+
+	return next
+}
+
+func (s *Server) enqueuePinOp(po *pinningOperation) {
+	q := s.pinQueue[po.userId]
+	s.pinQueue[po.userId] = append(q, po)
+}
+
 func (s *Server) pinQueueManager() {
 	var next *pinningOperation
 
 	var send chan *pinningOperation
 
-	if len(s.pinQueue) > 0 {
-		next = s.pinQueue[0]
-		s.pinQueue = s.pinQueue[1:]
+	next = s.popNextPinOp()
+	if next != nil {
 		send = s.pinQueueOut
 	}
 
@@ -183,18 +222,30 @@ func (s *Server) pinQueueManager() {
 				send = s.pinQueueOut
 			} else {
 				s.pinQueueLk.Lock()
-				s.pinQueue = append(s.pinQueue, op)
+				s.enqueuePinOp(op)
 				s.pinQueueLk.Unlock()
 			}
 		case send <- next:
-			if len(s.pinQueue) > 0 {
-				next = s.pinQueue[0]
-				s.pinQueue = s.pinQueue[1:]
-				send = s.pinQueueOut
-			} else {
-				next = nil
+			s.pinQueueLk.Lock()
+			s.activePins[next.userId]++
+
+			next = s.popNextPinOp()
+			if next == nil {
 				send = nil
 			}
+			s.pinQueueLk.Unlock()
+		case op := <-s.pinComplete:
+			s.pinQueueLk.Lock()
+			s.activePins[op.userId]--
+
+			if next == nil {
+				next = s.popNextPinOp()
+				if next != nil {
+					send = s.pinQueueOut
+				}
+			}
+			s.pinQueueLk.Unlock()
+
 		}
 	}
 }
@@ -204,6 +255,7 @@ func (s *Server) pinWorker() {
 		if err := s.doPinning(op); err != nil {
 			log.Errorf("pinning queue error: %s", err)
 		}
+		s.pinComplete <- op
 	}
 }
 
@@ -267,6 +319,7 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
 	op := &pinningOperation{
 		contId:  cont.ID,
+		userId:  cont.UserID,
 		obj:     cont.Cid.CID,
 		name:    cont.Name,
 		peers:   peers,

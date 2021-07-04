@@ -380,13 +380,16 @@ func main() {
 			tracer:      otel.Tracer("api"),
 			quickCache:  make(map[string]endpointCache),
 			pinJobs:     make(map[uint]*pinningOperation),
+			pinQueue:    make(map[uint][]*pinningOperation),
+			activePins:  make(map[uint]int),
 			pinQueueIn:  make(chan *pinningOperation, 64),
 			pinQueueOut: make(chan *pinningOperation),
+			pinComplete: make(chan *pinningOperation, 64),
 		}
 
 		go s.pinQueueManager()
 
-		for i := 0; i < 10; i++ {
+		for i := 0; i < 20; i++ {
 			go s.pinWorker()
 		}
 
@@ -532,7 +535,9 @@ type Server struct {
 
 	pinQueueIn  chan *pinningOperation
 	pinQueueOut chan *pinningOperation
-	pinQueue    []*pinningOperation
+	pinComplete chan *pinningOperation
+	pinQueue    map[uint][]*pinningOperation
+	activePins  map[uint]int
 	pinQueueLk  sync.Mutex
 }
 

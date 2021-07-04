@@ -958,6 +958,36 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		minersAlready[maddr] = true
 	}
 
+	// check on each of the existing deals, see if they need fixing
+	var numSealed, numPublished, numProgress int
+	for _, d := range deals {
+		status, err := cm.checkDeal(ctx, &d)
+		if err != nil {
+			var dfe *DealFailureError
+			if xerrors.As(err, &dfe) {
+				cm.recordDealFailure(dfe)
+				continue
+			} else {
+				return errDelay, err
+			}
+		}
+
+		switch status {
+		case DEAL_CHECK_UNKNOWN:
+			if err := cm.repairDeal(&d); err != nil {
+				return errDelay, xerrors.Errorf("repairing deal failed: %w", err)
+			}
+		case DEAL_CHECK_SECTOR_ON_CHAIN:
+			numSealed++
+		case DEAL_CHECK_DEALID_ON_CHAIN:
+			numPublished++
+		case DEAL_CHECK_PROGRESS:
+			numProgress++
+		default:
+			log.Errorf("unrecognized deal check status: %d", status)
+		}
+	}
+
 	if len(deals) < replicationFactor {
 		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil {
@@ -994,32 +1024,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
 		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
 			return errDelay, err
-		}
-	}
-
-	// check on each of the existing deals, see if they need fixing
-	var numSealed, numPublished int
-	for _, d := range deals {
-		status, err := cm.checkDeal(ctx, &d)
-		if err != nil {
-			var dfe *DealFailureError
-			if xerrors.As(err, &dfe) {
-				cm.recordDealFailure(dfe)
-				continue
-			} else {
-				return errDelay, err
-			}
-		}
-
-		switch status {
-		case DEAL_CHECK_UNKNOWN:
-			if err := cm.repairDeal(&d); err != nil {
-				return errDelay, xerrors.Errorf("repairing deal failed: %w", err)
-			}
-		case DEAL_CHECK_SECTOR_ON_CHAIN:
-			numSealed++
-		case DEAL_CHECK_DEALID_ON_CHAIN:
-			numPublished++
 		}
 	}
 
