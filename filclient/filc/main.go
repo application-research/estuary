@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"time"
 
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -36,6 +38,7 @@ func main() {
 		getAskCmd,
 		infoCmd,
 		listDealsCmd,
+		retrieveFileCmd,
 		queryRetrievalCmd,
 	}
 	app.Flags = []cli.Flag{
@@ -317,16 +320,17 @@ var listDealsCmd = &cli.Command{
 	},
 }
 
-var queryRetrievalCmd = &cli.Command{
-	Name: "query-retrieval",
+var retrieveFileCmd = &cli.Command{
+	Name: "retrieve",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}},
+		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
 	Action: func(cctx *cli.Context) error {
+		ctx := context.Background()
 
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
-			return fmt.Errorf("please specify a CID to query retrieval of")
+			return fmt.Errorf("please specify a CID to retrieve")
 		}
 
 		minerStr := cctx.String("miner")
@@ -334,12 +338,12 @@ var queryRetrievalCmd = &cli.Command{
 			return fmt.Errorf("must specify a miner with --miner")
 		}
 
-		miner, err := address.NewFromString(minerStr)
+		cid, err := cid.Decode(cidStr)
 		if err != nil {
 			return err
 		}
 
-		cid, err := cid.Decode(cidStr)
+		miner, err := address.NewFromString(minerStr)
 		if err != nil {
 			return err
 		}
@@ -355,18 +359,90 @@ var queryRetrievalCmd = &cli.Command{
 		}
 		defer closer()
 
-		res, err := fc.RetrievalQuery(context.TODO(), miner, cid)
+		query, err := fc.RetrievalQuery(ctx, miner, cid)
+		if err != nil {
+			return err
+		}
+
+		stats, err := fc.RetrieveContent(ctx, miner, &retrievalmarket.DealProposal{
+			PayloadCID: cid,
+			ID:         retrievalmarket.DealID(rand.Int63n(1000000) + 100000),
+			Params: retrievalmarket.Params{
+				Selector:                nil,
+				PieceCID:                nil,
+				PricePerByte:            query.MinPricePerByte,
+				PaymentInterval:         query.MaxPaymentInterval,
+				PaymentIntervalIncrease: query.MaxPaymentIntervalIncrease,
+				UnsealPrice:             query.UnsealPrice,
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("retrieved content")
+		fmt.Println("Total Payment: ", stats.TotalPayment)
+		fmt.Println("Num Payments: ", stats.NumPayments)
+		fmt.Println("Size: ", stats.Size)
+		fmt.Println("Duration: ", stats.Duration)
+		fmt.Println("Average Speed: ", stats.AverageSpeed)
+		fmt.Println("Ask Price: ", stats.AskPrice)
+		fmt.Println("Peer: ", stats.Peer)
+
+		return nil
+	},
+}
+
+var queryRetrievalCmd = &cli.Command{
+	Name: "query-retrieval",
+	Flags: []cli.Flag{
+		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		cidStr := cctx.Args().First()
+		if cidStr == "" {
+			return fmt.Errorf("please specify a CID to query retrieval of")
+		}
+
+		minerStr := cctx.String("miner")
+		if minerStr == "" {
+			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		cid, err := cid.Decode(cidStr)
+		if err != nil {
+			return err
+		}
+
+		miner, err := address.NewFromString(minerStr)
+		if err != nil {
+			return err
+		}
+
+		ddir, err := homedir.Expand("~/.filc")
+		if err != nil {
+			return err
+		}
+
+		fc, closer, err := getClient(cctx, ddir)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		query, err := fc.RetrievalQuery(context.TODO(), miner, cid)
 		if err != nil {
 			return err
 		}
 
 		fmt.Println("got retrieval info")
-		fmt.Println("Size: ", res.Size)
-		fmt.Println("Unseal Price: ", res.UnsealPrice)
-		fmt.Println("Min Price Per Byte: ", res.MinPricePerByte)
-		fmt.Println("Payment Address: ", res.PaymentAddress)
-		if res.Message != "" {
-			fmt.Println("Message: ", res.Message)
+		fmt.Println("Size: ", query.Size)
+		fmt.Println("Unseal Price: ", query.UnsealPrice)
+		fmt.Println("Min Price Per Byte: ", query.MinPricePerByte)
+		fmt.Println("Payment Address: ", query.PaymentAddress)
+		if query.Message != "" {
+			fmt.Println("Message: ", query.Message)
 		}
 
 		return nil
