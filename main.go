@@ -389,7 +389,7 @@ func main() {
 
 		go s.pinQueueManager()
 
-		for i := 0; i < 20; i++ {
+		for i := 0; i < 30; i++ {
 			go s.pinWorker()
 		}
 
@@ -613,6 +613,7 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 type Node struct {
 	Dht      *dht.IpfsDHT
 	Provider *batched.BatchProvidingSystem
+	FullRT   *fullrt.FullRT
 	Host     host.Host
 
 	Lmdb      *lmdb.Blockstore
@@ -748,6 +749,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 
 	return &Node{
 		Dht:                dht,
+		FullRT:             frt,
 		Provider:           prov,
 		Host:               h,
 		Blockstore:         mbs,

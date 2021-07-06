@@ -125,7 +125,7 @@ func (s *Server) pinDelegatesForContent(cont uint) []string {
 }
 
 func (s *Server) doPinning(op *pinningOperation) error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
 	defer cancel()
 
 	ctx, span := s.tracer.Start(ctx, "doPinning")
@@ -152,20 +152,26 @@ func (s *Server) doPinning(op *pinningOperation) error {
 
 	s.CM.ToCheck <- op.contId
 
-	if err := s.Node.Provider.Provide(op.obj); err != nil {
-		log.Infof("providing failed: %s", err)
-	}
-
 	if op.replace > 0 {
 		if err := s.CM.RemoveContent(ctx, op.replace, true); err != nil {
 			log.Infof("failed to remove content in replacement: %d", op.replace)
 		}
 	}
 
+	// this provide call goes out immediately
+	if err := s.Node.FullRT.Provide(ctx, op.obj, true); err != nil {
+		log.Infof("provider broadcast failed: %s", err)
+	}
+
+	// this one adds to a queue
+	if err := s.Node.Provider.Provide(op.obj); err != nil {
+		log.Infof("providing failed: %s", err)
+	}
+
 	return nil
 }
 
-const maxActivePerUser = 10
+const maxActivePerUser = 15
 
 func (s *Server) popNextPinOp() *pinningOperation {
 	if len(s.pinQueue) == 0 {
@@ -583,6 +589,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 }
 
 func (s *Server) handleDeletePin(e echo.Context, u *User) error {
+	// TODO: need to cancel any in-progress pinning operation
 	ctx := e.Request().Context()
 	id, err := strconv.Atoi(e.Param("requestid"))
 	if err != nil {
