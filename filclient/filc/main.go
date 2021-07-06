@@ -13,6 +13,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
+	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
@@ -35,6 +36,7 @@ func main() {
 		getAskCmd,
 		infoCmd,
 		listDealsCmd,
+		queryRetrievalCmd,
 	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -309,6 +311,62 @@ var listDealsCmd = &cli.Command{
 
 		for _, dcid := range deals {
 			fmt.Println(dcid)
+		}
+
+		return nil
+	},
+}
+
+var queryRetrievalCmd = &cli.Command{
+	Name: "query-retrieval",
+	Flags: []cli.Flag{
+		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		cidStr := cctx.Args().First()
+		if cidStr == "" {
+			return fmt.Errorf("please specify a CID to query retrieval of")
+		}
+
+		minerStr := cctx.String("miner")
+		if minerStr == "" {
+			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		miner, err := address.NewFromString(minerStr)
+		if err != nil {
+			return err
+		}
+
+		cid, err := cid.Decode(cidStr)
+		if err != nil {
+			return err
+		}
+
+		ddir, err := homedir.Expand("~/.filc")
+		if err != nil {
+			return err
+		}
+
+		fc, closer, err := getClient(cctx, ddir)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		res, err := fc.RetrievalQuery(context.TODO(), miner, cid)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("got retrieval info")
+		fmt.Println("Size: ", res.Size)
+		fmt.Println("Unseal Price: ", res.UnsealPrice)
+		fmt.Println("Min Price Per Byte: ", res.MinPricePerByte)
+		fmt.Println("Payment Address: ", res.PaymentAddress)
+		if res.Message != "" {
+			fmt.Println("Message: ", res.Message)
 		}
 
 		return nil
