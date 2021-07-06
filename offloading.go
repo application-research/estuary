@@ -23,6 +23,7 @@ type collectionResult struct {
 	ContentsFreed        []offloadCandidate `json:"contentsFreed"`
 	CandidatesConsidered int                `json:"candidatesConsidered"`
 	BlocksRemoved        int                `json:"blocksRemoved"`
+	DryRun               bool               `json:"dryRun"`
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, dryrun bool) (*collectionResult, error) {
@@ -72,6 +73,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 		SpaceFreed:           spaceRequest - bytesRemaining,
 		ContentsFreed:        toRemove,
 		CandidatesConsidered: len(candidates),
+		DryRun:               dryrun,
 	}
 
 	if dryrun {
@@ -139,7 +141,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			}
 
 			if err := cm.DB.Model(&ObjRef{}).
-				Where("content in ?",
+				Where("content in (?)",
 					cm.DB.Model(Content{}).
 						Where("aggregated_in = ?", c).
 						Select("id")).
