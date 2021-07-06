@@ -214,18 +214,17 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool) ([
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
 
-		if !all && good >= c.Replication {
+		if all || good >= c.Replication {
+			toOffload = append(toOffload, removalCandidateInfo{
+				Content:         c,
+				TotalDeals:      good + progress + failed,
+				ActiveDeals:     good,
+				InProgressDeals: progress,
+			})
+		} else {
 			// maybe kick off repairs?
 			log.Infof("content %d is in need of repairs", c.ID)
-			continue
 		}
-
-		toOffload = append(toOffload, removalCandidateInfo{
-			Content:         c,
-			TotalDeals:      good + progress + failed,
-			ActiveDeals:     good,
-			InProgressDeals: progress,
-		})
 	}
 
 	return toOffload, nil

@@ -142,6 +142,10 @@ func (cb *contentStagingZone) hasRoomForContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
+	if len(cb.Contents) >= cb.MaxItems {
+		return false
+	}
+
 	return cb.CurSize+c.Size <= cb.MaxSize
 }
 
