@@ -1835,7 +1835,7 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	removed, err := s.CM.OffloadContent(c.Request().Context(), uint(cont))
+	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint{uint(cont)})
 	if err != nil {
 		return err
 	}
