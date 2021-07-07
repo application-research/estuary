@@ -40,6 +40,11 @@ import (
 
 const defaultReplication = 6
 
+type EstuaryBlockstore interface {
+	blockstore.Blockstore
+	DeleteMany([]cid.Cid) error
+}
+
 type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
@@ -48,7 +53,7 @@ type ContentManager struct {
 
 	tracer trace.Tracer
 
-	Blockstore blockstore.Blockstore
+	Blockstore EstuaryBlockstore
 	Tracker    *TrackingBlockstore
 
 	ToCheck  chan uint
@@ -189,7 +194,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
-		Blockstore:           tbs.Under(),
+		Blockstore:           tbs.Under().(EstuaryBlockstore),
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),

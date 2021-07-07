@@ -3,10 +3,10 @@ module github.com/whyrusleeping/estuary
 go 1.15
 
 require (
-	github.com/application-research/go-bs-autobatch v0.0.0-20210703215650-04b3fd4955cf
+	github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea4303
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/filecoin-project/go-address v0.0.5
-	github.com/filecoin-project/go-bs-lmdb v1.0.5-0.20210630201652-b5b890078bea
+	github.com/filecoin-project/go-bs-lmdb v1.0.5
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.1-0.20210427191551-70bf140d31c7
 	github.com/filecoin-project/go-data-transfer v1.6.0
@@ -49,7 +49,7 @@ require (
 	github.com/spf13/viper v1.8.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
-	github.com/whyrusleeping/go-bs-measure v0.0.0-20210621165307-7143c5de1e39
+	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707001526-6239c3a9d3ab
 	go.opentelemetry.io/otel v0.18.0
 	go.opentelemetry.io/otel/trace v0.18.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
