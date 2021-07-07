@@ -1843,6 +1843,10 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 	return nil
 }
 
+func (cm *ContentManager) indexForAggregate(ctx context.Context, aggregateID, contID uint) (int, error) {
+	return 0, fmt.Errorf("selector based retrieval not yet implemented")
+}
+
 func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) error {
 	ctx, span := cm.tracer.Start(ctx, "runRetrieval")
 	defer span.End()
@@ -1850,6 +1854,18 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	var content Content
 	if err := cm.DB.First(&content, contentToFetch).Error; err != nil {
 		return err
+	}
+
+	rootContent := content.ID
+
+	index := -1
+	if content.AggregatedIn > 0 {
+		rootContent = content.AggregatedIn
+		ix, err := cm.indexForAggregate(ctx, rootContent, contentToFetch)
+		if err != nil {
+			return err
+		}
+		index = ix
 	}
 
 	var deals []contentDeal

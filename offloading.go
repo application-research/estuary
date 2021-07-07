@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 )
 
@@ -179,17 +180,29 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	// come in that has overlapping blocks, and have its blocks deleted by this
 	// process.
 	var deleteCount int
+	var cids []cid.Cid
 	for rows.Next() {
 		var dbc dbCID
 		if err := rows.Scan(&dbc); err != nil {
 			return deleteCount, err
 		}
 
-		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
+		cids = append(cids, dbc.CID)
+		if len(cids) > 100 {
+			if err := cm.Blockstore.DeleteMany(cids); err != nil {
+				return deleteCount, err
+			}
+			deleteCount += len(cids)
+			cids = cids[:0]
+		}
+	}
+	if len(cids) > 0 {
+		if err := cm.Blockstore.DeleteMany(cids); err != nil {
 			return deleteCount, err
 		}
-		deleteCount++
+		deleteCount += len(cids)
 	}
+
 	return deleteCount, nil
 }
 
