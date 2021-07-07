@@ -23,11 +23,21 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	exchangeoffline "github.com/ipfs/go-ipfs-exchange-offline"
 	batched "github.com/ipfs/go-ipfs-provider/batched"
-	ipld "github.com/ipfs/go-ipld-format"
+	ipldformat "github.com/ipfs/go-ipld-format"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
+	ipld "github.com/ipld/go-ipld-prime"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	ipldbasicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/traversal"
+	"github.com/ipld/go-ipld-prime/traversal/selector"
+	selectorbuilder "github.com/ipld/go-ipld-prime/traversal/selector/builder"
+	textselector "github.com/ipld/go-ipld-selector-text-lite"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
@@ -362,7 +372,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range b.Contents {
-		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
+		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipldformat.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
@@ -1844,47 +1854,65 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 		close(prog.wait)
 	}()
 
-	if err := cm.runRetrieval(ctx, contentToFetch); err != nil {
+	contentRoot, err := cm.runRetrieval(ctx, contentToFetch)
+	if err != nil {
 		prog.endErr = err
 		return err
 	}
 
+	// FIXME need to do something with this
+	panic(contentRoot)
+
 	return nil
 }
 
-func (cm *ContentManager) indexForAggregate(ctx context.Context, aggregateID, contID uint) (int, error) {
-	return 0, fmt.Errorf("selector based retrieval not yet implemented")
+func (cm *ContentManager) unixFsIndexPathForAggregate(ctx context.Context, aggregateID, contID uint) (textselector.Expression, error) {
+	return textselector.Expression("Link/420/Hash/Link/21/Hash"), fmt.Errorf("selector based retrieval not yet implemented")
 }
 
-func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) error {
+func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) (cid.Cid, error) {
 	ctx, span := cm.tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
 	var content Content
 	if err := cm.DB.First(&content, contentToFetch).Error; err != nil {
-		return err
+		return cid.Undef, err
 	}
 
 	rootContent := content.ID
 
-	index := -1
-	if content.AggregatedIn > 0 {
-		rootContent = content.AggregatedIn
-		ix, err := cm.indexForAggregate(ctx, rootContent, contentToFetch)
-		if err != nil {
-			return err
-		}
-		index = ix
-	}
-	_ = index
-
 	var deals []contentDeal
 	if err := cm.DB.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
-		return err
+		return cid.Undef, err
 	}
 
 	if len(deals) == 0 {
-		return xerrors.Errorf("no active deals for content %d we are trying to retrieve", contentToFetch)
+		return cid.Undef, xerrors.Errorf("no active deals for content %d we are trying to retrieve", contentToFetch)
+	}
+
+	var pathSelection textselector.Expression
+	var subselectDag ipld.Node
+	if content.AggregatedIn > 0 {
+		rootContent = content.AggregatedIn
+
+		var err error
+		pathSelection, err = cm.unixFsIndexPathForAggregate(ctx, rootContent, contentToFetch)
+		if err != nil {
+			return cid.Undef, err
+		}
+
+		ssb := selectorbuilder.NewSelectorSpecBuilder(ipldbasicnode.Prototype.Any)
+		selSpecDag, err := textselector.SelectorSpecFromPath(
+			pathSelection,
+			ssb.ExploreRecursive(selector.RecursionLimitNone(), ssb.ExploreUnion(
+				ssb.Matcher(),
+				ssb.ExploreAll(ssb.ExploreRecursiveEdge()),
+			)),
+		)
+		if err != nil {
+			return cid.Undef, err
+		}
+		subselectDag = selSpecDag.Node()
 	}
 
 	// TODO: probably need some better way to pick miners to retrieve from...
@@ -1900,7 +1928,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 		log.Infow("attempting retrieval deal", "content", contentToFetch, "miner", maddr)
 
-		ask, err := cm.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
+		ask, err := cm.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID, subselectDag)
 		if err != nil {
 			span.RecordError(err)
 
@@ -1911,29 +1939,67 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 				Message: err.Error(),
 				Content: content.ID,
 				Cid:     content.Cid,
+				// Selection: pathSelection, FIXME ADD TO THE GORMZ
 			})
 			continue
 		}
-		log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
+		log.Infow("got retrieval ask", "content", content, "pathSelection", pathSelection, "miner", maddr, "ask", ask)
 
-		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
+		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, subselectDag, ask); err != nil {
 			span.RecordError(err)
-			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
+			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "pathSelection", pathSelection, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
 				Content: content.ID,
 				Cid:     content.Cid,
+				// Selection: pathSelection, FIXME ADD TO THE GORMZ
 			})
 			continue
 		}
 
 		// success
-		return nil
+		rootCid := content.Cid.CID
+
+		// we sub-selected: need to find the new root
+		if pathSelection != "" {
+
+			// no error checks - we just compiled this earlier
+			selSpecRoot, _ := textselector.SelectorSpecFromPath(pathSelection, nil)
+
+			var newRootFound bool
+
+			if err := TraverseDag(
+				ctx,
+				merkledag.NewDAGService(blockservice.New(cm.Blockstore, exchangeoffline.Exchange(cm.Blockstore))),
+				rootCid,
+				selSpecRoot.Node(),
+				func(p traversal.Progress, n ipld.Node, r traversal.VisitReason) error {
+					if r == traversal.VisitReason_SelectionMatch {
+						cidLnk, castOK := p.LastBlock.Link.(cidlink.Link)
+						if !castOK {
+							return xerrors.Errorf("cidlink cast unexpectedly failed on '%s'", p.LastBlock.Link.String())
+						}
+						rootCid = cidLnk.Cid
+						newRootFound = true
+						return traversal.SkipMe{}
+					}
+					return nil
+				},
+			); err != nil {
+				return cid.Undef, xerrors.Errorf("Finding partial retrieval sub-root: %w", err)
+			}
+
+			if !newRootFound {
+				return cid.Undef, xerrors.Errorf("Path selection '%s' does not match a node within %s", pathSelection, rootCid)
+			}
+		}
+
+		return rootCid, nil
 	}
 
-	return fmt.Errorf("failed to retrieve with any miner we have deals with")
+	return cid.Undef, fmt.Errorf("failed to retrieve with any miner we have deals with")
 }
 
 func (s *Server) handleFixupDeals(c echo.Context) error {
