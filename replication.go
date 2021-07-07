@@ -53,8 +53,9 @@ type ContentManager struct {
 
 	tracer trace.Tracer
 
-	Blockstore EstuaryBlockstore
-	Tracker    *TrackingBlockstore
+	Blockstore       EstuaryBlockstore
+	Tracker          *TrackingBlockstore
+	NotifyBlockstore *notifyBlockstore
 
 	ToCheck  chan uint
 	queueMgr *queueManager
@@ -188,13 +189,14 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *notifyBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
 	cm := &ContentManager{
 		Provider:             prov,
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
 		Blockstore:           tbs.Under().(EstuaryBlockstore),
+		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
@@ -337,10 +339,8 @@ func (qm *queueManager) processQueue() {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
-	log.Infof("process queue: %d", qm.queue.Len())
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
-		fmt.Println("top entry check time: ", qe.checkTime)
 		if time.Now().After(qe.checkTime) {
 			go qm.cb(qe.content)
 		} else {
@@ -944,7 +944,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		if err := cm.addContentToStagingZone(ctx, content); err != nil {
 			return errDelay, err
 		}
-		log.Infof("content placed into staging zone: %d", content.ID)
 		return -1, nil
 	}
 
@@ -1770,16 +1769,20 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 		}
 	}
 
-	if err := cm.retrieveContent(ctx, contentToFetch); err != nil {
-		return nil, xerrors.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
-	}
+	ch := cm.NotifyBlockstore.WaitFor(c)
 
-	out, err := cm.Blockstore.Get(c)
-	if err != nil {
-		return nil, xerrors.Errorf("failed to get desired block even after retrieval: %w", err)
-	}
+	go func() {
+		if err := cm.retrieveContent(ctx, contentToFetch); err != nil {
+			log.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
+		}
+	}()
 
-	return out, nil
+	select {
+	case blk := <-ch:
+		return blk, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
@@ -1867,6 +1870,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		}
 		index = ix
 	}
+	_ = index
 
 	var deals []contentDeal
 	if err := cm.DB.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {

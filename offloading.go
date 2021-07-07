@@ -39,23 +39,10 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 		return nil, err
 	}
 
-	// sort candidates by 'last used'
-	var offs []offloadCandidate
-	for _, c := range candidates {
-		la, err := cm.getLastAccessForContent(c.Content)
-		if err != nil {
-			return nil, err
-		}
-
-		offs = append(offs, offloadCandidate{
-			Content:    c.Content,
-			LastAccess: la,
-		})
+	offs, err := cm.getLastAccesses(ctx, candidates)
+	if err != nil {
+		return nil, err
 	}
-
-	sort.Slice(offs, func(i, j int) bool {
-		return offs[i].LastAccess.Before(offs[j].LastAccess)
-	})
 
 	// grab enough candidates to fulfil the requested space
 	bytesRemaining := spaceRequest
@@ -95,6 +82,30 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 	result.BlocksRemoved = rem
 
 	return result, nil
+}
+func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []Content) ([]offloadCandidate, error) {
+	ctx, span := cm.tracer.Start(ctx, "getLastAccesses")
+	defer span.End()
+
+	var offs []offloadCandidate
+	for _, c := range candidates {
+		la, err := cm.getLastAccessForContent(c.Content)
+		if err != nil {
+			return nil, err
+		}
+
+		offs = append(offs, offloadCandidate{
+			Content:    c.Content,
+			LastAccess: la,
+		})
+	}
+
+	// sort candidates by 'last used'
+	sort.Slice(offs, func(i, j int) bool {
+		return offs[i].LastAccess.Before(offs[j].LastAccess)
+	})
+
+	return offs, nil
 }
 
 // TODO: this is only looking at the root, maybe we could find an efficient way to check more of the objects?
@@ -236,9 +247,6 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool) ([
 				ActiveDeals:     good,
 				InProgressDeals: progress,
 			})
-		} else {
-			// maybe kick off repairs?
-			log.Infof("content %d is in need of repairs", c.ID)
 		}
 	}
 

@@ -3,7 +3,7 @@ module github.com/whyrusleeping/estuary
 go 1.15
 
 require (
-	github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea4303
+	github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5

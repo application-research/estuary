@@ -431,7 +431,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, nd.Provider)
+		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, s.Node.NotifBlockstore, nd.Provider)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
@@ -622,6 +622,7 @@ type Node struct {
 	Blockstore         blockstore.Blockstore
 	TrackingBlockstore *TrackingBlockstore
 	Bitswap            *bitswap.Bitswap
+	NotifBlockstore    *notifyBlockstore
 
 	Wallet *wallet.LocalWallet
 
@@ -681,7 +682,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		return nil, err
 	}
 
-	var bstore blockstore.Blockstore = lmdbs
+	var bstore EstuaryBlockstore = lmdbs
 
 	if cfg.WriteLog != "" {
 		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
@@ -697,7 +698,8 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 		bstore = ab
 	}
 
-	mbs := bsm.New("estuary", bstore)
+	notifbs := NewNotifBs(bstore)
+	mbs := bsm.New("estuary", notifbs)
 
 	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
 	if err != nil {

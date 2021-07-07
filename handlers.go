@@ -1381,7 +1381,11 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	return s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error
+	if err := s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 type suspendMinerBody struct {
