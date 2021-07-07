@@ -227,14 +227,14 @@ func (cm *ContentManager) ContentWatcher() {
 			}
 
 			log.Infof("checking content: %d", content.ID)
-			nextCheck, err := cm.ensureStorage(context.TODO(), content)
+			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
+				cm.queueMgr.add(content.ID, dur)
+			})
 			if err != nil {
 				log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
+				cm.queueMgr.add(content.ID, time.Minute*5)
 			}
 
-			if nextCheck > 0 {
-				cm.queueMgr.add(content.ID, nextCheck)
-			}
 		case <-timer.C:
 			log.Infow("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
 
@@ -901,7 +901,7 @@ const bucketingEnabled = true
 
 const errDelay = time.Minute * 5
 
-func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (time.Duration, error) {
+func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, done func(time.Duration)) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
 	))
@@ -911,12 +911,12 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 
 	if content.AggregatedIn > 0 {
 		// This content is aggregated inside another piece of content, nothing to do here
-		return -1, nil
+		return nil
 	}
 
 	if cm.contentInStagingZone(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
-		return -1, nil
+		return nil
 	}
 
 	// check if content has enough deals made for it
@@ -927,13 +927,13 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 	var deals []contentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return errDelay, err
+			return err
 		}
 	}
 
 	var user User
 	if err := cm.DB.First(&user, "id = ?", content.UserID).Error; err != nil {
-		return errDelay, err
+		return err
 	}
 
 	if len(deals) == 0 &&
@@ -942,9 +942,9 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		bucketingEnabled {
 		// Put it in a bucket!
 		if err := cm.addContentToStagingZone(ctx, content); err != nil {
-			return errDelay, err
+			return err
 		}
-		return -1, nil
+		return nil
 	}
 
 	replicationFactor := defaultReplication
@@ -961,7 +961,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 		}
 		maddr, err := d.MinerAddr()
 		if err != nil {
-			return errDelay, err
+			return err
 		}
 		minersAlready[maddr] = true
 	}
@@ -976,14 +976,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 				cm.recordDealFailure(dfe)
 				continue
 			} else {
-				return errDelay, err
+				return err
 			}
 		}
 
 		switch status {
 		case DEAL_CHECK_UNKNOWN:
 			if err := cm.repairDeal(&d); err != nil {
-				return errDelay, xerrors.Errorf("repairing deal failed: %w", err)
+				return xerrors.Errorf("repairing deal failed: %w", err)
 			}
 		case DEAL_CHECK_SECTOR_ON_CHAIN:
 			numSealed++
@@ -999,7 +999,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 	if len(deals) < replicationFactor {
 		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil {
-			return errDelay, err
+			return err
 		}
 
 		if pc == nil {
@@ -1010,39 +1010,45 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content) (t
 				if err != nil {
 					log.Errorf("failed to compute piece commitment for content: %s", err)
 				}
+
+				done(time.Second * 10)
 			}()
 
-			return time.Minute * 10, nil
+			return nil
 		}
 
 		if content.Offloaded {
 			go func() {
-				defer func() {
-					cm.ToCheck <- content.ID
-				}()
 				if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
 					log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
 				}
+
+				done(time.Second * 10)
 			}()
 
-			return -1, nil
+			return nil
 		}
 
-		// make some more deals!
-		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
-		if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
-			return errDelay, err
-		}
+		go func() {
+			// make some more deals!
+			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
+			if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
+				log.Errorf("failed to make more deals: %s", err)
+			}
+			done(time.Minute * 10)
+		}()
+		return nil
 	}
 
-	checkDelay := time.Minute * 10
 	if numSealed >= replicationFactor {
-		checkDelay = time.Hour * 24
+		done(time.Hour * 24)
 	} else if numSealed+numPublished >= replicationFactor {
-		checkDelay = time.Hour
+		done(time.Hour)
+	} else {
+		done(time.Minute * 10)
 	}
 
-	return checkDelay, nil
+	return nil
 }
 
 func (cm *ContentManager) getContent(id uint) (*Content, error) {

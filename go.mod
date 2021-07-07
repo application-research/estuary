@@ -49,7 +49,7 @@ require (
 	github.com/spf13/viper v1.8.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
-	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707001526-6239c3a9d3ab
+	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7
 	go.opentelemetry.io/otel v0.18.0
 	go.opentelemetry.io/otel/trace v0.18.0
 	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
