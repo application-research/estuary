@@ -1007,7 +1007,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			go func() {
 				_, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 				if err != nil {
-					log.Errorf("failed to compute piece commitment for content: %s", err)
+					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}
 
 				done(time.Second * 10)
@@ -1439,7 +1439,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 	_, size, err := cm.getPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
 	if err != nil {
-		return err
+		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
 	minerpool, err := cm.pickMiners(ctx, count*2, size.Padded(), exclude)
