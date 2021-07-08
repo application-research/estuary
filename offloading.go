@@ -23,6 +23,7 @@ type collectionResult struct {
 	ContentsFreed        []offloadCandidate `json:"contentsFreed"`
 	CandidatesConsidered int                `json:"candidatesConsidered"`
 	BlocksRemoved        int                `json:"blocksRemoved"`
+	DryRun               bool               `json:"dryRun"`
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, dryrun bool) (*collectionResult, error) {
@@ -72,6 +73,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 		SpaceFreed:           spaceRequest - bytesRemaining,
 		ContentsFreed:        toRemove,
 		CandidatesConsidered: len(candidates),
+		DryRun:               dryrun,
 	}
 
 	if dryrun {
@@ -79,17 +81,17 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 	}
 
 	// go offload them all
-	var blocksRemoved int
-	for _, c := range toRemove {
-		// TODO: a bulk content offloading function seems like it would be pretty efficient
-		rem, err := cm.OffloadContent(ctx, c.ID)
-		if err != nil {
-			log.Warnf("failed to offload content %d: %s", c.ID, err)
-		}
-		blocksRemoved += rem
+	var ids []uint
+	for _, tr := range toRemove {
+		ids = append(ids, tr.Content.ID)
 	}
 
-	result.BlocksRemoved = blocksRemoved
+	rem, err := cm.OffloadContents(ctx, ids)
+	if err != nil {
+		log.Warnf("failed to offload contents: %s", err)
+	}
+
+	result.BlocksRemoved = rem
 
 	return result, nil
 }
@@ -109,27 +111,45 @@ type refResult struct {
 	Cid dbCID
 }
 
-func (cm *ContentManager) OffloadContent(ctx context.Context, c uint) (int, error) {
-	ctx, span := cm.tracer.Start(ctx, "OffloadContent")
+func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (int, error) {
+	ctx, span := cm.tracer.Start(ctx, "OffloadContents")
 	defer span.End()
 
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
-	var cont Content
-	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
-		return 0, err
-	}
+	for _, c := range conts {
+		var cont Content
+		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+			return 0, err
+		}
 
-	if cont.AggregatedIn > 0 {
-		return 0, fmt.Errorf("cannot offload aggregated content")
-	}
+		if cont.AggregatedIn > 0 {
+			return 0, fmt.Errorf("cannot offload aggregated content")
+		}
 
-	if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
-		return 0, err
-	}
+		if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
+			return 0, err
+		}
 
-	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
-		return 0, err
+		if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
+			return 0, err
+		}
+
+		if cont.Aggregate {
+			if err := cm.DB.Model(&Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
+				return 0, err
+			}
+
+			if err := cm.DB.Model(&ObjRef{}).
+				Where("content in (?)",
+					cm.DB.Model(Content{}).
+						Where("aggregated_in = ?", c).
+						Select("id")).
+				Update("offloaded", 1).Error; err != nil {
+				return 0, err
+			}
+
+		}
 	}
 
 	/*
@@ -196,18 +216,17 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool) ([
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)
 		}
 
-		if !all && good >= c.Replication {
+		if all || good >= c.Replication {
+			toOffload = append(toOffload, removalCandidateInfo{
+				Content:         c,
+				TotalDeals:      good + progress + failed,
+				ActiveDeals:     good,
+				InProgressDeals: progress,
+			})
+		} else {
 			// maybe kick off repairs?
 			log.Infof("content %d is in need of repairs", c.ID)
-			continue
 		}
-
-		toOffload = append(toOffload, removalCandidateInfo{
-			Content:         c,
-			TotalDeals:      good + progress + failed,
-			ActiveDeals:     good,
-			InProgressDeals: progress,
-		})
 	}
 
 	return toOffload, nil

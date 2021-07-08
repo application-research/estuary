@@ -46,6 +46,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -657,6 +658,11 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 	if err != nil {
 		return err
 	}
+
+	span.SetAttributes(
+		attribute.Int64("totalSize", totalSize),
+		attribute.Int("numObjects", len(objects)),
+	)
 
 	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
 		return xerrors.Errorf("failed to create objects in db: %w", err)
@@ -1829,7 +1835,7 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	removed, err := s.CM.OffloadContent(c.Request().Context(), uint(cont))
+	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint{uint(cont)})
 	if err != nil {
 		return err
 	}
@@ -2116,7 +2122,7 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 	authToken := &AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 365),
+		Expiry: time.Now().Add(time.Hour * 24 * 30),
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
