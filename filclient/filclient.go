@@ -83,7 +83,7 @@ type FilClient struct {
 	computePieceComm GetPieceCommFunc
 }
 
-type GetPieceCommFunc func(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
+type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
@@ -308,9 +308,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	))
 	defer span.End()
 
-	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-
-	commP, size, err := fc.computePieceComm(ctx, sealType, data, fc.blockstore)
+	commP, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +412,7 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 	return &resp, nil
 }
 
-func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	cario := cario.NewCarIO()
 	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
 	if err != nil {
