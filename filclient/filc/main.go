@@ -25,8 +25,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const CFGDIR string = "~/.filc"
-
 func main() {
 	//--system dt-impl --system dt-chanmon --system dt_graphsync --system graphsync --system data_transfer_network debug
 	logging.SetLogLevel("dt-impl", "debug")
@@ -49,26 +47,32 @@ func main() {
 			Value: "~/.lotus",
 		},
 	}
-	cfgdir, err := homedir.Expand(CFGDIR)
+
+	// Store config dir in metadata
+	ddir, err := homedir.Expand("~/.filc")
 	if err != nil {
 		fmt.Println("could not set config dir: ", err)
 	}
-
 	app.Metadata = map[string]interface{}{
-		"cfgdir": cfgdir,
+		"ddir": ddir,
+	}
+
+	// ...and make sure the directory exists
+	if err := os.MkdirAll(ddir, 0755); err != nil {
+		fmt.Println("could not create config directory: ", err)
 	}
 
 	app.RunAndExitOnError()
 }
 
 // Get config directory from CLI metadata
-func cfgdir(cctx *cli.Context) string {
-	mCfgdir := cctx.App.Metadata["cfgdir"]
-	switch cfgdir := mCfgdir.(type) {
+func ddir(cctx *cli.Context) string {
+	mDdir := cctx.App.Metadata["ddir"]
+	switch ddir := mDdir.(type) {
 	case string:
-		return cfgdir
+		return ddir
 	default:
-		panic("cfgdir should be present in CLI metadata")
+		panic("ddir should be present in CLI metadata")
 	}
 }
 
@@ -87,7 +91,7 @@ var makeDealCmd = &cli.Command{
 			return fmt.Errorf("please specify file to make deal for")
 		}
 
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		mstr := cctx.String("miner")
 		if mstr == "" {
@@ -234,7 +238,7 @@ var makeDealCmd = &cli.Command{
 var infoCmd = &cli.Command{
 	Name: "info",
 	Action: func(cctx *cli.Context) error {
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -282,7 +286,7 @@ var getAskCmd = &cli.Command{
 			return fmt.Errorf("please specify miner to query ask of")
 		}
 
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		miner, err := address.NewFromString(cctx.Args().First())
 		if err != nil {
@@ -314,7 +318,7 @@ var getAskCmd = &cli.Command{
 var listDealsCmd = &cli.Command{
 	Name: "list",
 	Action: func(cctx *cli.Context) error {
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		deals, err := listDeals(ddir)
 		if err != nil {
@@ -357,7 +361,7 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		fc, closer, err := getClient(cctx, ddir)
 		if err != nil {
@@ -426,7 +430,7 @@ var queryRetrievalCmd = &cli.Command{
 			return err
 		}
 
-		ddir := cfgdir(cctx)
+		ddir := ddir(cctx)
 
 		fc, closer, err := getClient(cctx, ddir)
 		if err != nil {
