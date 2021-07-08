@@ -139,8 +139,8 @@ type retrievalSuccessRecord struct {
 	ID        uint      `gorm:"primarykey" json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 
-	PropCid dbCID  `json:"propCid"`
-	Miner   string `json:"miner"`
+	Cid   dbCID  `json:"cid"`
+	Miner string `json:"miner"`
 
 	Peer         string `json:"peer"`
 	Size         uint64 `json:"size"`
@@ -153,7 +153,7 @@ type retrievalSuccessRecord struct {
 
 func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
 	if err := cm.DB.Create(&retrievalSuccessRecord{
-		PropCid:      dbCID{cc},
+		Cid:          dbCID{cc},
 		Miner:        m.String(),
 		Peer:         rstats.Peer.String(),
 		Size:         rstats.Size,

@@ -2677,7 +2677,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		"size":          cont.Size,
 		"cid":           cont.Cid.CID,
 		"deals":         deals,
-		"traverseError": err,
+		"traverseError": fmt.Sprintf("%s", err),
 		"foundBlocks":   cset.Len(),
 	})
 }
