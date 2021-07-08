@@ -3,7 +3,7 @@ module github.com/whyrusleeping/estuary
 go 1.15
 
 require (
-	github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba
+	github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
@@ -28,6 +28,7 @@ require (
 	github.com/ipfs/go-graphsync v0.8.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.4
 	github.com/ipfs/go-ipfs-chunker v0.0.5
+	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
 	github.com/ipfs/go-ipfs-provider v0.5.1
 	github.com/ipfs/go-ipld-format v0.2.0
