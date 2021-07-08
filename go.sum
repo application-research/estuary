@@ -152,6 +152,8 @@ github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea43
 github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea4303/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
 github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba h1:J2lmKxPfS0zpatUu+iQzG3ERXB/U7324xfvkkKhDRQs=
 github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
+github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24 h1:sPn/lBRJBJv5SP1uhdw+u1YfeIHeDJzOlriG8af57QQ=
+github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=
 github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da/go.mod h1:Q73ZrmVTwzkszR9V5SSuryQ31EELlFMUz1kKyl939pY=

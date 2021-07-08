@@ -690,7 +690,7 @@ func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
 			return nil, err
 		}
 
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200)
+		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
 		if err != nil {
 			return nil, err
 		}

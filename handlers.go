@@ -2625,3 +2625,19 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 
 	return c.JSON(200, out)
 }
+
+func (s *Server) handleContentHealthCheck(c echo.Context) error {
+	val, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return err
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"status": "ok",
+	})
+}
