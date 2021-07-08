@@ -146,12 +146,6 @@ github.com/antonmedv/expr v1.8.9/go.mod h1:5qsM3oLGDND7sDmQGDXHkYfkjYMUX14qsgqmH
 github.com/apache/arrow/go/arrow v0.0.0-20191024131854-af6fa24be0db/go.mod h1:VTxUBvSJ3s3eHAg65PNgrsn5BtqCRPdmyXh6rAfdxN0=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
-github.com/application-research/go-bs-autobatch v0.0.0-20210703215650-04b3fd4955cf h1:srl2zGKKhcA51tIXqf4ZwC3Bo8R5hlqGSsbT93e1ncE=
-github.com/application-research/go-bs-autobatch v0.0.0-20210703215650-04b3fd4955cf/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
-github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea4303 h1:DtjipH48lsNQoD18TXlVPGBmMimQeA1d1J7/A5zFLW8=
-github.com/application-research/go-bs-autobatch v0.0.0-20210707003425-c6d975ea4303/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
-github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba h1:J2lmKxPfS0zpatUu+iQzG3ERXB/U7324xfvkkKhDRQs=
-github.com/application-research/go-bs-autobatch v0.0.0-20210707182528-29376b88f3ba/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
 github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24 h1:sPn/lBRJBJv5SP1uhdw+u1YfeIHeDJzOlriG8af57QQ=
 github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
@@ -390,8 +384,6 @@ github.com/filecoin-project/go-bitfield v0.2.0/go.mod h1:CNl9WG8hgR5mttCnUErjcQj
 github.com/filecoin-project/go-bitfield v0.2.3/go.mod h1:CNl9WG8hgR5mttCnUErjcQjGvuiZjRqK9rHVBsQF4oM=
 github.com/filecoin-project/go-bitfield v0.2.4 h1:uZ7MeE+XfM5lqrHJZ93OnhQKc/rveW8p9au0C68JPgk=
 github.com/filecoin-project/go-bitfield v0.2.4/go.mod h1:CNl9WG8hgR5mttCnUErjcQjGvuiZjRqK9rHVBsQF4oM=
-github.com/filecoin-project/go-bs-lmdb v1.0.5-0.20210630201652-b5b890078bea h1:quunMwK0O2ODPFz53BPnbgBNPgfuh8b2QLzYyQTFb48=
-github.com/filecoin-project/go-bs-lmdb v1.0.5-0.20210630201652-b5b890078bea/go.mod h1:QdXoAyeAHGj0zDe42RFkGGv1vxjCCreyTUyhrrNz5po=
 github.com/filecoin-project/go-bs-lmdb v1.0.5 h1:QXX8gUe7xSWJvUXXXRm4NyTpjduAAP4zNfLHu6STPrI=
 github.com/filecoin-project/go-bs-lmdb v1.0.5/go.mod h1:QdXoAyeAHGj0zDe42RFkGGv1vxjCCreyTUyhrrNz5po=
 github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2 h1:av5fw6wmm58FYMgJeoB/lK9XXrgdugYiTqkdxjTy9k8=
@@ -2116,10 +2108,6 @@ github.com/whyrusleeping/cbor-gen v0.0.0-20210219115102-f37d292932f2 h1:bsUlNhdm
 github.com/whyrusleeping/cbor-gen v0.0.0-20210219115102-f37d292932f2/go.mod h1:fgkXqYy7bV2cFeIEOkVTZS/WjXARfBqSH6Q2qHL33hQ=
 github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f h1:jQa4QT2UP9WYv2nzyawpKMOCl+Z/jW7djv2/J50lj9E=
 github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f/go.mod h1:p9UJB6dDgdPgMJZs7UjUOdulKyRr9fqkS+6JKAInPy8=
-github.com/whyrusleeping/go-bs-measure v0.0.0-20210621165307-7143c5de1e39 h1:+VT/Nvzj063w2IBR7EUz6UvF9CpxDqZ24zi6wHi9qJg=
-github.com/whyrusleeping/go-bs-measure v0.0.0-20210621165307-7143c5de1e39/go.mod h1:xmlBgH+9N2rfMTGW0pSBVl4gSL5KE83Wrxsp0wSo+aU=
-github.com/whyrusleeping/go-bs-measure v0.0.0-20210707001526-6239c3a9d3ab h1:DrD43Ddc+btxY77WcRk8TXP2mHex9b7tI7Vj/J75ZhM=
-github.com/whyrusleeping/go-bs-measure v0.0.0-20210707001526-6239c3a9d3ab/go.mod h1:xmlBgH+9N2rfMTGW0pSBVl4gSL5KE83Wrxsp0wSo+aU=
 github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7 h1:PfhYrutHCdQXdUA94fdlSnibRrRxIs/rWo9n4aprfnw=
 github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7/go.mod h1:xmlBgH+9N2rfMTGW0pSBVl4gSL5KE83Wrxsp0wSo+aU=
 github.com/whyrusleeping/go-ctrlnet v0.0.0-20180313164037-f564fbbdaa95/go.mod h1:SJqKCCPXRfBFCwXjfNT/skfsceF7+MBFLI2OrvuRA7g=

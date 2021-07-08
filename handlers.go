@@ -28,6 +28,7 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
@@ -222,6 +223,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
+	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 
 	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
@@ -2637,7 +2639,45 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
+	var u User
+	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
+		return err
+	}
+
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "content = ?", cont.ID).Error; err != nil {
+		return err
+	}
+
+	var exch exchange.Interface
+	if c.QueryParam("fetch") != "" {
+		exch = s.Node.Bitswap
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, exch)
+	dserv := merkledag.NewDAGService(bserv)
+
+	cset := cid.NewSet()
+	err = merkledag.Walk(c.Request().Context(), func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
+		return node.Links(), nil
+	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
+
 	return c.JSON(200, map[string]interface{}{
-		"status": "ok",
+		"user":          u.Username,
+		"filename":      cont.Name,
+		"size":          cont.Size,
+		"cid":           cont.Cid.CID,
+		"deals":         deals,
+		"traverseError": err,
+		"foundBlocks":   cset.Len(),
 	})
 }
