@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	//ffi "github.com/filecoin-project/filecoin-ffi"
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -84,7 +83,7 @@ type FilClient struct {
 	computePieceComm GetPieceCommFunc
 }
 
-type GetPieceCommFunc func(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
+type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
 
 func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address.Address, bs blockstore.Blockstore, ds datastore.Batching, ddir string) (*FilClient, error) {
 	ctx, shutdown := context.WithCancel(context.Background())
@@ -309,9 +308,7 @@ func (fc *FilClient) MakeDeal(ctx context.Context, miner address.Address, data c
 	))
 	defer span.End()
 
-	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-
-	commP, size, err := fc.computePieceComm(ctx, sealType, data, fc.blockstore)
+	commP, size, err := fc.computePieceComm(ctx, data, fc.blockstore)
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +412,7 @@ func (fc *FilClient) SendProposal(ctx context.Context, netprop *network.Proposal
 	return &resp, nil
 }
 
-func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	cario := cario.NewCarIO()
 	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
 	if err != nil {
@@ -442,34 +439,17 @@ func GeneratePieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, pa
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {
-	return cid.Undef, fmt.Errorf("zero padding not set up")
 
-	/*
-		cur := c
-		for curSize < toSize {
-
-			zc := zerocomm.ZeroPieceCommitment(curSize)
-
-			p, err := ffi.GenerateUnsealedCID(abi.RegisteredSealProof_StackedDrg32GiBV1, []abi.PieceInfo{
-				abi.PieceInfo{
-					Size:     curSize.Padded(),
-					PieceCID: cur,
-				},
-				abi.PieceInfo{
-					Size:     curSize.Padded(),
-					PieceCID: zc,
-				},
-			})
-			if err != nil {
-				return cid.Undef, err
-			}
-
-			cur = p
-			curSize = curSize * 2
-		}
-
-		return cur, nil
-	*/
+	rawPaddedCommp, err := commp.PadCommP(
+		// we know how long a pieceCid "hash" is, just blindly extract the trailing 32 bytes
+		c.Hash()[len(c.Hash())-32:],
+		uint64(curSize.Padded()),
+		uint64(toSize.Padded()),
+	)
+	if err != nil {
+		return cid.Undef, err
+	}
+	return commcid.DataCommitmentV1ToCID(rawPaddedCommp)
 }
 
 func (fc *FilClient) DealStatus(ctx context.Context, miner address.Address, propCid cid.Cid) (*storagemarket.ProviderDealState, error) {

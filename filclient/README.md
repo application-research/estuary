@@ -26,13 +26,13 @@ A standalone client library for interacting with the filecoin storage network
 - [ ] Godocs on main methods
 - [ ] Direct mempool integration (to avoid relying on a lotus gateway node)
 - [ ] Cleanup of dependency tree
-  - [ ] Remove dependency on filecoin-ffi
+  - [x] Remove dependency on filecoin-ffi
   - [ ] Remove dependency on go-fil-markets
   - [ ] Remove dependency on main lotus repo
 - [ ] Good usage examples
   - [ ] Sample application using filclient
-- [ ] Integration testing 
+- [ ] Integration testing
 
-## License 
+## License
 
 MIT

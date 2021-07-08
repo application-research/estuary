@@ -1005,8 +1005,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		if pc == nil {
 			// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
 			go func() {
-				sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-				_, _, err := cm.getPieceCommitment(context.Background(), sealType, content.Cid.CID, cm.Blockstore)
+				_, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 				if err != nil {
 					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}
@@ -1438,8 +1437,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}
 
-	sealType := abi.RegisteredSealProof_StackedDrg32GiBV1_1 // pull from miner...
-	_, size, err := cm.getPieceCommitment(ctx, sealType, content.Cid.CID, cm.Blockstore)
+	_, size, err := cm.getPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
 	if err != nil {
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
@@ -1702,7 +1700,7 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return nil, nil
 }
 
-func (cm *ContentManager) getPieceCommitment(ctx context.Context, rt abi.RegisteredSealProof, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	_, span := cm.tracer.Start(ctx, "getPieceComm")
 	defer span.End()
 
@@ -1715,7 +1713,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, rt abi.Registe
 	}
 
 	log.Infow("computing piece commitment", "data", data)
-	pc, size, err := filclient.GeneratePieceCommitment(ctx, rt, data, bs)
+	pc, size, err := filclient.GeneratePieceCommitment(ctx, data, bs)
 	if err != nil {
 		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
 	}
