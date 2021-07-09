@@ -1852,20 +1852,37 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 		close(prog.wait)
 	}()
 
-	contentRoot, err := cm.runRetrieval(ctx, contentToFetch)
+	_, err := cm.runRetrieval(ctx, contentToFetch)
 	if err != nil {
 		prog.endErr = err
 		return err
 	}
 
-	// FIXME need to do something with this
-	panic(contentRoot)
-
 	return nil
 }
 
 func (cm *ContentManager) unixFsIndexPathForAggregate(ctx context.Context, aggregateID, contID uint) (textselector.Expression, error) {
-	return textselector.Expression("Link/420/Hash/Link/21/Hash"), fmt.Errorf("selector based retrieval not yet implemented")
+	var parts []Content
+	if err := cm.DB.Find(&parts, "aggregated_in = ?", aggregateID).Error; err != nil {
+		return "", err
+	}
+
+	sort.Slice(parts, func(i, j int) bool {
+		return parts[i].ID < parts[j].ID
+	})
+
+	index := -1
+	for i := 0; i < len(parts); i++ {
+		if parts[i].ID == contID {
+			index = i
+			break
+		}
+	}
+	if index == -1 {
+		return "", fmt.Errorf("could not find requested content ID in aggregate list")
+	}
+
+	return textselector.Expression(fmt.Sprintf("Link/%d/Hash", index)), nil
 }
 
 func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint) (cid.Cid, error) {
@@ -1932,12 +1949,12 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
-				Miner:   maddr.String(),
-				Phase:   "query",
-				Message: err.Error(),
-				Content: content.ID,
-				Cid:     content.Cid,
-				// Selection: pathSelection, FIXME ADD TO THE GORMZ
+				Miner:         maddr.String(),
+				Phase:         "query",
+				Message:       err.Error(),
+				Content:       content.ID,
+				Cid:           content.Cid,
+				PathSelection: string(pathSelection),
 			})
 			continue
 		}
@@ -1947,12 +1964,12 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			span.RecordError(err)
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "pathSelection", pathSelection, "err", err)
 			cm.recordRetrievalFailure(&retrievalFailureRecord{
-				Miner:   maddr.String(),
-				Phase:   "retrieval",
-				Message: err.Error(),
-				Content: content.ID,
-				Cid:     content.Cid,
-				// Selection: pathSelection, FIXME ADD TO THE GORMZ
+				Miner:         maddr.String(),
+				Phase:         "retrieval",
+				Message:       err.Error(),
+				Content:       content.ID,
+				Cid:           content.Cid,
+				PathSelection: string(pathSelection),
 			})
 			continue
 		}

@@ -64,11 +64,12 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 type retrievalFailureRecord struct {
 	gorm.Model
-	Miner   string `json:"miner"`
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-	Content uint   `json:"content"`
-	Cid     dbCID  `json:"cid"`
+	Miner         string `json:"miner"`
+	Phase         string `json:"phase"`
+	Message       string `json:"message"`
+	Content       uint   `json:"content"`
+	PathSelection string `json:"selection"`
+	Cid           dbCID  `json:"cid"`
 }
 
 func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
