@@ -60,6 +60,7 @@ func main() {
 	// ...and make sure the directory exists
 	if err := os.MkdirAll(ddir, 0755); err != nil {
 		fmt.Println("could not create config directory: ", err)
+		os.Exit(1)
 	}
 
 	app.RunAndExitOnError()
