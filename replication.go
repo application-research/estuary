@@ -23,24 +23,17 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	exchangeoffline "github.com/ipfs/go-ipfs-exchange-offline"
 	batched "github.com/ipfs/go-ipfs-provider/batched"
 	ipldformat "github.com/ipfs/go-ipld-format"
-	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	ipld "github.com/ipld/go-ipld-prime"
-	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
-	ipldbasicnode "github.com/ipld/go-ipld-prime/node/basic"
-	"github.com/ipld/go-ipld-prime/traversal"
-	"github.com/ipld/go-ipld-prime/traversal/selector"
-	selectorbuilder "github.com/ipld/go-ipld-prime/traversal/selector/builder"
 	textselector "github.com/ipld/go-ipld-selector-text-lite"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
+	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -1916,14 +1909,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			return cid.Undef, err
 		}
 
-		ssb := selectorbuilder.NewSelectorSpecBuilder(ipldbasicnode.Prototype.Any)
-		selSpecDag, err := textselector.SelectorSpecFromPath(
-			pathSelection,
-			ssb.ExploreRecursive(selector.RecursionLimitNone(), ssb.ExploreUnion(
-				ssb.Matcher(),
-				ssb.ExploreAll(ssb.ExploreRecursiveEdge()),
-			)),
-		)
+		selSpecDag, err := textselector.SelectorSpecFromPath(pathSelection, retrievehelper.RecurseAllSelectorBuilder)
 		if err != nil {
 			return cid.Undef, err
 		}
@@ -1979,35 +1965,9 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 		// we sub-selected: need to find the new root
 		if pathSelection != "" {
-
-			// no error checks - we just compiled this earlier
-			selSpecRoot, _ := textselector.SelectorSpecFromPath(pathSelection, nil)
-
-			var newRootFound bool
-
-			if err := TraverseDag(
-				ctx,
-				merkledag.NewDAGService(blockservice.New(cm.Blockstore, exchangeoffline.Exchange(cm.Blockstore))),
-				rootCid,
-				selSpecRoot.Node(),
-				func(p traversal.Progress, n ipld.Node, r traversal.VisitReason) error {
-					if r == traversal.VisitReason_SelectionMatch {
-						cidLnk, castOK := p.LastBlock.Link.(cidlink.Link)
-						if !castOK {
-							return xerrors.Errorf("cidlink cast unexpectedly failed on '%s'", p.LastBlock.Link.String())
-						}
-						rootCid = cidLnk.Cid
-						newRootFound = true
-						return traversal.SkipMe{}
-					}
-					return nil
-				},
-			); err != nil {
-				return cid.Undef, xerrors.Errorf("Finding partial retrieval sub-root: %w", err)
-			}
-
-			if !newRootFound {
-				return cid.Undef, xerrors.Errorf("Path selection '%s' does not match a node within %s", pathSelection, rootCid)
+			rootCid, err = retrievehelper.ResolvePath(ctx, cm.Blockstore, rootCid, pathSelection)
+			if err != nil {
+				return cid.Undef, err
 			}
 		}
 

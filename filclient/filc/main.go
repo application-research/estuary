@@ -14,10 +14,13 @@ import (
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
+	"github.com/ipld/go-ipld-prime"
+	textselector "github.com/ipld/go-ipld-selector-text-lite"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
 	"github.com/whyrusleeping/estuary/lib/retrievehelper"
@@ -336,7 +339,15 @@ var listDealsCmd = &cli.Command{
 var retrieveFileCmd = &cli.Command{
 	Name: "retrieve",
 	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+		&cli.StringFlag{
+			Name:     "miner",
+			Aliases:  []string{"m"},
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:  "datamodel-path-selector",
+			Usage: "a rudimentary (DM-level-only) text-path selector, allowing for sub-selection within a deal",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := context.Background()
@@ -361,6 +372,16 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
+		var dagSubselect ipld.Node
+		selText := textselector.Expression(cctx.String("datamodel-path-selector"))
+		if selText != "" {
+			selSpec, err := textselector.SelectorSpecFromPath(selText, retrievehelper.RecurseAllSelectorBuilder)
+			if err != nil {
+				return xerrors.Errorf("unable to parse selector '%s': %w", selText, err)
+			}
+			dagSubselect = selSpec.Node()
+		}
+
 		ddir := ddir(cctx)
 
 		fc, closer, err := getClient(cctx, ddir)
@@ -369,12 +390,12 @@ var retrieveFileCmd = &cli.Command{
 		}
 		defer closer()
 
-		ask, err := fc.RetrievalQuery(ctx, miner, c, nil)
+		ask, err := fc.RetrievalQuery(ctx, miner, c, dagSubselect)
 		if err != nil {
 			return err
 		}
 
-		proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
+		proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, dagSubselect)
 		if err != nil {
 			return err
 		}
@@ -384,7 +405,17 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
+		if selText != "" {
+			// FIXME - do we get some access to things here? or just delete the entire block...
+			var blockstoreTakenFromSomewhere blockstore.Blockstore
+			c, err = retrievehelper.ResolvePath(ctx, blockstoreTakenFromSomewhere, c, selText)
+			if err != nil {
+				return err
+			}
+		}
+
 		fmt.Println("retrieved content")
+		fmt.Println("Root CID: ", c.String())
 		fmt.Println("Total Payment: ", stats.TotalPayment)
 		fmt.Println("Num Payments: ", stats.NumPayments)
 		fmt.Println("Size: ", stats.Size)
@@ -432,6 +463,7 @@ var queryRetrievalCmd = &cli.Command{
 		}
 		defer closer()
 
+		// TODO - pass in a selector once miners know how to respond to one
 		query, err := fc.RetrievalQuery(context.TODO(), miner, cid, nil)
 		if err != nil {
 			return err

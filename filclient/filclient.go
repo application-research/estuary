@@ -761,7 +761,7 @@ func (fc *FilClient) CheckOngoingTransfer(ctx context.Context, miner address.Add
 
 }
 
-func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, pcid cid.Cid, optionalSelector ipld.Node) (*retrievalmarket.QueryResponse, error) {
+func (fc *FilClient) RetrievalQuery(ctx context.Context, maddr address.Address, pcid cid.Cid, optionalSelectorCurrentlyIgnored ipld.Node) (*retrievalmarket.QueryResponse, error) {
 	ctx, span := Tracer.Start(ctx, "retrievalQuery", trace.WithAttributes(
 		attribute.Stringer("miner", maddr),
 	))
