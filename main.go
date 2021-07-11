@@ -454,6 +454,8 @@ func main() {
 		s.CM = cm
 
 		go func() {
+			return // disable adding more content for now
+
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
