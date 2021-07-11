@@ -1857,7 +1857,11 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 		return err
 	}
 
-	return s.CM.RefreshContent(c.Request().Context(), uint(cont))
+	if err := s.CM.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
+		return c.JSON(500, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) handleReadLocalContent(c echo.Context) error {

@@ -13,12 +13,14 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
+	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
+	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 	"golang.org/x/xerrors"
 )
 
@@ -35,6 +37,8 @@ func main() {
 		getAskCmd,
 		infoCmd,
 		listDealsCmd,
+		retrieveFileCmd,
+		queryRetrievalCmd,
 	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -43,7 +47,33 @@ func main() {
 		},
 	}
 
+	// Store config dir in metadata
+	ddir, err := homedir.Expand("~/.filc")
+	if err != nil {
+		fmt.Println("could not set config dir: ", err)
+	}
+	app.Metadata = map[string]interface{}{
+		"ddir": ddir,
+	}
+
+	// ...and make sure the directory exists
+	if err := os.MkdirAll(ddir, 0755); err != nil {
+		fmt.Println("could not create config directory: ", err)
+		os.Exit(1)
+	}
+
 	app.RunAndExitOnError()
+}
+
+// Get config directory from CLI metadata
+func ddir(cctx *cli.Context) string {
+	mDdir := cctx.App.Metadata["ddir"]
+	switch ddir := mDdir.(type) {
+	case string:
+		return ddir
+	default:
+		panic("ddir should be present in CLI metadata")
+	}
 }
 
 var makeDealCmd = &cli.Command{
@@ -61,10 +91,7 @@ var makeDealCmd = &cli.Command{
 			return fmt.Errorf("please specify file to make deal for")
 		}
 
-		ddir, err := homedir.Expand("~/.filc")
-		if err != nil {
-			return err
-		}
+		ddir := ddir(cctx)
 
 		mstr := cctx.String("miner")
 		if mstr == "" {
@@ -211,10 +238,7 @@ var makeDealCmd = &cli.Command{
 var infoCmd = &cli.Command{
 	Name: "info",
 	Action: func(cctx *cli.Context) error {
-		ddir, err := homedir.Expand("~/.filc")
-		if err != nil {
-			return err
-		}
+		ddir := ddir(cctx)
 
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -262,10 +286,7 @@ var getAskCmd = &cli.Command{
 			return fmt.Errorf("please specify miner to query ask of")
 		}
 
-		ddir, err := homedir.Expand("~/.filc")
-		if err != nil {
-			return err
-		}
+		ddir := ddir(cctx)
 
 		miner, err := address.NewFromString(cctx.Args().First())
 		if err != nil {
@@ -297,10 +318,7 @@ var getAskCmd = &cli.Command{
 var listDealsCmd = &cli.Command{
 	Name: "list",
 	Action: func(cctx *cli.Context) error {
-		ddir, err := homedir.Expand("~/.filc")
-		if err != nil {
-			return err
-		}
+		ddir := ddir(cctx)
 
 		deals, err := listDeals(ddir)
 		if err != nil {
@@ -309,6 +327,123 @@ var listDealsCmd = &cli.Command{
 
 		for _, dcid := range deals {
 			fmt.Println(dcid)
+		}
+
+		return nil
+	},
+}
+
+var retrieveFileCmd = &cli.Command{
+	Name: "retrieve",
+	Flags: []cli.Flag{
+		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+	},
+	Action: func(cctx *cli.Context) error {
+		ctx := context.Background()
+
+		cidStr := cctx.Args().First()
+		if cidStr == "" {
+			return fmt.Errorf("please specify a CID to retrieve")
+		}
+
+		minerStr := cctx.String("miner")
+		if minerStr == "" {
+			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		c, err := cid.Decode(cidStr)
+		if err != nil {
+			return err
+		}
+
+		miner, err := address.NewFromString(minerStr)
+		if err != nil {
+			return err
+		}
+
+		ddir := ddir(cctx)
+
+		fc, closer, err := getClient(cctx, ddir)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		ask, err := fc.RetrievalQuery(ctx, miner, c, nil)
+		if err != nil {
+			return err
+		}
+
+		proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
+		if err != nil {
+			return err
+		}
+
+		stats, err := fc.RetrieveContent(ctx, miner, proposal)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("retrieved content")
+		fmt.Println("Total Payment: ", stats.TotalPayment)
+		fmt.Println("Num Payments: ", stats.NumPayments)
+		fmt.Println("Size: ", stats.Size)
+		fmt.Println("Duration: ", stats.Duration)
+		fmt.Println("Average Speed: ", stats.AverageSpeed)
+		fmt.Println("Ask Price: ", stats.AskPrice)
+		fmt.Println("Peer: ", stats.Peer)
+
+		return nil
+	},
+}
+
+var queryRetrievalCmd = &cli.Command{
+	Name: "query-retrieval",
+	Flags: []cli.Flag{
+		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+	},
+	Action: func(cctx *cli.Context) error {
+
+		cidStr := cctx.Args().First()
+		if cidStr == "" {
+			return fmt.Errorf("please specify a CID to query retrieval of")
+		}
+
+		minerStr := cctx.String("miner")
+		if minerStr == "" {
+			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		cid, err := cid.Decode(cidStr)
+		if err != nil {
+			return err
+		}
+
+		miner, err := address.NewFromString(minerStr)
+		if err != nil {
+			return err
+		}
+
+		ddir := ddir(cctx)
+
+		fc, closer, err := getClient(cctx, ddir)
+		if err != nil {
+			return err
+		}
+		defer closer()
+
+		query, err := fc.RetrievalQuery(context.TODO(), miner, cid, nil)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("got retrieval info")
+		fmt.Println("Size: ", query.Size)
+		fmt.Println("Unseal Price: ", query.UnsealPrice)
+		fmt.Println("Min Price Per Byte: ", query.MinPricePerByte)
+		fmt.Println("Payment Address: ", query.PaymentAddress)
+		if query.Message != "" {
+			fmt.Println("Message: ", query.Message)
 		}
 
 		return nil

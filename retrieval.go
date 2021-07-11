@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -11,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipld/go-ipld-prime"
 	"github.com/whyrusleeping/estuary/filclient"
+	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
@@ -121,22 +121,9 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 }
 
 func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, optionalSelector ipld.Node, ask *retrievalmarket.QueryResponse) error {
-	params, err := retrievalmarket.NewParamsV1(
-		ask.MinPricePerByte,
-		ask.MaxPaymentInterval,
-		ask.MaxPaymentIntervalIncrease,
-		optionalSelector,
-		nil,
-		ask.UnsealPrice,
-	)
+	proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, optionalSelector)
 	if err != nil {
 		return err
-	}
-
-	proposal := &retrievalmarket.DealProposal{
-		PayloadCID: c,
-		ID:         retrievalmarket.DealID(rand.Int63n(1000000) + 100000),
-		Params:     params,
 	}
 
 	stats, err := cm.FilClient.RetrieveContent(ctx, maddr, proposal)
