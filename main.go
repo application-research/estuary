@@ -324,6 +324,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "fail-deals-on-transfer-failure",
 		},
+		&cli.BoolFlag{
+			Name: "disable-deal-making",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -435,6 +438,8 @@ func main() {
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+
+		cm.dealMakingDisabled = cctx.Bool("disable-deal-making")
 
 		cm.tracer = otel.Tracer("replicator")
 

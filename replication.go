@@ -76,6 +76,8 @@ type ContentManager struct {
 
 	// some behavior flags
 	FailDealOnTransferFailure bool
+
+	dealMakingDisabled bool
 }
 
 // 90% of the unpadded data size for a 4GB piece
@@ -1028,6 +1030,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
+		if cm.dealMakingDisabled {
+			log.Warnf("deal making is disabled for now")
+			done(time.Minute * 60)
+			return nil
+		}
 		go func() {
 			// make some more deals!
 			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))

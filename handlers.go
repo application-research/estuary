@@ -380,6 +380,11 @@ type addFromIpfsParams struct {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
+	return &httpError{
+		Code:    400,
+		Message: "adding more content temporarily disabled",
+	}
+
 	var params addFromIpfsParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -467,6 +472,10 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
+	return &httpError{
+		Code:    400,
+		Message: "adding more content temporarily disabled",
+	}
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -529,6 +538,11 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	return &httpError{
+		Code:    400,
+		Message: "adding more content temporarily disabled",
+	}
 
 	form, err := c.MultipartForm()
 	if err != nil {
