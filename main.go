@@ -2,41 +2,23 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	autobatch "github.com/application-research/go-bs-autobatch"
 	"github.com/filecoin-project/go-address"
-	lmdb "github.com/filecoin-project/go-bs-lmdb"
-	"github.com/ipfs/go-bitswap"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
-	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	batched "github.com/ipfs/go-ipfs-provider/batched"
-	queue "github.com/ipfs/go-ipfs-provider/queue"
 	logging "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p"
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/peer"
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	fullrt "github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
-	"github.com/whyrusleeping/estuary/keystore"
-	bsm "github.com/whyrusleeping/go-bs-measure"
+	"github.com/whyrusleeping/estuary/node"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
@@ -44,9 +26,6 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
-	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
-	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
 
@@ -231,39 +210,6 @@ type ObjRef struct {
 	Offloaded uint
 }
 
-func setupWallet(dir string) (*wallet.LocalWallet, error) {
-	kstore, err := keystore.OpenOrInitKeystore(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	wallet, err := wallet.NewWallet(kstore)
-	if err != nil {
-		return nil, err
-	}
-
-	addrs, err := wallet.WalletList(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	if len(addrs) == 0 {
-		_, err := wallet.WalletNew(context.TODO(), types.KTSecp256k1)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	defaddr, err := wallet.GetDefault()
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Wallet address is: ", defaddr)
-
-	return wallet, nil
-}
-
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
@@ -333,7 +279,7 @@ func main() {
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
-		cfg := &Config{
+		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
@@ -364,7 +310,36 @@ func main() {
 			return err
 		}
 
-		nd, err := setup(context.Background(), cfg, db)
+		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
+			out := make(chan cid.Cid)
+			go func() {
+				defer close(out)
+
+				var contents []Content
+				if err := db.Find(&contents, "active").Error; err != nil {
+					log.Errorf("failed to load contents for reproviding: %s", err)
+					return
+				}
+
+				for _, c := range contents {
+					select {
+					case out <- c.Cid.CID:
+					case <-rpctx.Done():
+						return
+					}
+				}
+
+			}()
+			return out, nil
+		}
+
+		var trackingBstore *TrackingBlockstore
+		cfg.BlockstoreWrap = func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
+			trackingBstore = NewTrackingBlockstore(bs, db)
+			return trackingBstore, nil
+		}
+
+		nd, err := node.Setup(context.Background(), cfg, db)
 		if err != nil {
 			return err
 		}
@@ -437,7 +412,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, s.Node.NotifBlockstore, nd.Provider)
+		cm := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
@@ -448,7 +423,7 @@ func main() {
 		cm.tracer = otel.Tracer("replicator")
 
 		if cctx.Bool("enable-auto-retrive") {
-			nd.TrackingBlockstore.SetCidReqFunc(cm.RefreshContentForCid)
+			trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
 		if !cctx.Bool("no-storage-cron") {
@@ -531,7 +506,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 
 type Server struct {
 	tracer     trace.Tracer
-	Node       *Node
+	Node       *node.Node
 	DB         *gorm.DB
 	FilClient  *filclient.FilClient
 	Api        api.Gateway
@@ -619,187 +594,6 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
-}
-
-type Node struct {
-	Dht      *dht.IpfsDHT
-	Provider *batched.BatchProvidingSystem
-	FullRT   *fullrt.FullRT
-	Host     host.Host
-
-	Lmdb      *lmdb.Blockstore
-	Datastore datastore.Batching
-
-	Blockstore         blockstore.Blockstore
-	TrackingBlockstore *TrackingBlockstore
-	Bitswap            *bitswap.Bitswap
-	NotifBlockstore    *notifyBlockstore
-
-	Wallet *wallet.LocalWallet
-
-	Bwc *metrics.BandwidthCounter
-
-	Config *Config
-}
-
-type Config struct {
-	ListenAddrs []string
-
-	Blockstore string
-
-	WriteLog string
-
-	Libp2pKeyFile string
-
-	Datastore string
-
-	WalletDir string
-}
-
-func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
-	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
-	if err != nil {
-		return nil, err
-	}
-
-	bwc := metrics.NewBandwidthCounter()
-
-	h, err := libp2p.New(ctx,
-		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
-		libp2p.NATPortMap(),
-		libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
-		libp2p.Identity(peerkey),
-		libp2p.BandwidthReporter(bwc),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	frt, err := fullrt.NewFullRT(h, dht.ProtocolDHT)
-	if err != nil {
-		return nil, err
-	}
-
-	dht, err := dht.New(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-
-	lmdbs, err := lmdb.Open(&lmdb.Options{
-		Path:   cfg.Blockstore,
-		NoSync: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var bstore EstuaryBlockstore = lmdbs
-
-	if cfg.WriteLog != "" {
-		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
-		if err != nil {
-			return nil, err
-		}
-
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
-		if err != nil {
-			return nil, err
-		}
-
-		bstore = ab
-	}
-
-	notifbs := NewNotifBs(bstore)
-	mbs := bsm.New("estuary", notifbs)
-
-	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	tbs := NewTrackingBlockstore(mbs, db)
-
-	bsnet := bsnet.NewFromIpfsHost(h, frt)
-	bswap := bitswap.New(ctx, bsnet, tbs)
-
-	wallet, err := setupWallet(cfg.WalletDir)
-	if err != nil {
-		return nil, err
-	}
-
-	provq, err := queue.NewQueue(context.Background(), "provq", ds)
-	if err != nil {
-		return nil, err
-	}
-
-	kprov := batched.KeyProvider(func(rpctx context.Context) (<-chan cid.Cid, error) {
-		out := make(chan cid.Cid)
-		go func() {
-			defer close(out)
-
-			var contents []Content
-			if err := db.Find(&contents, "active").Error; err != nil {
-				log.Errorf("failed to load contents for reproviding: %s", err)
-				return
-			}
-
-			for _, c := range contents {
-				select {
-				case out <- c.Cid.CID:
-				case <-rpctx.Done():
-					return
-				}
-			}
-
-		}()
-		return out, nil
-	})
-
-	prov, err := batched.New(frt, provq, kprov)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Node{
-		Dht:                dht,
-		FullRT:             frt,
-		Provider:           prov,
-		Host:               h,
-		Blockstore:         mbs,
-		Lmdb:               lmdbs,
-		Datastore:          ds,
-		Bitswap:            bswap.(*bitswap.Bitswap),
-		TrackingBlockstore: tbs,
-		Wallet:             wallet,
-		Bwc:                bwc,
-		Config:             cfg,
-	}, nil
-}
-
-func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
-	data, err := ioutil.ReadFile(kf)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		k, _, err := crypto.GenerateEd25519Key(crand.Reader)
-		if err != nil {
-			return nil, err
-		}
-
-		data, err := crypto.MarshalPrivateKey(k)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := ioutil.WriteFile(kf, data, 0600); err != nil {
-			return nil, err
-		}
-
-		return k, nil
-	}
-	return crypto.UnmarshalPrivateKey(data)
 }
 
 func jsondump(o interface{}) {

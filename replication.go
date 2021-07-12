@@ -31,6 +31,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
+	"github.com/whyrusleeping/estuary/node"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -40,11 +41,6 @@ import (
 
 const defaultReplication = 6
 
-type EstuaryBlockstore interface {
-	blockstore.Blockstore
-	DeleteMany([]cid.Cid) error
-}
-
 type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
@@ -53,9 +49,9 @@ type ContentManager struct {
 
 	tracer trace.Tracer
 
-	Blockstore       EstuaryBlockstore
+	Blockstore       node.EstuaryBlockstore
 	Tracker          *TrackingBlockstore
-	NotifyBlockstore *notifyBlockstore
+	NotifyBlockstore *node.NotifyBlockstore
 
 	ToCheck  chan uint
 	queueMgr *queueManager
@@ -192,13 +188,13 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *notifyBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
 	cm := &ContentManager{
 		Provider:             prov,
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
-		Blockstore:           tbs.Under().(EstuaryBlockstore),
+		Blockstore:           tbs.Under().(node.EstuaryBlockstore),
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
