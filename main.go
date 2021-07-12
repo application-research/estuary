@@ -327,6 +327,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "disable-deal-making",
 		},
+		&cli.BoolFlag{
+			Name: "disable-content-adding",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
@@ -440,6 +443,7 @@ func main() {
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 
 		cm.dealMakingDisabled = cctx.Bool("disable-deal-making")
+		cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
 
 		cm.tracer = otel.Tracer("replicator")
 

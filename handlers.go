@@ -54,18 +54,19 @@ import (
 )
 
 const (
-	ERR_INVALID_TOKEN        = "ERR_INVALID_TOKEN"
-	ERR_TOKEN_EXPIRED        = "ERR_TOKEN_EXPIRED"
-	ERR_AUTH_MISSING         = "ERR_AUTH_MISSING"
-	ERR_INVALID_AUTH         = "ERR_INVALID_AUTH"
-	ERR_AUTH_MISSING_BEARER  = "ERR_AUTH_MISSING_BEARER"
-	ERR_NOT_AUTHORIZED       = "ERR_NOT_AUTHORIZED"
-	ERR_INVALID_INVITE       = "ERR_INVALID_INVITE"
-	ERR_USERNAME_TAKEN       = "ERR_USERNAME_TAKEN"
-	ERR_USER_CREATION_FAILED = "ERR_USER_CREATION_FAILED"
-	ERR_USER_NOT_FOUND       = "ERR_USER_NOT_FOUND"
-	ERR_INVALID_PASSWORD     = "ERR_INVALID_PASSWORD"
-	ERR_INVITE_ALREADY_USED  = "ERR_INVITE_ALREADY_USED"
+	ERR_INVALID_TOKEN           = "ERR_INVALID_TOKEN"
+	ERR_TOKEN_EXPIRED           = "ERR_TOKEN_EXPIRED"
+	ERR_AUTH_MISSING            = "ERR_AUTH_MISSING"
+	ERR_INVALID_AUTH            = "ERR_INVALID_AUTH"
+	ERR_AUTH_MISSING_BEARER     = "ERR_AUTH_MISSING_BEARER"
+	ERR_NOT_AUTHORIZED          = "ERR_NOT_AUTHORIZED"
+	ERR_INVALID_INVITE          = "ERR_INVALID_INVITE"
+	ERR_USERNAME_TAKEN          = "ERR_USERNAME_TAKEN"
+	ERR_USER_CREATION_FAILED    = "ERR_USER_CREATION_FAILED"
+	ERR_USER_NOT_FOUND          = "ERR_USER_NOT_FOUND"
+	ERR_INVALID_PASSWORD        = "ERR_INVALID_PASSWORD"
+	ERR_INVITE_ALREADY_USED     = "ERR_INVITE_ALREADY_USED"
+	ERR_CONTENT_ADDING_DISABLED = "ERR_CONTENT_ADDING_DISABLED"
 )
 
 const (
@@ -380,9 +381,11 @@ type addFromIpfsParams struct {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	return &httpError{
-		Code:    400,
-		Message: "adding more content temporarily disabled",
+	if s.CM.contentAddingDisabled {
+		return &httpError{
+			Code:    400,
+			Message: ERR_CONTENT_ADDING_DISABLED,
+		}
 	}
 
 	var params addFromIpfsParams
@@ -472,10 +475,13 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	return &httpError{
-		Code:    400,
-		Message: "adding more content temporarily disabled",
+	if s.CM.contentAddingDisabled {
+		return &httpError{
+			Code:    400,
+			Message: ERR_CONTENT_ADDING_DISABLED,
+		}
 	}
+
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -539,9 +545,11 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	return &httpError{
-		Code:    400,
-		Message: "adding more content temporarily disabled",
+	if s.CM.contentAddingDisabled {
+		return &httpError{
+			Code:    400,
+			Message: ERR_CONTENT_ADDING_DISABLED,
+		}
 	}
 
 	form, err := c.MultipartForm()
@@ -2163,6 +2171,9 @@ type userSettings struct {
 
 	MaxStagingWait       time.Duration `json:"maxStagingWait"`
 	FileStagingThreshold int64         `json:"fileStagingThreshold"`
+
+	ContentAddingDisabled bool `json:"contentAddingDisabled"`
+	DealMakingDisabled    bool `json:"dealMakingDisabled"`
 }
 
 type viewerResponse struct {
@@ -2178,11 +2189,13 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Username: u.Username,
 		Perms:    u.Perm,
 		Settings: userSettings{
-			Replication:          6,
-			Verified:             true,
-			DealDuration:         2880 * 365,
-			MaxStagingWait:       maxStagingZoneLifetime,
-			FileStagingThreshold: int64(individualDealThreshold),
+			Replication:           6,
+			Verified:              true,
+			DealDuration:          2880 * 365,
+			MaxStagingWait:        maxStagingZoneLifetime,
+			FileStagingThreshold:  int64(individualDealThreshold),
+			ContentAddingDisabled: s.CM.contentAddingDisabled,
+			DealMakingDisabled:    s.CM.dealMakingDisabled,
 		},
 	})
 }

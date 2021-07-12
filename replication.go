@@ -77,7 +77,8 @@ type ContentManager struct {
 	// some behavior flags
 	FailDealOnTransferFailure bool
 
-	dealMakingDisabled bool
+	dealMakingDisabled    bool
+	contentAddingDisabled bool
 }
 
 // 90% of the unpadded data size for a 4GB piece
