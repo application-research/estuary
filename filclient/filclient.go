@@ -872,6 +872,14 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		return nil, err
 	}
 
+	unsub := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, channelState datatransfer.ChannelState) {
+		if channelState.ChannelID() == chanid {
+			fmt.Printf("[%s] event: %s %d %s %s\n", time.Now().Format("15:04:05"), event.Message, event.Code, datatransfer.Events[event.Code], event.Timestamp.Format("15:04:05"))
+			fmt.Printf("channelstate: %s %s\n", datatransfer.Statuses[channelState.Status()], channelState.Message())
+		}
+	})
+	defer unsub()
+
 	// NB: data transfer will propose the retrieval, and if the miner accepts
 	// it, will start sending data via graphsync to us. This happens behind the
 	// scenes, and we dont get much introspection into this

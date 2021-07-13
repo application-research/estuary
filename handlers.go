@@ -42,6 +42,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -218,6 +219,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
 
+	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
@@ -240,6 +242,12 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
+
+	dealer := admin.Group("/dealer")
+	dealer.POST("/init", s.handleDealerInit)
+	dealer.GET("/list", s.handleDealerList)
+
+	e.GET("/dealer/conn", s.handleDealerConnection)
 
 	if domain != "" {
 		return e.StartAutoTLS(srv)
@@ -1951,33 +1959,42 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	return &user, nil
 }
 
+func extractAuth(c echo.Context) (string, error) {
+	auth := c.Request().Header.Get("Authorization")
+	if auth == "" {
+		return "", &httpError{
+			Code:    403,
+			Message: ERR_AUTH_MISSING,
+		}
+	}
+
+	parts := strings.Split(auth, " ")
+	if len(parts) != 2 {
+		return "", &httpError{
+			Code:    403,
+			Message: ERR_INVALID_AUTH,
+		}
+	}
+
+	if parts[0] != "Bearer" {
+		return "", &httpError{
+			Code:    403,
+			Message: ERR_AUTH_MISSING_BEARER,
+		}
+	}
+
+	return parts[1], nil
+}
+
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			auth := c.Request().Header.Get("Authorization")
-			if auth == "" {
-				return &httpError{
-					Code:    403,
-					Message: ERR_AUTH_MISSING,
-				}
+			auth, err := extractAuth(c)
+			if err != nil {
+				return err
 			}
 
-			parts := strings.Split(auth, " ")
-			if len(parts) != 2 {
-				return &httpError{
-					Code:    403,
-					Message: ERR_INVALID_AUTH,
-				}
-			}
-
-			if parts[0] != "Bearer" {
-				return &httpError{
-					Code:    403,
-					Message: ERR_AUTH_MISSING_BEARER,
-				}
-			}
-
-			u, err := s.checkTokenAuth(parts[1])
+			u, err := s.checkTokenAuth(auth)
 			if err != nil {
 				return err
 			}
@@ -2711,4 +2728,92 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		"traverseError": fmt.Sprintf("%s", err),
 		"foundBlocks":   cset.Len(),
 	})
+}
+
+type initDealerResponse struct {
+	Handle string `json:"handle"`
+	Token  string `json:"token"`
+}
+
+func (s *Server) handleDealerInit(c echo.Context) error {
+	dealer := &Dealer{
+		Handle: "DEALER" + uuid.New().String() + "HANDLE",
+		Token:  "SECRET" + uuid.New().String() + "SECRET",
+	}
+	if err := s.DB.Create(dealer).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &initDealerResponse{
+		Handle: dealer.Handle,
+		Token:  dealer.Token,
+	})
+}
+
+func (s *Server) handleDealerList(c echo.Context) error {
+	var dealers []Dealer
+	if err := s.DB.Find(&dealers).Error; err != nil {
+		return err
+	}
+
+	var out []initDealerResponse
+	for _, d := range dealers {
+		out = append(out, initDealerResponse{
+			Handle: d.Handle,
+			Token:  d.Token,
+		})
+	}
+
+	return c.JSON(200, out)
+}
+
+func (s *Server) handleDealerConnection(c echo.Context) error {
+	auth, err := extractAuth(c)
+	if err != nil {
+		return err
+	}
+
+	var dealer Dealer
+	if err := s.DB.First(&dealer, "token = ?", auth).Error; err != nil {
+		return err
+	}
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		cmds, err := s.registerDealerConnection(dealer.Handle)
+		if err != nil {
+			log.Errorf("failed to register dealer: %s", err)
+			return
+		}
+		_ = cmds
+
+		defer ws.Close()
+		for {
+			// Write
+			err := websocket.Message.Send(ws, "Hello, Client!")
+			if err != nil {
+				c.Logger().Error(err)
+			}
+
+			// Read
+			msg := ""
+			err = websocket.Message.Receive(ws, &msg)
+			if err != nil {
+				c.Logger().Error(err)
+			}
+			fmt.Printf("%s\n", msg)
+		}
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
+}
+
+func (s *Server) registerDealerConnection(str string) (chan struct{}, error) {
+	panic("no")
+}
+
+func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
+	var deals []contentDeal
+	if err := s.DB.Find(&deals, "deal_id > 0 and not failed").Error; err != nil {
+		return err
+	}
+	return c.JSON(200, deals)
 }
