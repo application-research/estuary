@@ -2810,10 +2810,20 @@ func (s *Server) registerDealerConnection(str string) (chan struct{}, error) {
 	panic("no")
 }
 
+type allDealsQuery struct {
+	Miner  string
+	Cid    dbCID
+	DealID int64
+}
+
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
-	var deals []contentDeal
-	if err := s.DB.Find(&deals, "deal_id > 0 and not failed").Error; err != nil {
+	var out []allDealsQuery
+	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not failed").
+		Joins("left join contents on content_deals.content = contents.id").
+		Select("miner, contents.cid as cid, deal_id").
+		Scan(&out).
+		Error; err != nil {
 		return err
 	}
-	return c.JSON(200, deals)
+	return c.JSON(200, out)
 }
