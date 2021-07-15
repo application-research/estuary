@@ -24,6 +24,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -837,14 +838,12 @@ type RetrievalStats struct {
 }
 
 func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address, proposal *retrievalmarket.DealProposal) (*RetrievalStats, error) {
-	log.Infof("starting retrieval with miner: %s", miner)
-
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
 
-	//startTime := time.Now()
-
-	mpID, err := fc.minerPeer(ctx, miner)
+	start := time.Now()
+	log.Infof("attempting retrieval with miner: %s", miner)
+	mpid, err := fc.minerPeer(ctx, miner)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get miner peer: %w", err)
 	}
@@ -854,44 +853,213 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		return nil, err
 	}
 
-	// Get the payment channel and create a lane for this retrieval
-	pchAddr, err := fc.getPaychWithMinFunds(ctx, minerOwner)
+	pchaddr, err := fc.getPaychWithMinFunds(ctx, minerOwner)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to get payment channel: %w", err)
 	}
-	pchLane, err := fc.pchmgr.AllocateLane(pchAddr)
+
+	// Allocate a lane on our payment channel, usually you want a new lane per retrieval
+	lane, err := fc.pchmgr.AllocateLane(pchaddr)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to allocate lane: %w", err)
 	}
 
-	done := false
-	fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
-		switch event.Code {
-		case datatransfer.Accept:
-			log.Infof("deal accepted: %s", event.Message)
-			fmt.Println("e", pchLane)
-			panic("test successful")
-		case datatransfer.FinishTransfer:
-			done = true
-		}
-	})
-
-	// Submit the retrieval deal proposal to the miner
-	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
+	// Use the data transfer protocol to propose the retrieval deal
+	sel := shared.AllSelector()
+	var vouch datatransfer.Voucher = proposal
+	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpid, vouch, proposal.PayloadCID, sel)
 	if err != nil {
 		return nil, err
 	}
 
-	// Wait for the retrieval to finish before exiting the function
+	// NB: data transfer will propose the retrieval, and if the miner accepts
+	// it, will start sending data via graphsync to us. This happens behind the
+	// scenes, and we dont get much introspection into this
+
+	// Now, we poll the data transfer channel status and wait until it says its accepted
+	if err := fc.waitForDealAccepted(ctx, chanid); err != nil {
+		return nil, err
+	}
+
+	var nonce uint64
+	total := abi.NewTokenAmount(0)
+
+	var voucherCount int
 	for {
+		// Now that the deal has been accepted, we sit around and wait for data
+		// to come in and for the miner to ask for more money
+		amt, nvc, done, err := fc.waitForPaymentNeeded(ctx, chanid, voucherCount)
+		if err != nil {
+			return nil, xerrors.Errorf("waitForPayment needed failed: %w", err)
+		}
+
 		if done {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+
+		voucherCount = nvc
+
+		total = types.BigAdd(total, *amt)
+
+		vres, err := fc.pchmgr.CreateVoucher(ctx, pchaddr, paych.SignedVoucher{
+			ChannelAddr: pchaddr,
+			Lane:        lane,
+			Nonce:       nonce,
+			Amount:      total,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
+			return nil, fmt.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall)
+		}
+
+		paymnt := &retrievalmarket.DealPayment{
+			ID:             proposal.ID,
+			PaymentChannel: pchaddr,
+			PaymentVoucher: vres.Voucher,
+		}
+
+		if err := fc.dataTransfer.SendVoucher(ctx, chanid, paymnt); err != nil {
+			return nil, xerrors.Errorf("failed to send payment voucher: %w", err)
+		}
+
+		nonce++
 	}
 
-	// TODO: just a test
-	fmt.Println(chanid)
+	st, err := fc.dataTransfer.ChannelState(ctx, chanid)
+	if err != nil {
+		return nil, err
+	}
 
-	panic("todo")
+	took := time.Since(start)
+	speed := uint64(float64(st.Received()) / took.Seconds())
+
+	st.Received()
+
+	return &RetrievalStats{
+		Peer:         st.OtherPeer(),
+		Size:         st.Received(),
+		Duration:     took,
+		AverageSpeed: speed,
+		TotalPayment: total,
+		NumPayments:  int(nonce),
+		AskPrice:     proposal.PricePerByte,
+	}, nil
+}
+
+func (fc *FilClient) waitForDealAccepted(ctx context.Context, chanid datatransfer.ChannelID) error {
+	// looping here is dumb, but the alternative is to write a lot of code that
+	// connects into the data transfer events watcher thing and interprets the
+	// entrails of our sacrifices to determine when to do the next things
+	for {
+		st, err := fc.dataTransfer.ChannelState(ctx, chanid)
+		if err != nil {
+			return err
+		}
+
+		results := st.VoucherResults()
+		var res datatransfer.VoucherResult
+		if len(results) > 0 {
+			res = results[len(results)-1]
+		}
+		switch rest := res.(type) {
+		case *retrievalmarket.DealResponse:
+			switch rest.Status {
+			case retrievalmarket.DealStatusAccepted:
+				log.Infow("retrieval deal accepted! ", "msg", rest.Message, "owed", types.FIL(rest.PaymentOwed), "received", st.Received())
+				return nil
+			case retrievalmarket.DealStatusRejected:
+				return fmt.Errorf("deal rejected: %s", rest.Message)
+			case retrievalmarket.DealStatusFundsNeededUnseal:
+				return fmt.Errorf("data needs to be unsealed")
+			case retrievalmarket.DealStatusErrored:
+				return fmt.Errorf("retrieval deal errored: %s", rest.Message)
+			default:
+				return fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
+			}
+		default:
+			if res != nil {
+				return fmt.Errorf("unrecognized voucher response type: %T", res)
+			}
+		}
+
+		time.Sleep(pollingDelay)
+	}
+
+	return nil
+}
+
+const noDataTimeout = time.Second * 20
+
+const pollingDelay = time.Millisecond * 150
+
+func (fc *FilClient) waitForPaymentNeeded(ctx context.Context, chanid datatransfer.ChannelID, curcount int) (*abi.TokenAmount, int, bool, error) {
+
+	var lastReceived uint64
+	lastReceivedTime := time.Now()
+
+	for {
+		st, err := fc.dataTransfer.ChannelState(ctx, chanid)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		if lastReceived == st.Received() {
+			if time.Since(lastReceivedTime) > noDataTimeout {
+				return nil, 0, false, fmt.Errorf("timed out waiting for data or payment request")
+			}
+		} else {
+			lastReceived = st.Received()
+			lastReceivedTime = time.Now()
+		}
+
+		fmt.Println("retrieval progress: ", st.Received())
+
+		switch st.Status() {
+		case datatransfer.TransferFinished:
+			return nil, 0, true, nil
+		case datatransfer.ResponderPaused:
+			// fmt.Println("for some reason the status is 'paused'")
+		case datatransfer.Ongoing:
+			// this is good?
+		case datatransfer.ResponderFinalizingTransferFinished:
+			// i think this is good.
+			return nil, 0, true, nil
+		default:
+			return nil, 0, false, fmt.Errorf("unrecognized transfer status: %d", st.Status())
+
+		}
+
+		voucherResults := st.VoucherResults()
+		if curcount == len(voucherResults) {
+			// no new voucher results, dont want to make decisions based on old
+			// information
+			time.Sleep(pollingDelay)
+			continue
+		}
+
+		res := voucherResults[len(voucherResults)-1]
+		switch rest := res.(type) {
+		case *retrievalmarket.DealResponse:
+			switch rest.Status {
+			case retrievalmarket.DealStatusAccepted:
+				// this is what we want to see, means things are good for now
+				//fmt.Println("Accepted status while waiting for data! ", rest.Message, types.FIL(rest.PaymentOwed), st.Received())
+			case retrievalmarket.DealStatusFundsNeeded:
+				return &rest.PaymentOwed, len(voucherResults), false, nil
+			case retrievalmarket.DealStatusFundsNeededUnseal:
+				log.Warnf("miner needs to unseal data, not retrieving from here")
+				return nil, 0, false, fmt.Errorf("payment for unsealing requested unexpectedly")
+			default:
+				return nil, 0, false, fmt.Errorf("unexpected status while waiting for accept: %d", rest.Status)
+			}
+		default:
+			if res != nil {
+				return nil, 0, false, fmt.Errorf("unrecognized voucher response type: %T", res)
+			}
+		}
+
+		time.Sleep(pollingDelay)
+	}
 }
