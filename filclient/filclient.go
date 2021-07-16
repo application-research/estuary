@@ -24,6 +24,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/actors/builtin/paych"
 	rpcstmgr "github.com/filecoin-project/lotus/chain/stmgr/rpc"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -842,7 +843,9 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	ctx, span := Tracer.Start(ctx, "fcRetrieveContent")
 	defer span.End()
 
-	//startTime := time.Now()
+	// Stats
+	startTime := time.Now()
+	totalPayment := abi.NewTokenAmount(0)
 
 	mpID, err := fc.minerPeer(ctx, miner)
 	if err != nil {
@@ -863,35 +866,106 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	if err != nil {
 		return nil, xerrors.Errorf("failed to allocate lane: %w", err)
 	}
-
-	done := false
-	fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
-		switch event.Code {
-		case datatransfer.Accept:
-			log.Infof("deal accepted: %s", event.Message)
-			fmt.Println("e", pchLane)
-			panic("test successful")
-		case datatransfer.FinishTransfer:
-			done = true
-		}
-	})
+	fmt.Println(pchLane)
 
 	// Submit the retrieval deal proposal to the miner
 	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
 	if err != nil {
 		return nil, err
 	}
-
-	// Wait for the retrieval to finish before exiting the function
-	for {
-		if done {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-
-	// TODO: just a test
 	fmt.Println(chanid)
 
-	panic("todo")
+	// Used to limit prints to the console about received status
+	lastReceivedUpdate := time.Now()
+
+	// The next nonce (incrementing unique ID starting from 0) for the next voucher
+	var nonce uint64 = 0
+
+	// Set up incoming events handler
+
+	// dtRes receives either an error (failure) or nil (success) which is waited
+	// on and handled below before exiting the function
+	dtRes := make(chan error)
+	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
+		switch event.Code {
+		case datatransfer.NewVoucherResult:
+			switch resType := state.LastVoucherResult().(type) {
+			case *retrievalmarket.DealResponse:
+				switch resType.Status {
+				case retrievalmarket.DealStatusAccepted:
+					log.Info("deal accepted")
+
+				// Respond with a payment voucher when funds are requested
+				case retrievalmarket.DealStatusFundsNeeded:
+					log.Infof("sending payment voucher: %v", resType.PaymentOwed)
+
+					totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
+
+					vres, err := fc.pchmgr.CreateVoucher(ctx, pchAddr, paych.SignedVoucher{
+						ChannelAddr: pchAddr,
+						Lane:        pchLane,
+						Nonce:       nonce,
+						Amount:      totalPayment,
+					})
+					if err != nil {
+						dtRes <- err
+					}
+
+					if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
+						dtRes <- xerrors.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall)
+					}
+
+					if err := fc.dataTransfer.SendVoucher(ctx, chanid, &retrievalmarket.DealPayment{
+						ID:             proposal.ID,
+						PaymentChannel: pchAddr,
+						PaymentVoucher: vres.Voucher,
+					}); err != nil {
+						dtRes <- xerrors.Errorf("failed to send payment voucher: %w", err)
+					}
+
+					nonce++
+				case retrievalmarket.DealStatusFundsNeededUnseal:
+					dtRes <- xerrors.Errorf("received unexpected payment request for unsealing data")
+				default:
+					log.Debugf("unrecognized voucher: %v", resType)
+				}
+			default:
+				log.Error("unrecognized voucher response type")
+			}
+		case datatransfer.DataReceived:
+			if time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
+				fmt.Printf("received: %v\r", state.Received())
+				lastReceivedUpdate = time.Now()
+			}
+		case datatransfer.FinishTransfer:
+			dtRes <- nil
+			fmt.Print("\n")
+		}
+	})
+	defer unsubscribe()
+
+	// Wait for the retrieval to finish before exiting the function
+	if err := <-dtRes; err != nil {
+		return nil, xerrors.Errorf("data transfer error: %w", err)
+	}
+
+	// Compile the retrieval stats
+
+	state, err := fc.dataTransfer.ChannelState(ctx, chanid)
+	if err != nil {
+		return nil, xerrors.Errorf("could not get channel state: %w", err)
+	}
+
+	duration := time.Since(startTime)
+	speed := uint64(float64(state.Received()) / duration.Seconds())
+
+	return &RetrievalStats{
+		Peer:         state.OtherPeer(),
+		Size:         state.Received(),
+		Duration:     duration,
+		AverageSpeed: speed,
+		TotalPayment: totalPayment,
+		NumPayments:  int(nonce),
+		AskPrice:     proposal.PricePerByte,
+	}, nil
 }
