@@ -866,14 +866,12 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	if err != nil {
 		return nil, xerrors.Errorf("failed to allocate lane: %w", err)
 	}
-	fmt.Println(pchLane)
 
 	// Submit the retrieval deal proposal to the miner
 	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println(chanid)
 
 	// Used to limit prints to the console about received status
 	lastReceivedUpdate := time.Now()
