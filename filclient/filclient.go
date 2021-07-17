@@ -895,7 +895,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
-					log.Infof("sending payment voucher (%v): %v", nonce, resType.PaymentOwed)
+					log.Infof("sending payment voucher (nonce: %v, amount: %v)", nonce, resType.PaymentOwed)
 
 					totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
@@ -943,8 +943,13 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	defer unsubscribe()
 
 	// Wait for the retrieval to finish before exiting the function
-	if err := <-dtRes; err != nil {
-		return nil, xerrors.Errorf("data transfer error: %w", err)
+	select {
+	case err := <-dtRes:
+		if err != nil {
+			return nil, xerrors.Errorf("data transfer error: %w", err)
+		}
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	}
 
 	// Compile the retrieval stats
