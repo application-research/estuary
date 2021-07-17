@@ -32,6 +32,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/node"
+	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -374,7 +375,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	obj := &Object{
-		Cid:  dbCID{ncid},
+		Cid:  util.DbCID{ncid},
 		Size: int(size),
 	}
 	if err := cm.DB.Create(obj).Error; err != nil {
@@ -382,7 +383,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	content := &Content{
-		Cid:         dbCID{ncid},
+		Cid:         util.DbCID{ncid},
 		Size:        int64(size) + b.CurSize,
 		Name:        "aggregate",
 		Active:      true,
@@ -741,16 +742,16 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 
 type contentDeal struct {
 	gorm.Model
-	Content          uint      `json:"content"`
-	PropCid          dbCID     `json:"propCid"`
-	Miner            string    `json:"miner"`
-	DealID           int64     `json:"dealId"`
-	Failed           bool      `json:"failed"`
-	Verified         bool      `json:"verified"`
-	FailedAt         time.Time `json:"failedAt,omitempty"`
-	DTChan           string    `json:"dtChan"`
-	TransferStarted  time.Time `json:"transferStarted"`
-	TransferFinished time.Time `json:"transferFinished"`
+	Content          uint       `json:"content"`
+	PropCid          util.DbCID `json:"propCid"`
+	Miner            string     `json:"miner"`
+	DealID           int64      `json:"dealId"`
+	Failed           bool       `json:"failed"`
+	Verified         bool       `json:"verified"`
+	FailedAt         time.Time  `json:"failedAt,omitempty"`
+	DTChan           string     `json:"dtChan"`
+	TransferStarted  time.Time  `json:"transferStarted"`
+	TransferFinished time.Time  `json:"transferFinished"`
 
 	OnChainAt time.Time `json:"onChainAt"`
 	SealedAt  time.Time `json:"sealedAt"`
@@ -1426,7 +1427,7 @@ func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) b
 }
 
 type proposalRecord struct {
-	PropCid dbCID
+	PropCid util.DbCID
 	Data    []byte
 }
 
@@ -1569,7 +1570,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 			cd := &contentDeal{
 				Content:  content.ID,
-				PropCid:  dbCID{dealresp.Response.Proposal},
+				PropCid:  util.DbCID{dealresp.Response.Proposal},
 				Miner:    ms[i].String(),
 				Verified: verified,
 			}
@@ -1630,7 +1631,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	//fmt.Println("proposal cid: ", nd.Cid())
 
 	if err := cm.DB.Create(&proposalRecord{
-		PropCid: dbCID{nd.Cid()},
+		PropCid: util.DbCID{nd.Cid()},
 		Data:    nd.RawData(),
 	}).Error; err != nil {
 		return err
@@ -1682,8 +1683,8 @@ func averageAskPrice(asks []*network.AskResponse) types.FIL {
 }
 
 type PieceCommRecord struct {
-	Data  dbCID `gorm:"unique"`
-	Piece dbCID
+	Data  util.DbCID `gorm:"unique"`
+	Piece util.DbCID
 	Size  abi.UnpaddedPieceSize
 }
 
@@ -1751,8 +1752,8 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 	}
 
 	opcr := PieceCommRecord{
-		Data:  dbCID{data},
-		Piece: dbCID{pc},
+		Data:  util.DbCID{data},
+		Piece: util.DbCID{pc},
 		Size:  size,
 	}
 
@@ -2030,6 +2031,44 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 				return
 			}
 		}(dll)
+	}
+
+	return nil
+}
+
+func (s *Server) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object) error {
+	ctx, span := s.tracer.Start(ctx, "addObjectsToDatabase")
+	defer span.End()
+
+	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
+		return xerrors.Errorf("failed to create objects in db: %w", err)
+	}
+
+	refs := make([]ObjRef, 0, len(objects))
+	var totalSize int64
+	for _, o := range objects {
+		refs = append(refs, ObjRef{
+			Content: content,
+			Object:  o.ID,
+		})
+		totalSize += int64(o.Size)
+	}
+
+	span.SetAttributes(
+		attribute.Int64("totalSize", totalSize),
+		attribute.Int("numObjects", len(objects)),
+	)
+
+	if err := s.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
+		"active":  true,
+		"size":    totalSize,
+		"pinning": false,
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update content in database: %w", err)
+	}
+
+	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
+		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
 	return nil

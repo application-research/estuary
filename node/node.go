@@ -86,7 +86,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	h, err := libp2p.New(ctx,
 		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
 		libp2p.NATPortMap(),
-		libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
+		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 	)

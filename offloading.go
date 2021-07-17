@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
+	"github.com/whyrusleeping/estuary/util"
 	"golang.org/x/xerrors"
 )
 
@@ -120,7 +121,7 @@ func (cm *ContentManager) getLastAccessForContent(cont Content) (time.Time, erro
 }
 
 type refResult struct {
-	Cid dbCID
+	Cid util.DbCID
 }
 
 func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (int, error) {
@@ -193,7 +194,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	var deleteCount int
 	var cids []cid.Cid
 	for rows.Next() {
-		var dbc dbCID
+		var dbc util.DbCID
 		if err := rows.Scan(&dbc); err != nil {
 			return deleteCount, err
 		}

@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"database/sql/driver"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +17,8 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/node"
+	"github.com/whyrusleeping/estuary/pinner"
+	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
@@ -29,8 +29,6 @@ import (
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -99,7 +97,7 @@ func init() {
 
 type storageMiner struct {
 	gorm.Model
-	Address         dbAddr `gorm:"unique"`
+	Address         util.DbAddr `gorm:"unique"`
 	Suspended       bool
 	SuspendedReason string
 	Name            string
@@ -108,85 +106,20 @@ type storageMiner struct {
 	Owner           uint
 }
 
-type dbAddr struct {
-	Addr address.Address
-}
-
-func (dba *dbAddr) Scan(v interface{}) error {
-	s, ok := v.(string)
-	if !ok {
-		return fmt.Errorf("dbAddrs must be strings")
-	}
-
-	addr, err := address.NewFromString(s)
-	if err != nil {
-		return err
-	}
-
-	dba.Addr = addr
-	return nil
-}
-
-func (dba dbAddr) Value() (driver.Value, error) {
-	return dba.Addr.String(), nil
-}
-
-type dbCID struct {
-	CID cid.Cid
-}
-
-func (dbc *dbCID) Scan(v interface{}) error {
-	b, ok := v.([]byte)
-	if !ok {
-		return fmt.Errorf("dbcids must get bytes!")
-	}
-
-	c, err := cid.Cast(b)
-	if err != nil {
-		return err
-	}
-
-	dbc.CID = c
-	return nil
-}
-
-func (dbc dbCID) Value() (driver.Value, error) {
-	return dbc.CID.Bytes(), nil
-}
-
-func (dbc dbCID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dbc.CID.String())
-}
-
-func (dbc *dbCID) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-
-	c, err := cid.Decode(s)
-	if err != nil {
-		return err
-	}
-
-	dbc.CID = c
-	return nil
-}
-
 type Content struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"-"`
 	UpdatedAt time.Time      `json:"-"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         dbCID  `json:"cid"`
-	Name        string `json:"name"`
-	UserID      uint   `json:"userId" gorm:"index"`
-	Description string `json:"description"`
-	Size        int64  `json:"size"`
-	Active      bool   `json:"active"`
-	Offloaded   bool   `json:"offloaded"`
-	Replication int    `json:"replication"`
+	Cid         util.DbCID `json:"cid"`
+	Name        string     `json:"name"`
+	UserID      uint       `json:"userId" gorm:"index"`
+	Description string     `json:"description"`
+	Size        int64      `json:"size"`
+	Active      bool       `json:"active"`
+	Offloaded   bool       `json:"offloaded"`
+	Replication int        `json:"replication"`
 
 	AggregatedIn uint `json:"aggregatedIn"`
 	Aggregate    bool `json:"aggregate"`
@@ -196,8 +129,8 @@ type Content struct {
 }
 
 type Object struct {
-	ID         uint  `gorm:"primarykey"`
-	Cid        dbCID `gorm:"index"`
+	ID         uint       `gorm:"primarykey"`
+	Cid        util.DbCID `gorm:"index"`
 	Size       int
 	Reads      int
 	LastAccess time.Time
@@ -221,6 +154,7 @@ func main() {
 	logging.SetLogLevel("data_transfer_network", "debug")
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
+	logging.SetLogLevel("provider.batched", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -355,24 +289,18 @@ func main() {
 		}
 
 		s := &Server{
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			quickCache:  make(map[string]endpointCache),
-			pinJobs:     make(map[uint]*pinningOperation),
-			pinQueue:    make(map[uint][]*pinningOperation),
-			activePins:  make(map[uint]int),
-			pinQueueIn:  make(chan *pinningOperation, 64),
-			pinQueueOut: make(chan *pinningOperation),
-			pinComplete: make(chan *pinningOperation, 64),
+			Node:       nd,
+			Api:        api,
+			StagingMgr: sbmgr,
+			tracer:     otel.Tracer("api"),
+			quickCache: make(map[string]endpointCache),
+			pinJobs:    make(map[uint]*pinner.PinningOperation),
 		}
 
-		go s.pinQueueManager()
+		// TODO: this is an ugly self referential hack... should fix
+		s.pinMgr = pinner.NewPinManager(s.doPinning, nil)
 
-		for i := 0; i < 30; i++ {
-			go s.pinWorker()
-		}
+		go s.pinMgr.Run(30)
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
@@ -450,25 +378,11 @@ func main() {
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
-	parts := strings.SplitN(dbval, "=", 2)
-	if len(parts) == 1 {
-		return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS'")
-	}
-
-	var dial gorm.Dialector
-	switch parts[0] {
-	case "sqlite":
-		dial = sqlite.Open(parts[1])
-	case "postgres":
-		dial = postgres.Open(parts[1])
-	default:
-		return nil, fmt.Errorf("unsupported or unrecognized db type: %s", parts[0])
-	}
-
-	db, err := gorm.Open(dial, &gorm.Config{})
+	db, err := util.SetupDatabase(dbval)
 	if err != nil {
 		return nil, err
 	}
+
 	db.AutoMigrate(&Content{})
 	db.AutoMigrate(&Object{})
 	db.AutoMigrate(&ObjRef{})
@@ -499,7 +413,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range defaultMiners {
-			db.Create(&storageMiner{Address: dbAddr{m}})
+			db.Create(&storageMiner{Address: util.DbAddr{m}})
 		}
 
 	}
@@ -519,14 +433,12 @@ type Server struct {
 	quickCache map[string]endpointCache
 
 	pinLk   sync.Mutex
-	pinJobs map[uint]*pinningOperation
+	pinJobs map[uint]*pinner.PinningOperation
 
-	pinQueueIn  chan *pinningOperation
-	pinQueueOut chan *pinningOperation
-	pinComplete chan *pinningOperation
-	pinQueue    map[uint][]*pinningOperation
-	activePins  map[uint]int
-	pinQueueLk  sync.Mutex
+	pinMgr *pinner.PinManager
+
+	dealersLk sync.Mutex
+	dealers   map[string]*dealerConnection
 }
 
 type endpointCache struct {

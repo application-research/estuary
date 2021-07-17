@@ -41,7 +41,7 @@ require (
 	github.com/libp2p/go-libp2p-connmgr v0.2.4
 	github.com/libp2p/go-libp2p-core v0.8.6-0.20210415043615-525a0b130172
 	github.com/libp2p/go-libp2p-crypto v0.1.0
-	github.com/libp2p/go-libp2p-kad-dht v0.12.1
+	github.com/libp2p/go-libp2p-kad-dht v0.12.2
 	github.com/libp2p/go-libp2p-protocol v0.1.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.18.0
