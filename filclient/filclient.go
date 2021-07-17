@@ -925,10 +925,10 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 				case retrievalmarket.DealStatusFundsNeededUnseal:
 					dtRes <- xerrors.Errorf("received unexpected payment request for unsealing data")
 				default:
-					log.Debugf("unrecognized voucher: %v", resType)
+					log.Warnf("unrecognized voucher response status: %v", resType.Status)
 				}
 			default:
-				log.Error("unrecognized voucher response type")
+				log.Warnf("unrecognized voucher response type: %v", resType)
 			}
 		case datatransfer.DataReceived:
 			if time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
@@ -937,7 +937,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 			}
 		case datatransfer.FinishTransfer:
 			dtRes <- nil
-			fmt.Print("\n")
+		default:
+			log.Warn("unrecognized data transfer event: %v", event)
 		}
 	})
 	defer unsubscribe()
