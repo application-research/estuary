@@ -1704,6 +1704,35 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return nil, nil
 }
 
+func (cm *ContentManager) findContent(ctx context.Context, cont Content) ([]string, error) {
+	return []string{"local"}, nil
+}
+
+func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	var cont Content
+	if err := cm.DB.First(&cont, "cid = ?", data.Bytes()).Error; err != nil {
+		return cid.Undef, 0, err
+	}
+
+	locs, err := cm.findContent(ctx, cont)
+	if err != nil {
+		return cid.Undef, 0, xerrors.Errorf("failed to locate content: %w", err)
+	}
+
+	if len(locs) == 0 {
+		return cid.Undef, 0, xerrors.Errorf("content not found: %d", cont.ID)
+	}
+
+	sel := locs[0]
+
+	if sel != "local" {
+		return cid.Undef, 0, xerrors.Errorf("remote stuff not yet implemented")
+	}
+
+	log.Infow("computing piece commitment", "data", cont.Cid.CID)
+	return filclient.GeneratePieceCommitment(ctx, data, bs)
+}
+
 func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	_, span := cm.tracer.Start(ctx, "getPieceComm")
 	defer span.End()
@@ -1716,8 +1745,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 		return pcr.Piece.CID, pcr.Size, nil
 	}
 
-	log.Infow("computing piece commitment", "data", data)
-	pc, size, err := filclient.GeneratePieceCommitment(ctx, data, bs)
+	pc, size, err := cm.runPieceCommCompute(ctx, data, bs)
 	if err != nil {
 		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
 	}

@@ -339,7 +339,7 @@ func main() {
 			return trackingBstore, nil
 		}
 
-		nd, err := node.Setup(context.Background(), cfg, db)
+		nd, err := node.Setup(context.Background(), cfg)
 		if err != nil {
 			return err
 		}
@@ -488,6 +488,8 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&User{})
 	db.AutoMigrate(&AuthToken{})
 	db.AutoMigrate(&InviteCode{})
+
+	db.AutoMigrate(&Dealer{})
 
 	var count int64
 	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {

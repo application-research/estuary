@@ -30,7 +30,6 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	"github.com/whyrusleeping/estuary/keystore"
 	bsm "github.com/whyrusleeping/go-bs-measure"
-	"gorm.io/gorm"
 )
 
 type EstuaryBlockstore interface {
@@ -76,7 +75,7 @@ type Config struct {
 	KeyProviderFunc func(context.Context) (<-chan cid.Cid, error)
 }
 
-func Setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
+func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
 	if err != nil {
 		return nil, err
