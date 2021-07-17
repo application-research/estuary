@@ -895,7 +895,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 				// Respond with a payment voucher when funds are requested
 				case retrievalmarket.DealStatusFundsNeeded:
-					log.Infof("sending payment voucher: %v", resType.PaymentOwed)
+					log.Infof("sending payment voucher (%v): %v", nonce, resType.PaymentOwed)
 
 					totalPayment = types.BigAdd(totalPayment, resType.PaymentOwed)
 
