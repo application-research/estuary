@@ -21,16 +21,49 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-ipfs-provider/batched"
 	"github.com/ipfs/go-ipfs-provider/queue"
+	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
+	"github.com/libp2p/go-libp2p-core/peer"
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/keystore"
 	bsm "github.com/whyrusleeping/go-bs-measure"
+	"golang.org/x/xerrors"
 )
+
+var log = logging.Logger("est-node")
+
+var bootstrappers = []string{
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+}
+
+var BootstrapPeers []peer.AddrInfo
+
+func init() {
+	for _, bsp := range bootstrappers {
+		ma, err := multiaddr.NewMultiaddr(bsp)
+		if err != nil {
+			log.Errorf("failed to parse bootstrap address: ", err)
+			continue
+		}
+
+		ai, err := peer.AddrInfoFromP2pAddr(ma)
+		if err != nil {
+			log.Errorf("failed to create address info: ", err)
+			continue
+		}
+
+		BootstrapPeers = append(BootstrapPeers, *ai)
+	}
+}
 
 type EstuaryBlockstore interface {
 	blockstore.Blockstore
@@ -81,6 +114,11 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
+	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	bwc := metrics.NewBandwidthCounter()
 
 	h, err := libp2p.New(ctx,
@@ -94,14 +132,21 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix)
+	dhtopts := fullrt.DHTOption(
+		//dht.Validator(in.Validator),
+		dht.Datastore(ds),
+		dht.BootstrapPeers(BootstrapPeers...),
+		dht.BucketSize(20),
+	)
+
+	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix, dhtopts)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("constructing fullrt: %w", err)
 	}
 
 	dht, err := dht.New(ctx, h)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
 	lmdbs, err := lmdb.Open(&lmdb.Options{
@@ -131,11 +176,6 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	notifbs := NewNotifBs(bstore)
 	mbs := bsm.New("estuary", notifbs)
 
-	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	var blkst blockstore.Blockstore = mbs
 
 	if cfg.BlockstoreWrap != nil {
@@ -163,7 +203,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 
 	prov, err := batched.New(frt, provq, kprov)
 	if err != nil {
-		return nil, err
+		return nil, xerrors.Errorf("setup batched provider: %w", err)
 	}
 
 	return &Node{

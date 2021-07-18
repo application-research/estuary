@@ -13,8 +13,6 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
@@ -33,13 +31,6 @@ import (
 )
 
 var log = logging.Logger("estuary")
-
-var bootstrappers = []string{
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
-}
 
 var defaultMiners []address.Address
 
@@ -314,20 +305,8 @@ func main() {
 		}
 
 		go func() {
-			for _, bsp := range bootstrappers {
-
-				ma, err := multiaddr.NewMultiaddr(bsp)
-				if err != nil {
-					fmt.Println("failed to parse bootstrap address: ", err)
-					continue
-				}
-				ai, err := peer.AddrInfoFromP2pAddr(ma)
-				if err != nil {
-					fmt.Println("failed to create address info: ", err)
-					continue
-				}
-
-				if err := nd.Host.Connect(context.TODO(), *ai); err != nil {
+			for _, ai := range node.BootstrapPeers {
+				if err := nd.Host.Connect(context.TODO(), ai); err != nil {
 					fmt.Println("failed to connect to bootstrapper: ", err)
 					continue
 				}
