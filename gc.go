@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ipfs/go-cid"
+	"github.com/whyrusleeping/estuary/util"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
@@ -123,7 +124,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 	}
 
 	for rows.Next() {
-		var dbc dbCID
+		var dbc util.DbCID
 		if err := rows.Scan(&dbc); err != nil {
 			return err
 		}

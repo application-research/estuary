@@ -2,41 +2,23 @@ package main
 
 import (
 	"context"
-	crand "crypto/rand"
-	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	autobatch "github.com/application-research/go-bs-autobatch"
 	"github.com/filecoin-project/go-address"
-	lmdb "github.com/filecoin-project/go-bs-lmdb"
-	"github.com/ipfs/go-bitswap"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
-	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	batched "github.com/ipfs/go-ipfs-provider/batched"
-	queue "github.com/ipfs/go-ipfs-provider/queue"
 	logging "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p"
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/peer"
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	fullrt "github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/filclient"
-	"github.com/whyrusleeping/estuary/keystore"
-	bsm "github.com/whyrusleeping/go-bs-measure"
+	"github.com/whyrusleeping/estuary/node"
+	"github.com/whyrusleeping/estuary/pinner"
+	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
@@ -44,14 +26,9 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
-	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
-	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -120,7 +97,7 @@ func init() {
 
 type storageMiner struct {
 	gorm.Model
-	Address         dbAddr `gorm:"unique"`
+	Address         util.DbAddr `gorm:"unique"`
 	Suspended       bool
 	SuspendedReason string
 	Name            string
@@ -129,85 +106,20 @@ type storageMiner struct {
 	Owner           uint
 }
 
-type dbAddr struct {
-	Addr address.Address
-}
-
-func (dba *dbAddr) Scan(v interface{}) error {
-	s, ok := v.(string)
-	if !ok {
-		return fmt.Errorf("dbAddrs must be strings")
-	}
-
-	addr, err := address.NewFromString(s)
-	if err != nil {
-		return err
-	}
-
-	dba.Addr = addr
-	return nil
-}
-
-func (dba dbAddr) Value() (driver.Value, error) {
-	return dba.Addr.String(), nil
-}
-
-type dbCID struct {
-	CID cid.Cid
-}
-
-func (dbc *dbCID) Scan(v interface{}) error {
-	b, ok := v.([]byte)
-	if !ok {
-		return fmt.Errorf("dbcids must get bytes!")
-	}
-
-	c, err := cid.Cast(b)
-	if err != nil {
-		return err
-	}
-
-	dbc.CID = c
-	return nil
-}
-
-func (dbc dbCID) Value() (driver.Value, error) {
-	return dbc.CID.Bytes(), nil
-}
-
-func (dbc dbCID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dbc.CID.String())
-}
-
-func (dbc *dbCID) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-
-	c, err := cid.Decode(s)
-	if err != nil {
-		return err
-	}
-
-	dbc.CID = c
-	return nil
-}
-
 type Content struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"-"`
 	UpdatedAt time.Time      `json:"-"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         dbCID  `json:"cid"`
-	Name        string `json:"name"`
-	UserID      uint   `json:"userId" gorm:"index"`
-	Description string `json:"description"`
-	Size        int64  `json:"size"`
-	Active      bool   `json:"active"`
-	Offloaded   bool   `json:"offloaded"`
-	Replication int    `json:"replication"`
+	Cid         util.DbCID `json:"cid"`
+	Name        string     `json:"name"`
+	UserID      uint       `json:"userId" gorm:"index"`
+	Description string     `json:"description"`
+	Size        int64      `json:"size"`
+	Active      bool       `json:"active"`
+	Offloaded   bool       `json:"offloaded"`
+	Replication int        `json:"replication"`
 
 	AggregatedIn uint `json:"aggregatedIn"`
 	Aggregate    bool `json:"aggregate"`
@@ -217,8 +129,8 @@ type Content struct {
 }
 
 type Object struct {
-	ID         uint  `gorm:"primarykey"`
-	Cid        dbCID `gorm:"index"`
+	ID         uint       `gorm:"primarykey"`
+	Cid        util.DbCID `gorm:"index"`
 	Size       int
 	Reads      int
 	LastAccess time.Time
@@ -229,39 +141,6 @@ type ObjRef struct {
 	Content   uint
 	Object    uint
 	Offloaded uint
-}
-
-func setupWallet(dir string) (*wallet.LocalWallet, error) {
-	kstore, err := keystore.OpenOrInitKeystore(dir)
-	if err != nil {
-		return nil, err
-	}
-
-	wallet, err := wallet.NewWallet(kstore)
-	if err != nil {
-		return nil, err
-	}
-
-	addrs, err := wallet.WalletList(context.TODO())
-	if err != nil {
-		return nil, err
-	}
-
-	if len(addrs) == 0 {
-		_, err := wallet.WalletNew(context.TODO(), types.KTSecp256k1)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	defaddr, err := wallet.GetDefault()
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println("Wallet address is: ", defaddr)
-
-	return wallet, nil
 }
 
 func main() {
@@ -275,6 +154,7 @@ func main() {
 	logging.SetLogLevel("data_transfer_network", "debug")
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
+	logging.SetLogLevel("provider.batched", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -324,10 +204,16 @@ func main() {
 		&cli.BoolFlag{
 			Name: "fail-deals-on-transfer-failure",
 		},
+		&cli.BoolFlag{
+			Name: "disable-deal-making",
+		},
+		&cli.BoolFlag{
+			Name: "disable-content-adding",
+		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
-		cfg := &Config{
+		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
@@ -358,7 +244,36 @@ func main() {
 			return err
 		}
 
-		nd, err := setup(context.Background(), cfg, db)
+		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
+			out := make(chan cid.Cid)
+			go func() {
+				defer close(out)
+
+				var contents []Content
+				if err := db.Find(&contents, "active").Error; err != nil {
+					log.Errorf("failed to load contents for reproviding: %s", err)
+					return
+				}
+
+				for _, c := range contents {
+					select {
+					case out <- c.Cid.CID:
+					case <-rpctx.Done():
+						return
+					}
+				}
+
+			}()
+			return out, nil
+		}
+
+		var trackingBstore *TrackingBlockstore
+		cfg.BlockstoreWrap = func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
+			trackingBstore = NewTrackingBlockstore(bs, db)
+			return trackingBstore, nil
+		}
+
+		nd, err := node.Setup(context.Background(), cfg)
 		if err != nil {
 			return err
 		}
@@ -374,24 +289,18 @@ func main() {
 		}
 
 		s := &Server{
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			quickCache:  make(map[string]endpointCache),
-			pinJobs:     make(map[uint]*pinningOperation),
-			pinQueue:    make(map[uint][]*pinningOperation),
-			activePins:  make(map[uint]int),
-			pinQueueIn:  make(chan *pinningOperation, 64),
-			pinQueueOut: make(chan *pinningOperation),
-			pinComplete: make(chan *pinningOperation, 64),
+			Node:       nd,
+			Api:        api,
+			StagingMgr: sbmgr,
+			tracer:     otel.Tracer("api"),
+			quickCache: make(map[string]endpointCache),
+			pinJobs:    make(map[uint]*pinner.PinningOperation),
 		}
 
-		go s.pinQueueManager()
+		// TODO: this is an ugly self referential hack... should fix
+		s.pinMgr = pinner.NewPinManager(s.doPinning, nil)
 
-		for i := 0; i < 30; i++ {
-			go s.pinWorker()
-		}
+		go s.pinMgr.Run(30)
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
@@ -431,15 +340,18 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, s.Node.TrackingBlockstore, s.Node.NotifBlockstore, nd.Provider)
+		cm := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 
+		cm.dealMakingDisabled = cctx.Bool("disable-deal-making")
+		cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
+
 		cm.tracer = otel.Tracer("replicator")
 
 		if cctx.Bool("enable-auto-retrive") {
-			nd.TrackingBlockstore.SetCidReqFunc(cm.RefreshContentForCid)
+			trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
 		if !cctx.Bool("no-storage-cron") {
@@ -449,6 +361,8 @@ func main() {
 		s.CM = cm
 
 		go func() {
+			return // disable adding more content for now
+
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
@@ -464,25 +378,11 @@ func main() {
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
-	parts := strings.SplitN(dbval, "=", 2)
-	if len(parts) == 1 {
-		return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS'")
-	}
-
-	var dial gorm.Dialector
-	switch parts[0] {
-	case "sqlite":
-		dial = sqlite.Open(parts[1])
-	case "postgres":
-		dial = postgres.Open(parts[1])
-	default:
-		return nil, fmt.Errorf("unsupported or unrecognized db type: %s", parts[0])
-	}
-
-	db, err := gorm.Open(dial, &gorm.Config{})
+	db, err := util.SetupDatabase(dbval)
 	if err != nil {
 		return nil, err
 	}
+
 	db.AutoMigrate(&Content{})
 	db.AutoMigrate(&Object{})
 	db.AutoMigrate(&ObjRef{})
@@ -503,6 +403,8 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&AuthToken{})
 	db.AutoMigrate(&InviteCode{})
 
+	db.AutoMigrate(&Dealer{})
+
 	var count int64
 	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
 		return nil, err
@@ -511,7 +413,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range defaultMiners {
-			db.Create(&storageMiner{Address: dbAddr{m}})
+			db.Create(&storageMiner{Address: util.DbAddr{m}})
 		}
 
 	}
@@ -520,7 +422,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 
 type Server struct {
 	tracer     trace.Tracer
-	Node       *Node
+	Node       *node.Node
 	DB         *gorm.DB
 	FilClient  *filclient.FilClient
 	Api        api.Gateway
@@ -531,14 +433,12 @@ type Server struct {
 	quickCache map[string]endpointCache
 
 	pinLk   sync.Mutex
-	pinJobs map[uint]*pinningOperation
+	pinJobs map[uint]*pinner.PinningOperation
 
-	pinQueueIn  chan *pinningOperation
-	pinQueueOut chan *pinningOperation
-	pinComplete chan *pinningOperation
-	pinQueue    map[uint][]*pinningOperation
-	activePins  map[uint]int
-	pinQueueLk  sync.Mutex
+	pinMgr *pinner.PinManager
+
+	dealersLk sync.Mutex
+	dealers   map[string]*dealerConnection
 }
 
 type endpointCache struct {
@@ -608,187 +508,6 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
-}
-
-type Node struct {
-	Dht      *dht.IpfsDHT
-	Provider *batched.BatchProvidingSystem
-	FullRT   *fullrt.FullRT
-	Host     host.Host
-
-	Lmdb      *lmdb.Blockstore
-	Datastore datastore.Batching
-
-	Blockstore         blockstore.Blockstore
-	TrackingBlockstore *TrackingBlockstore
-	Bitswap            *bitswap.Bitswap
-	NotifBlockstore    *notifyBlockstore
-
-	Wallet *wallet.LocalWallet
-
-	Bwc *metrics.BandwidthCounter
-
-	Config *Config
-}
-
-type Config struct {
-	ListenAddrs []string
-
-	Blockstore string
-
-	WriteLog string
-
-	Libp2pKeyFile string
-
-	Datastore string
-
-	WalletDir string
-}
-
-func setup(ctx context.Context, cfg *Config, db *gorm.DB) (*Node, error) {
-	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
-	if err != nil {
-		return nil, err
-	}
-
-	bwc := metrics.NewBandwidthCounter()
-
-	h, err := libp2p.New(ctx,
-		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
-		libp2p.NATPortMap(),
-		libp2p.ConnectionManager(connmgr.NewConnManager(500, 800, time.Minute)),
-		libp2p.Identity(peerkey),
-		libp2p.BandwidthReporter(bwc),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	frt, err := fullrt.NewFullRT(h, dht.ProtocolDHT)
-	if err != nil {
-		return nil, err
-	}
-
-	dht, err := dht.New(ctx, h)
-	if err != nil {
-		return nil, err
-	}
-
-	lmdbs, err := lmdb.Open(&lmdb.Options{
-		Path:   cfg.Blockstore,
-		NoSync: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	var bstore EstuaryBlockstore = lmdbs
-
-	if cfg.WriteLog != "" {
-		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
-		if err != nil {
-			return nil, err
-		}
-
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
-		if err != nil {
-			return nil, err
-		}
-
-		bstore = ab
-	}
-
-	notifbs := NewNotifBs(bstore)
-	mbs := bsm.New("estuary", notifbs)
-
-	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	tbs := NewTrackingBlockstore(mbs, db)
-
-	bsnet := bsnet.NewFromIpfsHost(h, frt)
-	bswap := bitswap.New(ctx, bsnet, tbs)
-
-	wallet, err := setupWallet(cfg.WalletDir)
-	if err != nil {
-		return nil, err
-	}
-
-	provq, err := queue.NewQueue(context.Background(), "provq", ds)
-	if err != nil {
-		return nil, err
-	}
-
-	kprov := batched.KeyProvider(func(rpctx context.Context) (<-chan cid.Cid, error) {
-		out := make(chan cid.Cid)
-		go func() {
-			defer close(out)
-
-			var contents []Content
-			if err := db.Find(&contents, "active").Error; err != nil {
-				log.Errorf("failed to load contents for reproviding: %s", err)
-				return
-			}
-
-			for _, c := range contents {
-				select {
-				case out <- c.Cid.CID:
-				case <-rpctx.Done():
-					return
-				}
-			}
-
-		}()
-		return out, nil
-	})
-
-	prov, err := batched.New(frt, provq, kprov)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Node{
-		Dht:                dht,
-		FullRT:             frt,
-		Provider:           prov,
-		Host:               h,
-		Blockstore:         mbs,
-		Lmdb:               lmdbs,
-		Datastore:          ds,
-		Bitswap:            bswap.(*bitswap.Bitswap),
-		TrackingBlockstore: tbs,
-		Wallet:             wallet,
-		Bwc:                bwc,
-		Config:             cfg,
-	}, nil
-}
-
-func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
-	data, err := ioutil.ReadFile(kf)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return nil, err
-		}
-
-		k, _, err := crypto.GenerateEd25519Key(crand.Reader)
-		if err != nil {
-			return nil, err
-		}
-
-		data, err := crypto.MarshalPrivateKey(k)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := ioutil.WriteFile(kf, data, 0600); err != nil {
-			return nil, err
-		}
-
-		return k, nil
-	}
-	return crypto.UnmarshalPrivateKey(data)
 }
 
 func jsondump(o interface{}) {

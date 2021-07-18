@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/lib/retrievehelper"
+	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
@@ -60,11 +61,11 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 type retrievalFailureRecord struct {
 	gorm.Model
-	Miner   string `json:"miner"`
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-	Content uint   `json:"content"`
-	Cid     dbCID  `json:"cid"`
+	Miner   string     `json:"miner"`
+	Phase   string     `json:"phase"`
+	Message string     `json:"message"`
+	Content uint       `json:"content"`
+	Cid     util.DbCID `json:"cid"`
 }
 
 func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
@@ -132,8 +133,8 @@ type retrievalSuccessRecord struct {
 	ID        uint      `gorm:"primarykey" json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 
-	Cid   dbCID  `json:"cid"`
-	Miner string `json:"miner"`
+	Cid   util.DbCID `json:"cid"`
+	Miner string     `json:"miner"`
 
 	Peer         string `json:"peer"`
 	Size         uint64 `json:"size"`
@@ -146,7 +147,7 @@ type retrievalSuccessRecord struct {
 
 func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
 	if err := cm.DB.Create(&retrievalSuccessRecord{
-		Cid:          dbCID{cc},
+		Cid:          util.DbCID{cc},
 		Miner:        m.String(),
 		Peer:         rstats.Peer.String(),
 		Size:         rstats.Size,

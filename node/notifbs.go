@@ -1,4 +1,4 @@
-package main
+package node
 
 import (
 	"sync"
@@ -7,22 +7,22 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
-type notifyBlockstore struct {
+type NotifyBlockstore struct {
 	EstuaryBlockstore
 
 	subLk sync.Mutex
 	subs  map[cid.Cid][]chan blocks.Block
 }
 
-func NewNotifBs(bstore EstuaryBlockstore) *notifyBlockstore {
-	return &notifyBlockstore{
+func NewNotifBs(bstore EstuaryBlockstore) *NotifyBlockstore {
+	return &NotifyBlockstore{
 		EstuaryBlockstore: bstore,
 		subs:              make(map[cid.Cid][]chan blocks.Block),
 	}
 
 }
 
-func (nb *notifyBlockstore) WaitFor(c cid.Cid) <-chan blocks.Block {
+func (nb *NotifyBlockstore) WaitFor(c cid.Cid) <-chan blocks.Block {
 	nch := make(chan blocks.Block, 1)
 	nb.subLk.Lock()
 	nb.subs[c] = append(nb.subs[c], nch)
@@ -46,7 +46,7 @@ func (nb *notifyBlockstore) WaitFor(c cid.Cid) <-chan blocks.Block {
 	return nch
 }
 
-func (nb *notifyBlockstore) Put(blk blocks.Block) error {
+func (nb *NotifyBlockstore) Put(blk blocks.Block) error {
 	c := blk.Cid()
 	nb.subLk.Lock()
 	chs, ok := nb.subs[c]
@@ -62,7 +62,7 @@ func (nb *notifyBlockstore) Put(blk blocks.Block) error {
 	return nb.EstuaryBlockstore.Put(blk)
 }
 
-func (nb *notifyBlockstore) PutMany(blks []blocks.Block) error {
+func (nb *NotifyBlockstore) PutMany(blks []blocks.Block) error {
 	nb.subLk.Lock()
 	for _, blk := range blks {
 		c := blk.Cid()
