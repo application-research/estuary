@@ -94,7 +94,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	frt, err := fullrt.NewFullRT(h, dht.ProtocolDHT)
+	frt, err := fullrt.NewFullRT(h, dht.DefaultPrefix)
 	if err != nil {
 		return nil, err
 	}

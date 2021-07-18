@@ -8,6 +8,8 @@ import (
 type Hello struct {
 	Host   string
 	PeerID string
+
+	DiskSpaceFree int64
 }
 
 type Command struct {
@@ -15,11 +17,13 @@ type Command struct {
 	Params CmdParams
 }
 
+const CMD_AddPin = "AddPin"
+
 type CmdParams struct {
-	AddPinOp *AddPinOp
+	AddPin *AddPin
 }
 
-type AddPinOp struct {
+type AddPin struct {
 	DBID   uint
 	UserId uint
 	Cid    cid.Cid

@@ -19,6 +19,8 @@ type Dealer struct {
 	LastConnection time.Time
 	Host           string
 	PeerID         string
+
+	Open bool
 }
 
 type dealerConnection struct {

@@ -1,8 +1,8 @@
-estuary
-filc
-barge
-estuary-dealer
-bsget
+/estuary
+/filc
+/barge
+/estuary-dealer
+/bsget
 
 estuary-blocks/*
 estuary-leveldb/*

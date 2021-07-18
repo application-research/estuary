@@ -31,6 +31,7 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
+	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	uio "github.com/ipfs/go-unixfs/io"
@@ -215,6 +216,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/invites", s.handleAdminGetInvites)
 
 	admin.GET("/fixdeals", s.handleFixupDeals)
+	admin.POST("/loglevel", s.handleLogLevel)
 
 	netw := admin.Group("/net")
 	netw.GET("/peers", s.handleNetPeers)
@@ -372,14 +374,14 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
-	var col *Collection
+	var cols []*Collection
 	if params.Collection != "" {
 		var srchCol Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
 			return err
 		}
 
-		col = &srchCol
+		cols = []*Collection{&srchCol}
 	}
 
 	var addrInfos []peer.AddrInfo
@@ -407,48 +409,17 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	for _, ai := range addrInfos {
-		if err := s.Node.Host.Connect(ctx, ai); err != nil {
-			log.Warnf("failed to connect to requested peer: %s", err)
-		}
-	}
-
 	filename := params.Name
 	if filename == "" {
 		filename = params.Root
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
-	dserv := merkledag.NewDAGService(bserv)
-
-	dsess := merkledag.NewSession(ctx, dserv)
-
-	cont, err := s.addDatabaseTracking(ctx, u, dsess, s.Node.Blockstore, rcid, filename, defaultReplication)
+	pinstatus, err := s.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
 	if err != nil {
 		return err
 	}
 
-	if col != nil {
-		if err := s.DB.Create(&CollectionRef{
-			Collection: col.ID,
-			Content:    cont.ID,
-		}).Error; err != nil {
-			log.Errorf("failed to add content to requested collection: %s", err)
-		}
-	}
-
-	go func() {
-		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck <- cont.ID
-	}()
-
-	go func() {
-		if err := s.Node.Provider.Provide(rcid); err != nil {
-			fmt.Println("providing failed: ", err)
-		}
-		fmt.Println("providing complete")
-	}()
-	return c.JSON(200, map[string]interface{}{"content": cont})
+	return c.JSON(202, pinstatus)
 }
 
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
@@ -2713,4 +2684,20 @@ func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 		return err
 	}
 	return c.JSON(200, out)
+}
+
+type logLevelBody struct {
+	System string `json:"system"`
+	Level  string `json:"level"`
+}
+
+func (s *Server) handleLogLevel(c echo.Context) error {
+	var body logLevelBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	logging.SetLogLevel(body.System, body.Level)
+
+	return c.JSON(200, map[string]interface{}{})
 }

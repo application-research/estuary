@@ -17,6 +17,7 @@ import (
 	"github.com/whyrusleeping/estuary/pinner"
 	"github.com/whyrusleeping/estuary/types"
 	"github.com/whyrusleeping/estuary/util"
+	"golang.org/x/xerrors"
 )
 
 func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
@@ -132,6 +133,11 @@ func (s *Server) refreshPinQueue() error {
 }
 
 func (s *Server) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+	loc, err := s.selectLocationForContent(ctx, obj, user)
+	if err != nil {
+		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
+	}
+
 	var metab string
 	if meta != nil {
 		b, err := json.Marshal(meta)
@@ -159,11 +165,6 @@ func (s *Server) pinContent(ctx context.Context, user uint, obj cid.Cid, name st
 
 	}
 	if err := s.DB.Create(&cont).Error; err != nil {
-		return nil, err
-	}
-
-	loc, err := s.selectLocationForContent(cont)
-	if err != nil {
 		return nil, err
 	}
 
@@ -202,7 +203,17 @@ func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint
 }
 
 func (s *Server) pinContentOnDealer(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
-	if err := s.sendDealerCommand(ctx, handle, &drpc.Command{}); err != nil {
+	if err := s.sendDealerCommand(ctx, handle, &drpc.Command{
+		Op: drpc.CMD_AddPin,
+		Params: drpc.CmdParams{
+			AddPin: &drpc.AddPin{
+				DBID:   cont.ID,
+				UserId: cont.UserID,
+				Cid:    cont.Cid.CID,
+				Peers:  peers,
+			},
+		},
+	}); err != nil {
 		return err
 	}
 
@@ -226,8 +237,37 @@ func (s *Server) pinContentOnDealer(ctx context.Context, cont Content, peers []p
 	return nil
 }
 
-func (s *Server) selectLocationForContent(cont Content) (string, error) {
-	return "local", nil
+func (s *Server) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
+	ctx, span := s.tracer.Start(ctx, "selectLocation")
+	defer span.End()
+
+	var user User
+	if err := s.DB.First(&user, "id = ?", uid).Error; err != nil {
+		return "", err
+	}
+
+	if user.Flags&4 == 0 {
+		return "local", nil
+	}
+
+	var activeDealers []string
+	s.dealersLk.Lock()
+	for d := range s.dealers {
+		activeDealers = append(activeDealers, d)
+	}
+	s.dealersLk.Unlock()
+
+	var dealers []Dealer
+	if err := s.DB.Find(&dealers, "handle in ? and open", activeDealers).Error; err != nil {
+		return "", err
+	}
+
+	if len(dealers) == 0 {
+		log.Warn("no dealers available for content to be delegated to")
+		return "local", nil
+	}
+
+	panic("nyi")
 }
 
 // pinning api /pins endpoint
