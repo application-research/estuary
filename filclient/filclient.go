@@ -938,15 +938,17 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 			default:
 				log.Warnf("unrecognized voucher response type: %v", resType)
 			}
-		case datatransfer.DataReceived:
+		case datatransfer.DataReceivedProgress:
 			if time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
 				fmt.Printf("received: %v\r", state.Received())
 				lastReceivedUpdate = time.Now()
 			}
+		case datatransfer.DataReceived:
+			// Ignore this
 		case datatransfer.FinishTransfer:
 			dtRes <- nil
 		default:
-			log.Warn("unrecognized data transfer event: %v", event)
+			log.Warnf("unrecognized data transfer event: %v", event.Code)
 		}
 	})
 	defer unsubscribe()
