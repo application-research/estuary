@@ -949,6 +949,8 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 			// Ignore this
 		case datatransfer.FinishTransfer:
 			dtRes <- nil
+		case datatransfer.Cancel:
+			dtRes <- xerrors.Errorf("data transfer canceled")
 		default:
 			log.Debugf("unrecognized data transfer event: %v", datatransfer.Events[event.Code])
 		}
