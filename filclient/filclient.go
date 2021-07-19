@@ -885,6 +885,12 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	// on and handled below before exiting the function
 	dtRes := make(chan error)
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
+
+		// Skip all events that aren't related to this channel
+		if state.ChannelID() != chanid {
+			return
+		}
+
 		switch event.Code {
 		case datatransfer.NewVoucherResult:
 			switch resType := state.LastVoucherResult().(type) {
