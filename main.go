@@ -236,6 +236,7 @@ func main() {
 		}
 
 		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
+			log.Infof("running key provider func")
 			out := make(chan cid.Cid)
 			go func() {
 				defer close(out)
@@ -245,6 +246,7 @@ func main() {
 					log.Errorf("failed to load contents for reproviding: %s", err)
 					return
 				}
+				log.Infof("key provider func returning %d values", len(contents))
 
 				for _, c := range contents {
 					select {

@@ -30,6 +30,7 @@ import (
 	crypto "github.com/libp2p/go-libp2p-crypto"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
+	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/keystore"
 	bsm "github.com/whyrusleeping/go-bs-measure"
@@ -127,6 +128,8 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
+		libp2p.DefaultTransports,
+		libp2p.Transport(libp2pquic.NewTransport),
 	)
 	if err != nil {
 		return nil, err
@@ -144,7 +147,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing fullrt: %w", err)
 	}
 
-	dht, err := dht.New(ctx, h)
+	dht, err := dht.New(ctx, h, dht.Datastore(ds))
 	if err != nil {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
@@ -199,12 +202,15 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	kprov := batched.KeyProvider(cfg.KeyProviderFunc)
-
-	prov, err := batched.New(frt, provq, kprov)
+	prov, err := batched.New(frt, provq,
+		batched.KeyProvider(cfg.KeyProviderFunc),
+		batched.Datastore(ds),
+	)
 	if err != nil {
 		return nil, xerrors.Errorf("setup batched provider: %w", err)
 	}
+
+	prov.Run() // TODO: call close at some point
 
 	return &Node{
 		Dht:        dht,

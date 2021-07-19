@@ -43,6 +43,7 @@ require (
 	github.com/libp2p/go-libp2p-crypto v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.12.2
 	github.com/libp2p/go-libp2p-protocol v0.1.0
+	github.com/libp2p/go-libp2p-quic-transport v0.10.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.18.0
 	github.com/mitchellh/go-homedir v1.1.0
