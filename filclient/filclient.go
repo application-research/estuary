@@ -82,6 +82,8 @@ type FilClient struct {
 	dataTransfer datatransfer.Manager
 
 	computePieceComm GetPieceCommFunc
+
+	RetrievalProgressLogging bool
 }
 
 type GetPieceCommFunc func(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error)
@@ -939,7 +941,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 				log.Debugf("unrecognized voucher response type: %v", resType)
 			}
 		case datatransfer.DataReceivedProgress:
-			if time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
+			if fc.RetrievalProgressLogging && time.Since(lastReceivedUpdate) >= time.Millisecond*100 {
 				fmt.Printf("received: %v\r", state.Received())
 				lastReceivedUpdate = time.Now()
 			}
