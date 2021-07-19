@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/filecoin-project/go-address"
@@ -867,24 +868,25 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		return nil, xerrors.Errorf("failed to allocate lane: %w", err)
 	}
 
-	// Submit the retrieval deal proposal to the miner
-	chanid, err := fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
-	if err != nil {
-		return nil, err
-	}
+	var chanid datatransfer.ChannelID
+	var chanidMu sync.Mutex
 
-	// Used to limit prints to the console about received status
-	lastReceivedUpdate := time.Now()
+	// Set up incoming events handler
 
 	// The next nonce (incrementing unique ID starting from 0) for the next voucher
 	var nonce uint64 = 0
 
-	// Set up incoming events handler
+	// Used to limit prints to the console about received status
+	lastReceivedUpdate := time.Now()
 
 	// dtRes receives either an error (failure) or nil (success) which is waited
 	// on and handled below before exiting the function
 	dtRes := make(chan error)
+
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
+		// Lock chanid for the entire callback
+		chanidMu.Lock()
+		defer chanidMu.Unlock()
 
 		// Skip all events that aren't related to this channel
 		if state.ChannelID() != chanid {
@@ -949,6 +951,13 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	})
 	defer unsubscribe()
 
+	// Submit the retrieval deal proposal to the miner
+	chanidMu.Lock()
+	chanid, err = fc.dataTransfer.OpenPullDataChannel(ctx, mpID, proposal, proposal.PayloadCID, shared.AllSelector())
+	chanidMu.Unlock()
+	if err != nil {
+		return nil, err
+	}
 	// Wait for the retrieval to finish before exiting the function
 	select {
 	case err := <-dtRes:
