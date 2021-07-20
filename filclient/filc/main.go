@@ -31,6 +31,7 @@ func main() {
 	logging.SetLogLevel("dt-chanmon", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
+	logging.SetLogLevel("filclient", "debug")
 	app := cli.NewApp()
 
 	app.Commands = []*cli.Command{
