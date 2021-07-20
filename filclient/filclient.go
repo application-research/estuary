@@ -886,12 +886,13 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 	dtRes := make(chan error)
 
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
-		// Lock chanid for the entire callback
+		// Copy chanid so it can be used later in the callback
 		chanidMu.Lock()
-		defer chanidMu.Unlock()
+		chanidLk := chanid
+		chanidMu.Unlock()
 
 		// Skip all events that aren't related to this channel
-		if state.ChannelID() != chanid {
+		if state.ChannelID() != chanidLk {
 			return
 		}
 
@@ -923,7 +924,7 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 						dtRes <- xerrors.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall)
 					}
 
-					if err := fc.dataTransfer.SendVoucher(ctx, chanid, &retrievalmarket.DealPayment{
+					if err := fc.dataTransfer.SendVoucher(ctx, chanidLk, &retrievalmarket.DealPayment{
 						ID:             proposal.ID,
 						PaymentChannel: pchAddr,
 						PaymentVoucher: vres.Voucher,
