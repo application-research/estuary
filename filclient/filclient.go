@@ -883,7 +883,14 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 
 	// dtRes receives either an error (failure) or nil (success) which is waited
 	// on and handled below before exiting the function
-	dtRes := make(chan error)
+	dtRes := make(chan error, 1)
+
+	finish := func(err error) {
+		select {
+		case dtRes <- err:
+		default:
+		}
+	}
 
 	unsubscribe := fc.dataTransfer.SubscribeToEvents(func(event datatransfer.Event, state datatransfer.ChannelState) {
 		// Copy chanid so it can be used later in the callback
@@ -917,11 +924,11 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 						Amount:      totalPayment,
 					})
 					if err != nil {
-						dtRes <- err
+						finish(err)
 					}
 
 					if types.BigCmp(vres.Shortfall, big.NewInt(0)) > 0 {
-						dtRes <- xerrors.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall)
+						finish(xerrors.Errorf("not enough funds remaining in payment channel (shortfall = %s)", vres.Shortfall))
 					}
 
 					if err := fc.dataTransfer.SendVoucher(ctx, chanidLk, &retrievalmarket.DealPayment{
@@ -929,12 +936,12 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 						PaymentChannel: pchAddr,
 						PaymentVoucher: vres.Voucher,
 					}); err != nil {
-						dtRes <- xerrors.Errorf("failed to send payment voucher: %w", err)
+						finish(xerrors.Errorf("failed to send payment voucher: %w", err))
 					}
 
 					nonce++
 				case retrievalmarket.DealStatusFundsNeededUnseal:
-					dtRes <- xerrors.Errorf("received unexpected payment request for unsealing data")
+					finish(xerrors.Errorf("received unexpected payment request for unsealing data"))
 				default:
 					log.Debugf("unrecognized voucher response status: %v", retrievalmarket.DealStatuses[resType.Status])
 				}
@@ -949,9 +956,9 @@ func (fc *FilClient) RetrieveContent(ctx context.Context, miner address.Address,
 		case datatransfer.DataReceived:
 			// Ignore this
 		case datatransfer.FinishTransfer:
-			dtRes <- nil
+			finish(nil)
 		case datatransfer.Cancel:
-			dtRes <- xerrors.Errorf("data transfer canceled")
+			finish(xerrors.Errorf("data transfer canceled"))
 		default:
 			log.Debugf("unrecognized data transfer event: %v", datatransfer.Events[event.Code])
 		}
