@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -20,13 +21,13 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
-	s.pinLk.Lock()
-	po, ok := s.pinJobs[cont]
-	s.pinLk.Unlock()
+func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
+	cm.pinLk.Lock()
+	po, ok := cm.pinJobs[cont]
+	cm.pinLk.Unlock()
 	if !ok {
 		var content Content
-		if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+		if err := cm.DB.First(&content, "id = ?", cont).Error; err != nil {
 			return nil, err
 		}
 
@@ -46,7 +47,7 @@ func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 				Name: content.Name,
 				Meta: meta,
 			},
-			Delegates: s.pinDelegatesForContent(cont),
+			Delegates: cm.pinDelegatesForContent(cont),
 			Info:      nil, // TODO: all sorts of extra info we could add...
 		}
 
@@ -58,15 +59,15 @@ func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 	}
 
 	status := po.PinStatus()
-	status.Delegates = s.pinDelegatesForContent(cont)
+	status.Delegates = cm.pinDelegatesForContent(cont)
 
 	return status, nil
 }
 
-func (s *Server) pinDelegatesForContent(cont uint) []string {
+func (cm *ContentManager) pinDelegatesForContent(cont uint) []string {
 	var out []string
-	for _, a := range s.Node.Host.Addrs() {
-		out = append(out, fmt.Sprintf("%s/p2p/%s", a, s.Node.Host.ID()))
+	for _, a := range cm.Host.Addrs() {
+		out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
 	}
 
 	return out
@@ -87,7 +88,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	if err := s.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj); err != nil {
+	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj); err != nil {
 		return err
 	}
 
@@ -112,9 +113,9 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 	return nil
 }
 
-func (s *Server) refreshPinQueue() error {
+func (cm *ContentManager) refreshPinQueue() error {
 	var toPin []Content
-	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+	if err := cm.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
 		return err
 	}
 
@@ -126,14 +127,14 @@ func (s *Server) refreshPinQueue() error {
 	// to content, could be interesting to see the graph of replacements
 	// anyways
 	for _, c := range toPin {
-		s.addPinToQueue(c, nil, 0)
+		cm.addPinToQueue(c, nil, 0)
 	}
 
 	return nil
 }
 
-func (s *Server) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
-	loc, err := s.selectLocationForContent(ctx, obj, user)
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
@@ -158,29 +159,31 @@ func (s *Server) pinContent(ctx context.Context, user uint, obj cid.Cid, name st
 		Pinning: true,
 		PinMeta: metab,
 
+		Location: loc,
+
 		/*
 			Size        int64  `json:"size"`
 			Offloaded   bool   `json:"offloaded"`
 		*/
 
 	}
-	if err := s.DB.Create(&cont).Error; err != nil {
+	if err := cm.DB.Create(&cont).Error; err != nil {
 		return nil, err
 	}
 
 	if loc == "local" {
-		s.addPinToQueue(cont, peers, replace)
+		cm.addPinToQueue(cont, peers, replace)
 	} else {
-		if err := s.pinContentOnDealer(ctx, cont, peers, replace, loc); err != nil {
+		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc); err != nil {
 			return nil, err
 		}
 	}
 
-	return s.pinStatus(cont.ID)
+	return cm.pinStatus(cont.ID)
 }
 
 // TODO: the queue needs to be a lot smarter than throwing things into a channel...
-func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
+func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
 
 	op := &pinner.PinningOperation{
 		ContId:   cont.ID,
@@ -194,16 +197,16 @@ func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint
 		Location: "local",
 	}
 
-	s.pinLk.Lock()
+	cm.pinLk.Lock()
 	// TODO: check if we are overwriting anything here
-	s.pinJobs[cont.ID] = op
-	s.pinLk.Unlock()
+	cm.pinJobs[cont.ID] = op
+	cm.pinLk.Unlock()
 
-	s.pinMgr.Add(op)
+	cm.pinMgr.Add(op)
 }
 
-func (s *Server) pinContentOnDealer(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
-	if err := s.sendDealerCommand(ctx, handle, &drpc.Command{
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
 		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
@@ -229,20 +232,20 @@ func (s *Server) pinContentOnDealer(ctx context.Context, cont Content, peers []p
 		Location: handle,
 	}
 
-	s.pinLk.Lock()
+	cm.pinLk.Lock()
 	// TODO: check if we are overwriting anything here
-	s.pinJobs[cont.ID] = op
-	s.pinLk.Unlock()
+	cm.pinJobs[cont.ID] = op
+	cm.pinLk.Unlock()
 
 	return nil
 }
 
-func (s *Server) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
-	ctx, span := s.tracer.Start(ctx, "selectLocation")
+func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
+	ctx, span := cm.tracer.Start(ctx, "selectLocation")
 	defer span.End()
 
 	var user User
-	if err := s.DB.First(&user, "id = ?", uid).Error; err != nil {
+	if err := cm.DB.First(&user, "id = ?", uid).Error; err != nil {
 		return "", err
 	}
 
@@ -250,24 +253,28 @@ func (s *Server) selectLocationForContent(ctx context.Context, obj cid.Cid, uid 
 		return "local", nil
 	}
 
-	var activeDealers []string
-	s.dealersLk.Lock()
-	for d := range s.dealers {
-		activeDealers = append(activeDealers, d)
+	var activeShuttles []string
+	cm.shuttlesLk.Lock()
+	for d := range cm.shuttles {
+		activeShuttles = append(activeShuttles, d)
 	}
-	s.dealersLk.Unlock()
+	cm.shuttlesLk.Unlock()
 
-	var dealers []Dealer
-	if err := s.DB.Find(&dealers, "handle in ? and open", activeDealers).Error; err != nil {
+	var shuttles []Shuttle
+	if err := cm.DB.Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
-	if len(dealers) == 0 {
-		log.Warn("no dealers available for content to be delegated to")
+	if len(shuttles) == 0 {
+		log.Warn("no shuttles available for content to be delegated to")
 		return "local", nil
 	}
 
-	panic("nyi")
+	// TODO: take into account existing staging zones and their primary
+	// locations while choosing
+
+	n := rand.Intn(len(shuttles))
+	return shuttles[n].Handle, nil
 }
 
 // pinning api /pins endpoint
@@ -361,7 +368,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			break
 		}
 
-		st, err := s.pinStatus(c.ID)
+		st, err := s.CM.pinStatus(c.ID)
 		if err != nil {
 			return err
 		}
@@ -433,7 +440,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
 	if err != nil {
 		return err
 	}
@@ -447,7 +454,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	st, err := s.pinStatus(uint(id))
+	st, err := s.CM.pinStatus(uint(id))
 	if err != nil {
 		return err
 	}
@@ -493,7 +500,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
 	if err != nil {
 		return err
 	}
@@ -527,21 +534,38 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	return nil
 }
 
-func (s *Server) UpdatePinStatus(handle string, cont uint, status string) {
-	s.pinLk.Lock()
-	op, ok := s.pinJobs[cont]
-	s.pinLk.Unlock()
+func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status string) {
+	cm.pinLk.Lock()
+	op, ok := cm.pinJobs[cont]
+	cm.pinLk.Unlock()
 	if !ok {
-		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "dealer", handle)
+		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "shuttle", handle)
 		return
 	}
 
 	op.SetStatus(status)
 }
 
-func (s *Server) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) {
-	ctx, span := s.tracer.Start(ctx, "handlePinningComplete")
+func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) error {
+	ctx, span := cm.tracer.Start(ctx, "handlePinningComplete")
 	defer span.End()
+
+	var cont Content
+	if err := cm.DB.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
+		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
+	}
+
+	if cont.Active {
+		// content already active, no need to add objects, just update location
+		if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"location": handle,
+		}).Error; err != nil {
+			return err
+		}
+
+		// TODO: should we recheck the staging zones?
+		return nil
+	}
 
 	objects := make([]*Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
@@ -551,7 +575,9 @@ func (s *Server) handlePinningComplete(ctx context.Context, handle string, pinco
 		})
 	}
 
-	if err := s.addObjectsToDatabase(ctx, pincomp.DBID, objects); err != nil {
-		log.Errorw("failed to add objects to database", "err", err, "content", pincomp.DBID, "dealer", handle)
+	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects); err != nil {
+		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
+
+	return nil
 }

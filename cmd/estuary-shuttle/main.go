@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -26,14 +27,16 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/whyrusleeping/estuary/drpc"
+	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
 	"github.com/whyrusleeping/estuary/util"
+	"github.com/whyrusleeping/memo"
 )
 
-var Tracer = otel.Tracer("dealer")
+var Tracer = otel.Tracer("shuttle")
 
-var log = logging.Logger("dealer")
+var log = logging.Logger("shuttle")
 
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
@@ -43,7 +46,7 @@ func init() {
 
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("dealer", "debug")
+	logging.SetLogLevel("shuttle", "debug")
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
@@ -61,20 +64,20 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "database",
-			Value:   "sqlite=estuary-dealer.db",
-			EnvVars: []string{"ESTUARY_DEALER_DATABASE"},
+			Value:   "sqlite=estuary-shuttle.db",
+			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
 			Usage:   "address for the api server to listen on",
 			Value:   ":3005",
-			EnvVars: []string{"ESTUARY_DEALER_API_LISTEN"},
+			EnvVars: []string{"ESTUARY_SHUTTLE_API_LISTEN"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
 			Value:   ".",
-			EnvVars: []string{"ESTUARY_DEALER_DATADIR"},
+			EnvVars: []string{"ESTUARY_SHUTTLE_DATADIR"},
 		},
 		&cli.StringFlag{
 			Name:  "estuary-api",
@@ -88,7 +91,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:     "handle",
-			Usage:    "estuary dealer handle to use",
+			Usage:    "estuary shuttle handle to use",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -122,22 +125,54 @@ func main() {
 			return err
 		}
 
+		defaddr, err := nd.Wallet.GetDefault()
+		if err != nil {
+			return err
+		}
+
+		filc, err := filclient.NewClient(nd.Host, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		if err != nil {
+			return err
+		}
+
 		db, err := setupDatabase(cctx.String("database"))
 		if err != nil {
 			return err
 		}
 
-		d := &Dealer{
+		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			c, err := cid.Decode(k)
+			if err != nil {
+				return nil, err
+			}
+
+			commpcid, size, err := filclient.GeneratePieceCommitment(ctx, c, nd.Blockstore)
+			if err != nil {
+				return nil, err
+			}
+
+			res := &commpResult{
+				CommP: commpcid,
+				Size:  size,
+			}
+
+			return res, nil
+		})
+
+		d := &Shuttle{
 			Node: nd,
 			Api:  api,
 			DB:   db,
+			Filc: filc,
+
+			commpMemo: commpMemo,
 
 			outgoing: make(chan *drpc.Message),
 
-			hostname:     "",
-			estuaryHost:  cctx.String("estuary-api"),
-			dealerHandle: cctx.String("handle"),
-			dealerToken:  cctx.String("auth-token"),
+			hostname:      "",
+			estuaryHost:   cctx.String("estuary-api"),
+			shuttleHandle: cctx.String("handle"),
+			shuttleToken:  cctx.String("auth-token"),
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
 
@@ -146,25 +181,30 @@ func main() {
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
-
+		os.Exit(1)
 	}
 }
 
-type Dealer struct {
+type Shuttle struct {
 	Node   *node.Node
 	Api    api.Gateway
 	DB     *gorm.DB
 	PinMgr *pinner.PinManager
+	Filc   *filclient.FilClient
+
+	addPinLk sync.Mutex
 
 	outgoing chan *drpc.Message
 
-	hostname     string
-	estuaryHost  string
-	dealerHandle string
-	dealerToken  string
+	hostname      string
+	estuaryHost   string
+	shuttleHandle string
+	shuttleToken  string
+
+	commpMemo *memo.Memoizer
 }
 
-func (d *Dealer) RunRpcConnection() error {
+func (d *Shuttle) RunRpcConnection() error {
 	for {
 		conn, err := d.dialConn()
 		if err != nil {
@@ -184,7 +224,7 @@ func (d *Dealer) RunRpcConnection() error {
 	}
 }
 
-func (d *Dealer) runRpc(conn *websocket.Conn) error {
+func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 	defer conn.Close()
 
 	readDone := make(chan struct{})
@@ -209,9 +249,11 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 				return
 			}
 
-			if err := d.handleRpcCmd(&cmd); err != nil {
-				log.Errorf("failed to handle rpc command: %s", err)
-			}
+			go func(cmd *drpc.Command) {
+				if err := d.handleRpcCmd(cmd); err != nil {
+					log.Errorf("failed to handle rpc command: %s", err)
+				}
+			}(&cmd)
 		}
 	}()
 
@@ -229,29 +271,20 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 	}
 }
 
-func (d *Dealer) handleRpcCmd(cmd *drpc.Command) error {
-	switch cmd.Op {
-	case "AddPin":
-		return d.handleRpcAddPin(cmd.Params.AddPinOp)
-	default:
-		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
-	}
-}
-
-func (d *Dealer) getHelloMessage() (*drpc.Hello, error) {
+func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 	return &drpc.Hello{
 		Host:   d.hostname,
 		PeerID: d.Node.Host.ID().Pretty(),
 	}, nil
 }
 
-func (d *Dealer) dialConn() (*websocket.Conn, error) {
-	cfg, err := websocket.NewConfig(d.estuaryHost+"/dealer/conn", "http://localhost")
+func (d *Shuttle) dialConn() (*websocket.Conn, error) {
+	cfg, err := websocket.NewConfig(d.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.Header.Set("Authorization", "Bearer "+d.dealerToken)
+	cfg.Header.Set("Authorization", "Bearer "+d.shuttleToken)
 
 	conn, err := websocket.DialConfig(cfg)
 	if err != nil {
@@ -267,7 +300,7 @@ type User struct {
 	Perms    int
 }
 
-func (d *Dealer) checkTokenAuth(token string) (*User, error) {
+func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	req, err := http.NewRequest("GET", d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
@@ -303,7 +336,7 @@ func (d *Dealer) checkTokenAuth(token string) (*User, error) {
 	}, nil
 }
 
-func (d *Dealer) AuthRequired(level int) echo.MiddlewareFunc {
+func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			auth, err := util.ExtractAuth(c)
@@ -342,7 +375,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (d *Dealer) ServeAPI(listen string) error {
+func (d *Shuttle) ServeAPI(listen string) error {
 	e := echo.New()
 
 	content := e.Group("/content")
@@ -354,12 +387,12 @@ func (d *Dealer) ServeAPI(listen string) error {
 	return e.Start(listen)
 }
 
-func (d *Dealer) handleAdd(e echo.Context, u *User) error {
+func (d *Shuttle) handleAdd(e echo.Context, u *User) error {
 	panic("nyi")
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
 	ctx, span := Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -399,9 +432,14 @@ func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, contentID uint) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
+
+	var dbpin Pin
+	if err := d.DB.First(&dbpin, "id = ?", pin).Error; err != nil {
+		return err
+	}
 
 	var objects []*Object
 	var totalSize int64
@@ -457,12 +495,12 @@ func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dse
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
-	d.sendPinCompleteMessage(contentID, totalSize, objects)
+	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
 
 	return nil
 }
 
-func (d *Dealer) onPinStatusUpdate(cont uint, status string) {
+func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
 			Op: "UpdatePinStatus",
