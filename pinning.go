@@ -282,7 +282,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
 	defer span.End()
 
-	qcids := e.QueryParam("cids")
+	qcids := e.QueryParam("cid")
 	qname := e.QueryParam("name")
 	qstatus := e.QueryParam("status")
 	qbefore := e.QueryParam("before")
@@ -292,13 +292,13 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	q := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Order("created_at desc")
 
 	if qcids != "" {
-		var cids []cid.Cid
+		var cids []util.DbCID
 		for _, cstr := range strings.Split(qcids, ",") {
 			c, err := cid.Decode(cstr)
 			if err != nil {
 				return err
 			}
-			cids = append(cids, c)
+			cids = append(cids, util.DbCID{c})
 		}
 
 		q = q.Where("cid in ?", cids)
