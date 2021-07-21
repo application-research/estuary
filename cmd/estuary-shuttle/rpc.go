@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (d *Dealer) handleRpcCmd(cmd *drpc.Command) error {
+func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	ctx := context.TODO()
 
 	log.Infof("handling rpc command: %s", cmd.Op)
@@ -34,7 +34,7 @@ func (d *Dealer) handleRpcCmd(cmd *drpc.Command) error {
 	}
 }
 
-func (d *Dealer) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
+func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	select {
 	case d.outgoing <- msg:
 		return nil
@@ -43,13 +43,13 @@ func (d *Dealer) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	}
 }
 
-func (d *Dealer) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
+func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId)
 }
 
-func (d *Dealer) addPin(ctx context.Context, contid uint, data cid.Cid, user uint) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint) error {
 	pin := &Pin{
 		Content: contid,
 		Cid:     util.DbCID{data},
@@ -79,7 +79,7 @@ type commpResult struct {
 	Size  abi.UnpaddedPieceSize
 }
 
-func (d *Dealer) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCommP) error {
+func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCommP) error {
 	ctx, span := Tracer.Start(ctx, "handleComputeCommP")
 	defer span.End()
 
@@ -105,7 +105,7 @@ func (d *Dealer) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCom
 	})
 }
 
-func (d *Dealer) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
+func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
 	objs := make([]drpc.PinObj, 0, len(objects))
 	for _, o := range objects {
 		objs = append(objs, drpc.PinObj{
@@ -128,7 +128,7 @@ func (d *Dealer) sendPinCompleteMessage(ctx context.Context, cont uint, size int
 	}
 }
 
-func (d *Dealer) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
+func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 
@@ -154,7 +154,7 @@ func (d *Dealer) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent
 	return nil
 }
 
-func (d *Dealer) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 
@@ -214,7 +214,7 @@ func (d *Dealer) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggreg
 	return nil
 }
 
-func (d *Dealer) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
+func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
 	go func() {
 		chanid, err := d.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
 		if err != nil {
@@ -242,7 +242,7 @@ func (d *Dealer) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTran
 	return nil
 }
 
-func (d *Dealer) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
+func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
 	if err := d.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_TransferStatus,
 		Params: drpc.MsgParams{

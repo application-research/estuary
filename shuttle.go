@@ -13,7 +13,7 @@ import (
 	"github.com/whyrusleeping/estuary/util"
 )
 
-type Dealer struct {
+type Shuttle struct {
 	gorm.Model
 
 	Handle string `gorm:"unique"`
@@ -26,7 +26,7 @@ type Dealer struct {
 	Open bool
 }
 
-type dealerConnection struct {
+type shuttleConnection struct {
 	handle string
 
 	addrInfo peer.AddrInfo
@@ -35,53 +35,53 @@ type dealerConnection struct {
 	closing chan struct{}
 }
 
-func (dc *dealerConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
+func (dc *shuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
 	select {
 	case dc.cmds <- cmd:
 		return nil
 	case <-dc.closing:
-		return ErrNoDealerConnection
+		return ErrNoShuttleConnection
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 }
 
-func (cm *ContentManager) registerDealerConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
-	cm.dealersLk.Lock()
-	defer cm.dealersLk.Unlock()
-	_, ok := cm.dealers[handle]
+func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	_, ok := cm.shuttles[handle]
 	if ok {
-		log.Warn("registering dealer but found existing connection")
-		return nil, nil, fmt.Errorf("dealer already connected")
+		log.Warn("registering shuttle but found existing connection")
+		return nil, nil, fmt.Errorf("shuttle already connected")
 	}
 
-	d := &dealerConnection{
+	d := &shuttleConnection{
 		handle:   handle,
 		addrInfo: hello.AddrInfo,
 		cmds:     make(chan *drpc.Command, 32),
 		closing:  make(chan struct{}),
 	}
 
-	cm.dealers[handle] = d
+	cm.shuttles[handle] = d
 
 	return d.cmds, func() {
 		close(d.closing)
-		cm.dealersLk.Lock()
-		outd, ok := cm.dealers[handle]
+		cm.shuttlesLk.Lock()
+		outd, ok := cm.shuttles[handle]
 		if ok {
 			if outd == d {
-				delete(cm.dealers, handle)
+				delete(cm.shuttles, handle)
 			}
 		}
-		cm.dealersLk.Unlock()
+		cm.shuttlesLk.Unlock()
 
 	}, nil
 }
 
-var ErrNilParams = fmt.Errorf("dealer message had nil params")
+var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
-func (cm *ContentManager) processDealerMessage(handle string, msg *drpc.Message) error {
-	ctx, span := cm.tracer.Start(context.TODO(), "processDealerMessage")
+func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message) error {
+	ctx, span := cm.tracer.Start(context.TODO(), "processShuttleMessage")
 	defer span.End()
 
 	switch msg.Op {
@@ -99,7 +99,7 @@ func (cm *ContentManager) processDealerMessage(handle string, msg *drpc.Message)
 		}
 
 		if err := cm.handlePinningComplete(ctx, handle, param); err != nil {
-			log.Errorw("handling pin complete message failed", "dealer", handle, "err", err)
+			log.Errorw("handling pin complete message failed", "shuttle", handle, "err", err)
 		}
 		return nil
 	case drpc.OP_CommPComplete:
@@ -109,7 +109,7 @@ func (cm *ContentManager) processDealerMessage(handle string, msg *drpc.Message)
 		}
 
 		if err := cm.handleRpcCommPComplete(ctx, handle, param); err != nil {
-			log.Errorf("handling commp complete message from dealer %s: %s", handle, err)
+			log.Errorf("handling commp complete message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	default:
@@ -117,23 +117,23 @@ func (cm *ContentManager) processDealerMessage(handle string, msg *drpc.Message)
 	}
 }
 
-var ErrNoDealerConnection = fmt.Errorf("no connection to requested dealer")
+var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
-func (cm *ContentManager) sendDealerCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
-	cm.dealersLk.Lock()
-	d, ok := cm.dealers[handle]
-	cm.dealersLk.Unlock()
+func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
+	cm.shuttlesLk.Lock()
+	d, ok := cm.shuttles[handle]
+	cm.shuttlesLk.Unlock()
 	if ok {
 		return d.sendMessage(ctx, cmd)
 	}
 
-	return ErrNoDealerConnection
+	return ErrNoShuttleConnection
 }
 
-func (cm *ContentManager) dealerIsOnline(handle string) bool {
-	cm.dealersLk.Lock()
-	d, ok := cm.dealers[handle]
-	cm.dealersLk.Unlock()
+func (cm *ContentManager) shuttleIsOnline(handle string) bool {
+	cm.shuttlesLk.Lock()
+	d, ok := cm.shuttles[handle]
+	cm.shuttlesLk.Unlock()
 	if !ok {
 		return false
 	}

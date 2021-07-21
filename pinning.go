@@ -174,7 +174,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	if loc == "local" {
 		cm.addPinToQueue(cont, peers, replace)
 	} else {
-		if err := cm.pinContentOnDealer(ctx, cont, peers, replace, loc); err != nil {
+		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc); err != nil {
 			return nil, err
 		}
 	}
@@ -205,8 +205,8 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 	cm.pinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnDealer(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
-	if err := cm.sendDealerCommand(ctx, handle, &drpc.Command{
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
 		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
@@ -253,28 +253,28 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		return "local", nil
 	}
 
-	var activeDealers []string
-	cm.dealersLk.Lock()
-	for d := range cm.dealers {
-		activeDealers = append(activeDealers, d)
+	var activeShuttles []string
+	cm.shuttlesLk.Lock()
+	for d := range cm.shuttles {
+		activeShuttles = append(activeShuttles, d)
 	}
-	cm.dealersLk.Unlock()
+	cm.shuttlesLk.Unlock()
 
-	var dealers []Dealer
-	if err := cm.DB.Find(&dealers, "handle in ? and open", activeDealers).Error; err != nil {
+	var shuttles []Shuttle
+	if err := cm.DB.Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
-	if len(dealers) == 0 {
-		log.Warn("no dealers available for content to be delegated to")
+	if len(shuttles) == 0 {
+		log.Warn("no shuttles available for content to be delegated to")
 		return "local", nil
 	}
 
 	// TODO: take into account existing staging zones and their primary
 	// locations while choosing
 
-	n := rand.Intn(len(dealers))
-	return dealers[n].Handle, nil
+	n := rand.Intn(len(shuttles))
+	return shuttles[n].Handle, nil
 }
 
 // pinning api /pins endpoint
@@ -539,7 +539,7 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 	op, ok := cm.pinJobs[cont]
 	cm.pinLk.Unlock()
 	if !ok {
-		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "dealer", handle)
+		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "shuttle", handle)
 		return
 	}
 
@@ -552,7 +552,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
-		return xerrors.Errorf("got dealer pin complete for unknown content %d (dealer = %s): %w", pincomp.DBID, handle, err)
+		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
 	if cont.Active {

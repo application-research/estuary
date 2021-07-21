@@ -87,8 +87,8 @@ type ContentManager struct {
 
 	pinMgr *pinner.PinManager
 
-	dealersLk sync.Mutex
-	dealers   map[string]*dealerConnection
+	shuttlesLk sync.Mutex
+	shuttles   map[string]*shuttleConnection
 }
 
 // 90% of the unpadded data size for a 4GB piece
@@ -442,7 +442,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	if len(cbl) > 1 {
-		// Need to migrate content all to the same dealer
+		// Need to migrate content all to the same shuttle
 		cm.bucketLk.Lock()
 		// put the staging zone back in the list
 		cm.buckets[b.User] = append(cm.buckets[b.User], b)
@@ -2211,7 +2211,7 @@ func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, toMove 
 	return fmt.Errorf("migrating content back to primary instance not yet implemented")
 }
 
-func (cm *ContentManager) addrInfoForDealer(handle string) (*peer.AddrInfo, error) {
+func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, error) {
 	if handle == "local" {
 		return &peer.AddrInfo{
 			ID:    cm.Host.ID(),
@@ -2219,9 +2219,9 @@ func (cm *ContentManager) addrInfoForDealer(handle string) (*peer.AddrInfo, erro
 		}, nil
 	}
 
-	cm.dealersLk.Lock()
-	defer cm.dealersLk.Unlock()
-	conn, ok := cm.dealers[handle]
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	conn, ok := cm.shuttles[handle]
 	if !ok {
 		return nil, nil
 	}
@@ -2235,7 +2235,7 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	if err != nil {
 		return err
 	}
-	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_StartTransfer,
 		Params: drpc.CmdParams{
 			StartTransfer: &drpc.StartTransfer{
@@ -2251,7 +2251,7 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 }
 
 func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont Content, aggr []uint, blob []byte) error {
-	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_AggregateContent,
 		Params: drpc.CmdParams{
 			AggregateContent: &drpc.AggregateContent{
@@ -2280,7 +2280,7 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 	}
 
 	for handle := range fromLocs {
-		ai, err := cm.addrInfoForDealer(handle)
+		ai, err := cm.addrInfoForShuttle(handle)
 		if err != nil {
 			return err
 		}
@@ -2293,7 +2293,7 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 		tc.Sources = append(tc.Sources, *ai)
 	}
 
-	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_TakeContent,
 		Params: drpc.CmdParams{
 			TakeContent: tc,

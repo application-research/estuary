@@ -226,11 +226,11 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
 
-	dealer := admin.Group("/dealer")
-	dealer.POST("/init", s.handleDealerInit)
-	dealer.GET("/list", s.handleDealerList)
+	shuttle := admin.Group("/shuttle")
+	shuttle.POST("/init", s.handleShuttleInit)
+	shuttle.GET("/list", s.handleShuttleList)
 
-	e.GET("/dealer/conn", s.handleDealerConnection)
+	e.GET("/shuttle/conn", s.handleShuttleConnection)
 
 	if domain != "" {
 		return e.StartAutoTLS(srv)
@@ -2593,46 +2593,46 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	})
 }
 
-type initDealerResponse struct {
+type initShuttleResponse struct {
 	Handle string `json:"handle"`
 	Token  string `json:"token"`
 }
 
-func (s *Server) handleDealerInit(c echo.Context) error {
-	dealer := &Dealer{
-		Handle: "DEALER" + uuid.New().String() + "HANDLE",
+func (s *Server) handleShuttleInit(c echo.Context) error {
+	shuttle := &Shuttle{
+		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
 	}
-	if err := s.DB.Create(dealer).Error; err != nil {
+	if err := s.DB.Create(shuttle).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, &initDealerResponse{
-		Handle: dealer.Handle,
-		Token:  dealer.Token,
+	return c.JSON(200, &initShuttleResponse{
+		Handle: shuttle.Handle,
+		Token:  shuttle.Token,
 	})
 }
 
-type dealerListResponse struct {
+type shuttleListResponse struct {
 	Handle         string    `json:"handle"`
 	Token          string    `json:"token"`
 	Online         bool      `json:"online"`
 	LastConnection time.Time `json:"lastConnection"`
 }
 
-func (s *Server) handleDealerList(c echo.Context) error {
-	var dealers []Dealer
-	if err := s.DB.Find(&dealers).Error; err != nil {
+func (s *Server) handleShuttleList(c echo.Context) error {
+	var shuttles []Shuttle
+	if err := s.DB.Find(&shuttles).Error; err != nil {
 		return err
 	}
 
-	var out []dealerListResponse
-	for _, d := range dealers {
-		out = append(out, dealerListResponse{
+	var out []shuttleListResponse
+	for _, d := range shuttles {
+		out = append(out, shuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.CM.dealerIsOnline(d.Handle),
+			Online:         s.CM.shuttleIsOnline(d.Handle),
 		})
 
 	}
@@ -2640,14 +2640,14 @@ func (s *Server) handleDealerList(c echo.Context) error {
 	return c.JSON(200, out)
 }
 
-func (s *Server) handleDealerConnection(c echo.Context) error {
+func (s *Server) handleShuttleConnection(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
 	if err != nil {
 		return err
 	}
 
-	var dealer Dealer
-	if err := s.DB.First(&dealer, "token = ?", auth).Error; err != nil {
+	var shuttle Shuttle
+	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
 		return err
 	}
 
@@ -2661,9 +2661,9 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.CM.registerDealerConnection(dealer.Handle, &hello)
+		cmds, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
-			log.Errorf("failed to register dealer: %s", err)
+			log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
@@ -2675,7 +2675,7 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 					// Write
 					err := websocket.JSON.Send(ws, cmd)
 					if err != nil {
-						log.Errorf("failed to write command to dealer: %s", err)
+						log.Errorf("failed to write command to shuttle: %s", err)
 						return
 					}
 				case <-done:
@@ -2687,12 +2687,12 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
-				log.Errorf("failed to read message from dealer: %s", err)
+				log.Errorf("failed to read message from shuttle: %s", err)
 				return
 			}
 
-			if err := s.CM.processDealerMessage(dealer.Handle, &msg); err != nil {
-				log.Errorf("failed to process message from dealer: %s", err)
+			if err := s.CM.processShuttleMessage(shuttle.Handle, &msg); err != nil {
+				log.Errorf("failed to process message from shuttle: %s", err)
 				return
 			}
 		}

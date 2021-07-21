@@ -385,7 +385,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&AuthToken{})
 	db.AutoMigrate(&InviteCode{})
 
-	db.AutoMigrate(&Dealer{})
+	db.AutoMigrate(&Shuttle{})
 
 	var count int64
 	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
