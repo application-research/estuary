@@ -31,6 +31,7 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipldformat "github.com/ipfs/go-ipld-format"
+	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	uio "github.com/ipfs/go-unixfs/io"
@@ -40,37 +41,19 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/multiformats/go-multiaddr"
+	drpc "github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
+	"github.com/whyrusleeping/estuary/util"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
-)
-
-const (
-	ERR_INVALID_TOKEN        = "ERR_INVALID_TOKEN"
-	ERR_TOKEN_EXPIRED        = "ERR_TOKEN_EXPIRED"
-	ERR_AUTH_MISSING         = "ERR_AUTH_MISSING"
-	ERR_INVALID_AUTH         = "ERR_INVALID_AUTH"
-	ERR_AUTH_MISSING_BEARER  = "ERR_AUTH_MISSING_BEARER"
-	ERR_NOT_AUTHORIZED       = "ERR_NOT_AUTHORIZED"
-	ERR_INVALID_INVITE       = "ERR_INVALID_INVITE"
-	ERR_USERNAME_TAKEN       = "ERR_USERNAME_TAKEN"
-	ERR_USER_CREATION_FAILED = "ERR_USER_CREATION_FAILED"
-	ERR_USER_NOT_FOUND       = "ERR_USER_NOT_FOUND"
-	ERR_INVALID_PASSWORD     = "ERR_INVALID_PASSWORD"
-	ERR_INVITE_ALREADY_USED  = "ERR_INVITE_ALREADY_USED"
-)
-
-const (
-	PermLevelUser  = 2
-	PermLevelAdmin = 10
 )
 
 func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok string, cachedir string) error {
@@ -97,7 +80,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	e.Use(s.tracingMiddleware)
 	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
 		log.Errorf("handler error: %s", err)
-		var herr *httpError
+		var herr *util.HttpError
 		if xerrors.As(err, &herr) {
 			ctx.JSON(herr.Code, map[string]string{
 				"error": herr.Message,
@@ -127,10 +110,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	e.GET("/test-error", s.handleTestError)
 
-	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(PermLevelUser))
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
 	user := e.Group("/user")
-	user.Use(s.AuthRequired(PermLevelUser))
+	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/test-error", s.handleTestError)
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
@@ -140,7 +123,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.GET("/stats", withUser(s.handleGetUserStats))
 
 	content := e.Group("/content")
-	content.Use(s.AuthRequired(PermLevelUser))
+	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	content.POST("/add-car", withUser(s.handleAddCar))
@@ -160,7 +143,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	// need to have some sort of 'super user' permission level in order to use
 	// them? Can easily cause harm using them
 	deals := e.Group("/deals")
-	deals.Use(s.AuthRequired(PermLevelUser))
+	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	//deals.POST("/make/:miner", s.handleMakeDeal)
@@ -174,14 +157,14 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	deals.GET("/info/:dealid", s.handleGetDealInfo)
 
 	cols := e.Group("/collections")
-	cols.Use(s.AuthRequired(PermLevelUser))
+	cols.Use(s.AuthRequired(util.PermLevelUser))
 	cols.GET("/list", withUser(s.handleListCollections))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
 
 	pinning := e.Group("/pinning")
-	pinning.Use(s.AuthRequired(PermLevelUser))
+	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
 	pinning.POST("/pins", withUser(s.handleAddPin))
 	pinning.GET("/pins/:requestid", withUser(s.handleGetPin))
@@ -203,7 +186,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	miners.GET("/storage/query/:miner", s.handleQueryAsk)
 
 	admin := e.Group("/admin")
-	admin.Use(s.AuthRequired(PermLevelAdmin))
+	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/balance", s.handleAdminBalance)
 	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
@@ -217,6 +200,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
 
+	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
@@ -232,6 +216,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/invites", s.handleAdminGetInvites)
 
 	admin.GET("/fixdeals", s.handleFixupDeals)
+	admin.POST("/loglevel", s.handleLogLevel)
 
 	netw := admin.Group("/net")
 	netw.GET("/peers", s.handleNetPeers)
@@ -240,20 +225,17 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
 
+	dealer := admin.Group("/dealer")
+	dealer.POST("/init", s.handleDealerInit)
+	dealer.GET("/list", s.handleDealerList)
+
+	e.GET("/dealer/conn", s.handleDealerConnection)
+
 	if domain != "" {
 		return e.StartAutoTLS(srv)
 	} else {
 		return e.Start(srv)
 	}
-}
-
-type httpError struct {
-	Code    int
-	Message string
-}
-
-func (he httpError) Error() string {
-	return he.Message
 }
 
 func serveCpuProfile(c echo.Context) error {
@@ -380,19 +362,26 @@ type addFromIpfsParams struct {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
+	if s.CM.contentAddingDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
+
 	var params addFromIpfsParams
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
 
-	var col *Collection
+	var cols []*Collection
 	if params.Collection != "" {
 		var srchCol Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
 			return err
 		}
 
-		col = &srchCol
+		cols = []*Collection{&srchCol}
 	}
 
 	var addrInfos []peer.AddrInfo
@@ -420,52 +409,28 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	for _, ai := range addrInfos {
-		if err := s.Node.Host.Connect(ctx, ai); err != nil {
-			log.Warnf("failed to connect to requested peer: %s", err)
-		}
-	}
-
 	filename := params.Name
 	if filename == "" {
 		filename = params.Root
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
-	dserv := merkledag.NewDAGService(bserv)
-
-	dsess := merkledag.NewSession(ctx, dserv)
-
-	cont, err := s.addDatabaseTracking(ctx, u, dsess, s.Node.Blockstore, rcid, filename, defaultReplication)
+	pinstatus, err := s.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
 	if err != nil {
 		return err
 	}
 
-	if col != nil {
-		if err := s.DB.Create(&CollectionRef{
-			Collection: col.ID,
-			Content:    cont.ID,
-		}).Error; err != nil {
-			log.Errorf("failed to add content to requested collection: %s", err)
-		}
-	}
-
-	go func() {
-		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck <- cont.ID
-	}()
-
-	go func() {
-		if err := s.Node.Provider.Provide(rcid); err != nil {
-			fmt.Println("providing failed: ", err)
-		}
-		fmt.Println("providing complete")
-	}()
-	return c.JSON(200, map[string]interface{}{"content": cont})
+	return c.JSON(202, pinstatus)
 }
 
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	if s.CM.contentAddingDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
 
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
@@ -529,6 +494,13 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	if s.CM.contentAddingDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
 
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -635,9 +607,7 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 	defer span.End()
 
 	var objects []*Object
-	var totalSize int64
 	cset := cid.NewSet()
-
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
@@ -645,11 +615,9 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 		}
 
 		objects = append(objects, &Object{
-			Cid:  dbCID{c},
+			Cid:  util.DbCID{c},
 			Size: len(node.RawData()),
 		})
-
-		totalSize += int64(len(node.RawData()))
 
 		if c.Type() == cid.Raw {
 			return nil, nil
@@ -661,31 +629,8 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 		return err
 	}
 
-	span.SetAttributes(
-		attribute.Int64("totalSize", totalSize),
-		attribute.Int("numObjects", len(objects)),
-	)
-
-	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
-	}
-
-	if err := s.DB.Model(Content{}).Where("id = ?", cont).UpdateColumns(map[string]interface{}{
-		"active":  true,
-		"size":    totalSize,
-		"pinning": false,
-	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
-	}
-
-	refs := make([]ObjRef, len(objects))
-	for i := range refs {
-		refs[i].Content = cont
-		refs[i].Object = objects[i].ID
-	}
-
-	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+	if err := s.addObjectsToDatabase(ctx, cont, objects); err != nil {
+		return err
 	}
 
 	return nil
@@ -695,43 +640,11 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipldfor
 	ctx, span := s.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
-	var objects []*Object
-	var totalSize int64
-	cset := cid.NewSet()
-
-	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipldformat.Link, error) {
-		node, err := dserv.Get(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		objects = append(objects, &Object{
-			Cid:  dbCID{c},
-			Size: len(node.RawData()),
-		})
-
-		totalSize += int64(len(node.RawData()))
-
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
-		return node.Links(), nil
-	}, root, cset.Visit, merkledag.Concurrent())
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return nil, xerrors.Errorf("failed to create objects in db: %w", err)
-	}
-
-	// okay cool, we added the content, now track it
 	content := &Content{
-		Cid:         dbCID{root},
-		Size:        totalSize,
+		Cid:         util.DbCID{root},
 		Name:        fname,
-		Active:      true,
+		Active:      false,
+		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
 	}
@@ -740,14 +653,8 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipldfor
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	refs := make([]ObjRef, len(objects))
-	for i := range refs {
-		refs[i].Content = content.ID
-		refs[i].Object = objects[i].ID
-	}
-
-	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return nil, xerrors.Errorf("failed to create refs: %w", err)
+	if err := s.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
+		return nil, err
 	}
 
 	return content, nil
@@ -1434,7 +1341,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: dbAddr{m}}).Error; err != nil {
+	if err := s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: util.DbAddr{m}}).Error; err != nil {
 		return err
 	}
 
@@ -1747,9 +1654,9 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 	}
 
 	if content.UserID != u.ID {
-		return &httpError{
+		return &util.HttpError{
 			Code:    401,
-			Message: ERR_NOT_AUTHORIZED,
+			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -1780,9 +1687,9 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	}
 
 	if content.UserID != u.ID {
-		return &httpError{
+		return &util.HttpError{
 			Code:    403,
-			Message: ERR_NOT_AUTHORIZED,
+			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -1900,27 +1807,27 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	var authToken AuthToken
 	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &httpError{
+			return nil, &util.HttpError{
 				Code:    http.StatusForbidden,
-				Message: ERR_INVALID_TOKEN,
+				Message: util.ERR_INVALID_TOKEN,
 			}
 		}
 		return nil, err
 	}
 
 	if authToken.Expiry.Before(time.Now()) {
-		return nil, &httpError{
+		return nil, &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: ERR_TOKEN_EXPIRED,
+			Message: util.ERR_TOKEN_EXPIRED,
 		}
 	}
 
 	var user User
 	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &httpError{
+			return nil, &util.HttpError{
 				Code:    http.StatusForbidden,
-				Message: ERR_INVALID_TOKEN,
+				Message: util.ERR_INVALID_TOKEN,
 			}
 		}
 		return nil, err
@@ -1932,30 +1839,12 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			auth := c.Request().Header.Get("Authorization")
-			if auth == "" {
-				return &httpError{
-					Code:    403,
-					Message: ERR_AUTH_MISSING,
-				}
+			auth, err := util.ExtractAuth(c)
+			if err != nil {
+				return err
 			}
 
-			parts := strings.Split(auth, " ")
-			if len(parts) != 2 {
-				return &httpError{
-					Code:    403,
-					Message: ERR_INVALID_AUTH,
-				}
-			}
-
-			if parts[0] != "Bearer" {
-				return &httpError{
-					Code:    403,
-					Message: ERR_AUTH_MISSING_BEARER,
-				}
-			}
-
-			u, err := s.checkTokenAuth(parts[1])
+			u, err := s.checkTokenAuth(auth)
 			if err != nil {
 				return err
 			}
@@ -1967,9 +1856,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 
 			log.Warnw("User not authorized", "user", u.ID, "perm", u.Perm, "required", level)
 
-			return &httpError{
+			return &util.HttpError{
 				Code:    401,
-				Message: ERR_NOT_AUTHORIZED,
+				Message: util.ERR_NOT_AUTHORIZED,
 			}
 		}
 	}
@@ -1990,17 +1879,17 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	var invite InviteCode
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &httpError{
+			return &util.HttpError{
 				Code:    http.StatusForbidden,
-				Message: ERR_INVALID_INVITE,
+				Message: util.ERR_INVALID_INVITE,
 			}
 		}
 	}
 
 	if invite.ClaimedBy != 0 {
-		return &httpError{
+		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: ERR_INVITE_ALREADY_USED,
+			Message: util.ERR_INVITE_ALREADY_USED,
 		}
 	}
 
@@ -2008,9 +1897,9 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	var exist User
 	if err := s.DB.First(&exist, "username = ?", username).Error; err == nil {
-		return &httpError{
+		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: ERR_USERNAME_TAKEN,
+			Message: util.ERR_USERNAME_TAKEN,
 		}
 	}
 
@@ -2018,12 +1907,12 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		Username: username,
 		UUID:     uuid.New().String(),
 		PassHash: reg.PasswordHash,
-		Perm:     PermLevelUser,
+		Perm:     util.PermLevelUser,
 	}
 	if err := s.DB.Create(newUser).Error; err != nil {
-		herr := &httpError{
+		herr := &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: ERR_USER_CREATION_FAILED,
+			Message: util.ERR_USER_CREATION_FAILED,
 		}
 
 		return fmt.Errorf("user creation failed: %s: %w", err, herr)
@@ -2069,18 +1958,18 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	var user User
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &httpError{
+			return &util.HttpError{
 				Code:    http.StatusForbidden,
-				Message: ERR_USER_NOT_FOUND,
+				Message: util.ERR_USER_NOT_FOUND,
 			}
 		}
 		return err
 	}
 
 	if user.PassHash != body.PassHash {
-		return &httpError{
+		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: ERR_INVALID_PASSWORD,
+			Message: util.ERR_INVALID_PASSWORD,
 		}
 	}
 
@@ -2142,33 +2031,19 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 	return authToken, nil
 }
 
-type userSettings struct {
-	Replication  int  `json:"replication"`
-	Verified     bool `json:"verified"`
-	DealDuration int  `json:"dealDuration"`
-
-	MaxStagingWait       time.Duration `json:"maxStagingWait"`
-	FileStagingThreshold int64         `json:"fileStagingThreshold"`
-}
-
-type viewerResponse struct {
-	Username string `json:"username"`
-	Perms    int    `json:"perms"`
-
-	Settings userSettings `json:"settings"`
-}
-
 func (s *Server) handleGetViewer(c echo.Context, u *User) error {
-
-	return c.JSON(200, &viewerResponse{
+	return c.JSON(200, &util.ViewerResponse{
+		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
-		Settings: userSettings{
-			Replication:          6,
-			Verified:             true,
-			DealDuration:         2880 * 365,
-			MaxStagingWait:       maxStagingZoneLifetime,
-			FileStagingThreshold: int64(individualDealThreshold),
+		Settings: util.UserSettings{
+			Replication:           6,
+			Verified:              true,
+			DealDuration:          2880 * 365,
+			MaxStagingWait:        maxStagingZoneLifetime,
+			FileStagingThreshold:  int64(individualDealThreshold),
+			ContentAddingDisabled: s.CM.contentAddingDisabled,
+			DealMakingDisabled:    s.CM.dealMakingDisabled,
 		},
 	})
 }
@@ -2560,7 +2435,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 type dealQuery struct {
 	DealID    int64
 	Contentid uint
-	Cid       dbCID
+	Cid       util.DbCID
 	Aggregate bool
 }
 
@@ -2684,4 +2559,145 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		"traverseError": fmt.Sprintf("%s", err),
 		"foundBlocks":   cset.Len(),
 	})
+}
+
+type initDealerResponse struct {
+	Handle string `json:"handle"`
+	Token  string `json:"token"`
+}
+
+func (s *Server) handleDealerInit(c echo.Context) error {
+	dealer := &Dealer{
+		Handle: "DEALER" + uuid.New().String() + "HANDLE",
+		Token:  "SECRET" + uuid.New().String() + "SECRET",
+	}
+	if err := s.DB.Create(dealer).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &initDealerResponse{
+		Handle: dealer.Handle,
+		Token:  dealer.Token,
+	})
+}
+
+type dealerListResponse struct {
+	Handle         string    `json:"handle"`
+	Token          string    `json:"token"`
+	Online         bool      `json:"online"`
+	LastConnection time.Time `json:"lastConnection"`
+}
+
+func (s *Server) handleDealerList(c echo.Context) error {
+	var dealers []Dealer
+	if err := s.DB.Find(&dealers).Error; err != nil {
+		return err
+	}
+
+	var out []dealerListResponse
+	for _, d := range dealers {
+		out = append(out, dealerListResponse{
+			Handle:         d.Handle,
+			Token:          d.Token,
+			LastConnection: d.LastConnection,
+			Online:         s.dealerIsOnline(d.Handle),
+		})
+
+	}
+
+	return c.JSON(200, out)
+}
+
+func (s *Server) handleDealerConnection(c echo.Context) error {
+	auth, err := util.ExtractAuth(c)
+	if err != nil {
+		return err
+	}
+
+	var dealer Dealer
+	if err := s.DB.First(&dealer, "token = ?", auth).Error; err != nil {
+		return err
+	}
+
+	websocket.Handler(func(ws *websocket.Conn) {
+		done := make(chan struct{})
+		defer close(done)
+		defer ws.Close()
+		var hello drpc.Hello
+		if err := websocket.JSON.Receive(ws, &hello); err != nil {
+			log.Errorf("failed to read hello message from client: %s", err)
+			return
+		}
+
+		cmds, unreg, err := s.registerDealerConnection(dealer.Handle, &hello)
+		if err != nil {
+			log.Errorf("failed to register dealer: %s", err)
+			return
+		}
+		defer unreg()
+
+		go func() {
+			for {
+				select {
+				case cmd := <-cmds:
+					// Write
+					err := websocket.JSON.Send(ws, cmd)
+					if err != nil {
+						log.Errorf("failed to write command to dealer: %s", err)
+						return
+					}
+				case <-done:
+					return
+				}
+			}
+		}()
+
+		for {
+			var msg drpc.Message
+			if err := websocket.JSON.Receive(ws, &msg); err != nil {
+				log.Errorf("failed to read message from dealer: %s", err)
+				return
+			}
+
+			if err := s.processDealerMessage(dealer.Handle, &msg); err != nil {
+				log.Errorf("failed to process message from dealer: %s", err)
+				return
+			}
+		}
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
+}
+
+type allDealsQuery struct {
+	Miner  string
+	Cid    util.DbCID
+	DealID int64
+}
+
+func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
+	var out []allDealsQuery
+	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not failed").
+		Joins("left join contents on content_deals.content = contents.id").
+		Select("miner, contents.cid as cid, deal_id").
+		Scan(&out).
+		Error; err != nil {
+		return err
+	}
+	return c.JSON(200, out)
+}
+
+type logLevelBody struct {
+	System string `json:"system"`
+	Level  string `json:"level"`
+}
+
+func (s *Server) handleLogLevel(c echo.Context) error {
+	var body logLevelBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	logging.SetLogLevel(body.System, body.Level)
+
+	return c.JSON(200, map[string]interface{}{})
 }

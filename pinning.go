@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ipfs/go-blockservice"
@@ -14,54 +13,14 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
+	drpc "github.com/whyrusleeping/estuary/drpc"
+	"github.com/whyrusleeping/estuary/pinner"
+	"github.com/whyrusleeping/estuary/types"
+	"github.com/whyrusleeping/estuary/util"
+	"golang.org/x/xerrors"
 )
 
-type pinningOperation struct {
-	obj   cid.Cid
-	name  string
-	peers []peer.AddrInfo
-	meta  map[string]interface{}
-
-	status string
-
-	userId  uint
-	contId  uint
-	replace uint
-
-	started     time.Time
-	numFetched  int
-	sizeFetched int64
-	fetchErr    error
-	endTime     time.Time
-
-	lk sync.Mutex
-}
-
-func (po *pinningOperation) fail(err error) {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	po.fetchErr = err
-	po.endTime = time.Now()
-	po.status = "failed"
-}
-
-func (po *pinningOperation) complete() {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	po.endTime = time.Now()
-	po.status = "pinned"
-}
-
-func (po *pinningOperation) setStatus(st string) {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	po.status = st
-}
-
-func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
+func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 	s.pinLk.Lock()
 	po, ok := s.pinJobs[cont]
 	s.pinLk.Unlock()
@@ -78,11 +37,11 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 			}
 		}
 
-		ps := &ipfsPinStatus{
+		ps := &types.IpfsPinStatus{
 			Requestid: fmt.Sprint(cont),
 			Status:    "pinning",
 			Created:   content.CreatedAt,
-			Pin: ipfsPin{
+			Pin: types.IpfsPin{
 				Cid:  content.Cid.CID.String(),
 				Name: content.Name,
 				Meta: meta,
@@ -98,21 +57,10 @@ func (s *Server) pinStatus(cont uint) (*ipfsPinStatus, error) {
 		return ps, nil
 	}
 
-	po.lk.Lock()
-	defer po.lk.Unlock()
+	status := po.PinStatus()
+	status.Delegates = s.pinDelegatesForContent(cont)
 
-	return &ipfsPinStatus{
-		Requestid: fmt.Sprint(cont),
-		Status:    po.status,
-		Created:   po.started,
-		Pin: ipfsPin{
-			Cid:  po.obj.String(),
-			Name: po.name,
-			Meta: po.meta,
-		},
-		Delegates: s.pinDelegatesForContent(cont),
-		Info:      nil,
-	}, nil
+	return status, nil
 }
 
 func (s *Server) pinDelegatesForContent(cont uint) []string {
@@ -124,14 +72,11 @@ func (s *Server) pinDelegatesForContent(cont uint) []string {
 	return out
 }
 
-func (s *Server) doPinning(op *pinningOperation) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
-	defer cancel()
-
+func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	for _, pi := range op.peers {
+	for _, pi := range op.Peers {
 		if err := s.Node.Host.Connect(ctx, pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
@@ -142,127 +87,29 @@ func (s *Server) doPinning(op *pinningOperation) error {
 
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	op.setStatus("pinning")
-	if err := s.addDatabaseTrackingToContent(ctx, op.contId, dsess, s.Node.Blockstore, op.obj); err != nil {
-		op.fail(err)
+	if err := s.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj); err != nil {
 		return err
 	}
 
-	op.complete()
+	s.CM.ToCheck <- op.ContId
 
-	s.CM.ToCheck <- op.contId
-
-	if op.replace > 0 {
-		if err := s.CM.RemoveContent(ctx, op.replace, true); err != nil {
-			log.Infof("failed to remove content in replacement: %d", op.replace)
+	if op.Replace > 0 {
+		if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
+			log.Infof("failed to remove content in replacement: %d", op.Replace)
 		}
 	}
 
 	// this provide call goes out immediately
-	if err := s.Node.FullRT.Provide(ctx, op.obj, true); err != nil {
+	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
 		log.Infof("provider broadcast failed: %s", err)
 	}
 
 	// this one adds to a queue
-	if err := s.Node.Provider.Provide(op.obj); err != nil {
+	if err := s.Node.Provider.Provide(op.Obj); err != nil {
 		log.Infof("providing failed: %s", err)
 	}
 
 	return nil
-}
-
-const maxActivePerUser = 15
-
-func (s *Server) popNextPinOp() *pinningOperation {
-	if len(s.pinQueue) == 0 {
-		return nil
-	}
-
-	var minCount int = 10000
-	var user uint
-	for u := range s.pinQueue {
-		active := s.activePins[u]
-		if active < minCount {
-			minCount = active
-			user = u
-		}
-	}
-
-	if minCount >= maxActivePerUser {
-		return nil
-	}
-
-	pq := s.pinQueue[user]
-
-	next := pq[0]
-
-	if len(pq) == 1 {
-		delete(s.pinQueue, user)
-	} else {
-		s.pinQueue[user] = pq[1:]
-	}
-
-	return next
-}
-
-func (s *Server) enqueuePinOp(po *pinningOperation) {
-	q := s.pinQueue[po.userId]
-	s.pinQueue[po.userId] = append(q, po)
-}
-
-func (s *Server) pinQueueManager() {
-	var next *pinningOperation
-
-	var send chan *pinningOperation
-
-	next = s.popNextPinOp()
-	if next != nil {
-		send = s.pinQueueOut
-	}
-
-	for {
-		select {
-		case op := <-s.pinQueueIn:
-			if next == nil {
-				next = op
-				send = s.pinQueueOut
-			} else {
-				s.pinQueueLk.Lock()
-				s.enqueuePinOp(op)
-				s.pinQueueLk.Unlock()
-			}
-		case send <- next:
-			s.pinQueueLk.Lock()
-			s.activePins[next.userId]++
-
-			next = s.popNextPinOp()
-			if next == nil {
-				send = nil
-			}
-			s.pinQueueLk.Unlock()
-		case op := <-s.pinComplete:
-			s.pinQueueLk.Lock()
-			s.activePins[op.userId]--
-
-			if next == nil {
-				next = s.popNextPinOp()
-				if next != nil {
-					send = s.pinQueueOut
-				}
-			}
-			s.pinQueueLk.Unlock()
-
-		}
-	}
-}
-
-func (s *Server) pinWorker() {
-	for op := range s.pinQueueOut {
-		if err := s.doPinning(op); err != nil {
-			log.Errorf("pinning queue error: %s", err)
-		}
-		s.pinComplete <- op
-	}
 }
 
 func (s *Server) refreshPinQueue() error {
@@ -285,7 +132,12 @@ func (s *Server) refreshPinQueue() error {
 	return nil
 }
 
-func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*ipfsPinStatus, error) {
+func (s *Server) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+	loc, err := s.selectLocationForContent(ctx, obj, user)
+	if err != nil {
+		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
+	}
+
 	var metab string
 	if meta != nil {
 		b, err := json.Marshal(meta)
@@ -296,7 +148,7 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 	}
 
 	cont := Content{
-		Cid: dbCID{obj},
+		Cid: util.DbCID{obj},
 
 		Name:        name,
 		UserID:      user,
@@ -316,22 +168,30 @@ func (s *Server) pinContent(user uint, obj cid.Cid, name string, cols []*Collect
 		return nil, err
 	}
 
-	s.addPinToQueue(cont, peers, replace)
+	if loc == "local" {
+		s.addPinToQueue(cont, peers, replace)
+	} else {
+		if err := s.pinContentOnDealer(ctx, cont, peers, replace, loc); err != nil {
+			return nil, err
+		}
+	}
 
 	return s.pinStatus(cont.ID)
 }
 
 // TODO: the queue needs to be a lot smarter than throwing things into a channel...
 func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
-	op := &pinningOperation{
-		contId:  cont.ID,
-		userId:  cont.UserID,
-		obj:     cont.Cid.CID,
-		name:    cont.Name,
-		peers:   peers,
-		started: cont.CreatedAt,
-		status:  "queued",
-		replace: replace,
+
+	op := &pinner.PinningOperation{
+		ContId:   cont.ID,
+		UserId:   cont.UserID,
+		Obj:      cont.Cid.CID,
+		Name:     cont.Name,
+		Peers:    peers,
+		Started:  cont.CreatedAt,
+		Status:   "queued",
+		Replace:  replace,
+		Location: "local",
 	}
 
 	s.pinLk.Lock()
@@ -339,25 +199,75 @@ func (s *Server) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint
 	s.pinJobs[cont.ID] = op
 	s.pinLk.Unlock()
 
-	go func() {
-		s.pinQueueIn <- op
-	}()
+	s.pinMgr.Add(op)
 }
 
-type ipfsPin struct {
-	Cid     string                 `json:"cid"`
-	Name    string                 `json:"name"`
-	Origins []string               `json:"origins"`
-	Meta    map[string]interface{} `json:"meta"`
+func (s *Server) pinContentOnDealer(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+	if err := s.sendDealerCommand(ctx, handle, &drpc.Command{
+		Op: drpc.CMD_AddPin,
+		Params: drpc.CmdParams{
+			AddPin: &drpc.AddPin{
+				DBID:   cont.ID,
+				UserId: cont.UserID,
+				Cid:    cont.Cid.CID,
+				Peers:  peers,
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	op := &pinner.PinningOperation{
+		ContId:   cont.ID,
+		UserId:   cont.UserID,
+		Obj:      cont.Cid.CID,
+		Name:     cont.Name,
+		Peers:    peers,
+		Started:  cont.CreatedAt,
+		Status:   "queued",
+		Replace:  replace,
+		Location: handle,
+	}
+
+	s.pinLk.Lock()
+	// TODO: check if we are overwriting anything here
+	s.pinJobs[cont.ID] = op
+	s.pinLk.Unlock()
+
+	return nil
 }
 
-type ipfsPinStatus struct {
-	Requestid string                 `json:"requestid"`
-	Status    string                 `json:"status"`
-	Created   time.Time              `json:"created"`
-	Pin       ipfsPin                `json:"pin"`
-	Delegates []string               `json:"delegates"`
-	Info      map[string]interface{} `json:"info"`
+func (s *Server) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
+	ctx, span := s.tracer.Start(ctx, "selectLocation")
+	defer span.End()
+
+	var user User
+	if err := s.DB.First(&user, "id = ?", uid).Error; err != nil {
+		return "", err
+	}
+
+	if user.Flags&4 == 0 {
+		return "local", nil
+	}
+
+	var activeDealers []string
+	s.dealersLk.Lock()
+	for d := range s.dealers {
+		activeDealers = append(activeDealers, d)
+	}
+	s.dealersLk.Unlock()
+
+	var dealers []Dealer
+	if err := s.DB.Find(&dealers, "handle in ? and open", activeDealers).Error; err != nil {
+		return "", err
+	}
+
+	if len(dealers) == 0 {
+		log.Warn("no dealers available for content to be delegated to")
+		return "local", nil
+	}
+
+	panic("nyi")
 }
 
 // pinning api /pins endpoint
@@ -445,7 +355,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 
 	}
 
-	var out []*ipfsPinStatus
+	var out []*types.IpfsPinStatus
 	for _, c := range contents {
 		if lim > 0 && len(out) >= lim {
 			break
@@ -489,7 +399,9 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 */
 
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
-	var pin ipfsPin
+	ctx := e.Request().Context()
+
+	var pin types.IpfsPin
 	if err := e.Bind(&pin); err != nil {
 		return err
 	}
@@ -521,7 +433,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
+	status, err := s.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
 	if err != nil {
 		return err
 	}
@@ -544,12 +456,13 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 }
 
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
+	ctx := e.Request().Context()
 	id, err := strconv.Atoi(e.Param("requestid"))
 	if err != nil {
 		return err
 	}
 
-	var pin ipfsPin
+	var pin types.IpfsPin
 	if err := e.Bind(&pin); err != nil {
 		return err
 	}
@@ -559,9 +472,9 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 	if content.UserID != u.ID {
-		return &httpError{
+		return &util.HttpError{
 			Code:    401,
-			Message: ERR_NOT_AUTHORIZED,
+			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -580,7 +493,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.pinContent(u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
+	status, err := s.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
 	if err != nil {
 		return err
 	}
@@ -601,9 +514,9 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 	if content.UserID != u.ID {
-		return &httpError{
+		return &util.HttpError{
 			Code:    401,
-			Message: ERR_NOT_AUTHORIZED,
+			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -612,4 +525,33 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	}
 
 	return nil
+}
+
+func (s *Server) UpdatePinStatus(handle string, cont uint, status string) {
+	s.pinLk.Lock()
+	op, ok := s.pinJobs[cont]
+	s.pinLk.Unlock()
+	if !ok {
+		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "dealer", handle)
+		return
+	}
+
+	op.SetStatus(status)
+}
+
+func (s *Server) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) {
+	ctx, span := s.tracer.Start(ctx, "handlePinningComplete")
+	defer span.End()
+
+	objects := make([]*Object, 0, len(pincomp.Objects))
+	for _, o := range pincomp.Objects {
+		objects = append(objects, &Object{
+			Cid:  util.DbCID{o.Cid},
+			Size: o.Size,
+		})
+	}
+
+	if err := s.addObjectsToDatabase(ctx, pincomp.DBID, objects); err != nil {
+		log.Errorw("failed to add objects to database", "err", err, "content", pincomp.DBID, "dealer", handle)
+	}
 }

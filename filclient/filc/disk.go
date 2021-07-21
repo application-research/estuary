@@ -88,6 +88,8 @@ func clientFromNode(cctx *cli.Context, nd *Node, dir string) (*filclient.FilClie
 		return nil, nil, err
 	}
 
+	fc.RetrievalProgressLogging = true
+
 	return fc, closer, nil
 }
 

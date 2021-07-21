@@ -1,0 +1,15 @@
+/estuary
+/filc
+/barge
+/estuary-dealer
+/bsget
+
+estuary-blocks/*
+estuary-leveldb/*
+estuary-maddr
+estuary-peer.key
+estuary-wallet/*
+estuary-write-log/*
+estuary.db
+
+cidlistsdir/*
