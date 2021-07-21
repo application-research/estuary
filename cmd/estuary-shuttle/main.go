@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -69,6 +70,13 @@ func main() {
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
 		},
 		&cli.StringFlag{
+			Name: "blockstore",
+		},
+		&cli.StringFlag{
+			Name:  "write-log",
+			Usage: "enable write log blockstore in specified directory",
+		},
+		&cli.StringFlag{
 			Name:    "apilisten",
 			Usage:   "address for the api server to listen on",
 			Value:   ":3005",
@@ -104,11 +112,25 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
 
+		bsdir := cctx.String("blockstore")
+		if bsdir == "" {
+			bsdir = filepath.Join(ddir, "blocks")
+		} else if bsdir[0] != '/' {
+			bsdir = filepath.Join(ddir, bsdir)
+
+		}
+
+		wlog := cctx.String("write-log")
+		if wlog != "" && wlog[0] != '/' {
+			wlog = filepath.Join(ddir, wlog)
+		}
+
 		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
 			},
-			Blockstore:    filepath.Join(ddir, "blocks"),
+			Blockstore:    bsdir,
+			WriteLog:      wlog,
 			Libp2pKeyFile: filepath.Join(ddir, "peer.key"),
 			Datastore:     filepath.Join(ddir, "leveldb"),
 			WalletDir:     filepath.Join(ddir, "wallet"),
@@ -305,9 +327,14 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 }
 
 func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
+
 	return &drpc.Hello{
 		Host:   d.hostname,
 		PeerID: d.Node.Host.ID().Pretty(),
+		AddrInfo: peer.AddrInfo{
+			ID:    d.Node.Host.ID(),
+			Addrs: d.Node.Host.Addrs(),
+		},
 	}, nil
 }
 
