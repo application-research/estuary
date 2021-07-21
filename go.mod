@@ -18,6 +18,7 @@ require (
 	github.com/filecoin-project/lotus v1.10.1
 	github.com/filecoin-project/specs-actors v0.9.14
 	github.com/google/uuid v1.2.0
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/influxdata/influxdb-client-go/v2 v2.2.2
 	github.com/ipfs/go-bitswap v0.3.3
 	github.com/ipfs/go-block-format v0.0.3

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -112,6 +113,26 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling commp complete message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_TransferStarted:
+		param := msg.Params.TransferStarted
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcTransferStarted(ctx, handle, param); err != nil {
+			log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
+		}
+		return nil
+	case drpc.OP_TransferStatus:
+		param := msg.Params.TransferStatus
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcTransferStatus(ctx, handle, param); err != nil {
+			log.Errorf("handling transfer status message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
 	}
@@ -160,5 +181,44 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 		return err
 	}
 
+	return nil
+}
+
+func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStarted) error {
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
+		"dt_chan":           param.Chanid,
+		"transfer_started":  time.Now(),
+		"transfer_finished": time.Time{},
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+	}
+
+	log.Infow("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	return nil
+}
+
+func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
+	if param.Failed {
+		var cd contentDeal
+		if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
+			return err
+		}
+
+		miner, err := cd.MinerAddr()
+		if err != nil {
+			return err
+		}
+
+		if oerr := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "start-data-transfer-remote",
+			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+			Content: cd.Content,
+		}); oerr != nil {
+			return oerr
+		}
+		return nil
+	}
+	cm.updateTransferStatus(ctx, handle, param.DealDBID, param.State)
 	return nil
 }

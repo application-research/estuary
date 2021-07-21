@@ -17,6 +17,7 @@ import (
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
@@ -167,6 +168,8 @@ func main() {
 
 			commpMemo: commpMemo,
 
+			trackingChannels: make(map[string]*chanTrack),
+
 			outgoing: make(chan *drpc.Message),
 
 			hostname:      "",
@@ -175,6 +178,28 @@ func main() {
 			shuttleToken:  cctx.String("auth-token"),
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
+
+		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
+			chid := st.ChannelID().String()
+			d.tcLk.Lock()
+			defer d.tcLk.Unlock()
+			trk, ok := d.trackingChannels[chid]
+
+			if !ok {
+				return
+			}
+
+			if trk.last == nil || trk.last.Status != st.Status() {
+				cst := filclient.ChannelStateConv(st)
+				trk.last = cst
+
+				go d.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					Chanid:   chid,
+					DealDBID: trk.dbid,
+					State:    cst,
+				})
+			}
+		})
 
 		return d.ServeAPI(cctx.String("apilisten"))
 	}
@@ -192,6 +217,9 @@ type Shuttle struct {
 	PinMgr *pinner.PinManager
 	Filc   *filclient.FilClient
 
+	tcLk             sync.Mutex
+	trackingChannels map[string]*chanTrack
+
 	addPinLk sync.Mutex
 
 	outgoing chan *drpc.Message
@@ -202,6 +230,11 @@ type Shuttle struct {
 	shuttleToken  string
 
 	commpMemo *memo.Memoizer
+}
+
+type chanTrack struct {
+	dbid uint
+	last *filclient.ChannelState
 }
 
 func (d *Shuttle) RunRpcConnection() error {

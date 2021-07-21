@@ -22,6 +22,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	lru "github.com/hashicorp/golang-lru"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -89,6 +90,8 @@ type ContentManager struct {
 
 	shuttlesLk sync.Mutex
 	shuttles   map[string]*shuttleConnection
+
+	remoteTransferStatus *lru.ARCCache
 }
 
 // 90% of the unpadded data size for a 4GB piece
@@ -207,6 +210,12 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, host host.Host) *ContentManager {
+
+	cache, err := lru.NewARC(50000)
+	if err != nil {
+		panic(err)
+	}
+
 	cm := &ContentManager{
 		Provider:             prov,
 		DB:                   db,
@@ -221,6 +230,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		buckets:              make(map[uint][]*contentStagingZone),
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
 		pinMgr:               pinmgr,
+		remoteTransferStatus: cache,
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -1331,7 +1341,12 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 	// miner still has time...
 
-	status, err := cm.GetTransferStatus(ctx, d, content.Cid.CID)
+	if d.DTChan == "" && content.Location != "local" {
+		log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
+		return DEAL_CHECK_PROGRESS, nil
+	}
+
+	status, err := cm.GetTransferStatus(ctx, d, content)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
 	}
@@ -1398,9 +1413,43 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	return DEAL_CHECK_PROGRESS, nil
 }
 
-func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, ccid cid.Cid) (*filclient.ChannelState, error) {
+type transferStatusRecord struct {
+	State    *filclient.ChannelState
+	Shuttle  string
+	Received time.Time
+}
+
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, content *Content) (*filclient.ChannelState, error) {
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
+
+	if content.Location == "local" {
+		return cm.getLocalTransferStatus(ctx, d, content)
+	}
+
+	val, ok := cm.remoteTransferStatus.Get(d.ID)
+	if !ok {
+		return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+	}
+
+	tsr, ok := val.(*transferStatusRecord)
+	if !ok {
+		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
+	}
+
+	return tsr.State, nil
+}
+
+func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {
+	cm.remoteTransferStatus.Add(dealdbid, &transferStatusRecord{
+		State:    st,
+		Shuttle:  loc,
+		Received: time.Now(),
+	})
+}
+
+func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, content *Content) (*filclient.ChannelState, error) {
+	ccid := content.Cid.CID
 
 	miner, err := d.MinerAddr()
 	if err != nil {

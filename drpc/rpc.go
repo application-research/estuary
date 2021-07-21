@@ -5,6 +5,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/whyrusleeping/estuary/filclient"
 )
 
 type Hello struct {
@@ -132,6 +133,8 @@ type TransferStatus struct {
 	Chanid   string
 	DealDBID uint
 
-	Status  string
+	State *filclient.ChannelState
+
+	Failed  bool
 	Message string
 }

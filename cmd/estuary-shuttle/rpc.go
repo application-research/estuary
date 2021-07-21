@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
@@ -214,6 +215,15 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	return nil
 }
 
+func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint) {
+	s.tcLk.Lock()
+	defer s.tcLk.Unlock()
+
+	s.trackingChannels[chanid.String()] = &chanTrack{
+		dbid: dealdbid,
+	}
+}
+
 func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
 	go func() {
 		chanid, err := d.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
@@ -221,11 +231,13 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 			log.Errorf("failed to start requested data transfer: %s", err)
 			d.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 				DealDBID: cmd.DealDBID,
-				Status:   "error",
+				Failed:   true,
 				Message:  fmt.Sprintf("failed to start data transfer: %s", err),
 			})
 			return
 		}
+
+		d.trackTransfer(chanid, cmd.DealDBID)
 
 		if err := d.sendRpcMessage(ctx, &drpc.Message{
 			Op: drpc.OP_TransferStarted,

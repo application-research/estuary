@@ -647,6 +647,10 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 	return &chanid, nil
 }
 
+func (fc *FilClient) SubscribeToDataTransferEvents(f datatransfer.Subscriber) func() {
+	return fc.dataTransfer.SubscribeToEvents(f)
+}
+
 type Balance struct {
 	Account         address.Address `json:"account"`
 	Balance         types.FIL       `json:"balance"`
