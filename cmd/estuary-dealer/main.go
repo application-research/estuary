@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/urfave/cli/v2"
@@ -26,9 +27,11 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/whyrusleeping/estuary/drpc"
+	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
 	"github.com/whyrusleeping/estuary/util"
+	"github.com/whyrusleeping/memo"
 )
 
 var Tracer = otel.Tracer("dealer")
@@ -122,15 +125,47 @@ func main() {
 			return err
 		}
 
+		defaddr, err := nd.Wallet.GetDefault()
+		if err != nil {
+			return err
+		}
+
+		filc, err := filclient.NewClient(nd.Host, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		if err != nil {
+			return err
+		}
+
 		db, err := setupDatabase(cctx.String("database"))
 		if err != nil {
 			return err
 		}
 
+		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			c, err := cid.Decode(k)
+			if err != nil {
+				return nil, err
+			}
+
+			commpcid, size, err := filclient.GeneratePieceCommitment(ctx, c, nd.Blockstore)
+			if err != nil {
+				return nil, err
+			}
+
+			res := &commpResult{
+				CommP: commpcid,
+				Size:  size,
+			}
+
+			return res, nil
+		})
+
 		d := &Dealer{
 			Node: nd,
 			Api:  api,
 			DB:   db,
+			Filc: filc,
+
+			commpMemo: commpMemo,
 
 			outgoing: make(chan *drpc.Message),
 
@@ -146,7 +181,7 @@ func main() {
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
-
+		os.Exit(1)
 	}
 }
 
@@ -155,6 +190,9 @@ type Dealer struct {
 	Api    api.Gateway
 	DB     *gorm.DB
 	PinMgr *pinner.PinManager
+	Filc   *filclient.FilClient
+
+	addPinLk sync.Mutex
 
 	outgoing chan *drpc.Message
 
@@ -162,6 +200,8 @@ type Dealer struct {
 	estuaryHost  string
 	dealerHandle string
 	dealerToken  string
+
+	commpMemo *memo.Memoizer
 }
 
 func (d *Dealer) RunRpcConnection() error {
@@ -209,9 +249,11 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 				return
 			}
 
-			if err := d.handleRpcCmd(&cmd); err != nil {
-				log.Errorf("failed to handle rpc command: %s", err)
-			}
+			go func(cmd *drpc.Command) {
+				if err := d.handleRpcCmd(cmd); err != nil {
+					log.Errorf("failed to handle rpc command: %s", err)
+				}
+			}(&cmd)
 		}
 	}()
 
@@ -226,15 +268,6 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 			}
 			conn.SetWriteDeadline(time.Time{})
 		}
-	}
-}
-
-func (d *Dealer) handleRpcCmd(cmd *drpc.Command) error {
-	switch cmd.Op {
-	case "AddPin":
-		return d.handleRpcAddPin(cmd.Params.AddPinOp)
-	default:
-		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
 	}
 }
 
@@ -399,9 +432,14 @@ func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, contentID uint) error {
+func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
+
+	var dbpin Pin
+	if err := d.DB.First(&dbpin, "id = ?", pin).Error; err != nil {
+		return err
+	}
 
 	var objects []*Object
 	var totalSize int64
@@ -457,7 +495,7 @@ func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dse
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
-	d.sendPinCompleteMessage(contentID, totalSize, objects)
+	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
 
 	return nil
 }

@@ -29,9 +29,12 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-unixfs"
 	"github.com/labstack/echo/v4"
+	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	drpc "github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/node"
+	"github.com/whyrusleeping/estuary/pinner"
 	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -47,6 +50,8 @@ type ContentManager struct {
 	Api       api.Gateway
 	FilClient *filclient.FilClient
 	Provider  *batched.BatchProvidingSystem
+
+	Host host.Host
 
 	tracer trace.Tracer
 
@@ -76,6 +81,14 @@ type ContentManager struct {
 
 	dealMakingDisabled    bool
 	contentAddingDisabled bool
+
+	pinJobs map[uint]*pinner.PinningOperation
+	pinLk   sync.Mutex
+
+	pinMgr *pinner.PinManager
+
+	dealersLk sync.Mutex
+	dealers   map[string]*dealerConnection
 }
 
 // 90% of the unpadded data size for a 4GB piece
@@ -99,16 +112,19 @@ type contentStagingZone struct {
 
 	CurSize int64 `json:"curSize"`
 
+	User uint `json:"user"`
+
 	lk sync.Mutex
 }
 
-func newContentStagingZone() *contentStagingZone {
+func newContentStagingZone(user uint) *contentStagingZone {
 	return &contentStagingZone{
 		ZoneOpened: time.Now(),
 		CloseTime:  time.Now().Add(maxStagingZoneLifetime),
 		MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
 		MaxSize:    int64(stagingZoneSizeLimit),
 		MaxItems:   maxBucketItems,
+		User:       user,
 	}
 }
 
@@ -124,6 +140,7 @@ const stagingZoneKeepalive = time.Minute * 40
 const maxBucketItems = 10000
 
 func (cb *contentStagingZone) isReady() bool {
+
 	// if its above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {
 		return true
@@ -189,18 +206,21 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, host host.Host) *ContentManager {
 	cm := &ContentManager{
 		Provider:             prov,
 		DB:                   db,
 		Api:                  api,
 		FilClient:            fc,
 		Blockstore:           tbs.Under().(node.EstuaryBlockstore),
+		Host:                 host,
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
 		buckets:              make(map[uint][]*contentStagingZone),
+		pinJobs:              make(map[uint]*pinner.PinningOperation),
+		pinMgr:               pinmgr,
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -351,9 +371,96 @@ func (qm *queueManager) processQueue() {
 	}
 }
 
+func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
+	var cont Content
+	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		return "", err
+	}
+
+	return cont.Location, nil
+}
+
+func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]Content, error) {
+	out := make(map[string][]Content)
+	for _, c := range b.Contents {
+		loc, err := cm.currentLocationForContent(c.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		out[loc] = append(out[loc], c)
+	}
+
+	return out, nil
+}
+
+func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *contentStagingZone) error {
+	var primary string
+	var curMax int64
+	dataByLoc := make(map[string]int64)
+	contentByLoc := make(map[string][]Content)
+
+	for _, c := range b.Contents {
+		loc, err := cm.currentLocationForContent(c.ID)
+		if err != nil {
+			return err
+		}
+
+		contentByLoc[loc] = append(contentByLoc[loc], c)
+
+		ntot := dataByLoc[loc] + c.Size
+		dataByLoc[loc] = ntot
+
+		if ntot > curMax {
+			curMax = ntot
+			primary = loc
+		}
+	}
+
+	// okay, move everything to 'primary'
+	var toMove []Content
+	for loc, conts := range contentByLoc {
+		if loc != primary {
+			toMove = append(toMove, conts...)
+		}
+	}
+
+	if primary == "local" {
+		return cm.migrateContentToLocalNode(ctx, toMove)
+	} else {
+		return cm.sendConsolidateContentCmd(ctx, primary, toMove)
+	}
+}
+
 func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagingZone) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
+
+	cbl, err := cm.stagedContentByLocation(ctx, b)
+	if err != nil {
+		return err
+	}
+
+	if len(cbl) > 1 {
+		// Need to migrate content all to the same dealer
+		cm.bucketLk.Lock()
+		// put the staging zone back in the list
+		cm.buckets[b.User] = append(cm.buckets[b.User], b)
+		cm.bucketLk.Unlock()
+
+		go func() {
+			if err := cm.consolidateStagedContent(ctx, b); err != nil {
+				log.Errorf("failed to consolidate staged content: %s", err)
+			}
+		}()
+
+		return nil
+	}
+
+	var loc string
+	for k := range cbl {
+		loc = k
+	}
 
 	sort.Slice(b.Contents, func(i, j int) bool {
 		return b.Contents[i].ID < b.Contents[j].ID
@@ -374,36 +481,18 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-	obj := &Object{
-		Cid:  util.DbCID{ncid},
-		Size: int(size),
-	}
-	if err := cm.DB.Create(obj).Error; err != nil {
-		return err
-	}
+	// TODO: determine location for aggregate!
 
 	content := &Content{
 		Cid:         util.DbCID{ncid},
 		Size:        int64(size) + b.CurSize,
 		Name:        "aggregate",
-		Active:      true,
+		Active:      false,
 		UserID:      b.Contents[0].UserID,
 		Replication: defaultReplication,
 		Aggregate:   true,
 	}
-
 	if err := cm.DB.Create(content).Error; err != nil {
-		return err
-	}
-
-	if err := cm.DB.Create(&ObjRef{
-		Content: content.ID,
-		Object:  obj.ID,
-	}).Error; err != nil {
-		return err
-	}
-
-	if err := cm.Blockstore.Put(dir); err != nil {
 		return err
 	}
 
@@ -416,11 +505,41 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return xerrors.Errorf("failed to mark staged contents as part of aggregate %d: %w", content.ID, err)
 	}
 
-	go func() {
-		cm.ToCheck <- content.ID
-	}()
+	if loc == "local" {
+		obj := &Object{
+			Cid:  util.DbCID{ncid},
+			Size: int(size),
+		}
+		if err := cm.DB.Create(obj).Error; err != nil {
+			return err
+		}
 
-	return nil
+		if err := cm.DB.Create(&ObjRef{
+			Content: content.ID,
+			Object:  obj.ID,
+		}).Error; err != nil {
+			return err
+		}
+
+		if err := cm.Blockstore.Put(dir); err != nil {
+			return err
+		}
+
+		if err := cm.DB.Model(Content{}).Where("id = ?", content.ID).UpdateColumns(map[string]interface{}{
+			"active":   true,
+			"location": "local",
+		}).Error; err != nil {
+			return err
+		}
+
+		go func() {
+			cm.ToCheck <- content.ID
+		}()
+
+		return nil
+	} else {
+		return cm.sendAggregateCmd(ctx, loc, *content, ids, dir.RawData())
+	}
 }
 
 func (cm *ContentManager) startup() error {
@@ -859,7 +978,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 
 	blist, ok := cm.buckets[content.UserID]
 	if !ok {
-		b := newContentStagingZone()
+		b := newContentStagingZone(content.UserID)
 		b.tryAddContent(content)
 		cm.buckets[content.UserID] = []*contentStagingZone{b}
 		return nil
@@ -871,7 +990,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 		}
 	}
 
-	b := newContentStagingZone()
+	b := newContentStagingZone(content.UserID)
 	b.tryAddContent(content)
 	cm.buckets[content.UserID] = append(blist, b)
 	return nil
@@ -1596,30 +1715,59 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		chanid, err := cm.FilClient.StartDataTransfer(ctx, ms[i], resp.Response.Proposal, content.Cid.CID)
+		// im so paranoid
+		if cd.PropCid.CID != resp.Response.Proposal {
+			log.Errorf("proposal in saved deal did not match response (%s != %s)", cd.PropCid.CID, resp.Response.Proposal)
+		}
+
+		err := cm.StartDataTransfer(ctx, cd)
 		if err != nil {
-			if oerr := cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "start-data-transfer",
-				Message: err.Error(),
-				Content: content.ID,
-			}); oerr != nil {
-				return oerr
-			}
+			log.Errorw("failed to start data transfer", "err", err, "miner", ms[i])
 			continue
 		}
 
-		cd.DTChan = chanid.String()
-		cd.TransferStarted = time.Now()
-		cd.TransferFinished = time.Time{}
-
-		if err := cm.DB.Save(cd).Error; err != nil {
-			return xerrors.Errorf("failed to update deal with channel ID: %w", err)
-		}
-
-		log.Infow("Started data transfer", "chanid", chanid)
 	}
 
+	return nil
+}
+
+func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal) error {
+	var cont Content
+	if err := cm.DB.First(&cont, "id = ?", cd.Content).Error; err != nil {
+		return err
+	}
+
+	if cont.Location != "local" {
+		return cm.sendStartTransferCommand(ctx, cont.Location, cd, cont.Cid.CID)
+	}
+
+	miner, err := cd.MinerAddr()
+	if err != nil {
+		return err
+	}
+
+	chanid, err := cm.FilClient.StartDataTransfer(ctx, miner, cd.PropCid.CID, cont.Cid.CID)
+	if err != nil {
+		if oerr := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "start-data-transfer",
+			Message: err.Error(),
+			Content: cont.ID,
+		}); oerr != nil {
+			return oerr
+		}
+		return nil
+	}
+
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+		"dt_chan":           chanid.String(),
+		"transfer_started":  time.Now(),
+		"transfer_finished": time.Time{},
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+	}
+
+	log.Infow("Started data transfer", "chanid", chanid)
 	return nil
 }
 
@@ -1705,28 +1853,13 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return nil, nil
 }
 
-func (cm *ContentManager) findContent(ctx context.Context, cont Content) ([]string, error) {
-	return []string{"local"}, nil
-}
-
 func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	var cont Content
 	if err := cm.DB.First(&cont, "cid = ?", data.Bytes()).Error; err != nil {
 		return cid.Undef, 0, err
 	}
 
-	locs, err := cm.findContent(ctx, cont)
-	if err != nil {
-		return cid.Undef, 0, xerrors.Errorf("failed to locate content: %w", err)
-	}
-
-	if len(locs) == 0 {
-		return cid.Undef, 0, xerrors.Errorf("content not found: %d", cont.ID)
-	}
-
-	sel := locs[0]
-
-	if sel != "local" {
+	if cont.Location != "local" {
 		return cid.Undef, 0, xerrors.Errorf("remote stuff not yet implemented")
 	}
 
@@ -2036,11 +2169,11 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object) error {
-	ctx, span := s.tracer.Start(ctx, "addObjectsToDatabase")
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object) error {
+	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
-	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
+	if err := cm.DB.CreateInBatches(objects, 300).Error; err != nil {
 		return xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
@@ -2059,7 +2192,7 @@ func (s *Server) addObjectsToDatabase(ctx context.Context, content uint, objects
 		attribute.Int("numObjects", len(objects)),
 	)
 
-	if err := s.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"size":    totalSize,
 		"pinning": false,
@@ -2067,9 +2200,103 @@ func (s *Server) addObjectsToDatabase(ctx context.Context, content uint, objects
 		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
 
-	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
+	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
 	return nil
+}
+
+func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, toMove []Content) error {
+	return fmt.Errorf("migrating content back to primary instance not yet implemented")
+}
+
+func (cm *ContentManager) addrInfoForDealer(handle string) (*peer.AddrInfo, error) {
+	if handle == "local" {
+		return &peer.AddrInfo{
+			ID:    cm.Host.ID(),
+			Addrs: cm.Host.Addrs(),
+		}, nil
+	}
+
+	cm.dealersLk.Lock()
+	defer cm.dealersLk.Unlock()
+	conn, ok := cm.dealers[handle]
+	if !ok {
+		return nil, nil
+	}
+
+	return &conn.addrInfo, nil
+
+}
+
+func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *contentDeal, datacid cid.Cid) error {
+	miner, err := cd.MinerAddr()
+	if err != nil {
+		return err
+	}
+	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_StartTransfer,
+		Params: drpc.CmdParams{
+			StartTransfer: &drpc.StartTransfer{
+				DealDBID:  cd.ID,
+				ContentID: cd.Content,
+				Miner:     miner,
+				PropCid:   cd.PropCid.CID,
+				DataCid:   datacid,
+			},
+		},
+	})
+
+}
+
+func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont Content, aggr []uint, blob []byte) error {
+	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_AggregateContent,
+		Params: drpc.CmdParams{
+			AggregateContent: &drpc.AggregateContent{
+				DBID:     cont.ID,
+				UserID:   cont.UserID,
+				Contents: aggr,
+				Root:     cont.Cid.CID,
+				ObjData:  blob,
+			},
+		},
+	})
+}
+
+func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc string, contents []Content) error {
+	fromLocs := make(map[string]struct{})
+
+	tc := &drpc.TakeContent{}
+	for _, c := range contents {
+		fromLocs[c.Location] = struct{}{}
+
+		tc.Contents = append(tc.Contents, drpc.ContentFetch{
+			ID:     c.ID,
+			Cid:    c.Cid.CID,
+			UserID: c.UserID,
+		})
+	}
+
+	for handle := range fromLocs {
+		ai, err := cm.addrInfoForDealer(handle)
+		if err != nil {
+			return err
+		}
+
+		if ai == nil {
+			log.Warnf("no addr info for node: %s", handle)
+			continue
+		}
+
+		tc.Sources = append(tc.Sources, *ai)
+	}
+
+	return cm.sendDealerCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_TakeContent,
+		Params: drpc.CmdParams{
+			TakeContent: tc,
+		},
+	})
 }

@@ -117,6 +117,8 @@ type Content struct {
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
+
+	Location string `json:"location"`
 }
 
 type Object struct {
@@ -287,13 +289,12 @@ func main() {
 			StagingMgr: sbmgr,
 			tracer:     otel.Tracer("api"),
 			quickCache: make(map[string]endpointCache),
-			pinJobs:    make(map[uint]*pinner.PinningOperation),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
-		s.pinMgr = pinner.NewPinManager(s.doPinning, nil)
+		pinmgr := pinner.NewPinManager(s.doPinning, nil)
 
-		go s.pinMgr.Run(30)
+		go pinmgr.Run(30)
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
@@ -321,7 +322,7 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider)
+		cm := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd.Host)
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
@@ -341,13 +342,13 @@ func main() {
 
 		s.CM = cm
 
-		go func() {
-			return // disable adding more content for now
-
-			if err := s.refreshPinQueue(); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
-		}()
+		if !cm.contentAddingDisabled {
+			go func() {
+				if err := cm.refreshPinQueue(); err != nil {
+					log.Errorf("failed to refresh pin queue: %s", err)
+				}
+			}()
+		}
 
 		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
@@ -412,14 +413,6 @@ type Server struct {
 
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
-
-	pinLk   sync.Mutex
-	pinJobs map[uint]*pinner.PinningOperation
-
-	pinMgr *pinner.PinManager
-
-	dealersLk sync.Mutex
-	dealers   map[string]*dealerConnection
 }
 
 type endpointCache struct {

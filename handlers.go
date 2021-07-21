@@ -120,6 +120,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
+	user.PUT("/address", withUser(s.handleUserChangeAddress))
 	user.GET("/stats", withUser(s.handleGetUserStats))
 
 	content := e.Group("/content")
@@ -414,7 +415,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		filename = params.Root
 	}
 
-	pinstatus, err := s.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -454,7 +455,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
 	if err != nil {
 		return err
 	}
@@ -557,7 +558,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	content, err := s.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -602,8 +603,8 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
-func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
-	ctx, span := s.tracer.Start(ctx, "computeObjRefsUpdate")
+func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var objects []*Object
@@ -629,15 +630,15 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 		return err
 	}
 
-	if err := s.addObjectsToDatabase(ctx, cont, objects); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, cont, objects); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
-	ctx, span := s.tracer.Start(ctx, "computeObjRefs")
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
+	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	content := &Content{
@@ -647,13 +648,14 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.No
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
+		Location:    "local",
 	}
 
-	if err := s.DB.Create(content).Error; err != nil {
+	if err := cm.DB.Create(content).Error; err != nil {
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
+	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
 		return nil, err
 	}
 
@@ -890,6 +892,8 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
+
+	// TODO: check both cidv0 and v1 for dag-pb cids
 
 	var contents []Content
 	if err := s.DB.Find(&contents, "cid = ? and user_id = ?", obj.Bytes(), u.ID).Error; err != nil {
@@ -2001,6 +2005,33 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{})
 }
 
+type changeAddressParams struct {
+	Address string `json:"address"`
+}
+
+func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
+	var params changeAddressParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	addr, err := address.NewFromString(params.Address)
+	if err != nil {
+		log.Warnf("invalid filecoin address in change address request body: %w", err)
+
+		return &util.HttpError{
+			Code:    401,
+			Message: "invalid address in request body",
+		}
+	}
+
+	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
+}
+
 type userStatsResponse struct {
 	TotalSize int64 `json:"totalSize"`
 	NumPins   int64 `json:"numPins"`
@@ -2036,6 +2067,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
+		Address:  u.Address.Addr.String(),
 		Settings: util.UserSettings{
 			Replication:           6,
 			Verified:              true,
@@ -2600,7 +2632,7 @@ func (s *Server) handleDealerList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.dealerIsOnline(d.Handle),
+			Online:         s.CM.dealerIsOnline(d.Handle),
 		})
 
 	}
@@ -2629,7 +2661,7 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.registerDealerConnection(dealer.Handle, &hello)
+		cmds, unreg, err := s.CM.registerDealerConnection(dealer.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register dealer: %s", err)
 			return
@@ -2659,7 +2691,7 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 				return
 			}
 
-			if err := s.processDealerMessage(dealer.Handle, &msg); err != nil {
+			if err := s.CM.processDealerMessage(dealer.Handle, &msg); err != nil {
 				log.Errorf("failed to process message from dealer: %s", err)
 				return
 			}

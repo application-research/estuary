@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/whyrusleeping/estuary/util"
 	"gorm.io/gorm"
 )
 
@@ -13,6 +14,8 @@ type User struct {
 	PassHash string
 
 	UserEmail string
+
+	Address util.DbAddr
 
 	Perm  int
 	Flags int
