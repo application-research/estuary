@@ -19,6 +19,8 @@ type User struct {
 
 	Perm  int
 	Flags int
+
+	StorageDisabled bool
 }
 
 type AuthToken struct {

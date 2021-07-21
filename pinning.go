@@ -408,6 +408,13 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	ctx := e.Request().Context()
 
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
+
 	var pin types.IpfsPin
 	if err := e.Bind(&pin); err != nil {
 		return err
@@ -463,6 +470,13 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 }
 
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
+
 	ctx := e.Request().Context()
 	id, err := strconv.Atoi(e.Param("requestid"))
 	if err != nil {

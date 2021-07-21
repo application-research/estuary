@@ -363,7 +363,7 @@ type addFromIpfsParams struct {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -426,7 +426,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -496,7 +496,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -2074,7 +2074,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			DealDuration:          2880 * 365,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
-			ContentAddingDisabled: s.CM.contentAddingDisabled,
+			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled,
 		},
 	})
