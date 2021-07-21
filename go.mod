@@ -49,6 +49,7 @@ require (
 	github.com/lightstep/otel-launcher-go v0.18.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.3.1
+	github.com/spf13/viper v1.7.1
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7
