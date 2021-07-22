@@ -202,7 +202,7 @@ func main() {
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
 
-		d.PinMgr.Run(30)
+		go d.PinMgr.Run(30)
 
 		if err := d.refreshPinQueue(); err != nil {
 			log.Errorf("failed to refresh pin queue: %s", err)
