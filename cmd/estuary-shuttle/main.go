@@ -91,7 +91,7 @@ func main() {
 		&cli.StringFlag{
 			Name:  "estuary-api",
 			Usage: "api endpoint for master estuary node",
-			Value: "https://api.estuary.tech",
+			Value: "api.estuary.tech",
 		},
 		&cli.StringFlag{
 			Name:     "auth-token",
@@ -345,7 +345,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 }
 
 func (d *Shuttle) dialConn() (*websocket.Conn, error) {
-	cfg, err := websocket.NewConfig(d.estuaryHost+"/shuttle/conn", "http://localhost")
+	cfg, err := websocket.NewConfig("wss://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ type User struct {
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
-	req, err := http.NewRequest("GET", d.estuaryHost+"/viewer", nil)
+	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
 	}
