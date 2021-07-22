@@ -140,9 +140,14 @@ const maxContentAge = time.Hour * 24 * 7
 // staging zones will remain open for at least this long after the last piece of content is added to them (unless they are full)
 const stagingZoneKeepalive = time.Minute * 40
 
+const minDealSize = 256 << 20
+
 const maxBucketItems = 10000
 
 func (cb *contentStagingZone) isReady() bool {
+	if cb.CurSize < minDealSize {
+		return false
+	}
 
 	// if its above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {

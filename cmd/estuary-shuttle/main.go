@@ -223,6 +223,12 @@ func main() {
 			}
 		})
 
+		go func() {
+			if err := d.RunRpcConnection(); err != nil {
+				log.Errorf("failed to run rpc connection: %s", err)
+			}
+		}()
+
 		return d.ServeAPI(cctx.String("apilisten"))
 	}
 
