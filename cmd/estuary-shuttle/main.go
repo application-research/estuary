@@ -521,12 +521,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var dbpin Pin
-	if err := d.DB.First(&dbpin, "content = ?", pin).Error; err != nil {
+	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
 		return err
 	}
 
@@ -566,7 +566,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, ds
 		return xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
-	if err := d.DB.Model(Pin{}).Where("id = ?", pin).UpdateColumns(map[string]interface{}{
+	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"size":    totalSize,
 		"pinning": false,
@@ -576,7 +576,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, ds
 
 	refs := make([]ObjRef, len(objects))
 	for i := range refs {
-		refs[i].Pin = pin
+		refs[i].Pin = dbpin.ID
 		refs[i].Object = objects[i].ID
 	}
 
