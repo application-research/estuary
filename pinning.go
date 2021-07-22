@@ -592,5 +592,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 
+	cm.ToCheck <- cont.ID
+
 	return nil
 }
