@@ -23,20 +23,20 @@ import (
 
 // Get the status for each of a list of content IDs - returns an identically
 // sized array of statuses corresponding to the passed in IDs
-func (s *Server) pinStatuses(contentIDs []uint) ([]*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinStatuses(contentIDs []uint) ([]*types.IpfsPinStatus, error) {
 	statuses := make([]*types.IpfsPinStatus, len(contentIDs))
 
 	// Grab the available contents from the database
 	var dbContents []Content
-	if err := s.DB.Find(&dbContents, "id IN ?", contentIDs).Error; err != nil {
+	if err := cm.DB.Find(&dbContents, "id IN ?", contentIDs).Error; err != nil {
 		return nil, err
 	}
 
 	// Then write in status results
 	for i, id := range contentIDs {
-		s.pinLk.Lock()
-		operation, ok := s.pinJobs[id]
-		s.pinLk.Unlock()
+		cm.pinLk.Lock()
+		operation, ok := cm.pinJobs[id]
+		cm.pinLk.Unlock()
 
 		// If the status already exists in memory, use that
 		if ok {
@@ -75,7 +75,7 @@ func (s *Server) pinStatuses(contentIDs []uint) ([]*types.IpfsPinStatus, error) 
 					Name: content.Name,
 					Meta: meta,
 				},
-				Delegates: s.pinDelegatesForContent(id),
+				Delegates: cm.pinDelegatesForContent(*content),
 				Info:      nil, // TODO: all sorts of extra info we could add...
 			}
 			if content.Active {
@@ -87,8 +87,8 @@ func (s *Server) pinStatuses(contentIDs []uint) ([]*types.IpfsPinStatus, error) 
 	return statuses, nil
 }
 
-func (s *Server) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
-	statuses, err := s.pinStatuses([]uint{cont})
+func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
+	statuses, err := cm.pinStatuses([]uint{cont})
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +412,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		contentIDs[i] = content.ID
 	}
 
-	unprocessed, err := s.pinStatuses(contentIDs)
+	unprocessed, err := s.CM.pinStatuses(contentIDs)
 	if err != nil {
 		return err
 	}
