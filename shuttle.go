@@ -167,6 +167,16 @@ func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	}
 }
 
+func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if ok {
+		return &d.addrInfo
+	}
+	return nil
+}
+
 func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle string, resp *drpc.CommPComplete) error {
 	ctx, span := cm.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()

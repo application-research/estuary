@@ -22,15 +22,15 @@ import (
 )
 
 func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
+	var content Content
+	if err := cm.DB.First(&content, "id = ?", cont).Error; err != nil {
+		return nil, err
+	}
+
 	cm.pinLk.Lock()
 	po, ok := cm.pinJobs[cont]
 	cm.pinLk.Unlock()
 	if !ok {
-		var content Content
-		if err := cm.DB.First(&content, "id = ?", cont).Error; err != nil {
-			return nil, err
-		}
-
 		var meta map[string]interface{}
 		if content.PinMeta != "" {
 			if err := json.Unmarshal([]byte(content.PinMeta), &meta); err != nil {
@@ -47,7 +47,7 @@ func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 				Name: content.Name,
 				Meta: meta,
 			},
-			Delegates: cm.pinDelegatesForContent(cont),
+			Delegates: cm.pinDelegatesForContent(content),
 			Info:      nil, // TODO: all sorts of extra info we could add...
 		}
 
@@ -59,18 +59,32 @@ func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 	}
 
 	status := po.PinStatus()
-	status.Delegates = cm.pinDelegatesForContent(cont)
+	status.Delegates = cm.pinDelegatesForContent(content)
 
 	return status, nil
 }
 
-func (cm *ContentManager) pinDelegatesForContent(cont uint) []string {
-	var out []string
-	for _, a := range cm.Host.Addrs() {
-		out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
-	}
+func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
+	if cont.Location == "local" {
+		var out []string
+		for _, a := range cm.Host.Addrs() {
+			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
+		}
 
-	return out
+		return out
+	} else {
+		ai, err := cm.addrInfoForShuttle(cont.Location)
+		if err != nil {
+			log.Errorf("failed to get address info for shuttle %q: %s", cont.Location, err)
+			return nil
+		}
+
+		var out []string
+		for _, a := range ai.Addrs {
+			out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
+		}
+		return out
+	}
 }
 
 func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) error {

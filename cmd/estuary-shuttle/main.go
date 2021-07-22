@@ -299,6 +299,7 @@ func (d *Shuttle) RunRpcConnection() error {
 }
 
 func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+	log.Infof("connecting to primary estuary node")
 	defer conn.Close()
 
 	readDone := make(chan struct{})
@@ -319,7 +320,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 		for {
 			var cmd drpc.Command
 			if err := websocket.JSON.Receive(conn, &cmd); err != nil {
-				log.Errorf("failed to read command from websocket: %w", err)
+				log.Errorf("failed to read command from websocket: %s", err)
 				return
 			}
 
@@ -487,11 +488,13 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj); err != nil {
 		// pinning failed, we wont try again. mark pin as dead
+		/* maybe its fine if we retry later?
 		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 		}).Error; err != nil {
 			log.Errorf("failed to update failed pin status: %s", err)
 		}
+		*/
 
 		return err
 	}
