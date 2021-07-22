@@ -2104,6 +2104,8 @@ github.com/whyrusleeping/ledger-filecoin-go v0.9.1-0.20201010031517-c3dcc1bddce4
 github.com/whyrusleeping/mafmt v1.2.8/go.mod h1:faQJFPbLSxzD9xpA02ttW/tS9vZykNvXwGvqIpk20FA=
 github.com/whyrusleeping/mdns v0.0.0-20180901202407-ef14215e6b30/go.mod h1:j4l84WPFclQPj320J9gp0XwNKBb3U0zt5CBqjPp22G4=
 github.com/whyrusleeping/mdns v0.0.0-20190826153040-b9b60ed33aa9/go.mod h1:j4l84WPFclQPj320J9gp0XwNKBb3U0zt5CBqjPp22G4=
+github.com/whyrusleeping/memo v0.0.0-20210319212142-d69afb686d15 h1:JngnLooDwEDdtrBmfMwBFi8HbmEgktI32bS0ipHKNp4=
+github.com/whyrusleeping/memo v0.0.0-20210319212142-d69afb686d15/go.mod h1:xgUNxvGGAouwP4wwwLwlzWuKMSUElf89vICsRhit+TE=
 github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7 h1:E9S12nwJwEOXe2d6gT6qxdvqMnNq+VnSsKPgm2ZZNds=
 github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7/go.mod h1:X2c0RVCI1eSUFI8eLcY3c0423ykwiUdxLJtkDvruhjI=
 github.com/whyrusleeping/pubsub v0.0.0-20190708150250-92bcb0691325 h1:++Zf4xQ7YrkE81gNHIjVqx5JZsn0nbMeHOkY1ILAIME=

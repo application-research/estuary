@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -16,6 +19,7 @@ import (
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
@@ -26,14 +30,16 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/whyrusleeping/estuary/drpc"
+	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
 	"github.com/whyrusleeping/estuary/util"
+	"github.com/whyrusleeping/memo"
 )
 
-var Tracer = otel.Tracer("dealer")
+var Tracer = otel.Tracer("shuttle")
 
-var log = logging.Logger("dealer")
+var log = logging.Logger("shuttle")
 
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
@@ -43,7 +49,7 @@ func init() {
 
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("dealer", "debug")
+	logging.SetLogLevel("shuttle", "debug")
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
@@ -61,25 +67,32 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "database",
-			Value:   "sqlite=estuary-dealer.db",
-			EnvVars: []string{"ESTUARY_DEALER_DATABASE"},
+			Value:   "sqlite=estuary-shuttle.db",
+			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
+		},
+		&cli.StringFlag{
+			Name: "blockstore",
+		},
+		&cli.StringFlag{
+			Name:  "write-log",
+			Usage: "enable write log blockstore in specified directory",
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
 			Usage:   "address for the api server to listen on",
 			Value:   ":3005",
-			EnvVars: []string{"ESTUARY_DEALER_API_LISTEN"},
+			EnvVars: []string{"ESTUARY_SHUTTLE_API_LISTEN"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
 			Value:   ".",
-			EnvVars: []string{"ESTUARY_DEALER_DATADIR"},
+			EnvVars: []string{"ESTUARY_SHUTTLE_DATADIR"},
 		},
 		&cli.StringFlag{
 			Name:  "estuary-api",
 			Usage: "api endpoint for master estuary node",
-			Value: "https://api.estuary.tech",
+			Value: "api.estuary.tech",
 		},
 		&cli.StringFlag{
 			Name:     "auth-token",
@@ -88,7 +101,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:     "handle",
-			Usage:    "estuary dealer handle to use",
+			Usage:    "estuary shuttle handle to use",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -100,11 +113,25 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
 
+		bsdir := cctx.String("blockstore")
+		if bsdir == "" {
+			bsdir = filepath.Join(ddir, "blocks")
+		} else if bsdir[0] != '/' {
+			bsdir = filepath.Join(ddir, bsdir)
+
+		}
+
+		wlog := cctx.String("write-log")
+		if wlog != "" && wlog[0] != '/' {
+			wlog = filepath.Join(ddir, wlog)
+		}
+
 		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
 			},
-			Blockstore:    filepath.Join(ddir, "blocks"),
+			Blockstore:    bsdir,
+			WriteLog:      wlog,
 			Libp2pKeyFile: filepath.Join(ddir, "peer.key"),
 			Datastore:     filepath.Join(ddir, "leveldb"),
 			WalletDir:     filepath.Join(ddir, "wallet"),
@@ -122,49 +149,136 @@ func main() {
 			return err
 		}
 
+		defaddr, err := nd.Wallet.GetDefault()
+		if err != nil {
+			return err
+		}
+
+		filc, err := filclient.NewClient(nd.Host, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		if err != nil {
+			return err
+		}
+
 		db, err := setupDatabase(cctx.String("database"))
 		if err != nil {
 			return err
 		}
 
-		d := &Dealer{
+		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			c, err := cid.Decode(k)
+			if err != nil {
+				return nil, err
+			}
+
+			commpcid, size, err := filclient.GeneratePieceCommitment(ctx, c, nd.Blockstore)
+			if err != nil {
+				return nil, err
+			}
+
+			res := &commpResult{
+				CommP: commpcid,
+				Size:  size,
+			}
+
+			return res, nil
+		})
+
+		d := &Shuttle{
 			Node: nd,
 			Api:  api,
 			DB:   db,
+			Filc: filc,
+
+			commpMemo: commpMemo,
+
+			trackingChannels: make(map[string]*chanTrack),
 
 			outgoing: make(chan *drpc.Message),
 
-			hostname:     "",
-			estuaryHost:  cctx.String("estuary-api"),
-			dealerHandle: cctx.String("handle"),
-			dealerToken:  cctx.String("auth-token"),
+			hostname:      "",
+			estuaryHost:   cctx.String("estuary-api"),
+			shuttleHandle: cctx.String("handle"),
+			shuttleToken:  cctx.String("auth-token"),
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
+
+		go d.PinMgr.Run(30)
+
+		if err := d.refreshPinQueue(); err != nil {
+			log.Errorf("failed to refresh pin queue: %s", err)
+		}
+
+		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
+			chid := st.ChannelID().String()
+			d.tcLk.Lock()
+			defer d.tcLk.Unlock()
+			trk, ok := d.trackingChannels[chid]
+
+			if !ok {
+				return
+			}
+
+			if trk.last == nil || trk.last.Status != st.Status() {
+				cst := filclient.ChannelStateConv(st)
+				trk.last = cst
+
+				go d.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					Chanid:   chid,
+					DealDBID: trk.dbid,
+					State:    cst,
+				})
+			}
+		})
+
+		go func() {
+			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
+				log.Errorf("failed to start http server for pprof endpoints: %s", err)
+			}
+		}()
+
+		go func() {
+			if err := d.RunRpcConnection(); err != nil {
+				log.Errorf("failed to run rpc connection: %s", err)
+			}
+		}()
 
 		return d.ServeAPI(cctx.String("apilisten"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
-
+		os.Exit(1)
 	}
 }
 
-type Dealer struct {
+type Shuttle struct {
 	Node   *node.Node
 	Api    api.Gateway
 	DB     *gorm.DB
 	PinMgr *pinner.PinManager
+	Filc   *filclient.FilClient
+
+	tcLk             sync.Mutex
+	trackingChannels map[string]*chanTrack
+
+	addPinLk sync.Mutex
 
 	outgoing chan *drpc.Message
 
-	hostname     string
-	estuaryHost  string
-	dealerHandle string
-	dealerToken  string
+	hostname      string
+	estuaryHost   string
+	shuttleHandle string
+	shuttleToken  string
+
+	commpMemo *memo.Memoizer
 }
 
-func (d *Dealer) RunRpcConnection() error {
+type chanTrack struct {
+	dbid uint
+	last *filclient.ChannelState
+}
+
+func (d *Shuttle) RunRpcConnection() error {
 	for {
 		conn, err := d.dialConn()
 		if err != nil {
@@ -184,7 +298,8 @@ func (d *Dealer) RunRpcConnection() error {
 	}
 }
 
-func (d *Dealer) runRpc(conn *websocket.Conn) error {
+func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+	log.Infof("connecting to primary estuary node")
 	defer conn.Close()
 
 	readDone := make(chan struct{})
@@ -205,13 +320,15 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 		for {
 			var cmd drpc.Command
 			if err := websocket.JSON.Receive(conn, &cmd); err != nil {
-				log.Errorf("failed to read command from websocket: %w", err)
+				log.Errorf("failed to read command from websocket: %s", err)
 				return
 			}
 
-			if err := d.handleRpcCmd(&cmd); err != nil {
-				log.Errorf("failed to handle rpc command: %s", err)
-			}
+			go func(cmd *drpc.Command) {
+				if err := d.handleRpcCmd(cmd); err != nil {
+					log.Errorf("failed to handle rpc command: %s", err)
+				}
+			}(&cmd)
 		}
 	}()
 
@@ -229,29 +346,25 @@ func (d *Dealer) runRpc(conn *websocket.Conn) error {
 	}
 }
 
-func (d *Dealer) handleRpcCmd(cmd *drpc.Command) error {
-	switch cmd.Op {
-	case "AddPin":
-		return d.handleRpcAddPin(cmd.Params.AddPinOp)
-	default:
-		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
-	}
-}
+func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 
-func (d *Dealer) getHelloMessage() (*drpc.Hello, error) {
 	return &drpc.Hello{
 		Host:   d.hostname,
 		PeerID: d.Node.Host.ID().Pretty(),
+		AddrInfo: peer.AddrInfo{
+			ID:    d.Node.Host.ID(),
+			Addrs: d.Node.Host.Addrs(),
+		},
 	}, nil
 }
 
-func (d *Dealer) dialConn() (*websocket.Conn, error) {
-	cfg, err := websocket.NewConfig(d.estuaryHost+"/dealer/conn", "http://localhost")
+func (d *Shuttle) dialConn() (*websocket.Conn, error) {
+	cfg, err := websocket.NewConfig("wss://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.Header.Set("Authorization", "Bearer "+d.dealerToken)
+	cfg.Header.Set("Authorization", "Bearer "+d.shuttleToken)
 
 	conn, err := websocket.DialConfig(cfg)
 	if err != nil {
@@ -267,8 +380,8 @@ type User struct {
 	Perms    int
 }
 
-func (d *Dealer) checkTokenAuth(token string) (*User, error) {
-	req, err := http.NewRequest("GET", d.estuaryHost+"/viewer", nil)
+func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
+	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +416,7 @@ func (d *Dealer) checkTokenAuth(token string) (*User, error) {
 	}, nil
 }
 
-func (d *Dealer) AuthRequired(level int) echo.MiddlewareFunc {
+func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			auth, err := util.ExtractAuth(c)
@@ -342,7 +455,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (d *Dealer) ServeAPI(listen string) error {
+func (d *Shuttle) ServeAPI(listen string) error {
 	e := echo.New()
 
 	content := e.Group("/content")
@@ -354,12 +467,12 @@ func (d *Dealer) ServeAPI(listen string) error {
 	return e.Start(listen)
 }
 
-func (d *Dealer) handleAdd(e echo.Context, u *User) error {
+func (d *Shuttle) handleAdd(e echo.Context, u *User) error {
 	panic("nyi")
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
 	ctx, span := Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -374,6 +487,15 @@ func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 	dsess := merkledag.NewSession(ctx, dserv)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj); err != nil {
+		// pinning failed, we wont try again. mark pin as dead
+		/* maybe its fine if we retry later?
+		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
+			"pinning": false,
+		}).Error; err != nil {
+			log.Errorf("failed to update failed pin status: %s", err)
+		}
+		*/
+
 		return err
 	}
 
@@ -399,9 +521,14 @@ func (d *Dealer) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, contentID uint) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
+
+	var dbpin Pin
+	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
+		return err
+	}
 
 	var objects []*Object
 	var totalSize int64
@@ -439,7 +566,7 @@ func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dse
 		return xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
-	if err := d.DB.Model(Pin{}).Where("id = ?", pin).UpdateColumns(map[string]interface{}{
+	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"size":    totalSize,
 		"pinning": false,
@@ -449,7 +576,7 @@ func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dse
 
 	refs := make([]ObjRef, len(objects))
 	for i := range refs {
-		refs[i].Pin = pin
+		refs[i].Pin = dbpin.ID
 		refs[i].Object = objects[i].ID
 	}
 
@@ -457,12 +584,13 @@ func (d *Dealer) addDatabaseTrackingToContent(ctx context.Context, pin uint, dse
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
-	d.sendPinCompleteMessage(contentID, totalSize, objects)
+	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
 
 	return nil
 }
 
-func (d *Dealer) onPinStatusUpdate(cont uint, status string) {
+func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
+	log.Infof("updating pin status: %d %s", cont, status)
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
 			Op: "UpdatePinStatus",
@@ -476,4 +604,47 @@ func (d *Dealer) onPinStatusUpdate(cont uint, status string) {
 			log.Errorf("failed to send pin status update: %s", err)
 		}
 	}()
+}
+
+func (s *Shuttle) refreshPinQueue() error {
+	var toPin []Pin
+	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+		return err
+	}
+
+	// TODO: this doesnt persist the replacement directives, so a queued
+	// replacement, if ongoing during a restart of the node, will still
+	// complete the pin when the process comes back online, but it wont delete
+	// the old pin.
+	// Need to fix this, probably best option is just to add a 'replace' field
+	// to content, could be interesting to see the graph of replacements
+	// anyways
+	log.Infof("refreshing %d pins", len(toPin))
+	for _, c := range toPin {
+		s.addPinToQueue(c, nil, 0)
+	}
+
+	return nil
+}
+
+func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
+	op := &pinner.PinningOperation{
+		ContId:  p.Content,
+		UserId:  p.UserID,
+		Obj:     p.Cid.CID,
+		Peers:   peers,
+		Started: p.CreatedAt,
+		Status:  "queued",
+		Replace: replace,
+	}
+
+	/*
+
+		s.pinLk.Lock()
+		// TODO: check if we are overwriting anything here
+		s.pinJobs[cont.ID] = op
+		s.pinLk.Unlock()
+	*/
+
+	s.PinMgr.Add(op)
 }

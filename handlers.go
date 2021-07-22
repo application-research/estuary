@@ -120,6 +120,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
+	user.PUT("/address", withUser(s.handleUserChangeAddress))
 	user.GET("/stats", withUser(s.handleGetUserStats))
 
 	content := e.Group("/content")
@@ -225,11 +226,11 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
 
-	dealer := admin.Group("/dealer")
-	dealer.POST("/init", s.handleDealerInit)
-	dealer.GET("/list", s.handleDealerList)
+	shuttle := admin.Group("/shuttle")
+	shuttle.POST("/init", s.handleShuttleInit)
+	shuttle.GET("/list", s.handleShuttleList)
 
-	e.GET("/dealer/conn", s.handleDealerConnection)
+	e.GET("/shuttle/conn", s.handleShuttleConnection)
 
 	if domain != "" {
 		return e.StartAutoTLS(srv)
@@ -362,7 +363,7 @@ type addFromIpfsParams struct {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -414,7 +415,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		filename = params.Root
 	}
 
-	pinstatus, err := s.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -425,7 +426,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -454,7 +455,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
 	if err != nil {
 		return err
 	}
@@ -495,7 +496,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -557,7 +558,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	content, err := s.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -602,8 +603,8 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
-func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
-	ctx, span := s.tracer.Start(ctx, "computeObjRefsUpdate")
+func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var objects []*Object
@@ -629,15 +630,15 @@ func (s *Server) addDatabaseTrackingToContent(ctx context.Context, cont uint, ds
 		return err
 	}
 
-	if err := s.addObjectsToDatabase(ctx, cont, objects); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, cont, objects); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
-	ctx, span := s.tracer.Start(ctx, "computeObjRefs")
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
+	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	content := &Content{
@@ -647,13 +648,14 @@ func (s *Server) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.No
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
+		Location:    "local",
 	}
 
-	if err := s.DB.Create(content).Error; err != nil {
+	if err := cm.DB.Create(content).Error; err != nil {
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
+	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
 		return nil, err
 	}
 
@@ -793,7 +795,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID)
+			chanst, err := s.CM.GetTransferStatus(ctx, &d, &content)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
 				return
@@ -854,7 +856,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID)
+	chanst, err := s.CM.GetTransferStatus(ctx, &deal, &content)
 	if err != nil {
 		log.Errorf("failed to get transfer status: %s", err)
 	}
@@ -890,6 +892,8 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
+
+	// TODO: check both cidv0 and v1 for dag-pb cids
 
 	var contents []Content
 	if err := s.DB.Find(&contents, "cid = ? and user_id = ?", obj.Bytes(), u.ID).Error; err != nil {
@@ -2001,6 +2005,33 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{})
 }
 
+type changeAddressParams struct {
+	Address string `json:"address"`
+}
+
+func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
+	var params changeAddressParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	addr, err := address.NewFromString(params.Address)
+	if err != nil {
+		log.Warnf("invalid filecoin address in change address request body: %w", err)
+
+		return &util.HttpError{
+			Code:    401,
+			Message: "invalid address in request body",
+		}
+	}
+
+	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
+}
+
 type userStatsResponse struct {
 	TotalSize int64 `json:"totalSize"`
 	NumPins   int64 `json:"numPins"`
@@ -2036,13 +2067,14 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
+		Address:  u.Address.Addr.String(),
 		Settings: util.UserSettings{
 			Replication:           6,
 			Verified:              true,
 			DealDuration:          2880 * 365,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
-			ContentAddingDisabled: s.CM.contentAddingDisabled,
+			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled,
 		},
 	})
@@ -2561,46 +2593,49 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	})
 }
 
-type initDealerResponse struct {
+type initShuttleResponse struct {
 	Handle string `json:"handle"`
 	Token  string `json:"token"`
 }
 
-func (s *Server) handleDealerInit(c echo.Context) error {
-	dealer := &Dealer{
-		Handle: "DEALER" + uuid.New().String() + "HANDLE",
+func (s *Server) handleShuttleInit(c echo.Context) error {
+	shuttle := &Shuttle{
+		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
+		Open:   true,
 	}
-	if err := s.DB.Create(dealer).Error; err != nil {
+	if err := s.DB.Create(shuttle).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, &initDealerResponse{
-		Handle: dealer.Handle,
-		Token:  dealer.Token,
+	return c.JSON(200, &initShuttleResponse{
+		Handle: shuttle.Handle,
+		Token:  shuttle.Token,
 	})
 }
 
-type dealerListResponse struct {
-	Handle         string    `json:"handle"`
-	Token          string    `json:"token"`
-	Online         bool      `json:"online"`
-	LastConnection time.Time `json:"lastConnection"`
+type shuttleListResponse struct {
+	Handle         string         `json:"handle"`
+	Token          string         `json:"token"`
+	Online         bool           `json:"online"`
+	LastConnection time.Time      `json:"lastConnection"`
+	AddrInfo       *peer.AddrInfo `json:"addrInfo"`
 }
 
-func (s *Server) handleDealerList(c echo.Context) error {
-	var dealers []Dealer
-	if err := s.DB.Find(&dealers).Error; err != nil {
+func (s *Server) handleShuttleList(c echo.Context) error {
+	var shuttles []Shuttle
+	if err := s.DB.Find(&shuttles).Error; err != nil {
 		return err
 	}
 
-	var out []dealerListResponse
-	for _, d := range dealers {
-		out = append(out, dealerListResponse{
+	var out []shuttleListResponse
+	for _, d := range shuttles {
+		out = append(out, shuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.dealerIsOnline(d.Handle),
+			Online:         s.CM.shuttleIsOnline(d.Handle),
+			AddrInfo:       s.CM.shuttleAddrInfo(d.Handle),
 		})
 
 	}
@@ -2608,14 +2643,14 @@ func (s *Server) handleDealerList(c echo.Context) error {
 	return c.JSON(200, out)
 }
 
-func (s *Server) handleDealerConnection(c echo.Context) error {
+func (s *Server) handleShuttleConnection(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
 	if err != nil {
 		return err
 	}
 
-	var dealer Dealer
-	if err := s.DB.First(&dealer, "token = ?", auth).Error; err != nil {
+	var shuttle Shuttle
+	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
 		return err
 	}
 
@@ -2629,9 +2664,9 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.registerDealerConnection(dealer.Handle, &hello)
+		cmds, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
-			log.Errorf("failed to register dealer: %s", err)
+			log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
@@ -2643,7 +2678,7 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 					// Write
 					err := websocket.JSON.Send(ws, cmd)
 					if err != nil {
-						log.Errorf("failed to write command to dealer: %s", err)
+						log.Errorf("failed to write command to shuttle: %s", err)
 						return
 					}
 				case <-done:
@@ -2655,12 +2690,12 @@ func (s *Server) handleDealerConnection(c echo.Context) error {
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
-				log.Errorf("failed to read message from dealer: %s", err)
+				log.Errorf("failed to read message from shuttle: %s", err)
 				return
 			}
 
-			if err := s.processDealerMessage(dealer.Handle, &msg); err != nil {
-				log.Errorf("failed to process message from dealer: %s", err)
+			if err := s.CM.processShuttleMessage(shuttle.Handle, &msg); err != nil {
+				log.Errorf("failed to process message from shuttle: %s", err)
 				return
 			}
 		}

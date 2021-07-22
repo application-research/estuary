@@ -80,6 +80,7 @@ type ViewerResponse struct {
 	Username string `json:"username"`
 	Perms    int    `json:"perms"`
 	ID       uint   `json:"id"`
+	Address  string `json:"address,omitempty"`
 
 	Settings UserSettings `json:"settings"`
 }
