@@ -236,6 +236,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
 		pinMgr:               pinmgr,
 		remoteTransferStatus: cache,
+		shuttles:             make(map[string]*shuttleConnection),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
