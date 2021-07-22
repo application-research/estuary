@@ -36,6 +36,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 }
 
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
+	log.Infof("sending rpc message: ", msg.Op)
 	select {
 	case d.outgoing <- msg:
 		return nil

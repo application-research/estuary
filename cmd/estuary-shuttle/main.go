@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"sync"
@@ -228,6 +229,12 @@ func main() {
 				})
 			}
 		})
+
+		go func() {
+			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
+				log.Errorf("failed to start http server for pprof endpoints: %s", err)
+			}
+		}()
 
 		go func() {
 			if err := d.RunRpcConnection(); err != nil {
@@ -573,6 +580,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, ds
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
+	log.Infof("updating pin status: %d %s", cont, status)
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
 			Op: "UpdatePinStatus",
@@ -601,6 +609,7 @@ func (s *Shuttle) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
+	log.Infof("refreshing %d pins", len(toPin))
 	for _, c := range toPin {
 		s.addPinToQueue(c, nil, 0)
 	}
