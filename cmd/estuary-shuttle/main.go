@@ -201,6 +201,12 @@ func main() {
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
 
+		d.PinMgr.Run(30)
+
+		if err := d.refreshPinQueue(); err != nil {
+			log.Errorf("failed to refresh pin queue: %s", err)
+		}
+
 		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
 			chid := st.ChannelID().String()
 			d.tcLk.Lock()
@@ -580,4 +586,46 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 			log.Errorf("failed to send pin status update: %s", err)
 		}
 	}()
+}
+
+func (s *Shuttle) refreshPinQueue() error {
+	var toPin []Pin
+	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+		return err
+	}
+
+	// TODO: this doesnt persist the replacement directives, so a queued
+	// replacement, if ongoing during a restart of the node, will still
+	// complete the pin when the process comes back online, but it wont delete
+	// the old pin.
+	// Need to fix this, probably best option is just to add a 'replace' field
+	// to content, could be interesting to see the graph of replacements
+	// anyways
+	for _, c := range toPin {
+		s.addPinToQueue(c, nil, 0)
+	}
+
+	return nil
+}
+
+func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
+	op := &pinner.PinningOperation{
+		ContId:  p.Content,
+		UserId:  p.UserID,
+		Obj:     p.Cid.CID,
+		Peers:   peers,
+		Started: p.CreatedAt,
+		Status:  "queued",
+		Replace: replace,
+	}
+
+	/*
+
+		s.pinLk.Lock()
+		// TODO: check if we are overwriting anything here
+		s.pinJobs[cont.ID] = op
+		s.pinLk.Unlock()
+	*/
+
+	s.PinMgr.Add(op)
 }

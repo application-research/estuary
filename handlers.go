@@ -2602,6 +2602,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 	shuttle := &Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
+		Open:   true,
 	}
 	if err := s.DB.Create(shuttle).Error; err != nil {
 		return err

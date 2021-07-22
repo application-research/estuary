@@ -182,7 +182,6 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	return cm.pinStatus(cont.ID)
 }
 
-// TODO: the queue needs to be a lot smarter than throwing things into a channel...
 func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
 
 	op := &pinner.PinningOperation{
