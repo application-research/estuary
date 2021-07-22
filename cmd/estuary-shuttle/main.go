@@ -486,6 +486,13 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 	dsess := merkledag.NewSession(ctx, dserv)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj); err != nil {
+		// pinning failed, we wont try again. mark pin as dead
+		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
+			"pinning": false,
+		}).Error; err != nil {
+			log.Errorf("failed to update failed pin status: %s", err)
+		}
+
 		return err
 	}
 
@@ -516,7 +523,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, pin uint, ds
 	defer span.End()
 
 	var dbpin Pin
-	if err := d.DB.First(&dbpin, "id = ?", pin).Error; err != nil {
+	if err := d.DB.First(&dbpin, "content = ?", pin).Error; err != nil {
 		return err
 	}
 
