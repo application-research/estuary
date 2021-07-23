@@ -9,8 +9,10 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/libp2p/go-libp2p-core/peer"
 	drpc "github.com/whyrusleeping/estuary/drpc"
+	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/util"
 )
 
@@ -208,6 +210,7 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 }
 
 func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
+	log.Infof("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
 	if param.Failed {
 		var cd contentDeal
 		if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
@@ -227,6 +230,11 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}); oerr != nil {
 			return oerr
 		}
+
+		cm.updateTransferStatus(ctx, handle, param.DealDBID, &filclient.ChannelState{
+			Status:  datatransfer.Failed,
+			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+		})
 		return nil
 	}
 	cm.updateTransferStatus(ctx, handle, param.DealDBID, param.State)

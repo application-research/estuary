@@ -1358,6 +1358,12 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
+	if status == nil {
+		// no status for transfer, could be because the remote hasnt reported it to us yet?
+		log.Errorf("no status for deal: %d", d)
+		return DEAL_CHECK_UNKNOWN, nil // for now, failing this case
+	}
+
 	switch status.Status {
 	case datatransfer.Failed:
 		cm.recordDealFailure(&DealFailureError{

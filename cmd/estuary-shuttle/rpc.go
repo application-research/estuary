@@ -256,6 +256,7 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 }
 
 func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
+	log.Infof("sending transfer status update: %d %d %s", st.DealDBID, st.State.Status, st.State.Message)
 	if err := d.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_TransferStatus,
 		Params: drpc.MsgParams{

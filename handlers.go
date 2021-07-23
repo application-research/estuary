@@ -798,7 +798,6 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 			chanst, err := s.CM.GetTransferStatus(ctx, &d, &content)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
-				return
 			}
 
 			dstatus.TransferStatus = chanst

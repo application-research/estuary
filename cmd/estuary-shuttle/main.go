@@ -213,7 +213,6 @@ func main() {
 			d.tcLk.Lock()
 			defer d.tcLk.Unlock()
 			trk, ok := d.trackingChannels[chid]
-
 			if !ok {
 				return
 			}
@@ -222,6 +221,7 @@ func main() {
 				cst := filclient.ChannelStateConv(st)
 				trk.last = cst
 
+				log.Infof("event(%d) message: %s", event.Code, event.Message)
 				go d.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
