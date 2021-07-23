@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-address"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log"
@@ -202,6 +203,48 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name: "disable-content-adding",
+		},
+	}
+	app.Commands = []*cli.Command{
+		{
+			Name:  "setup",
+			Usage: "Creates an initial auth token under new user \"admin\"",
+			Action: func(cctx *cli.Context) error {
+				db, err := setupDatabase(cctx)
+				if err != nil {
+					return err
+				}
+
+				username := "admin"
+				passHash := ""
+
+				if err := db.First(&User{}, "username = ?", username).Error; err == nil {
+					return fmt.Errorf("an admin user already exists")
+				}
+
+				newUser := &User{
+					UUID:     uuid.New().String(),
+					Username: username,
+					PassHash: passHash,
+					Perm:     100,
+				}
+				if err := db.Create(newUser).Error; err != nil {
+					return fmt.Errorf("admin user creation failed: %w", err)
+				}
+
+				authToken := &AuthToken{
+					Token:  "EST" + uuid.New().String() + "ARY",
+					User:   newUser.ID,
+					Expiry: time.Now().Add(time.Hour * 24 * 365),
+				}
+				if err := db.Create(authToken).Error; err != nil {
+					return fmt.Errorf("admin token creation failed: %w", err)
+				}
+
+				fmt.Printf("Auth Token: %v", authToken.Token)
+
+				return nil
+			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
