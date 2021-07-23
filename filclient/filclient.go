@@ -630,7 +630,7 @@ func (fc *FilClient) StartDataTransfer(ctx context.Context, miner address.Addres
 	ctx, span := Tracer.Start(ctx, "startDataTransfer")
 	defer span.End()
 
-	mpid, err := fc.minerPeer(ctx, miner)
+	mpid, err := fc.connectToMiner(ctx, miner)
 	if err != nil {
 		return nil, xerrors.Errorf("getting miner peer: %w", err)
 	}
