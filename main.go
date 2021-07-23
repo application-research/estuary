@@ -207,7 +207,8 @@ func main() {
 	}
 	app.Commands = []*cli.Command{
 		{
-			Name: "setup",
+			Name:  "setup",
+			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
 				db, err := setupDatabase(cctx)
 				if err != nil {
@@ -233,7 +234,7 @@ func main() {
 
 				authToken := &AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   0,
+					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
 				}
 				if err := db.Create(authToken).Error; err != nil {
@@ -244,7 +245,6 @@ func main() {
 
 				return nil
 			},
-			Usage: "Creates an initial auth token under new user \"admin\"",
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
