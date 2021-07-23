@@ -378,6 +378,8 @@ type User struct {
 	ID       uint
 	Username string
 	Perms    int
+
+	AuthToken string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
@@ -410,9 +412,10 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	}
 
 	return &User{
-		ID:       out.ID,
-		Username: out.Username,
-		Perms:    out.Perms,
+		ID:        out.ID,
+		Username:  out.Username,
+		Perms:     out.Perms,
+		AuthToken: token,
 	}, nil
 }
 
@@ -455,20 +458,102 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (d *Shuttle) ServeAPI(listen string) error {
+func (s *Shuttle) ServeAPI(listen string) error {
 	e := echo.New()
 
 	content := e.Group("/content")
-	content.Use(d.AuthRequired(util.PermLevelUser))
-	content.POST("/add", withUser(d.handleAdd))
+	content.Use(s.AuthRequired(util.PermLevelUser))
+	content.POST("/add", withUser(s.handleAdd))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
 
 	return e.Start(listen)
 }
 
-func (d *Shuttle) handleAdd(e echo.Context, u *User) error {
-	panic("nyi")
+func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
+	return fmt.Errorf("not done yet")
+	/*
+		ctx := c.Request().Context()
+
+			if s.CM.contentAddingDisabled || u.StorageDisabled {
+				return &util.HttpError{
+					Code:    400,
+					Message: util.ERR_CONTENT_ADDING_DISABLED,
+				}
+			}
+
+		form, err := c.MultipartForm()
+		if err != nil {
+			return err
+		}
+		defer form.RemoveAll()
+
+		mpf, err := c.FormFile("data")
+		if err != nil {
+			return err
+		}
+
+		fname := mpf.Filename
+		fi, err := mpf.Open()
+		if err != nil {
+			return err
+		}
+
+		defer fi.Close()
+
+		collection := c.FormValue("collection")
+
+			contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
+			if err != nil {
+				return err
+			}
+
+		bsid, bs, err := s.StagingMgr.AllocNew()
+		if err != nil {
+			return err
+		}
+
+		defer func() {
+			go func() {
+				if err := s.StagingMgr.CleanUp(bsid); err != nil {
+					log.Errorf("failed to clean up staging blockstore: %s", err)
+				}
+			}()
+		}()
+
+		bserv := blockservice.New(bs, nil)
+		dserv := merkledag.NewDAGService(bserv)
+
+		nd, err := s.importFile(ctx, dserv, fi)
+		if err != nil {
+			return err
+		}
+
+		if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid()); err != nil {
+			return xerrors.Errorf("encountered problem computing object references: %w", err)
+		}
+
+		if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+			return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+		}
+
+		go func() {
+			s.CM.ToCheck <- content.ID
+		}()
+
+		go func() {
+			if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
+				fmt.Println("providing failed: ", err)
+			}
+			fmt.Println("providing complete")
+		}()
+		return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+	*/
+}
+
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
+	return 0, fmt.Errorf("nyi")
+
 }
 
 // TODO: mostly copy paste from estuary, dedup code

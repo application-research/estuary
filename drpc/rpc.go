@@ -89,6 +89,7 @@ type MsgParams struct {
 	CommPComplete   *CommPComplete   `json:",omitempty"`
 	TransferStatus  *TransferStatus  `json:",omitempty"`
 	TransferStarted *TransferStarted `json:",omitempty"`
+	ShuttleUpdate   *ShuttleUpdate   `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -137,4 +138,11 @@ type TransferStatus struct {
 
 	Failed  bool
 	Message string
+}
+
+const OP_ShuttleUpdate = "ShuttleUpdate"
+
+type ShuttleUpdate struct {
+	DiskSpaceFree int64
+	NumPins       int64
 }

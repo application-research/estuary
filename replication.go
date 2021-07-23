@@ -1143,9 +1143,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 				_, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 				if err != nil {
 					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
+					done(time.Minute * 5)
+				} else {
+					done(time.Second * 10)
 				}
-
-				done(time.Second * 10)
 			}()
 
 			return nil
@@ -1908,6 +1909,8 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return nil, nil
 }
 
+var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
+
 func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
 	var cont Content
 	if err := cm.DB.First(&cont, "cid = ?", data.Bytes()).Error; err != nil {
@@ -1915,7 +1918,18 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	if cont.Location != "local" {
-		return cid.Undef, 0, xerrors.Errorf("remote stuff not yet implemented")
+		if err := cm.sendShuttleCommand(ctx, cont.Location, &drpc.Command{
+			Op: drpc.CMD_ComputeCommP,
+			Params: drpc.CmdParams{
+				ComputeCommP: &drpc.ComputeCommP{
+					Data: data,
+				},
+			},
+		}); err != nil {
+			return cid.Undef, 0, err
+		}
+
+		return cid.Undef, 0, ErrWaitForRemoteCompute
 	}
 
 	log.Infow("computing piece commitment", "data", cont.Cid.CID)
