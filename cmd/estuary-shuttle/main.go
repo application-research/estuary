@@ -365,6 +365,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 		return nil, err
 	}
 
+	log.Infow("sending hello", "hostname", d.hostname, "address", addr, "pid", d.Node.Host.ID())
 	return &drpc.Hello{
 		Host:    d.hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),

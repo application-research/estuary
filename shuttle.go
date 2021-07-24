@@ -62,19 +62,17 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		return nil, nil, fmt.Errorf("shuttle already connected")
 	}
 
-	var hostname string
-	u, err := url.Parse(hello.Host)
+	_, err := url.Parse(hello.Host)
 	if err != nil {
 		log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
-	} else {
-		hostname = u.Host
+		hello.Host = ""
 	}
 
 	d := &shuttleConnection{
 		handle:   handle,
 		address:  hello.Address,
 		addrInfo: hello.AddrInfo,
-		hostname: hostname,
+		hostname: hello.Host,
 		cmds:     make(chan *drpc.Command, 32),
 		closing:  make(chan struct{}),
 	}
