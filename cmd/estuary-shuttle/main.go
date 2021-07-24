@@ -576,6 +576,7 @@ type createContentBody struct {
 	Root        cid.Cid  `json:"root"`
 	Name        string   `json:"name"`
 	Collections []string `json:"collections"`
+	Location    string   `json:"location"`
 }
 
 type createContentResponse struct {
@@ -592,6 +593,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 		Root:        root,
 		Name:        fname,
 		Collections: cols,
+		Location:    s.shuttleHandle,
 	})
 	if err != nil {
 		return 0, err

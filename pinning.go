@@ -79,6 +79,11 @@ func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
 			return nil
 		}
 
+		if ai == nil {
+			log.Warnf("no address info for shuttle %s: %s", cont.Location, err)
+			return nil
+		}
+
 		var out []string
 		for _, a := range ai.Addrs {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
