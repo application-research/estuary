@@ -17,6 +17,7 @@ import (
 	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
+	"github.com/whyrusleeping/estuary/stagingbs"
 	"github.com/whyrusleeping/estuary/util"
 	"go.opentelemetry.io/otel"
 
@@ -321,7 +322,7 @@ func main() {
 			return err
 		}
 
-		sbmgr, err := NewStagingBSMgr(filepath.Join(ddir, "stagingdata"))
+		sbmgr, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "stagingdata"))
 		if err != nil {
 			return err
 		}
@@ -452,7 +453,7 @@ type Server struct {
 	FilClient  *filclient.FilClient
 	Api        api.Gateway
 	CM         *ContentManager
-	StagingMgr *StagingBSMgr
+	StagingMgr *stagingbs.StagingBSMgr
 
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache

@@ -590,7 +590,7 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.
 	))
 	defer span.End()
 
-	miners, err := cm.pickMiners(ctx, repl, size, nil)
+	miners, err := cm.pickMiners(ctx, Content{}, repl, size, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -681,7 +681,7 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 	return n - (n / 2), n / 2
 
 }
-func (cm *ContentManager) pickMiners(ctx context.Context, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
+func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
 	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
 		attribute.Int("count", n),
 	))
@@ -1628,7 +1628,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
-	minerpool, err := cm.pickMiners(ctx, count*2, size.Padded(), exclude)
+	minerpool, err := cm.pickMiners(ctx, content, count*2, size.Padded(), exclude)
 	if err != nil {
 		return err
 	}

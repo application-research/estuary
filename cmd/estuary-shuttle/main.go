@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -22,17 +24,21 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	chunker "github.com/ipfs/go-ipfs-chunker"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-unixfs/importer"
 	"github.com/labstack/echo/v4"
 	"github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
 	"github.com/whyrusleeping/estuary/pinner"
+	"github.com/whyrusleeping/estuary/stagingbs"
 	"github.com/whyrusleeping/estuary/util"
 	"github.com/whyrusleeping/memo"
 )
@@ -183,11 +189,17 @@ func main() {
 			return res, nil
 		})
 
+		sbm, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "staging"))
+		if err != nil {
+			return err
+		}
+
 		d := &Shuttle{
-			Node: nd,
-			Api:  api,
-			DB:   db,
-			Filc: filc,
+			Node:       nd,
+			Api:        api,
+			DB:         db,
+			Filc:       filc,
+			StagingMgr: sbm,
 
 			commpMemo: commpMemo,
 
@@ -252,11 +264,12 @@ func main() {
 }
 
 type Shuttle struct {
-	Node   *node.Node
-	Api    api.Gateway
-	DB     *gorm.DB
-	PinMgr *pinner.PinManager
-	Filc   *filclient.FilClient
+	Node       *node.Node
+	Api        api.Gateway
+	DB         *gorm.DB
+	PinMgr     *pinner.PinManager
+	Filc       *filclient.FilClient
+	StagingMgr *stagingbs.StagingBSMgr
 
 	tcLk             sync.Mutex
 	trackingChannels map[string]*chanTrack
@@ -379,7 +392,8 @@ type User struct {
 	Username string
 	Perms    int
 
-	AuthToken string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
+	AuthToken       string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
+	StorageDisabled bool
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
@@ -412,10 +426,11 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	}
 
 	return &User{
-		ID:        out.ID,
-		Username:  out.Username,
-		Perms:     out.Perms,
-		AuthToken: token,
+		ID:              out.ID,
+		Username:        out.Username,
+		Perms:           out.Perms,
+		AuthToken:       token,
+		StorageDisabled: out.Settings.ContentAddingDisabled,
 	}, nil
 }
 
@@ -471,89 +486,142 @@ func (s *Shuttle) ServeAPI(listen string) error {
 }
 
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
-	return fmt.Errorf("not done yet")
-	/*
-		ctx := c.Request().Context()
+	ctx := c.Request().Context()
 
-			if s.CM.contentAddingDisabled || u.StorageDisabled {
-				return &util.HttpError{
-					Code:    400,
-					Message: util.ERR_CONTENT_ADDING_DISABLED,
-				}
-			}
-
-		form, err := c.MultipartForm()
-		if err != nil {
-			return err
+	if u.StorageDisabled {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
-		defer form.RemoveAll()
+	}
 
-		mpf, err := c.FormFile("data")
-		if err != nil {
-			return err
-		}
+	form, err := c.MultipartForm()
+	if err != nil {
+		return err
+	}
+	defer form.RemoveAll()
 
-		fname := mpf.Filename
-		fi, err := mpf.Open()
-		if err != nil {
-			return err
-		}
+	mpf, err := c.FormFile("data")
+	if err != nil {
+		return err
+	}
 
-		defer fi.Close()
+	fname := mpf.Filename
+	fi, err := mpf.Open()
+	if err != nil {
+		return err
+	}
 
-		collection := c.FormValue("collection")
+	defer fi.Close()
 
-			contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
-			if err != nil {
-				return err
-			}
+	collection := c.FormValue("collection")
 
-		bsid, bs, err := s.StagingMgr.AllocNew()
-		if err != nil {
-			return err
-		}
+	bsid, bs, err := s.StagingMgr.AllocNew()
+	if err != nil {
+		return err
+	}
 
-		defer func() {
-			go func() {
-				if err := s.StagingMgr.CleanUp(bsid); err != nil {
-					log.Errorf("failed to clean up staging blockstore: %s", err)
-				}
-			}()
-		}()
-
-		bserv := blockservice.New(bs, nil)
-		dserv := merkledag.NewDAGService(bserv)
-
-		nd, err := s.importFile(ctx, dserv, fi)
-		if err != nil {
-			return err
-		}
-
-		if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid()); err != nil {
-			return xerrors.Errorf("encountered problem computing object references: %w", err)
-		}
-
-		if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
-			return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-		}
-
+	defer func() {
 		go func() {
-			s.CM.ToCheck <- content.ID
-		}()
-
-		go func() {
-			if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
-				fmt.Println("providing failed: ", err)
+			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+				log.Errorf("failed to clean up staging blockstore: %s", err)
 			}
-			fmt.Println("providing complete")
 		}()
-		return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
-	*/
+	}()
+
+	bserv := blockservice.New(bs, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	nd, err := s.importFile(ctx, dserv, fi)
+	if err != nil {
+		return err
+	}
+
+	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
+	if err != nil {
+		return err
+	}
+
+	pin := &Pin{
+		Content: contid,
+		Cid:     util.DbCID{nd.Cid()},
+		UserID:  u.ID,
+
+		Active:  false,
+		Pinning: true,
+	}
+
+	if err := s.DB.Create(pin).Error; err != nil {
+		return err
+	}
+
+	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid()); err != nil {
+		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	}
+
+	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	go func() {
+		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
+			fmt.Println("providing failed: ", err)
+		}
+		fmt.Println("providing complete")
+	}()
+	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+}
+
+type createContentBody struct {
+	Root        cid.Cid  `json:"root"`
+	Name        string   `json:"name"`
+	Collections []string `json:"collections"`
+}
+
+type createContentResponse struct {
+	ID uint `json:"id"`
 }
 
 func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
-	return 0, fmt.Errorf("nyi")
+	var cols []string
+	if collection != "" {
+		cols = []string{collection}
+	}
 
+	data, err := json.Marshal(createContentBody{
+		Root:        root,
+		Name:        fname,
+		Collections: cols,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	req, err := http.NewRequest("POST", "https://"+s.estuaryHost+"/content/create", bytes.NewReader(data))
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+u.AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	defer resp.Body.Close()
+
+	var rbody createContentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
+		return 0, err
+	}
+
+	if rbody.ID == 0 {
+		return 0, fmt.Errorf("create content request failed, got back content ID zero")
+	}
+
+	return rbody.ID, nil
 }
 
 // TODO: mostly copy paste from estuary, dedup code
@@ -732,4 +800,49 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
 	*/
 
 	s.PinMgr.Add(op)
+}
+
+func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
+	_, span := Tracer.Start(ctx, "importFile")
+	defer span.End()
+
+	spl := chunker.DefaultSplitter(fi)
+	return importer.BuildDagFromReader(dserv, spl)
+}
+
+func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
+	ctx, span := Tracer.Start(ctx, "blockstoreCopy")
+	defer span.End()
+
+	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
+	keys, err := from.AllKeysChan(ctx)
+	if err != nil {
+		return err
+	}
+
+	var batch []blocks.Block
+
+	for k := range keys {
+		blk, err := from.Get(k)
+		if err != nil {
+			return err
+		}
+
+		batch = append(batch, blk)
+
+		if len(batch) > 500 {
+			if err := to.PutMany(batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := to.PutMany(batch); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

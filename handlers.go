@@ -139,6 +139,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
+	content.POST("/create", withUser(s.handleCreateContent))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
@@ -200,6 +201,8 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
+
+	admin.GET("/storage-failures", s.handleAdminStorageFailures)
 
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
@@ -2075,6 +2078,9 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			FileStagingThreshold:  int64(individualDealThreshold),
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled,
+			UploadEndpoints: []string{
+				"https://api.estuary.tech/content/add",
+			},
 		},
 	})
 }
@@ -2734,4 +2740,48 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(200, map[string]interface{}{})
+}
+
+func (s *Server) handleAdminStorageFailures(c echo.Context) error {
+	var recs []dfeRecord
+	if err := s.DB.Limit(2000).Order("created_at desc").Find(&recs).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, recs)
+}
+
+type createContentBody struct {
+	Root        cid.Cid  `json:"root"`
+	Name        string   `json:"name"`
+	Collections []string `json:"collections"`
+	Location    string   `json:"location"`
+}
+
+type createContentResponse struct {
+	ID uint `json:"id"`
+}
+
+func (s *Server) handleCreateContent(c echo.Context, u *User) error {
+	var req createContentBody
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	content := &Content{
+		Cid:         util.DbCID{req.Root},
+		Name:        req.Name,
+		Active:      false,
+		Pinning:     false,
+		UserID:      u.ID,
+		Replication: defaultReplication,
+		Location:    "local",
+	}
+	if err := s.DB.Create(content).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, createContentResponse{
+		ID: content.ID,
+	})
 }

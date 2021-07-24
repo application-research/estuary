@@ -74,6 +74,8 @@ type UserSettings struct {
 
 	ContentAddingDisabled bool `json:"contentAddingDisabled"`
 	DealMakingDisabled    bool `json:"dealMakingDisabled"`
+
+	UploadEndpoints []string `json:"uploadEndpoints"`
 }
 
 type ViewerResponse struct {
