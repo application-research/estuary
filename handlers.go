@@ -2300,7 +2300,7 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	}
 
 	var stats publicStatsResponse
-	if err := s.DB.Model(Content{}).Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
+	if err := s.DB.Model(Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
 		return err
 	}
 
