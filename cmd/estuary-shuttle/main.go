@@ -207,7 +207,7 @@ func main() {
 
 			outgoing: make(chan *drpc.Message),
 
-			hostname:      "",
+			hostname:      cctx.String("host"),
 			estuaryHost:   cctx.String("estuary-api"),
 			shuttleHandle: cctx.String("handle"),
 			shuttleToken:  cctx.String("auth-token"),
@@ -360,7 +360,6 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 }
 
 func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
-
 	return &drpc.Hello{
 		Host:   d.hostname,
 		PeerID: d.Node.Host.ID().Pretty(),

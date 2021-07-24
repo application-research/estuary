@@ -2065,6 +2065,11 @@ func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
 }
 
 func (s *Server) handleGetViewer(c echo.Context, u *User) error {
+	uep, err := s.getPreferredUploadEndpoints(u)
+	if err != nil {
+		return err
+	}
+
 	return c.JSON(200, &util.ViewerResponse{
 		ID:       u.ID,
 		Username: u.Username,
@@ -2078,11 +2083,24 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			FileStagingThreshold:  int64(individualDealThreshold),
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled,
-			UploadEndpoints: []string{
-				"https://api.estuary.tech/content/add",
-			},
+			UploadEndpoints:       uep,
 		},
 	})
+}
+
+func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
+	var out []string
+
+	// TODO: this should be a lotttttt smarter
+	s.CM.shuttlesLk.Lock()
+	defer s.CM.shuttlesLk.Unlock()
+	for _, sh := range s.CM.shuttles {
+		if sh.hostname != "" {
+			out = append(out, "https://"+sh.hostname+"/content/add")
+		}
+	}
+	out = append(out, "https://api.estuary.tech/content/add")
+	return out, nil
 }
 
 func (s *Server) handleHealth(c echo.Context) error {

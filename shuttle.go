@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"time"
 
 	"golang.org/x/xerrors"
@@ -32,6 +33,7 @@ type Shuttle struct {
 type shuttleConnection struct {
 	handle string
 
+	hostname string
 	addrInfo peer.AddrInfo
 
 	cmds    chan *drpc.Command
@@ -58,9 +60,18 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		return nil, nil, fmt.Errorf("shuttle already connected")
 	}
 
+	var hostname string
+	u, err := url.Parse(hello.Host)
+	if err != nil {
+		log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
+	} else {
+		hostname = u.Host
+	}
+
 	d := &shuttleConnection{
 		handle:   handle,
 		addrInfo: hello.AddrInfo,
+		hostname: hostname,
 		cmds:     make(chan *drpc.Command, 32),
 		closing:  make(chan struct{}),
 	}
