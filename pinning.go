@@ -21,19 +21,14 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
-	var content Content
-	if err := cm.DB.First(&content, "id = ?", cont).Error; err != nil {
-		return nil, err
-	}
-
+func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) {
 	cm.pinLk.Lock()
-	po, ok := cm.pinJobs[cont]
+	po, ok := cm.pinJobs[cont.ID]
 	cm.pinLk.Unlock()
 	if !ok {
 		var meta map[string]interface{}
-		if content.PinMeta != "" {
-			if err := json.Unmarshal([]byte(content.PinMeta), &meta); err != nil {
+		if cont.PinMeta != "" {
+			if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
 				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 			}
 		}
@@ -41,17 +36,17 @@ func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 		ps := &types.IpfsPinStatus{
 			Requestid: fmt.Sprint(cont),
 			Status:    "pinning",
-			Created:   content.CreatedAt,
+			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
-				Cid:  content.Cid.CID.String(),
-				Name: content.Name,
+				Cid:  cont.Cid.CID.String(),
+				Name: cont.Name,
 				Meta: meta,
 			},
-			Delegates: cm.pinDelegatesForContent(content),
+			Delegates: cm.pinDelegatesForContent(cont),
 			Info:      nil, // TODO: all sorts of extra info we could add...
 		}
 
-		if content.Active {
+		if cont.Active {
 			ps.Status = "pinned"
 		}
 
@@ -59,7 +54,7 @@ func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
 	}
 
 	status := po.PinStatus()
-	status.Delegates = cm.pinDelegatesForContent(content)
+	status.Delegates = cm.pinDelegatesForContent(cont)
 
 	return status, nil
 }
@@ -198,7 +193,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	return cm.pinStatus(cont.ID)
+	return cm.pinStatus(cont)
 }
 
 func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
@@ -386,7 +381,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			break
 		}
 
-		st, err := s.CM.pinStatus(c.ID)
+		st, err := s.CM.pinStatus(c)
 		if err != nil {
 			return err
 		}
@@ -479,7 +474,12 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	st, err := s.CM.pinStatus(uint(id))
+	var content Content
+	if err := s.DB.First(&content, "id = ?", uint(id)).Error; err != nil {
+		return err
+	}
+
+	st, err := s.CM.pinStatus(content)
 	if err != nil {
 		return err
 	}
