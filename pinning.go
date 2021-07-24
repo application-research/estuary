@@ -21,79 +21,42 @@ import (
 	"golang.org/x/xerrors"
 )
 
-// Get the status for each of a list of content IDs - returns an identically
-// sized array of statuses corresponding to the passed in IDs
-func (cm *ContentManager) pinStatuses(contentIDs []uint) ([]*types.IpfsPinStatus, error) {
-	statuses := make([]*types.IpfsPinStatus, len(contentIDs))
-
-	// Grab the available contents from the database
-	var dbContents []Content
-	if err := cm.DB.Find(&dbContents, "id IN ?", contentIDs).Error; err != nil {
-		return nil, err
-	}
-
-	// Then write in status results
-	for i, id := range contentIDs {
-		cm.pinLk.Lock()
-		operation, ok := cm.pinJobs[id]
-		cm.pinLk.Unlock()
-
-		// If the status already exists in memory, use that
-		if ok {
-			statuses[i] = operation.PinStatus()
-		} else {
-			// Otherwise, find the content result from the database query...
-			var content *Content
-			// TODO: wanted to avoid quadratic time complexity, but still should
-			// be considerably faster than the previous solution for now
-			for _, c := range dbContents {
-				if c.ID == id {
-					*content = c
-				}
-			}
-
-			// If it wasn't found even in the database, that's an error
-			if content == nil {
-				return nil, fmt.Errorf("pin status could not be found for %v", id)
-			}
-
-			// Then validate PinMeta...
-			var meta map[string]interface{}
-			if content.PinMeta != "" {
-				if err := json.Unmarshal([]byte(content.PinMeta), &meta); err != nil {
-					log.Warnf("content %d has invalid pinmeta: %s", content.ID, err)
-				}
-			}
-
-			// ...and write into statuses
-			statuses[i] = &types.IpfsPinStatus{
-				Requestid: fmt.Sprint(id),
-				Status:    "pinning",
-				Created:   content.CreatedAt,
-				Pin: types.IpfsPin{
-					Cid:  content.Cid.CID.String(),
-					Name: content.Name,
-					Meta: meta,
-				},
-				Delegates: cm.pinDelegatesForContent(*content),
-				Info:      nil, // TODO: all sorts of extra info we could add...
-			}
-			if content.Active {
-				statuses[i].Status = "pinned"
+func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) {
+	cm.pinLk.Lock()
+	po, ok := cm.pinJobs[cont.ID]
+	cm.pinLk.Unlock()
+	if !ok {
+		var meta map[string]interface{}
+		if cont.PinMeta != "" {
+			if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
+				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 			}
 		}
+
+		ps := &types.IpfsPinStatus{
+			Requestid: fmt.Sprint(cont),
+			Status:    "pinning",
+			Created:   cont.CreatedAt,
+			Pin: types.IpfsPin{
+				Cid:  cont.Cid.CID.String(),
+				Name: cont.Name,
+				Meta: meta,
+			},
+			Delegates: cm.pinDelegatesForContent(cont),
+			Info:      nil, // TODO: all sorts of extra info we could add...
+		}
+
+		if cont.Active {
+			ps.Status = "pinned"
+		}
+
+		return ps, nil
 	}
 
-	return statuses, nil
-}
+	status := po.PinStatus()
+	status.Delegates = cm.pinDelegatesForContent(cont)
 
-func (cm *ContentManager) pinStatus(cont uint) (*types.IpfsPinStatus, error) {
-	statuses, err := cm.pinStatuses([]uint{cont})
-	if err != nil {
-		return nil, err
-	}
-
-	return statuses[0], nil
+	return status, nil
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
@@ -225,7 +188,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	return cm.pinStatus(cont.ID)
+	return cm.pinStatus(cont)
 }
 
 func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
@@ -380,6 +343,11 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		lim = limit
 	}
 
+	var contents []Content
+	if err := q.Scan(&contents).Error; err != nil {
+		return err
+	}
+
 	var allowed map[string]bool
 
 	if qstatus != "" {
@@ -402,29 +370,18 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 
 	}
 
-	var contents []Content
-	if err := q.Scan(&contents).Error; err != nil {
-		return err
-	}
-
-	contentIDs := make([]uint, len(contents))
-	for i, content := range contents {
-		contentIDs[i] = content.ID
-	}
-
-	unprocessed, err := s.CM.pinStatuses(contentIDs)
-	if err != nil {
-		return err
-	}
-
 	var out []*types.IpfsPinStatus
-	for _, status := range unprocessed {
+	for _, c := range contents {
 		if lim > 0 && len(out) >= lim {
 			break
 		}
 
-		if allowed == nil || allowed[status.Status] {
-			out = append(out, status)
+		st, err := s.CM.pinStatus(c)
+		if err != nil {
+			return err
+		}
+		if allowed == nil || allowed[st.Status] {
+			out = append(out, st)
 		}
 	}
 
@@ -512,7 +469,12 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	st, err := s.CM.pinStatus(uint(id))
+	var content Content
+	if err := s.DB.First(&content, "id = ?", uint(id)).Error; err != nil {
+		return err
+	}
+
+	st, err := s.CM.pinStatus(content)
 	if err != nil {
 		return err
 	}
