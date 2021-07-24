@@ -80,8 +80,9 @@ type ContentManager struct {
 	// some behavior flags
 	FailDealOnTransferFailure bool
 
-	dealMakingDisabled    bool
-	contentAddingDisabled bool
+	dealMakingDisabled         bool
+	contentAddingDisabled      bool
+	localContentAddingDisabled bool
 
 	pinJobs map[uint]*pinner.PinningOperation
 	pinLk   sync.Mutex

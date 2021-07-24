@@ -280,6 +280,10 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	if len(shuttles) == 0 {
 		log.Warn("no shuttles available for content to be delegated to")
+		if cm.localContentAddingDisabled {
+			return "", fmt.Errorf("no shuttles available and local content adding disabled")
+		}
+
 		return "local", nil
 	}
 

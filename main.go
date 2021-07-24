@@ -205,6 +205,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "disable-content-adding",
 		},
+		&cli.BoolFlag{
+			Name: "disable-local-content-adding",
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -373,6 +376,7 @@ func main() {
 
 		cm.dealMakingDisabled = cctx.Bool("disable-deal-making")
 		cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
+		cm.localContentAddingDisabled = cctx.Bool("disable-local-content-adding")
 
 		cm.tracer = otel.Tracer("replicator")
 

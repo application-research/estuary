@@ -499,7 +499,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -2307,7 +2307,7 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 
 type publicStatsResponse struct {
 	TotalStorage     int64 `json:"totalStorage"`
-	TotalFilesStored int   `json:"totalFiles"`
+	TotalFilesStored int64 `json:"totalFiles"`
 	DealsOnChain     int64 `json:"dealsOnChain"`
 }
 
@@ -2318,7 +2318,11 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	}
 
 	var stats publicStatsResponse
-	if err := s.DB.Model(Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage,COUNT(*) as total_files_stored").Scan(&stats).Error; err != nil {
+	if err := s.DB.Model(Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage").Scan(&stats).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
 		return err
 	}
 
