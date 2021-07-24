@@ -14,6 +14,7 @@ type Hello struct {
 
 	DiskSpaceFree int64
 
+	Address  address.Address
 	AddrInfo peer.AddrInfo
 }
 

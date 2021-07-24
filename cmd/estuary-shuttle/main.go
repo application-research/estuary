@@ -360,9 +360,15 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 }
 
 func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
+	addr, err := d.Node.Wallet.GetDefault()
+	if err != nil {
+		return nil, err
+	}
+
 	return &drpc.Hello{
-		Host:   d.hostname,
-		PeerID: d.Node.Host.ID().Pretty(),
+		Host:    d.hostname,
+		PeerID:  d.Node.Host.ID().Pretty(),
+		Address: addr,
 		AddrInfo: peer.AddrInfo{
 			ID:    d.Node.Host.ID(),
 			Addrs: d.Node.Host.Addrs(),

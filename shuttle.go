@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/libp2p/go-libp2p-core/peer"
 	drpc "github.com/whyrusleeping/estuary/drpc"
@@ -35,6 +36,7 @@ type shuttleConnection struct {
 
 	hostname string
 	addrInfo peer.AddrInfo
+	address  address.Address
 
 	cmds    chan *drpc.Command
 	closing chan struct{}
@@ -70,6 +72,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 
 	d := &shuttleConnection{
 		handle:   handle,
+		address:  hello.Address,
 		addrInfo: hello.AddrInfo,
 		hostname: hostname,
 		cmds:     make(chan *drpc.Command, 32),
@@ -188,6 +191,16 @@ func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
 		return &d.addrInfo
 	}
 	return nil
+}
+
+func (cm *ContentManager) shuttleHostName(handle string) string {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if ok {
+		return d.hostname
+	}
+	return ""
 }
 
 func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle string, resp *drpc.CommPComplete) error {

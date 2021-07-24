@@ -2638,11 +2638,13 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 }
 
 type shuttleListResponse struct {
-	Handle         string         `json:"handle"`
-	Token          string         `json:"token"`
-	Online         bool           `json:"online"`
-	LastConnection time.Time      `json:"lastConnection"`
-	AddrInfo       *peer.AddrInfo `json:"addrInfo"`
+	Handle         string          `json:"handle"`
+	Token          string          `json:"token"`
+	Online         bool            `json:"online"`
+	LastConnection time.Time       `json:"lastConnection"`
+	AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
+	Address        address.Address `json:"address"`
+	Hostname       string          `json:"hostname"`
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
@@ -2659,6 +2661,7 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 			LastConnection: d.LastConnection,
 			Online:         s.CM.shuttleIsOnline(d.Handle),
 			AddrInfo:       s.CM.shuttleAddrInfo(d.Handle),
+			Hostname:       s.CM.shuttleHostName(d.Handle),
 		})
 
 	}
