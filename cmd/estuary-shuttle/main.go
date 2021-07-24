@@ -34,6 +34,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
@@ -113,6 +114,9 @@ func main() {
 		&cli.StringFlag{
 			Name:  "host",
 			Usage: "url that this node is publicly dialable at",
+		},
+		&cli.BoolFlag{
+			Name: "logging",
 		},
 	}
 
@@ -254,7 +258,7 @@ func main() {
 			}
 		}()
 
-		return d.ServeAPI(cctx.String("apilisten"))
+		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -479,8 +483,14 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (s *Shuttle) ServeAPI(listen string) error {
+func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	e := echo.New()
+
+	if logging {
+		e.Use(middleware.Logger())
+	}
+
+	e.Use(middleware.CORS())
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
