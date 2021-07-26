@@ -64,7 +64,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// This implies that the pin complete message got lost, need to resend all the objects
 
 			var objects []*Object
-			if err := d.DB.Model(ObjRef{}).Where("content = ?", contid).
+			if err := d.DB.Model(ObjRef{}).Where("pin = ?", existing.ID).
 				Joins("left join objects on obj_refs.object = objects.id").
 				Scan(&objects).Error; err != nil {
 				return err
