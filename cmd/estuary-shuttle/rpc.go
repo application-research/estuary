@@ -52,13 +52,18 @@ func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 }
 
 func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint) error {
-	var existing Pin
-	err := d.DB.First(&existing, "content = ?", contid).Error
-	switch {
-	default:
+	var search []Pin
+	if err := d.DB.Find(&search, "content = ?", contid).Error; err != nil {
 		return err
-	case err == nil:
+	}
+
+	if len(search) > 0 {
 		// already have a pin with this content id
+		if len(search) > 1 {
+			log.Errorf("have multiple pins for same content id: %d", contid)
+		}
+		existing := search[0]
+
 		if !existing.Pinning && existing.Active {
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
@@ -79,7 +84,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
 			}
 		}
-	case xerrors.Is(err, gorm.ErrRecordNotFound):
+	} else {
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
 			Content: contid,
@@ -165,17 +170,16 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	defer d.addPinLk.Unlock()
 
 	for _, c := range cmd.Contents {
-		var p Pin
-		err := d.DB.First(&p, "content = ?", c.ID).Error
-		switch err {
-		case nil:
-			// already have a pin for this, no need to do anything
-			continue
-		default:
-			// some other db error, bail
+		var count int64
+		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Count(&count).Error
+		if err != nil {
 			return err
-		case gorm.ErrRecordNotFound:
-			// ok
+		}
+		if count > 0 {
+			if count > 1 {
+				log.Errorf("have multiple pins for same content: %d", c.ID)
+			}
+			continue
 		}
 
 		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID); err != nil {

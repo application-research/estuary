@@ -121,7 +121,7 @@ const maxActivePerUser = 15
 func (pm *PinManager) PinQueueSize() int {
 	var count int
 	pm.pinQueueLk.Lock()
-	defer pm.pinQueueLk.Lock()
+	defer pm.pinQueueLk.Unlock()
 	for _, pq := range pm.pinQueue {
 		count += len(pq)
 	}
