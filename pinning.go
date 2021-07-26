@@ -608,7 +608,7 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 			"active":  false,
 			"pinning": false,
 			"failed":  true,
-		}); err != nil {
+		}).Error; err != nil {
 			log.Errorf("failed to mark content as failed in database: %s", err)
 		}
 	}

@@ -2637,13 +2637,18 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return node.Links(), nil
 	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 
+	errstr := ""
+	if err != nil {
+		errstr = err.Error()
+	}
+
 	return c.JSON(200, map[string]interface{}{
 		"user":          u.Username,
 		"filename":      cont.Name,
 		"size":          cont.Size,
 		"cid":           cont.Cid.CID,
 		"deals":         deals,
-		"traverseError": fmt.Sprintf("%s", err),
+		"traverseError": errstr,
 		"foundBlocks":   cset.Len(),
 	})
 }

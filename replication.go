@@ -784,11 +784,14 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 	))
 	defer span.End()
 
+	var asks []minerStorageAsk
+	if err := cm.DB.Find(&asks, "miner = ?", m.String()).Error; err != nil {
+		return nil, err
+	}
+
 	var msa minerStorageAsk
-	if err := cm.DB.First(&msa, "miner = ?", m.String()).Error; err != nil {
-		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
-		}
+	if len(asks) > 0 {
+		msa = asks[0]
 	}
 
 	if time.Since(msa.UpdatedAt) < maxCacheAge {
@@ -1909,20 +1912,21 @@ type PieceCommRecord struct {
 }
 
 func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord, error) {
-	var pcr PieceCommRecord
-	err := cm.DB.First(&pcr, "data = ?", data.Bytes()).Error
-	if err == nil {
-		if !pcr.Piece.CID.Defined() {
-			return nil, fmt.Errorf("got an undefined thing back from database")
-		}
-		return &pcr, nil
-	}
-
-	if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+	var pcrs []PieceCommRecord
+	if err := cm.DB.Find(&pcrs, "data = ?", data.Bytes()).Error; err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	if len(pcrs) == 0 {
+		return nil, nil
+	}
+
+	pcr := pcrs[0]
+	if !pcr.Piece.CID.Defined() {
+		return nil, fmt.Errorf("got an undefined thing back from database")
+	}
+
+	return &pcr, nil
 }
 
 var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
