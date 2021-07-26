@@ -178,6 +178,10 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
 func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
+	if handle == "" {
+		return fmt.Errorf("attempted to send command to empty shuttle handle")
+	}
+
 	cm.shuttlesLk.Lock()
 	d, ok := cm.shuttles[handle]
 	cm.shuttlesLk.Unlock()
