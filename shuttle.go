@@ -72,7 +72,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		hello.Host = ""
 	}
 
-	if err := cm.DB.Model(Shuttle{}).Where("handle = ?").UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
 		"host":            hello.Host,
 		"peer_id":         hello.AddrInfo.ID.String(),
 		"last_connection": time.Now(),
