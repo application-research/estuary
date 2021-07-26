@@ -49,6 +49,9 @@ func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) 
 		if cont.Active {
 			ps.Status = "pinned"
 		}
+		if cont.Failed {
+			ps.Status = "failed"
+		}
 
 		return ps, nil
 	}
@@ -589,6 +592,26 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 	}
 
 	op.SetStatus(status)
+	if status == "failed" {
+		var cont Content
+		if err := cm.DB.First(&cont, "id = ?").Error; err != nil {
+			log.Errorf("failed to look up content: %s", err)
+			return
+		}
+
+		if cont.Active {
+			log.Errorf("got failed pin status message from shuttle %s where content(%d) was already active, refusing to do anything", handle, cont)
+			return
+		}
+
+		if err := cm.DB.Model(Content{}).Where("id = ?", cont).UpdateColumns(map[string]interface{}{
+			"active":  false,
+			"pinning": false,
+			"failed":  true,
+		}); err != nil {
+			log.Errorf("failed to mark content as failed in database: %s", err)
+		}
+	}
 }
 
 func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) error {

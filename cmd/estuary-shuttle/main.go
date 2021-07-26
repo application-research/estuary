@@ -219,7 +219,7 @@ func main() {
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
 
-		go d.PinMgr.Run(30)
+		go d.PinMgr.Run(100)
 
 		if err := d.refreshPinQueue(); err != nil {
 			log.Errorf("failed to refresh pin queue: %s", err)
@@ -797,6 +797,16 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 	log.Infof("updating pin status: %d %s", cont, status)
+	if status == "failed" {
+		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
+			"pinning": false,
+			"active":  false,
+			"failed":  true,
+		}); err != nil {
+			log.Errorf("failed to mark pin as failed in database: %s", err)
+		}
+	}
+
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
 			Op: "UpdatePinStatus",

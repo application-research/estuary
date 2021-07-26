@@ -120,6 +120,8 @@ type Content struct {
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
 
+	Failed bool `json:"failed"`
+
 	Location string `json:"location"`
 }
 

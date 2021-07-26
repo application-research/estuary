@@ -29,6 +29,7 @@ type Pin struct {
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
+	Failed  bool   `json:"failed"`
 }
 
 type Object struct {

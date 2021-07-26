@@ -64,6 +64,25 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		}
 		existing := search[0]
 
+		if existing.Failed {
+			// being asked to pin a thing we have marked as failed means the
+			// primary node isnt aware that this pin failed, we need to resend
+			// that notification
+
+			if err := d.sendRpcMessage(ctx, &drpc.Message{
+				Op: "UpdatePinStatus",
+				Params: drpc.MsgParams{
+					UpdatePinStatus: &drpc.UpdatePinStatus{
+						DBID:   contid,
+						Status: "failed",
+					},
+				},
+			}); err != nil {
+				log.Errorf("failed to send pin status update: %s", err)
+			}
+			return fmt.Errorf("tried to add pin for content we failed to pin previously")
+		}
+
 		if !existing.Pinning && existing.Active {
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
@@ -213,6 +232,10 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
+		}
+
+		if !aggr.Active || aggr.Failed {
+			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c)
 		}
 
 		totalSize += aggr.Size
