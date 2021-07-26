@@ -144,6 +144,8 @@ type TransferStatus struct {
 const OP_ShuttleUpdate = "ShuttleUpdate"
 
 type ShuttleUpdate struct {
-	DiskSpaceFree int64
-	NumPins       int64
+	BlockstoreSize uint64
+	BlockstoreFree uint64
+	NumPins        int64
+	PinQueueSize   int
 }

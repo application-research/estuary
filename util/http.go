@@ -26,6 +26,7 @@ const (
 type HttpError struct {
 	Code    int
 	Message string
+	Details string
 }
 
 func (he HttpError) Error() string {

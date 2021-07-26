@@ -60,6 +60,8 @@ type PinningOperation struct {
 	ContId  uint
 	Replace uint
 
+	LastUpdate time.Time
+
 	Started     time.Time
 	NumFetched  int
 	SizeFetched int64
@@ -76,6 +78,7 @@ func (po *PinningOperation) fail(err error) {
 	po.FetchErr = err
 	po.EndTime = time.Now()
 	po.Status = "failed"
+	po.LastUpdate = time.Now()
 	po.lk.Unlock()
 }
 
@@ -84,6 +87,7 @@ func (po *PinningOperation) complete() {
 	defer po.lk.Unlock()
 
 	po.EndTime = time.Now()
+	po.LastUpdate = time.Now()
 	po.Status = "pinned"
 }
 
@@ -92,6 +96,7 @@ func (po *PinningOperation) SetStatus(st string) {
 	defer po.lk.Unlock()
 
 	po.Status = st
+	po.LastUpdate = time.Now()
 }
 
 func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
@@ -112,6 +117,17 @@ func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
 }
 
 const maxActivePerUser = 15
+
+func (pm *PinManager) PinQueueSize() int {
+	var count int
+	pm.pinQueueLk.Lock()
+	defer pm.pinQueueLk.Lock()
+	for _, pq := range pm.pinQueue {
+		count += len(pq)
+	}
+
+	return count
+}
 
 func (pm *PinManager) Add(op *PinningOperation) {
 	go func() {

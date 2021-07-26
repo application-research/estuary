@@ -18,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/net/websocket"
+	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
@@ -258,6 +259,38 @@ func main() {
 			}
 		}()
 
+		go func() {
+			upd, err := d.getUpdatePacket()
+			if err != nil {
+				log.Errorf("failed to get update packet: %s", err)
+			}
+
+			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+				Op: drpc.OP_ShuttleUpdate,
+				Params: drpc.MsgParams{
+					ShuttleUpdate: upd,
+				},
+			}); err != nil {
+				log.Errorf("failed to send shuttle update: %s", err)
+			}
+			for range time.Tick(time.Minute) {
+				upd, err := d.getUpdatePacket()
+				if err != nil {
+					log.Errorf("failed to get update packet: %s", err)
+				}
+
+				if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+					Op: drpc.OP_ShuttleUpdate,
+					Params: drpc.MsgParams{
+						ShuttleUpdate: upd,
+					},
+				}); err != nil {
+					log.Errorf("failed to send shuttle update: %s", err)
+				}
+			}
+
+		}()
+
 		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
 	}
 
@@ -491,6 +524,8 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	}
 
 	e.Use(middleware.CORS())
+
+	e.GET("/health", s.handleHealth)
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
@@ -863,4 +898,30 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 	}
 
 	return nil
+}
+
+func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
+	var upd drpc.ShuttleUpdate
+
+	upd.PinQueueSize = s.PinMgr.PinQueueSize()
+
+	var st unix.Statfs_t
+	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
+		return nil, err
+	}
+
+	upd.BlockstoreSize = st.Blocks * uint64(st.Bsize)
+	upd.BlockstoreFree = st.Bavail * uint64(st.Bsize)
+
+	if err := s.DB.Model(Pin{}).Where("active").Count(&upd.NumPins).Error; err != nil {
+		return nil, err
+	}
+
+	return &upd, nil
+}
+
+func (s *Shuttle) handleHealth(c echo.Context) error {
+	return c.JSON(200, map[string]string{
+		"status": "ok",
+	})
 }

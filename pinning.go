@@ -141,7 +141,13 @@ func (cm *ContentManager) refreshPinQueue() error {
 	// to content, could be interesting to see the graph of replacements
 	// anyways
 	for _, c := range toPin {
-		cm.addPinToQueue(c, nil, 0)
+		if c.Location == "local" {
+			cm.addPinToQueue(c, nil, 0)
+		} else {
+			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location); err != nil {
+				return err
+			}
+		}
 	}
 
 	return nil
@@ -197,6 +203,9 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 }
 
 func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
+	if cont.Location != "local" {
+		log.Errorf("calling addPinToQueue on non-local content")
+	}
 
 	op := &pinner.PinningOperation{
 		ContId:   cont.ID,
@@ -207,7 +216,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 		Started:  cont.CreatedAt,
 		Status:   "queued",
 		Replace:  replace,
-		Location: "local",
+		Location: cont.Location,
 	}
 
 	cm.pinLk.Lock()

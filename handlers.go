@@ -82,9 +82,13 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 		log.Errorf("handler error: %s", err)
 		var herr *util.HttpError
 		if xerrors.As(err, &herr) {
-			ctx.JSON(herr.Code, map[string]string{
+			res := map[string]string{
 				"error": herr.Message,
-			})
+			}
+			if herr.Details != "" {
+				res["details"] = herr.Details
+			}
+			ctx.JSON(herr.Code, res)
 			return
 		}
 
@@ -157,6 +161,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
 	deals.GET("/info/:dealid", s.handleGetDealInfo)
+	deals.GET("/failures", s.handleStorageFailures)
 
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
@@ -177,6 +182,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public := e.Group("/public")
 
 	public.GET("/stats", s.handlePublicStats)
+
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
 
@@ -201,8 +207,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
-
-	admin.GET("/storage-failures", s.handleAdminStorageFailures)
 
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
@@ -500,9 +504,19 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
+		var details string
+		if s.CM.localContentAddingDisabled {
+			uep, err := s.getPreferredUploadEndpoints(u)
+			if err != nil {
+				log.Warnf("failed to get preferred upload endpoints: %s", err)
+			} else {
+				details = fmt.Sprintf("this estuary instance has disabled adding new content, please redirect your request to one of the following endpoints: %v", uep)
+			}
+		}
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Details: details,
 		}
 	}
 
@@ -885,8 +899,9 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 }
 
 type getContentResponse struct {
-	Content      *Content `json:"content"`
-	AggregatedIn *Content `json:"aggregatedIn,omitempty"`
+	Content      *Content       `json:"content"`
+	AggregatedIn *Content       `json:"aggregatedIn,omitempty"`
+	Deals        []*contentDeal `json:"deals"`
 }
 
 func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
@@ -898,7 +913,7 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 	// TODO: check both cidv0 and v1 for dag-pb cids
 
 	var contents []Content
-	if err := s.DB.Find(&contents, "cid = ? and user_id = ?", obj.Bytes(), u.ID).Error; err != nil {
+	if err := s.DB.Find(&contents, "cid = ?", obj.Bytes()).Error; err != nil {
 		return err
 	}
 
@@ -908,6 +923,8 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 			Content: &contents[i],
 		}
 
+		id := cont.ID
+
 		if cont.AggregatedIn > 0 {
 			var aggr Content
 			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
@@ -915,6 +932,12 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 			}
 
 			resp.AggregatedIn = &aggr
+			id = cont.AggregatedIn
+		}
+
+		var deals []*contentDeal
+		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
+			return err
 		}
 
 		out = append(out, resp)
@@ -1171,6 +1194,8 @@ type adminStatsResponse struct {
 	NumRetrievals      int64 `json:"numRetrievals"`
 	NumRetrFailures    int64 `json:"numRetrievalFailures"`
 	NumStorageFailures int64 `json:"numStorageFailures"`
+
+	PinQueueSize int `json:"pinQueueSize"`
 }
 
 func (s *Server) handleAdminStats(c echo.Context) error {
@@ -1230,6 +1255,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		NumRetrievals:        numRetrievals,
 		NumRetrFailures:      numRetrievalFailures,
 		NumStorageFailures:   numStorageFailures,
+		PinQueueSize:         s.CM.pinMgr.PinQueueSize(),
 	})
 }
 
@@ -2651,6 +2677,8 @@ type shuttleListResponse struct {
 	AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
 	Address        address.Address `json:"address"`
 	Hostname       string          `json:"hostname"`
+
+	StorageStats *shuttleStorageStats `json:"storageStats"`
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
@@ -2668,8 +2696,8 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 			Online:         s.CM.shuttleIsOnline(d.Handle),
 			AddrInfo:       s.CM.shuttleAddrInfo(d.Handle),
 			Hostname:       s.CM.shuttleHostName(d.Handle),
+			StorageStats:   s.CM.shuttleStorageStats(d.Handle),
 		})
-
 	}
 
 	return c.JSON(200, out)
@@ -2769,7 +2797,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 	return c.JSON(200, map[string]interface{}{})
 }
 
-func (s *Server) handleAdminStorageFailures(c echo.Context) error {
+func (s *Server) handleStorageFailures(c echo.Context) error {
 	var recs []dfeRecord
 	if err := s.DB.Limit(2000).Order("created_at desc").Find(&recs).Error; err != nil {
 		return err

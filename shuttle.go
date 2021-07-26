@@ -32,14 +32,18 @@ type Shuttle struct {
 }
 
 type shuttleConnection struct {
-	handle string
+	handle  string
+	cmds    chan *drpc.Command
+	closing chan struct{}
 
 	hostname string
 	addrInfo peer.AddrInfo
 	address  address.Address
 
-	cmds    chan *drpc.Command
-	closing chan struct{}
+	blockstoreSize uint64
+	blockstoreFree uint64
+	pinCount       int64
+	pinQueueLength int64
 }
 
 func (dc *shuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
@@ -66,6 +70,14 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	if err != nil {
 		log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
 		hello.Host = ""
+	}
+
+	if err := cm.DB.Model(Shuttle{}).Where("handle = ?").UpdateColumns(map[string]interface{}{
+		"host":            hello.Host,
+		"peer_id":         hello.AddrInfo.ID.String(),
+		"last_connection": time.Now(),
+	}).Error; err != nil {
+		return nil, nil, err
 	}
 
 	d := &shuttleConnection{
@@ -147,6 +159,16 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling transfer status message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_ShuttleUpdate:
+		param := msg.Params.ShuttleUpdate
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcShuttleUpdate(ctx, handle, param); err != nil {
+			log.Errorf("handling shuttle update message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
 	}
@@ -199,6 +221,29 @@ func (cm *ContentManager) shuttleHostName(handle string) string {
 		return d.hostname
 	}
 	return ""
+}
+
+type shuttleStorageStats struct {
+	BlockstoreSize uint64 `json:"blockstoreSize"`
+	BlockstoreFree uint64 `json:"blockstoreFree"`
+	PinCount       int64  `json:"pinCount"`
+	PinQueueLength int64  `json:"pinQueueLength"`
+}
+
+func (cm *ContentManager) shuttleStorageStats(handle string) *shuttleStorageStats {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if !ok {
+		return nil
+	}
+
+	return &shuttleStorageStats{
+		BlockstoreSize: d.blockstoreSize,
+		BlockstoreFree: d.blockstoreFree,
+		PinCount:       d.pinCount,
+		PinQueueLength: d.pinQueueLength,
+	}
 }
 
 func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle string, resp *drpc.CommPComplete) error {
@@ -260,5 +305,21 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		return nil
 	}
 	cm.updateTransferStatus(ctx, handle, param.DealDBID, param.State)
+	return nil
+}
+
+func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *drpc.ShuttleUpdate) error {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if !ok {
+		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
+	}
+
+	d.blockstoreFree = param.BlockstoreFree
+	d.blockstoreSize = param.BlockstoreSize
+	d.pinCount = param.NumPins
+	d.pinQueueLength = int64(param.PinQueueSize)
+
 	return nil
 }

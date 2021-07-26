@@ -1853,7 +1853,15 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 
 func (cm *ContentManager) recordDealFailure(dfe *DealFailureError) error {
 	log.Infow("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
-	return cm.DB.Create(dfe.Record()).Error
+	rec := dfe.Record()
+	if dfe.Miner != address.Undef {
+		var m storageMiner
+		if err := cm.DB.First(&m, "address = ?", dfe.Miner.String()).Error; err != nil {
+			log.Errorf("failed to look up miner while recording deal failure: %s", err)
+		}
+		rec.MinerVersion = m.Version
+	}
+	return cm.DB.Create(rec).Error
 }
 
 type DealFailureError struct {
@@ -1865,10 +1873,11 @@ type DealFailureError struct {
 
 type dfeRecord struct {
 	gorm.Model
-	Miner   string `json:"miner"`
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-	Content uint   `json:"content"`
+	Miner        string `json:"miner"`
+	Phase        string `json:"phase"`
+	Message      string `json:"message"`
+	Content      uint   `json:"content"`
+	MinerVersion string `json:"minerVersion"`
 }
 
 func (dfe *DealFailureError) Record() *dfeRecord {

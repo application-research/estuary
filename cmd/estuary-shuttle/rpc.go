@@ -52,17 +52,47 @@ func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 }
 
 func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint) error {
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{data},
-		UserID:  user,
-
-		Active:  false,
-		Pinning: true,
-	}
-
-	if err := d.DB.Create(pin).Error; err != nil {
+	var existing Pin
+	err := d.DB.First(&existing, "content = ?", contid).Error
+	switch {
+	default:
 		return err
+	case err == nil:
+		// already have a pin with this content id
+		if !existing.Pinning && existing.Active {
+			// we already finished pinning this one
+			// This implies that the pin complete message got lost, need to resend all the objects
+
+			var objects []*Object
+			if err := d.DB.Model(ObjRef{}).Where("content = ?", contid).
+				Joins("left join objects on obj_refs.object = objects.id").
+				Scan(&objects).Error; err != nil {
+				return err
+			}
+
+			go d.sendPinCompleteMessage(ctx, contid, existing.Size, objects)
+			return nil
+		}
+
+		if !existing.Active {
+			if err := d.DB.Model(Pin{}).Where("id = ?", existing.ID).UpdateColumn("pinning", true).Error; err != nil {
+				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
+			}
+		}
+	case xerrors.Is(err, gorm.ErrRecordNotFound):
+		// good, no pin found with this content id, lets create it
+		pin := &Pin{
+			Content: contid,
+			Cid:     util.DbCID{data},
+			UserID:  user,
+
+			Active:  false,
+			Pinning: true,
+		}
+
+		if err := d.DB.Create(pin).Error; err != nil {
+			return err
+		}
 	}
 
 	op := &pinner.PinningOperation{
