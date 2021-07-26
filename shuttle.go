@@ -111,6 +111,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	ctx, span := cm.tracer.Start(context.TODO(), "processShuttleMessage")
 	defer span.End()
 
+	log.Infof("handling shuttle message: %s", msg.Op)
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
 		ups := msg.Params.UpdatePinStatus

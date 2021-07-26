@@ -802,7 +802,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 			"pinning": false,
 			"active":  false,
 			"failed":  true,
-		}); err != nil {
+		}).Error; err != nil {
 			log.Errorf("failed to mark pin as failed in database: %s", err)
 		}
 	}
@@ -934,4 +934,29 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 	return c.JSON(200, map[string]string{
 		"status": "ok",
 	})
+}
+
+func (s *Shuttle) Unpin(contid uint) error {
+	var pin Pin
+	if err := s.DB.First(&pin, "id = ?", contid).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Delete(Pin{}, pin.ID).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Where("pin = ?", pin.ID).Delete(ObjRef{}).Error; err != nil {
+		return err
+	}
+
+	return s.clearUnreferencedObjects(context.TODO(), pin.ID)
+}
+
+func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, pin uint) error {
+	s.addPinLk.Lock()
+	defer s.addPinLk.Unlock()
+
+	panic("nyi")
+
 }

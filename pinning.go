@@ -593,13 +593,13 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 
 	op.SetStatus(status)
 	if status == "failed" {
-		var cont Content
-		if err := cm.DB.First(&cont, "id = ?").Error; err != nil {
+		var c Content
+		if err := cm.DB.First(&c, "id = ?", cont).Error; err != nil {
 			log.Errorf("failed to look up content: %s", err)
 			return
 		}
 
-		if cont.Active {
+		if c.Active {
 			log.Errorf("got failed pin status message from shuttle %s where content(%d) was already active, refusing to do anything", handle, cont)
 			return
 		}

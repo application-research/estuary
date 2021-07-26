@@ -87,14 +87,15 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
 
-			var objects []*Object
-			if err := d.DB.Model(ObjRef{}).Where("pin = ?", existing.ID).
-				Joins("left join objects on obj_refs.object = objects.id").
-				Scan(&objects).Error; err != nil {
-				return err
-			}
+			go func() {
+				objects, err := d.objectsForPin(ctx, existing.ID)
+				if err != nil {
+					log.Errorf("failed to get objects for pin: %s", err)
+					return
+				}
 
-			go d.sendPinCompleteMessage(ctx, contid, existing.Size, objects)
+				d.sendPinCompleteMessage(ctx, contid, existing.Size, objects)
+			}()
 			return nil
 		}
 
@@ -128,6 +129,17 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 
 	d.PinMgr.Add(op)
 	return nil
+}
+
+func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error) {
+	var objects []*Object
+	if err := s.DB.Model(ObjRef{}).Where("pin = ?", pin).
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&objects).Error; err != nil {
+		return nil, err
+	}
+
+	return objects, nil
 }
 
 type commpResult struct {
