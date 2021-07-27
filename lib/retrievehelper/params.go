@@ -4,11 +4,17 @@ import (
 	"math/rand"
 
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-fil-markets/shared"
 	"github.com/ipfs/go-cid"
 	"github.com/ipld/go-ipld-prime"
 )
 
 func RetrievalProposalForAsk(ask *retrievalmarket.QueryResponse, c cid.Cid, optionalSelector ipld.Node) (*retrievalmarket.DealProposal, error) {
+
+	if optionalSelector == nil {
+		optionalSelector = shared.AllSelector()
+	}
+
 	params, err := retrievalmarket.NewParamsV1(
 		ask.MinPricePerByte,
 		ask.MaxPaymentInterval,
