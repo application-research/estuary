@@ -936,9 +936,14 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 	})
 }
 
-func (s *Shuttle) Unpin(contid uint) error {
+func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 	var pin Pin
 	if err := s.DB.First(&pin, "id = ?", contid).Error; err != nil {
+		return err
+	}
+
+	objs, err := s.objectsForPin(ctx, pin.ID)
+	if err != nil {
 		return err
 	}
 
@@ -950,13 +955,47 @@ func (s *Shuttle) Unpin(contid uint) error {
 		return err
 	}
 
-	return s.clearUnreferencedObjects(context.TODO(), pin.ID)
+	if err := s.clearUnreferencedObjects(ctx, objs); err != nil {
+		return err
+	}
+
+	for _, o := range objs {
+		// TODO: this is safe, but... slow?
+		if err := s.deleteIfNotPinned(o); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
-func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, pin uint) error {
+func (s *Shuttle) deleteIfNotPinned(o *Object) error {
 	s.addPinLk.Lock()
 	defer s.addPinLk.Unlock()
 
-	panic("nyi")
+	var c int64
+	if err := s.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
+		return err
+	}
+	if c == 0 {
+		return s.Node.Blockstore.DeleteBlock(o.Cid.CID)
+	}
+	return nil
+}
 
+func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
+	var ids []uint
+	for _, o := range objs {
+		ids = append(ids, o.ID)
+	}
+	s.addPinLk.Lock()
+	defer s.addPinLk.Unlock()
+
+	if err := s.DB.Where("(?) = 0 and id in ?",
+		s.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
+		Delete(Object{}).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

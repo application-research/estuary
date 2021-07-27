@@ -19,6 +19,7 @@ import (
 	"github.com/whyrusleeping/estuary/types"
 	"github.com/whyrusleeping/estuary/util"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 )
 
 func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) {
@@ -364,13 +365,11 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		lim = limit
 	}
 
-	var contents []Content
-	if err := q.Scan(&contents).Error; err != nil {
-		return err
+	if lim == 0 {
+		lim = 500
 	}
 
 	var allowed map[string]bool
-
 	if qstatus != "" {
 		allowed = make(map[string]bool)
 		/*
@@ -388,7 +387,22 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 				return fmt.Errorf("unrecognized pin status in query: %q", s)
 			}
 		}
+	}
 
+	// certain sets of statuses we can use the database to filter for
+	oq, dblimit, err := filterForStatusQuery(q, allowed)
+	if err != nil {
+		return err
+	}
+	q = oq
+
+	if dblimit {
+		q = q.Limit(lim)
+	}
+
+	var contents []Content
+	if err := q.Scan(&contents).Error; err != nil {
+		return err
 	}
 
 	var out []*types.IpfsPinStatus
@@ -410,6 +424,56 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		"count":   len(contents),
 		"results": out,
 	})
+}
+
+func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool, error) {
+	if len(statuses) == 0 || len(statuses) == 4 {
+		// if not filtering by status, we return *all* pins, in that case we can use the query to limit results
+		return q, true, nil
+	}
+
+	pinned := statuses["pinned"]
+	failed := statuses["failed"]
+	pinning := statuses["pinning"]
+	queued := statuses["queued"]
+
+	if len(statuses) == 1 {
+		switch {
+		case pinned:
+			return q.Where("active"), true, nil
+		case failed:
+			return q.Where("failed"), true, nil
+		default:
+			return q, false, nil
+		}
+	}
+
+	if len(statuses) == 2 {
+		if pinned && failed {
+			return q.Where("active or failed"), true, nil
+		}
+
+		if pinning && queued {
+			return q.Where("not active and not failed"), true, nil
+		}
+		// fallthrough to the rest of the logic
+	}
+
+	var canUseDBLimit bool = true
+	// If the query is trying to distinguish between pinning and queued, we cannot do that solely via a database query
+	if (statuses["queued"] && !statuses["pinning"]) || (statuses["pinning"] && !statuses["queued"]) {
+		canUseDBLimit = false
+	}
+
+	if !statuses["failed"] {
+		q = q.Where("not failed")
+	}
+
+	if !statuses["pinned"] {
+		q = q.Where("not active")
+	}
+
+	return q, canUseDBLimit, nil
 }
 
 /*
