@@ -432,7 +432,8 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 		ntot := dataByLoc[loc] + c.Size
 		dataByLoc[loc] = ntot
 
-		if ntot > curMax {
+		// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
+		if ntot > curMax && loc != "local" {
 			curMax = ntot
 			primary = loc
 		}
@@ -446,6 +447,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 		}
 	}
 
+	log.Infow("consolidating content to single location for aggregation", "user", b.User, "primary", primary, "numItems", len(toMove), "primaryWeight", curMax)
 	if primary == "local" {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
@@ -512,7 +514,9 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		UserID:      b.Contents[0].UserID,
 		Replication: defaultReplication,
 		Aggregate:   true,
+		Location:    loc,
 	}
+
 	if err := cm.DB.Create(content).Error; err != nil {
 		return err
 	}
@@ -547,8 +551,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		}
 
 		if err := cm.DB.Model(Content{}).Where("id = ?", content.ID).UpdateColumns(map[string]interface{}{
-			"active":   true,
-			"location": "local",
+			"active": true,
 		}).Error; err != nil {
 			return err
 		}
