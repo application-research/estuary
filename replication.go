@@ -24,10 +24,12 @@ import (
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	lru "github.com/hashicorp/golang-lru"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	batched "github.com/ipfs/go-ipfs-provider/batched"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -51,6 +53,7 @@ type ContentManager struct {
 	Api       api.Gateway
 	FilClient *filclient.FilClient
 	Provider  *batched.BatchProvidingSystem
+	Node      *node.Node
 
 	Host host.Host
 
@@ -443,7 +446,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	}
 
 	if primary == "local" {
-		return cm.migrateContentToLocalNode(ctx, toMove)
+		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
 		return cm.sendConsolidateContentCmd(ctx, primary, toMove)
 	}
@@ -2296,8 +2299,72 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	return nil
 }
 
-func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, toMove []Content) error {
-	return fmt.Errorf("migrating content back to primary instance not yet implemented")
+func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []Content) error {
+
+	for _, c := range toMove {
+		if err := cm.migrateContentToLocalNode(ctx, c); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont Content) error {
+	done, err := cm.safeFetchData(ctx, cont.Cid.CID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch data: %w", err)
+	}
+
+	defer done()
+
+	if err := cm.DB.Model(ObjRef{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		"offloaded": 0,
+	}).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		"offloaded": false,
+		"location":  "local",
+	}).Error; err != nil {
+		return err
+	}
+
+	// TODO: send unpin command to where the content was migrated from
+
+	return nil
+}
+
+func (cm *ContentManager) safeFetchData(ctx context.Context, c cid.Cid) (func(), error) {
+	// TODO: this method should mark each object it fetches as 'needed' before pulling the data so that
+	// any concurrent deletion tasks can avoid deleting our data as we fetch it
+
+	bserv := blockservice.New(cm.Blockstore, cm.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+
+	deref := func() {
+		log.Warnf("TODO: implement safe fetch data protections")
+	}
+
+	cset := cid.NewSet()
+	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
+		return node.Links(), nil
+	}, c, cset.Visit, merkledag.Concurrent())
+	if err != nil {
+		return deref, err
+	}
+
+	return deref, nil
 }
 
 func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, error) {

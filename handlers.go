@@ -2420,7 +2420,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	var deals []*metricsDealJoin
 	if err := s.DB.Model(contentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
-		Select("failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
+		Select("content_deals.failed as failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
 		Scan(&deals).Error; err != nil {
 		return err
 	}
