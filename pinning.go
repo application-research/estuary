@@ -35,7 +35,7 @@ func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) 
 		}
 
 		ps := &types.IpfsPinStatus{
-			Requestid: fmt.Sprint(cont),
+			Requestid: fmt.Sprintf("%d", cont.ID),
 			Status:    "pinning",
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
