@@ -70,6 +70,8 @@ type PinningOperation struct {
 
 	Location string
 
+	SkipLimiter bool
+
 	lk sync.Mutex
 }
 
@@ -168,7 +170,12 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		}
 	}
 
-	if minCount >= maxActivePerUser {
+	_, ok := pm.pinQueue[0]
+	if ok {
+		user = 0
+	}
+
+	if minCount >= maxActivePerUser && user != 0 {
 		return nil
 	}
 
@@ -186,8 +193,13 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
-	q := pm.pinQueue[po.UserId]
-	pm.pinQueue[po.UserId] = append(q, po)
+	u := po.UserId
+	if po.SkipLimiter {
+		u = 0
+	}
+
+	q := pm.pinQueue[u]
+	pm.pinQueue[u] = append(q, po)
 }
 
 func (pm *PinManager) Run(workers int) {

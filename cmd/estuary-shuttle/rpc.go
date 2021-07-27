@@ -48,10 +48,10 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
-	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId)
+	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, false)
 }
 
-func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, skipLimiter bool) error {
 	var search []Pin
 	if err := d.DB.Find(&search, "content = ?", contid).Error; err != nil {
 		return err
@@ -125,6 +125,8 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		ContId: contid,
 		UserId: user,
 		Status: "queued",
+
+		SkipLimiter: skipLimiter,
 	}
 
 	d.PinMgr.Add(op)
@@ -213,7 +215,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 			continue
 		}
 
-		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID); err != nil {
+		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, true); err != nil {
 			return err
 		}
 	}
