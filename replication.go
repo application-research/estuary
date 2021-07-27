@@ -218,7 +218,7 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, host host.Host) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node) *ContentManager {
 
 	cache, err := lru.NewARC(50000)
 	if err != nil {
@@ -231,7 +231,8 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Api:                  api,
 		FilClient:            fc,
 		Blockstore:           tbs.Under().(node.EstuaryBlockstore),
-		Host:                 host,
+		Host:                 nd.Host,
+		Node:                 nd,
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
