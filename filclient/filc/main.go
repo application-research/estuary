@@ -9,6 +9,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -20,6 +21,7 @@ import (
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
+	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 	"golang.org/x/xerrors"
 )
@@ -305,12 +307,7 @@ var getAskCmd = &cli.Command{
 			return fmt.Errorf("failed to get ask: %s", err)
 		}
 
-		fmt.Println("got back ask: ")
-		fmt.Println("Miner: ", ask.Ask.Ask.Miner)
-		fmt.Println("Price (unverified): ", ask.Ask.Ask.Price)
-		fmt.Println("Price (verified): ", ask.Ask.Ask.VerifiedPrice)
-		fmt.Println("Min PieceSize: ", ask.Ask.Ask.MinPieceSize)
-		fmt.Println("Max PieceSize: ", ask.Ask.Ask.MaxPieceSize)
+		printAskResponse(ask.Ask.Ask)
 
 		return nil
 	},
@@ -385,14 +382,7 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		fmt.Println("retrieved content")
-		fmt.Println("Total Payment: ", stats.TotalPayment)
-		fmt.Println("Num Payments: ", stats.NumPayments)
-		fmt.Println("Size: ", stats.Size)
-		fmt.Println("Duration: ", stats.Duration)
-		fmt.Println("Average Speed: ", stats.AverageSpeed)
-		fmt.Println("Ask Price: ", stats.AskPrice)
-		fmt.Println("Peer: ", stats.Peer)
+		printRetrievalStats(stats)
 
 		return nil
 	},
@@ -438,15 +428,116 @@ var queryRetrievalCmd = &cli.Command{
 			return err
 		}
 
-		fmt.Println("got retrieval info")
-		fmt.Println("Size: ", query.Size)
-		fmt.Println("Unseal Price: ", query.UnsealPrice)
-		fmt.Println("Min Price Per Byte: ", query.MinPricePerByte)
-		fmt.Println("Payment Address: ", query.PaymentAddress)
-		if query.Message != "" {
-			fmt.Println("Message: ", query.Message)
-		}
+		printQueryResponse(query)
 
 		return nil
 	},
+}
+
+func printAskResponse(ask *storagemarket.StorageAsk) {
+	fmt.Printf(`ASK RESPONSE
+-----
+Miner: %v
+Price (Unverified): %v
+Price (Verified): %v
+Min Piece Size: %v
+Max Piece Size: %v
+`,
+		ask.Miner,
+		ask.Price,
+		ask.VerifiedPrice,
+		ask.MinPieceSize,
+		ask.MaxPieceSize,
+	)
+}
+
+func printRetrievalStats(stats *filclient.RetrievalStats) {
+	fmt.Printf(`RETRIEVAL STATS
+-----
+Size:          %v (%v)
+Total Payment: %v
+Num Payments:  %v
+Duration:      %v
+Average Speed: %v (%v/s)
+Ask Price:     %v
+Peer:          %v
+`,
+		stats.Size, formatBytes(stats.Size),
+		stats.TotalPayment,
+		stats.NumPayments,
+		stats.Duration,
+		stats.AverageSpeed, formatBytes(stats.AverageSpeed),
+		stats.AskPrice,
+		stats.Peer,
+	)
+}
+
+func printQueryResponse(query *retrievalmarket.QueryResponse) {
+	var status string
+	switch query.Status {
+	case retrievalmarket.QueryResponseAvailable:
+		status = "Available"
+	case retrievalmarket.QueryResponseUnavailable:
+		status = "Unavailable"
+	case retrievalmarket.QueryResponseError:
+		status = "Error"
+	default:
+		status = fmt.Sprintf("Unknown (%d)", query.Status)
+	}
+
+	fmt.Printf(`QUERY RESPONSE
+-----
+Status:                        %v
+Size:                          %v (%v)
+Unseal Price:                  %v
+Min Price Per Byte:            %v
+Payment Address:               %v
+Max Payment Interval:          %v (%v)
+Max Payment Interval Increase: %v (%v)
+Piece CID Found:               %v
+`,
+		status,
+		query.Size, formatBytes(query.Size),
+		query.UnsealPrice,
+		query.MinPricePerByte,
+		query.PaymentAddress,
+		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
+		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
+		query.PieceCIDFound,
+	)
+	if query.Message != "" {
+		fmt.Println("Message:\n\t", query.Message)
+	}
+}
+
+func formatBytes(count uint64) string {
+
+	exabyteIndex := uint64(6)
+
+	prefixIndex := uint64(0)
+	prefixMultiplier := uint64(1)
+	for count/prefixMultiplier >= 1024 && prefixIndex < exabyteIndex {
+		prefixIndex++
+		prefixMultiplier *= 1024
+	}
+
+	var unit string
+	switch prefixIndex {
+	case 0:
+		unit = "B"
+	case 1:
+		unit = "kiB"
+	case 2:
+		unit = "MiB"
+	case 3:
+		unit = "GiB"
+	case 4:
+		unit = "TiB"
+	case 5:
+		unit = "PiB"
+	default:
+		unit = "EiB"
+	}
+
+	return fmt.Sprintf("%d.%d %s", count/prefixMultiplier, (count+5)/(prefixMultiplier/10)%10, unit)
 }

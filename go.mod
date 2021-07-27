@@ -10,10 +10,10 @@ require (
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
 	github.com/filecoin-project/go-commp-utils v0.1.1-0.20210427191551-70bf140d31c7
 	github.com/filecoin-project/go-data-transfer v1.7.0
-	github.com/filecoin-project/go-fil-commcid v0.0.0-20201016201715-d41df56b4f6a
+	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-commp-hashhash v0.1.0
-	github.com/filecoin-project/go-fil-markets v1.6.0-rc1
-	github.com/filecoin-project/go-padreader v0.0.0-20200903213702-ed5fae088b20
+	github.com/filecoin-project/go-fil-markets v1.6.0-rc1.0.20210723225932-46b52248a0f2
+	github.com/filecoin-project/go-padreader v0.0.0-20210723183308-812a16dc01b1
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210722133031-ad9bfe54c124
 	github.com/filecoin-project/lotus v1.10.1
 	github.com/filecoin-project/specs-actors v0.9.14

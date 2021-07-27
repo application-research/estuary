@@ -3,6 +3,7 @@ package filclient
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -140,7 +141,13 @@ func NewClient(h host.Host, api api.Gateway, w *wallet.LocalWallet, addr address
 		// Called when a restart completes successfully
 		//OnRestartComplete func(id datatransfer.ChannelID)
 	})
-	mgr, err := dtimpl.NewDataTransfer(ds, filepath.Join(ddir, "cidlistsdir"), dtn, tpt, dtRestartConfig)
+
+	cidlistsdirPath := filepath.Join(ddir, "cidlistsdir")
+	if err := os.MkdirAll(cidlistsdirPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to initialize cidlistsdir: %w", err)
+	}
+
+	mgr, err := dtimpl.NewDataTransfer(ds, cidlistsdirPath, dtn, tpt, dtRestartConfig)
 	if err != nil {
 		return nil, err
 	}
