@@ -506,7 +506,7 @@ Piece CID Found:               %v
 		query.PieceCIDFound,
 	)
 	if query.Message != "" {
-		fmt.Println("Message:\n\t", query.Message)
+		fmt.Printf("Message:\n\t%v\n", query.Message)
 	}
 }
 
@@ -539,5 +539,11 @@ func formatBytes(count uint64) string {
 		unit = "EiB"
 	}
 
-	return fmt.Sprintf("%d.%d %s", count/prefixMultiplier, (count+5)/(prefixMultiplier/10)%10, unit)
+	if prefixIndex == 0 {
+		// If the size is in bytes, just print a whole number
+		return fmt.Sprintf("%d %s", count/prefixMultiplier, unit)
+	} else {
+		// Otherwise, print the number with its first decimal digit
+		return fmt.Sprintf("%d.%d %s", count/prefixMultiplier, (count+5)/(prefixMultiplier/10)%10, unit)
+	}
 }
