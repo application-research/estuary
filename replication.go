@@ -1366,6 +1366,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if d.DTChan == "" && content.Location != "local" {
 		log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
+		if time.Since(d.CreatedAt) > time.Hour {
+			return DEAL_CHECK_UNKNOWN, nil
+		}
+
 		return DEAL_CHECK_PROGRESS, nil
 	}
 

@@ -319,7 +319,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qafter := e.QueryParam("after")
 	qlimit := e.QueryParam("limit")
 
-	q := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Order("created_at desc")
+	q := s.DB.Model(Content{}).Where("user_id = ? and not aggregate", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID
