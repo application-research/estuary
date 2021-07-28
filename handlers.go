@@ -267,6 +267,7 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
+	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
 	File            string  `json:"file"`
 	BWUsed          int64   `json:"bwUsed"`
@@ -324,6 +325,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
+			ID:   c.ID,
 			Cid:  c.Cid.CID,
 			File: c.Name,
 		}
@@ -755,8 +757,27 @@ type expandedContent struct {
 }
 
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
+
+	var limit int = 20
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		l, err := strconv.Atoi(limstr)
+		if err != nil {
+			return err
+		}
+		limit = l
+	}
+
+	var offset int
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		o, err := strconv.Atoi(offstr)
+		if err != nil {
+			return err
+		}
+		offset = o
+	}
+
 	var contents []Content
-	if err := s.DB.Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
 
