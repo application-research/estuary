@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -152,7 +151,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/query/:miner", s.handleQueryAsk)
-	//deals.POST("/make/:miner", s.handleMakeDeal)
+	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
@@ -603,6 +602,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		s.CM.ToCheck <- content.ID
 	}()
 
+	if c.QueryParam("lazy-provide") != "true" {
+		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
+		defer cancel()
+		if err := s.Node.FullRT.Provide(subctx, nd.Cid(), true); err != nil {
+			log.Errorf("fullrt provide call errored: %s", err)
+		}
+	}
+
 	go func() {
 		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
 			fmt.Println("providing failed: ", err)
@@ -965,14 +972,19 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Cid      cid.Cid        `json:"cid"`
-	Price    types.BigInt   `json:"price"`
-	Duration abi.ChainEpoch `json:"duration"`
-	Verified bool           `json:"verified"`
+	Content uint            `json:"content"`
+	Miner   address.Address `json:"miner"`
 }
 
-func (s *Server) handleMakeDeal(c echo.Context) error {
+func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	if u.Perm < util.PermLevelAdmin {
+		return util.HttpError{
+			Code:    401,
+			Message: util.ERR_INVALID_AUTH,
+		}
+	}
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -984,23 +996,19 @@ func (s *Server) handleMakeDeal(c echo.Context) error {
 		return err
 	}
 
-	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, 0, req.Duration, req.Verified)
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
+		return err
+	}
+
+	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
 	if err != nil {
 		return err
 	}
 
-	raw, err := json.MarshalIndent(proposal, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Println("deal proposal: ", string(raw))
-
-	resp, err := s.FilClient.SendProposal(ctx, proposal)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(200, resp)
+	return c.JSON(200, map[string]interface{}{
+		"deal": id,
+	})
 }
 
 func (s *Server) handleTransferStatus(c echo.Context) error {

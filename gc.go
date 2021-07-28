@@ -136,3 +136,81 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 
 	return nil
 }
+
+func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
+	var pin Content
+	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
+		return err
+	}
+
+	objs, err := cm.objectsForPin(ctx, pin.ID)
+	if err != nil {
+		return err
+	}
+
+	if err := cm.DB.Delete(Content{}, pin.ID).Error; err != nil {
+		return err
+	}
+
+	if err := cm.DB.Where("pin = ?", pin.ID).Delete(ObjRef{}).Error; err != nil {
+		return err
+	}
+
+	if err := cm.clearUnreferencedObjects(ctx, objs); err != nil {
+		return err
+	}
+
+	for _, o := range objs {
+		// TODO: this is safe, but... slow?
+		if err := cm.deleteIfNotPinned(ctx, o); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) error {
+	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinned")
+	defer span.End()
+
+	cm.contentLk.Lock()
+	defer cm.contentLk.Unlock()
+
+	var c int64
+	if err := cm.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
+		return err
+	}
+	if c == 0 {
+		return cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
+	}
+	return nil
+}
+
+func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
+	var ids []uint
+	for _, o := range objs {
+		ids = append(ids, o.ID)
+	}
+	cm.contentLk.Lock()
+	defer cm.contentLk.Unlock()
+
+	if err := cm.DB.Where("(?) = 0 and id in ?",
+		cm.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
+		Delete(Object{}).Error; err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*Object, error) {
+	var objects []*Object
+	if err := cm.DB.Model(ObjRef{}).Where("content = ?", cont).
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&objects).Error; err != nil {
+		return nil, err
+	}
+
+	return objects, nil
+}

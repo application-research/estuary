@@ -48,6 +48,8 @@ import (
 
 const defaultReplication = 6
 
+const dealDuration = 1555200
+
 type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
@@ -848,6 +850,9 @@ func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Addr
 
 	var sm storageMiner
 	if err := cm.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
 
@@ -1698,7 +1703,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			price = asks[i].Ask.Ask.VerifiedPrice
 		}
 
-		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, 1000000, verified)
+		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, dealDuration, verified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -1802,6 +1807,115 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	}
 
 	return nil
+}
+
+func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content, miner address.Address, verified bool) (uint, error) {
+	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
+		attribute.Int64("content", int64(content.ID)),
+		attribute.Stringer("miner", miner),
+	))
+	defer span.End()
+
+	if content.Offloaded {
+		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
+
+	ask, err := cm.FilClient.GetAsk(ctx, miner)
+	if err != nil {
+		var apierr *filclient.ApiError
+		if !xerrors.As(err, &apierr) {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   miner,
+				Phase:   "query-ask",
+				Message: err.Error(),
+				Content: content.ID,
+			})
+		}
+
+		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
+	}
+
+	price := ask.Ask.Ask.Price
+	if verified {
+		price = ask.Ask.Ask.VerifiedPrice
+	}
+
+	if cm.priceIsTooHigh(price, verified) {
+		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
+	}
+
+	prop, err := cm.FilClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.Ask.Ask.MinPieceSize, dealDuration, verified)
+	if err != nil {
+		return 0, xerrors.Errorf("failed to construct a deal proposal: %w", err)
+	}
+
+	if err := cm.putProposalRecord(prop.DealProposal); err != nil {
+		return 0, err
+	}
+
+	var deal *contentDeal
+	dealresp, err := cm.FilClient.SendProposal(ctx, prop)
+	if err != nil {
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "send-proposal",
+			Message: err.Error(),
+			Content: content.ID,
+		})
+		return 0, fmt.Errorf("failed to send proposal to miner: %w", err)
+	}
+
+	// TODO: verify signature!
+	switch dealresp.Response.State {
+	case storagemarket.StorageDealError:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: dealresp.Response.Message,
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("deal errored: %s", dealresp.Response.Message)
+	case storagemarket.StorageDealProposalRejected:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: dealresp.Response.Message,
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("deal rejected: %s", dealresp.Response.Message)
+	default:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("unrecognized proposal response state %d: %s", dealresp.Response.State, dealresp.Response.Message)
+	case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
+
+		deal = &contentDeal{
+			Content:  content.ID,
+			PropCid:  util.DbCID{dealresp.Response.Proposal},
+			Miner:    miner.String(),
+			Verified: verified,
+		}
+
+		if err := cm.DB.Create(deal).Error; err != nil {
+			return 0, xerrors.Errorf("failed to create database entry for deal: %w", err)
+		}
+	}
+
+	if err := cm.StartDataTransfer(ctx, deal); err != nil {
+		return 0, fmt.Errorf("failed to start data transfer: %w", err)
+	}
+
+	return deal.ID, nil
 }
 
 func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal) error {
