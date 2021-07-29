@@ -84,7 +84,9 @@ func ddir(cctx *cli.Context) string {
 }
 
 var makeDealCmd = &cli.Command{
-	Name: "deal",
+	Name:      "deal",
+	Usage:     "Make a storage deal with a miner",
+	ArgsUsage: "[file path]",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name: "miner",
@@ -243,7 +245,9 @@ var makeDealCmd = &cli.Command{
 }
 
 var infoCmd = &cli.Command{
-	Name: "info",
+	Name:      "info",
+	Usage:     "Display wallet information",
+	ArgsUsage: " ",
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
@@ -287,7 +291,9 @@ var infoCmd = &cli.Command{
 }
 
 var getAskCmd = &cli.Command{
-	Name: "get-ask",
+	Name:      "get-ask",
+	Usage:     "Query storage deal ask for a miner",
+	ArgsUsage: "[miner]",
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
 			return fmt.Errorf("please specify miner to query ask of")
@@ -318,7 +324,9 @@ var getAskCmd = &cli.Command{
 }
 
 var listDealsCmd = &cli.Command{
-	Name: "list",
+	Name:      "list",
+	Usage:     "List local storage deal history",
+	ArgsUsage: " ",
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
@@ -336,7 +344,9 @@ var listDealsCmd = &cli.Command{
 }
 
 var retrieveFileCmd = &cli.Command{
-	Name: "retrieve",
+	Name:      "retrieve",
+	Usage:     "Retrieve a file by CID from a miner",
+	ArgsUsage: "[cid]",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
@@ -393,7 +403,9 @@ var retrieveFileCmd = &cli.Command{
 }
 
 var queryRetrievalCmd = &cli.Command{
-	Name: "query-retrieval",
+	Name:      "query-retrieval",
+	Usage:     "Query retrieval information for a CID",
+	ArgsUsage: "[cid]",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
@@ -439,7 +451,9 @@ var queryRetrievalCmd = &cli.Command{
 }
 
 var clearBlockstoreCmd = &cli.Command{
-	Name: "clear-blockstore",
+	Name:      "clear-blockstore",
+	Usage:     "Delete all retrieved file data in the blockstore",
+	ArgsUsage: " ",
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
