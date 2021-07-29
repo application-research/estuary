@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -112,10 +111,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		nd, err := setup(ctx, ddir)
+		nd, err := setup(cctx.Context, ddir)
 		if err != nil {
 			return err
 		}
@@ -148,7 +144,7 @@ var makeDealCmd = &cli.Command{
 
 		tpr("File CID: %s", obj.Cid())
 
-		ask, err := fc.GetAsk(ctx, miner)
+		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
 			return err
 		}
@@ -160,7 +156,7 @@ var makeDealCmd = &cli.Command{
 			price = ask.Ask.Ask.VerifiedPrice
 		}
 
-		proposal, err := fc.MakeDeal(ctx, miner, obj.Cid(), price, 0, 2880*365, verified)
+		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, 0, 2880*365, verified)
 		if err != nil {
 			return err
 		}
@@ -176,7 +172,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		resp, err := fc.SendProposal(ctx, proposal)
+		resp, err := fc.SendProposal(cctx.Context, proposal)
 		if err != nil {
 			return err
 		}
@@ -195,7 +191,7 @@ var makeDealCmd = &cli.Command{
 
 		tpr("starting data transfer... %s", resp.Response.Proposal)
 
-		chanid, err := fc.StartDataTransfer(ctx, miner, resp.Response.Proposal, obj.Cid())
+		chanid, err := fc.StartDataTransfer(cctx.Context, miner, resp.Response.Proposal, obj.Cid())
 		if err != nil {
 			return err
 		}
@@ -203,7 +199,7 @@ var makeDealCmd = &cli.Command{
 		var lastStatus datatransfer.Status
 	loop:
 		for {
-			status, err := fc.TransferStatus(ctx, chanid)
+			status, err := fc.TransferStatus(cctx.Context, chanid)
 			if err != nil {
 				return err
 			}
@@ -251,10 +247,7 @@ var infoCmd = &cli.Command{
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		nd, err := setup(ctx, ddir)
+		nd, err := setup(cctx.Context, ddir)
 		if err != nil {
 			return err
 		}
@@ -272,14 +265,14 @@ var infoCmd = &cli.Command{
 
 		fmt.Println("default client address: ", addr)
 
-		act, err := api.StateGetActor(ctx, addr, types.EmptyTSK)
+		act, err := api.StateGetActor(cctx.Context, addr, types.EmptyTSK)
 		if err != nil {
 			return err
 		}
 
 		fmt.Println("Balance: ", types.FIL(act.Balance))
 
-		pow, err := api.StateVerifiedClientStatus(ctx, addr, types.EmptyTSK)
+		pow, err := api.StateVerifiedClientStatus(cctx.Context, addr, types.EmptyTSK)
 		if err != nil {
 			return err
 		}
@@ -351,8 +344,6 @@ var retrieveFileCmd = &cli.Command{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
 	Action: func(cctx *cli.Context) error {
-		ctx := context.Background()
-
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
 			return fmt.Errorf("please specify a CID to retrieve")
@@ -381,7 +372,7 @@ var retrieveFileCmd = &cli.Command{
 		}
 		defer closer()
 
-		ask, err := fc.RetrievalQuery(ctx, miner, c)
+		ask, err := fc.RetrievalQuery(cctx.Context, miner, c)
 		if err != nil {
 			return err
 		}
@@ -391,7 +382,7 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		stats, err := fc.RetrieveContent(ctx, miner, proposal)
+		stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
 		if err != nil {
 			return err
 		}
@@ -517,28 +508,40 @@ func printQueryResponse(query *retrievalmarket.QueryResponse) {
 	case retrievalmarket.QueryResponseError:
 		status = "Error"
 	default:
-		status = fmt.Sprintf("Unknown (%d)", query.Status)
+		status = fmt.Sprintf("Unrecognized Status (%d)", query.Status)
+	}
+
+	var pieceCIDFound string
+	switch query.PieceCIDFound {
+	case retrievalmarket.QueryItemAvailable:
+		pieceCIDFound = "Available"
+	case retrievalmarket.QueryItemUnavailable:
+		pieceCIDFound = "Unavailable"
+	case retrievalmarket.QueryItemUnknown:
+		pieceCIDFound = "Unknown"
+	default:
+		pieceCIDFound = fmt.Sprintf("Unrecognized (%d)", query.PieceCIDFound)
 	}
 
 	fmt.Printf(`QUERY RESPONSE
 -----
 Status:                        %v
+Piece CID Found:               %v
 Size:                          %v (%v)
 Unseal Price:                  %v (%v)
 Min Price Per Byte:            %v (%v)
 Payment Address:               %v
 Max Payment Interval:          %v (%v)
 Max Payment Interval Increase: %v (%v)
-Piece CID Found:               %v
 `,
 		status,
+		pieceCIDFound,
 		query.Size, formatBytes(query.Size),
 		query.UnsealPrice, types.FIL(query.UnsealPrice),
 		query.MinPricePerByte, types.FIL(query.UnsealPrice),
 		query.PaymentAddress,
 		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
 		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
-		query.PieceCIDFound,
 	)
 	if query.Message != "" {
 		fmt.Printf("Message:\n\t%v\n", query.Message)
