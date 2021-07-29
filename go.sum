@@ -143,6 +143,8 @@ github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24 h1:sPn/lBRJBJv5SP1uhdw+u1YfeIHeDJzOlriG8af57QQ=
 github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24/go.mod h1:VqlrRc2MvZvHSYuecGmFRBCMf6DNp7RFEoe2d20BBaU=
+github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb h1:Blw+pHwrjflCcezIPpI+8xqb2ZbtL+r1DJNlMrPuInM=
+github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
 github.com/armon/consul-api v0.0.0-20180202201655-eb2c6b5be1b6/go.mod h1:grANhF5doyWs3UAsr3K4I6qtAmlQcZDesFNEHPZAzj8=
 github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da/go.mod h1:Q73ZrmVTwzkszR9V5SSuryQ31EELlFMUz1kKyl939pY=
