@@ -503,7 +503,8 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 }
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
-	ctx := c.Request().Context()
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
+	defer span.End()
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		var details string
@@ -609,6 +610,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
 		if err := s.Node.FullRT.Provide(subctx, nd.Cid(), true); err != nil {
+			span.RecordError(fmt.Errorf("provide error: %w", err))
 			log.Errorf("fullrt provide call errored: %s", err)
 		}
 	}
@@ -619,7 +621,12 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 		fmt.Println("providing complete")
 	}()
-	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+
+	return c.JSON(200, map[string]interface{}{
+		"cid":       nd.Cid().String(),
+		"estuaryId": content.ID,
+		"providers": s.CM.pinDelegatesForContent(*content),
+	})
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -2635,6 +2642,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleContentHealthCheck(c echo.Context) error {
+	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return err
@@ -2643,6 +2651,12 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	var cont Content
 	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
 		return err
+	}
+
+	if cont.Location != "local" {
+		return c.JSON(200, map[string]interface{}{
+			"error": "requested content was not local to this instance, cannot check health right now",
+		})
 	}
 
 	var u User
@@ -2655,6 +2669,32 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
+	_, rootFetchErr := s.Node.Blockstore.Get(cont.Cid.CID)
+	if rootFetchErr != nil {
+		log.Errorf("failed to fetch root: %s", rootFetchErr)
+	}
+
+	if cont.Aggregate && rootFetchErr != nil {
+		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
+		var children []Content
+		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
+			return err
+		}
+
+		nd, err := s.CM.createAggregate(ctx, children)
+		if err != nil {
+			return fmt.Errorf("failed to create aggregate: %w", err)
+		}
+
+		if nd.Cid() != cont.Cid.CID {
+			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
+		}
+
+		if err := s.Node.Blockstore.Put(nd); err != nil {
+			return err
+		}
+	}
+
 	var exch exchange.Interface
 	if c.QueryParam("fetch") != "" {
 		exch = s.Node.Bitswap
@@ -2664,7 +2704,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
-	err = merkledag.Walk(c.Request().Context(), func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+	err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
