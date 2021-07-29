@@ -487,17 +487,9 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		loc = k
 	}
 
-	sort.Slice(b.Contents, func(i, j int) bool {
-		return b.Contents[i].ID < b.Contents[j].ID
-	})
-
-	log.Info("aggregating contents in staging zone into new content")
-	dir := unixfs.EmptyDirNode()
-	for _, c := range b.Contents {
-		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
-			Size: uint64(c.Size),
-			Cid:  c.Cid.CID,
-		})
+	dir, err := cm.createAggregate(ctx, b.Contents)
+	if err != nil {
+		return xerrors.Errorf("failed to create aggregate: %w", err)
 	}
 
 	ncid := dir.Cid()
@@ -566,6 +558,23 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	} else {
 		return cm.sendAggregateCmd(ctx, loc, *content, ids, dir.RawData())
 	}
+}
+
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) (*merkledag.ProtoNode, error) {
+	sort.Slice(conts, func(i, j int) bool {
+		return conts[i].ID < conts[j].ID
+	})
+
+	log.Info("aggregating contents in staging zone into new content")
+	dir := unixfs.EmptyDirNode()
+	for _, c := range conts {
+		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
+			Size: uint64(c.Size),
+			Cid:  c.Cid.CID,
+		})
+	}
+
+	return dir, nil
 }
 
 func (cm *ContentManager) startup() error {
@@ -2004,7 +2013,7 @@ type dfeRecord struct {
 	Miner        string `json:"miner"`
 	Phase        string `json:"phase"`
 	Message      string `json:"message"`
-	Content      uint   `json:"content"`
+	Content      uint   `json:"content" gorm:"index"`
 	MinerVersion string `json:"minerVersion"`
 }
 

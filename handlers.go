@@ -50,6 +50,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -2312,14 +2313,24 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
 		r := c.Request()
+
+		attrs := []attribute.KeyValue{
+			semconv.HTTPMethodKey.String(r.Method),
+			semconv.HTTPRouteKey.String(r.URL.Path),
+			semconv.HTTPClientIPKey.String(r.RemoteAddr),
+			semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
+		}
+
+		if reqid := r.Header.Get("EstClientReqID"); reqid != "" {
+			if len(reqid) > 64 {
+				reqid = reqid[:64]
+			}
+			attrs = append(attrs, attribute.String("ClientReqID", reqid))
+		}
+
 		tctx, span := s.tracer.Start(context.Background(),
 			"HTTP "+r.Method+" "+c.Path(),
-			trace.WithAttributes(
-				semconv.HTTPMethodKey.String(r.Method),
-				semconv.HTTPRouteKey.String(r.URL.Path),
-				semconv.HTTPClientIPKey.String(r.RemoteAddr),
-				semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
-			),
+			trace.WithAttributes(attrs...),
 		)
 		defer span.End()
 
