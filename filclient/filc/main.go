@@ -312,7 +312,7 @@ var getAskCmd = &cli.Command{
 		}
 		defer closer()
 
-		ask, err := fc.GetAsk(context.TODO(), miner)
+		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
 			return fmt.Errorf("failed to get ask: %s", err)
 		}
@@ -439,7 +439,7 @@ var queryRetrievalCmd = &cli.Command{
 		}
 		defer closer()
 
-		query, err := fc.RetrievalQuery(context.TODO(), miner, cid)
+		query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
 		if err != nil {
 			return err
 		}
