@@ -33,8 +33,30 @@ type dealData struct {
 	Proposal *market.ClientDealProposal
 }
 
-func saveDealProposal(dir string, propcid cid.Cid, proposal *market.ClientDealProposal) error {
-	if err := os.MkdirAll(filepath.Join(dir, "deals"), 0755); err != nil {
+func dealsPath(baseDir string) string {
+	return filepath.Join(baseDir, "deals")
+}
+
+func keyPath(baseDir string) string {
+	return filepath.Join(baseDir, "libp2p.key")
+}
+
+func blockstorePath(baseDir string) string {
+	return filepath.Join(baseDir, "blockstore")
+}
+
+func datastorePath(baseDir string) string {
+	return filepath.Join(baseDir, "datastore")
+}
+
+func walletPath(baseDir string) string {
+	return filepath.Join(baseDir, "wallet")
+}
+
+func saveDealProposal(dataDir string, propcid cid.Cid, proposal *market.ClientDealProposal) error {
+	dealsPath := dealsPath(dataDir)
+
+	if err := os.MkdirAll(dealsPath, 0755); err != nil {
 		return err
 	}
 
@@ -42,7 +64,7 @@ func saveDealProposal(dir string, propcid cid.Cid, proposal *market.ClientDealPr
 		Proposal: proposal,
 	}
 
-	fi, err := os.Create(filepath.Join(dir, "deals", propcid.String()))
+	fi, err := os.Create(filepath.Join(dealsPath, propcid.String()))
 	if err != nil {
 		return err
 	}
@@ -55,8 +77,8 @@ func saveDealProposal(dir string, propcid cid.Cid, proposal *market.ClientDealPr
 	return nil
 }
 
-func listDeals(dir string) ([]cid.Cid, error) {
-	elems, err := ioutil.ReadDir(filepath.Join(dir, "deals"))
+func listDeals(dataDir string) ([]cid.Cid, error) {
+	elems, err := ioutil.ReadDir(dealsPath(dataDir))
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +136,7 @@ type Node struct {
 }
 
 func setup(ctx context.Context, cfgdir string) (*Node, error) {
-	peerkey, err := loadOrInitPeerKey(filepath.Join(cfgdir, "libp2p.key"))
+	peerkey, err := loadOrInitPeerKey(keyPath(cfgdir))
 	if err != nil {
 		return nil, err
 	}
@@ -131,14 +153,14 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	}
 
 	bstore, err := lmdb.Open(&lmdb.Options{
-		Path:   filepath.Join(cfgdir, "blockstore"),
+		Path:   blockstorePath(cfgdir),
 		NoSync: true,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	ds, err := levelds.NewDatastore(filepath.Join(cfgdir, "datastore"), nil)
+	ds, err := levelds.NewDatastore(datastorePath(cfgdir), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +168,7 @@ func setup(ctx context.Context, cfgdir string) (*Node, error) {
 	bsnet := bsnet.NewFromIpfsHost(h, nil)
 	bswap := bitswap.New(ctx, bsnet, bstore)
 
-	wallet, err := setupWallet(filepath.Join(cfgdir, "wallet"))
+	wallet, err := setupWallet(walletPath(cfgdir))
 	if err != nil {
 		return nil, err
 	}

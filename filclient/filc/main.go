@@ -42,6 +42,7 @@ func main() {
 		listDealsCmd,
 		retrieveFileCmd,
 		queryRetrievalCmd,
+		clearBlockstoreCmd,
 	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -65,7 +66,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	app.RunAndExitOnError()
+	if err := app.Run(os.Args); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
 // Get config directory from CLI metadata
@@ -434,18 +438,35 @@ var queryRetrievalCmd = &cli.Command{
 	},
 }
 
+var clearBlockstoreCmd = &cli.Command{
+	Name: "clear-blockstore",
+	Action: func(cctx *cli.Context) error {
+		ddir := ddir(cctx)
+
+		fmt.Println("clearing blockstore...")
+
+		if err := os.RemoveAll(blockstorePath(ddir)); err != nil {
+			return err
+		}
+
+		fmt.Println("done")
+
+		return nil
+	},
+}
+
 func printAskResponse(ask *storagemarket.StorageAsk) {
 	fmt.Printf(`ASK RESPONSE
 -----
 Miner: %v
-Price (Unverified): %v
-Price (Verified): %v
+Price (Unverified): %v (%v)
+Price (Verified): %v (%v)
 Min Piece Size: %v
 Max Piece Size: %v
 `,
 		ask.Miner,
-		ask.Price,
-		ask.VerifiedPrice,
+		ask.Price, types.FIL(ask.Price),
+		ask.VerifiedPrice, types.FIL(ask.VerifiedPrice),
 		ask.MinPieceSize,
 		ask.MaxPieceSize,
 	)
@@ -455,19 +476,19 @@ func printRetrievalStats(stats *filclient.RetrievalStats) {
 	fmt.Printf(`RETRIEVAL STATS
 -----
 Size:          %v (%v)
-Total Payment: %v
+Total Payment: %v (%v)
+Ask Price:     %v (%v)
 Num Payments:  %v
 Duration:      %v
 Average Speed: %v (%v/s)
-Ask Price:     %v
 Peer:          %v
 `,
 		stats.Size, formatBytes(stats.Size),
-		stats.TotalPayment,
+		stats.TotalPayment, types.FIL(stats.AskPrice),
+		stats.AskPrice, types.FIL(stats.AskPrice),
 		stats.NumPayments,
 		stats.Duration,
 		stats.AverageSpeed, formatBytes(stats.AverageSpeed),
-		stats.AskPrice,
 		stats.Peer,
 	)
 }
@@ -489,8 +510,8 @@ func printQueryResponse(query *retrievalmarket.QueryResponse) {
 -----
 Status:                        %v
 Size:                          %v (%v)
-Unseal Price:                  %v
-Min Price Per Byte:            %v
+Unseal Price:                  %v (%v)
+Min Price Per Byte:            %v (%v)
 Payment Address:               %v
 Max Payment Interval:          %v (%v)
 Max Payment Interval Increase: %v (%v)
@@ -498,8 +519,8 @@ Piece CID Found:               %v
 `,
 		status,
 		query.Size, formatBytes(query.Size),
-		query.UnsealPrice,
-		query.MinPricePerByte,
+		query.UnsealPrice, types.FIL(query.UnsealPrice),
+		query.MinPricePerByte, types.FIL(query.UnsealPrice),
 		query.PaymentAddress,
 		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
 		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
