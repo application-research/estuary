@@ -275,10 +275,6 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		return "", err
 	}
 
-	if user.Flags&4 == 0 {
-		return "local", nil
-	}
-
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
 	for d := range cm.shuttles {
