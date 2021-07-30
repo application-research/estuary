@@ -22,6 +22,8 @@ import (
 	"github.com/ipfs/go-ipfs-provider/batched"
 	"github.com/ipfs/go-ipfs-provider/queue"
 	logging "github.com/ipfs/go-log"
+	metri "github.com/ipfs/go-metrics-interface"
+	mprome "github.com/ipfs/go-metrics-prometheus"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -49,6 +51,10 @@ var bootstrappers = []string{
 var BootstrapPeers []peer.AddrInfo
 
 func init() {
+	if err := mprome.Inject(); err != nil {
+		panic(err)
+	}
+
 	for _, bsp := range bootstrappers {
 		ma, err := multiaddr.NewMultiaddr(bsp)
 		if err != nil {
@@ -177,7 +183,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	notifbs := NewNotifBs(bstore)
-	mbs := bsm.New("estuary", notifbs)
+	mbs := bsm.New("estuary.repo", notifbs)
 
 	var blkst blockstore.Blockstore = mbs
 
@@ -190,7 +196,9 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
-	bswap := bitswap.New(ctx, bsnet, blkst)
+
+	bsctx := metri.CtxScope(ctx, "estuary.exch")
+	bswap := bitswap.New(bsctx, bsnet, blkst)
 
 	wallet, err := setupWallet(cfg.WalletDir)
 	if err != nil {

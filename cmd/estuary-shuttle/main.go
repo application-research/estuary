@@ -39,6 +39,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
@@ -255,6 +256,7 @@ func main() {
 		})
 
 		go func() {
+			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
 				log.Errorf("failed to start http server for pprof endpoints: %s", err)
 			}
