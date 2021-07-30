@@ -138,8 +138,10 @@ func (pm *PinManager) Add(op *PinningOperation) {
 
 }
 
+var maxTimeout = 24 * time.Hour
+
 func (pm *PinManager) doPinning(op *PinningOperation) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
 	op.SetStatus("pinning")

@@ -637,16 +637,44 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
+var noDataTimeout = time.Minute * 10
+
 func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	gotData := make(chan struct{}, 1)
+	go func() {
+		nodata := time.NewTimer(noDataTimeout)
+		defer nodata.Stop()
+
+		for {
+			select {
+			case <-nodata.C:
+				cancel()
+			case <-gotData:
+				nodata.Reset(noDataTimeout)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	var objects []*Object
 	cset := cid.NewSet()
+
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
+		}
+
+		select {
+		case gotData <- struct{}{}:
+		case <-ctx.Done():
 		}
 
 		objects = append(objects, &Object{
