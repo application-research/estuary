@@ -1004,6 +1004,8 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 			return err
 		}
 
+		resp.Deals = deals
+
 		out = append(out, resp)
 	}
 
