@@ -85,7 +85,7 @@ func ddir(cctx *cli.Context) string {
 var makeDealCmd = &cli.Command{
 	Name:      "deal",
 	Usage:     "Make a storage deal with a miner",
-	ArgsUsage: "[file path]",
+	ArgsUsage: "<file path>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name: "miner",
@@ -286,7 +286,7 @@ var infoCmd = &cli.Command{
 var getAskCmd = &cli.Command{
 	Name:      "get-ask",
 	Usage:     "Query storage deal ask for a miner",
-	ArgsUsage: "[miner]",
+	ArgsUsage: "<miner>",
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
 			return fmt.Errorf("please specify miner to query ask of")
@@ -339,7 +339,7 @@ var listDealsCmd = &cli.Command{
 var retrieveFileCmd = &cli.Command{
 	Name:      "retrieve",
 	Usage:     "Retrieve a file by CID from a miner",
-	ArgsUsage: "[cid]",
+	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
@@ -396,7 +396,7 @@ var retrieveFileCmd = &cli.Command{
 var queryRetrievalCmd = &cli.Command{
 	Name:      "query-retrieval",
 	Usage:     "Query retrieval information for a CID",
-	ArgsUsage: "[cid]",
+	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
