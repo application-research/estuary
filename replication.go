@@ -48,7 +48,9 @@ import (
 
 const defaultReplication = 6
 
-const dealDuration = 1555200
+// Making default deal duration be one week less than the maximum to ensure
+// miners who start their deals early dont run into issues
+const dealDuration = 1555200 - (2880 * 7)
 
 type ContentManager struct {
 	DB        *gorm.DB

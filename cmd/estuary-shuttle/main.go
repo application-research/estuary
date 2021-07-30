@@ -176,6 +176,8 @@ func main() {
 		}
 
 		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			start := time.Now()
+
 			c, err := cid.Decode(k)
 			if err != nil {
 				return nil, err
@@ -185,6 +187,8 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
+
+			log.Infof("commp generation over %d bytes took: %s", size, time.Since(start))
 
 			res := &commpResult{
 				CommP: commpcid,
