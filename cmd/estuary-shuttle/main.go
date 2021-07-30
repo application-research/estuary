@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,10 +31,12 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
+	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/estuary/drpc"
@@ -534,6 +537,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
+	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
 
@@ -1001,5 +1005,37 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 		return err
 	}
 
+	return nil
+}
+
+func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
+	cont, err := strconv.Atoi(c.Param("cont"))
+	if err != nil {
+		return err
+	}
+
+	var pin Pin
+	if err := s.DB.First(&pin, "content = ?", cont).Error; err != nil {
+		return err
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	dserv := merkledag.NewDAGService(bserv)
+
+	ctx := context.Background()
+	nd, err := dserv.Get(ctx, pin.Cid.CID)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+	r, err := uio.NewDagReader(ctx, nd, dserv)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+
+	io.Copy(c.Response(), r)
 	return nil
 }
