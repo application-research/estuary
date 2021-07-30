@@ -2141,7 +2141,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Settings: util.UserSettings{
 			Replication:           6,
 			Verified:              true,
-			DealDuration:          2880 * 365,
+			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
