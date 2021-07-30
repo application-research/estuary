@@ -99,7 +99,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			return nil
 		}
 
-		if !existing.Active {
+		if !existing.Active && !existing.Pinning {
 			if err := d.DB.Model(Pin{}).Where("id = ?", existing.ID).UpdateColumn("pinning", true).Error; err != nil {
 				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
 			}
