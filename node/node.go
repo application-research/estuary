@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	autobatch "github.com/application-research/go-bs-autobatch"
@@ -83,7 +84,7 @@ type Node struct {
 	FullRT   *fullrt.FullRT
 	Host     host.Host
 
-	Lmdb      *lmdb.Blockstore
+	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
 	Blockstore      blockstore.Blockstore
@@ -158,35 +159,12 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
-	lmdbs, err := lmdb.Open(&lmdb.Options{
-		Path:   cfg.Blockstore,
-		NoSync: true,
-	})
+	mbs, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog)
 	if err != nil {
 		return nil, err
 	}
 
-	var bstore EstuaryBlockstore = lmdbs
-
-	if cfg.WriteLog != "" {
-		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
-		if err != nil {
-			return nil, err
-		}
-
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
-		if err != nil {
-			return nil, err
-		}
-
-		bstore = ab
-	}
-
-	notifbs := NewNotifBs(bstore)
-	mbs := bsm.New("estuary.repo", notifbs)
-
 	var blkst blockstore.Blockstore = mbs
-
 	if cfg.BlockstoreWrap != nil {
 		wrapper, err := cfg.BlockstoreWrap(blkst)
 		if err != nil {
@@ -226,13 +204,115 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		Provider:   prov,
 		Host:       h,
 		Blockstore: mbs,
-		Lmdb:       lmdbs,
-		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
-		Wallet:     wallet,
-		Bwc:        bwc,
-		Config:     cfg,
+		//Lmdb:       lmdbs,
+		Datastore: ds,
+		Bitswap:   bswap.(*bitswap.Bitswap),
+		Wallet:    wallet,
+		Bwc:       bwc,
+		Config:    cfg,
 	}, nil
+}
+
+func parseBsCfg(bscfg string) (string, []string, string, error) {
+	if bscfg[0] != ':' {
+		return "", nil, "", fmt.Errorf("cfg must start with colon")
+	}
+
+	var inParen bool
+	var parenStart int
+	var parenEnd int
+	var end int
+	for i := 1; i < len(bscfg); i++ {
+		if inParen {
+			if bscfg[i] == ')' {
+				inParen = false
+				parenEnd = i
+			}
+			continue
+		}
+
+		if bscfg[i] == '(' {
+			inParen = true
+			parenStart = i
+		}
+
+		if bscfg[i] == ':' {
+			end = i
+			break
+		}
+	}
+
+	if parenStart == 0 {
+		return bscfg[1:end], nil, bscfg[end+1:], nil
+	}
+
+	t := bscfg[1:parenStart]
+	params := strings.Split(bscfg[parenStart+1:parenEnd], ",")
+
+	return t, params, bscfg[end+1:], nil
+}
+
+/* format:
+:lmdb:/path/to/thing
+*/
+func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
+	if !strings.HasPrefix(bscfg, ":") {
+		lmdbs, err := lmdb.Open(&lmdb.Options{
+			Path:   bscfg,
+			NoSync: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return lmdbs, nil
+	}
+
+	spec, params, path, err := parseBsCfg(bscfg)
+	if err != nil {
+		return nil, err
+	}
+
+	switch params[0] {
+	case "lmdb":
+		lmdbs, err := lmdb.Open(&lmdb.Options{
+			Path:   path,
+			NoSync: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return lmdbs, nil
+
+	}
+	panic("nyi")
+}
+
+func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
+	bstore, err := constructBlockstore(bscfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if wal != "" {
+		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(wal))
+		if err != nil {
+			return nil, err
+		}
+
+		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
+		if err != nil {
+			return nil, err
+		}
+
+		bstore = ab
+	}
+
+	notifbs := NewNotifBs(bstore)
+	mbs := bsm.New("estuary.repo", notifbs)
+
+	var blkst blockstore.Blockstore = mbs
+
+	return blkst, nil
 }
 
 func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
