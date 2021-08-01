@@ -132,7 +132,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	content.POST("/add-car", withUser(s.handleAddCar))
-	content.GET("/by-cid/:cid", withUser(s.handleGetContentByCid))
+	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -182,6 +182,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public := e.Group("/public")
 
 	public.GET("/stats", s.handlePublicStats)
+	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -969,7 +970,7 @@ type getContentResponse struct {
 	Deals        []*contentDeal `json:"deals"`
 }
 
-func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
+func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
 		return err
