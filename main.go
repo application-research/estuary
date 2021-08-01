@@ -376,7 +376,7 @@ func main() {
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 
-		cm.dealMakingDisabled = cctx.Bool("disable-deal-making")
+		cm.isDealMakingDisabled = cctx.Bool("disable-deal-making")
 		cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
 		cm.localContentAddingDisabled = cctx.Bool("disable-local-content-adding")
 

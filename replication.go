@@ -87,7 +87,9 @@ type ContentManager struct {
 	// some behavior flags
 	FailDealOnTransferFailure bool
 
-	dealMakingDisabled         bool
+	dealDisabledLk       sync.Mutex
+	isDealMakingDisabled bool
+
 	contentAddingDisabled      bool
 	localContentAddingDisabled bool
 
@@ -1191,7 +1193,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
-		if cm.dealMakingDisabled {
+		if cm.dealMakingDisabled() {
 			log.Warnf("deal making is disabled for now")
 			done(time.Minute * 60)
 			return nil
@@ -2588,4 +2590,16 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 			TakeContent: tc,
 		},
 	})
+}
+
+func (cm *ContentManager) dealMakingDisabled() bool {
+	cm.dealDisabledLk.Lock()
+	defer cm.dealDisabledLk.Unlock()
+	return cm.isDealMakingDisabled
+}
+
+func (cm *ContentManager) setDealMakingEnabled(enable bool) {
+	cm.dealDisabledLk.Lock()
+	defer cm.dealDisabledLk.Unlock()
+	cm.isDealMakingDisabled = !enable
 }

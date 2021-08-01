@@ -216,6 +216,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
+	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 
 	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
@@ -1526,10 +1527,12 @@ type diskSpaceInfo struct {
 }
 
 func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
-	lmst, err := s.Node.Lmdb.Stat()
-	if err != nil {
-		return err
-	}
+	/*
+		lmst, err := s.Node.Lmdb.Stat()
+		if err != nil {
+			return err
+		}
+	*/
 
 	var st unix.Statfs_t
 	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
@@ -1539,15 +1542,17 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	return c.JSON(200, &diskSpaceInfo{
 		BstoreSize: st.Blocks * uint64(st.Bsize),
 		BstoreFree: st.Bavail * uint64(st.Bsize),
-		LmdbUsage:  uint64(lmst.PSize) * (lmst.BranchPages + lmst.OverflowPages + lmst.LeafPages),
-		LmdbStat: lmdbStat{
-			PSize:         lmst.PSize,
-			Depth:         lmst.Depth,
-			BranchPages:   lmst.BranchPages,
-			LeafPages:     lmst.LeafPages,
-			OverflowPages: lmst.OverflowPages,
-			Entries:       lmst.Entries,
-		},
+		/*
+			LmdbUsage:  uint64(lmst.PSize) * (lmst.BranchPages + lmst.OverflowPages + lmst.LeafPages),
+			LmdbStat: lmdbStat{
+				PSize:         lmst.PSize,
+				Depth:         lmst.Depth,
+				BranchPages:   lmst.BranchPages,
+				LeafPages:     lmst.LeafPages,
+				OverflowPages: lmst.OverflowPages,
+				Entries:       lmst.Entries,
+			},
+		*/
 	})
 }
 
@@ -2175,7 +2180,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
-			DealMakingDisabled:    s.CM.dealMakingDisabled,
+			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 		},
 	})
@@ -2669,6 +2674,20 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+type setDealMakingBody struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (s *Server) handleSetDealMaking(c echo.Context) error {
+	var body setDealMakingBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	s.CM.setDealMakingEnabled(body.Enabled)
+	return c.JSON(200, map[string]string{})
 }
 
 func (s *Server) handleContentHealthCheck(c echo.Context) error {

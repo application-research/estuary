@@ -18,6 +18,7 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	flatfs "github.com/ipfs/go-ds-flatfs"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-ipfs-provider/batched"
@@ -272,7 +273,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
 		return nil, err
 	}
 
-	switch params[0] {
+	switch spec {
 	case "lmdb":
 		lmdbs, err := lmdb.Open(&lmdb.Options{
 			Path:   path,
@@ -282,9 +283,24 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
 			return nil, err
 		}
 		return lmdbs, nil
+	case "flatfs":
+		if len(params) > 0 {
+			return nil, fmt.Errorf("flatfs params not yet supported")
+		}
+		sf, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/2")
+		if err != nil {
+			return nil, err
+		}
 
+		ds, err := flatfs.CreateOrOpen(path, sf, false)
+		if err != nil {
+			return nil, err
+		}
+
+		return &deleteManyWrap{blockstore.NewBlockstore(ds)}, nil
+	default:
+		return nil, fmt.Errorf("unrecognized blockstore spec: %q", spec)
 	}
-	panic("nyi")
 }
 
 func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
@@ -307,7 +323,18 @@ func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
 		bstore = ab
 	}
 
-	notifbs := NewNotifBs(bstore)
+	ctx := metri.CtxScope(context.TODO(), "estuary.bstore")
+
+	cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
+		HasBloomFilterSize:   512 << 20,
+		HasBloomFilterHashes: 7,
+		HasARCCacheSize:      8 << 20,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	notifbs := NewNotifBs(&deleteManyWrap{cbstore})
 	mbs := bsm.New("estuary.repo", notifbs)
 
 	var blkst blockstore.Blockstore = mbs
@@ -372,4 +399,18 @@ func setupWallet(dir string) (*wallet.LocalWallet, error) {
 	fmt.Println("Wallet address is: ", defaddr)
 
 	return wallet, nil
+}
+
+type deleteManyWrap struct {
+	blockstore.Blockstore
+}
+
+func (dmw *deleteManyWrap) DeleteMany(cids []cid.Cid) error {
+	for _, c := range cids {
+		if err := dmw.Blockstore.DeleteBlock(c); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
