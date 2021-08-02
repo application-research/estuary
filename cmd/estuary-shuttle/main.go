@@ -736,6 +736,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 	return nil
 }
 
+const noDataTimeout = time.Minute * 10
+
 // TODO: mostly copy paste from estuary, dedup code
 func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
@@ -746,6 +748,26 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	gotData := make(chan struct{}, 1)
+	go func() {
+		nodata := time.NewTimer(noDataTimeout)
+		defer nodata.Stop()
+
+		for {
+			select {
+			case <-nodata.C:
+				cancel()
+			case <-gotData:
+				nodata.Reset(noDataTimeout)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	var objects []*Object
 	var totalSize int64
 	cset := cid.NewSet()
@@ -754,6 +776,11 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
+		}
+
+		select {
+		case gotData <- struct{}{}:
+		case <-ctx.Done():
 		}
 
 		objects = append(objects, &Object{
