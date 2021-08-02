@@ -131,9 +131,8 @@ func main() {
 		bsdir := cctx.String("blockstore")
 		if bsdir == "" {
 			bsdir = filepath.Join(ddir, "blocks")
-		} else if bsdir[0] != '/' {
+		} else if bsdir[0] != '/' && bsdir[0] != ':' {
 			bsdir = filepath.Join(ddir, bsdir)
-
 		}
 
 		wlog := cctx.String("write-log")
