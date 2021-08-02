@@ -37,6 +37,7 @@ import (
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/keystore"
+	migratebs "github.com/whyrusleeping/estuary/util/migratebs"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
 )
@@ -287,7 +288,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
 		if len(params) > 0 {
 			return nil, fmt.Errorf("flatfs params not yet supported")
 		}
-		sf, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/2")
+		sf, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/3")
 		if err != nil {
 			return nil, err
 		}
@@ -297,7 +298,23 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
 			return nil, err
 		}
 
-		return &deleteManyWrap{blockstore.NewBlockstore(ds)}, nil
+		return &deleteManyWrap{blockstore.NewBlockstoreNoPrefix(ds)}, nil
+	case "migrate":
+		if len(params) != 2 {
+			return nil, fmt.Errorf("migrate blockstore requires two params (%d given)", len(params))
+		}
+
+		from, err := constructBlockstore(params[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to construct source blockstore for migration: %w", err)
+		}
+
+		to, err := constructBlockstore(params[1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to construct dest blockstore for migration: %w", err)
+		}
+
+		return migratebs.NewBlockstore(from, to, false)
 	default:
 		return nil, fmt.Errorf("unrecognized blockstore spec: %q", spec)
 	}

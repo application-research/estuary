@@ -210,6 +210,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "disable-local-content-adding",
 		},
+		&cli.StringFlag{
+			Name: "blockstore",
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -255,11 +258,16 @@ func main() {
 	}
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
+
+		bstore := filepath.Join(ddir, "estuary-blocks")
+		if bs := cctx.String("blockstore"); bs != "" {
+			bstore = bs
+		}
 		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			Blockstore:    filepath.Join(ddir, "estuary-blocks"),
+			Blockstore:    bstore,
 			Libp2pKeyFile: filepath.Join(ddir, "estuary-peer.key"),
 			Datastore:     filepath.Join(ddir, "estuary-leveldb"),
 			WalletDir:     filepath.Join(ddir, "estuary-wallet"),
@@ -272,14 +280,6 @@ func main() {
 				cfg.WriteLog = filepath.Join(ddir, wl)
 			}
 		}
-
-		api, closer, err := lcli.GetGatewayAPI(cctx)
-		//api, closer, err := lcli.GetFullNodeAPI(cctx)
-		if err != nil {
-			return err
-		}
-
-		defer closer()
 
 		db, err := setupDatabase(cctx)
 		if err != nil {
@@ -331,6 +331,13 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		api, closer, err := lcli.GetGatewayAPI(cctx)
+		//api, closer, err := lcli.GetFullNodeAPI(cctx)
+		if err != nil {
+			return err
+		}
+		defer closer()
 
 		s := &Server{
 			Node:       nd,

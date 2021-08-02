@@ -152,17 +152,17 @@ func main() {
 			WalletDir:     filepath.Join(ddir, "wallet"),
 		}
 
+		nd, err := node.Setup(context.TODO(), cfg)
+		if err != nil {
+			return err
+		}
+
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
 			return err
 		}
 
 		defer closer()
-
-		nd, err := node.Setup(context.TODO(), cfg)
-		if err != nil {
-			return err
-		}
 
 		defaddr, err := nd.Wallet.GetDefault()
 		if err != nil {
