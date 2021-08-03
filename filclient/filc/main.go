@@ -10,11 +10,13 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
@@ -342,6 +344,7 @@ var retrieveFileCmd = &cli.Command{
 	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+		&cli.StringFlag{Name: "output", Aliases: []string{"o"}},
 	},
 	Action: func(cctx *cli.Context) error {
 		cidStr := cctx.Args().First()
@@ -352,6 +355,11 @@ var retrieveFileCmd = &cli.Command{
 		minerStr := cctx.String("miner")
 		if minerStr == "" {
 			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		outputStr := cctx.String("output")
+		if outputStr == "" {
+			outputStr = cidStr
 		}
 
 		c, err := cid.Decode(cidStr)
@@ -366,7 +374,12 @@ var retrieveFileCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		fc, closer, err := getClient(cctx, ddir)
+		node, err := setup(cctx.Context, ddir)
+		if err != nil {
+			return err
+		}
+
+		fc, closer, err := clientFromNode(cctx, node, ddir)
 		if err != nil {
 			return err
 		}
@@ -387,7 +400,21 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
+		bserv := blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore))
+		dserv := merkledag.NewDAGService(bserv)
+
+		dnode, err := dserv.Get(cctx.Context, c)
+		if err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(outputStr, dnode.RawData(), 0755); err != nil {
+			return err
+		}
+
 		printRetrievalStats(stats)
+
+		fmt.Println("Saved output to", outputStr)
 
 		return nil
 	},
@@ -489,7 +516,7 @@ Average Speed: %v (%v/s)
 Peer:          %v
 `,
 		stats.Size, formatBytes(stats.Size),
-		stats.TotalPayment, types.FIL(stats.AskPrice),
+		stats.TotalPayment, types.FIL(stats.TotalPayment),
 		stats.AskPrice, types.FIL(stats.AskPrice),
 		stats.NumPayments,
 		stats.Duration,
@@ -523,6 +550,7 @@ func printQueryResponse(query *retrievalmarket.QueryResponse) {
 		pieceCIDFound = fmt.Sprintf("Unrecognized (%d)", query.PieceCIDFound)
 	}
 
+	total := big.Add(query.UnsealPrice, big.Mul(big.NewIntUnsigned(query.Size), query.MinPricePerByte))
 	fmt.Printf(`QUERY RESPONSE
 -----
 Status:                        %v
@@ -530,6 +558,7 @@ Piece CID Found:               %v
 Size:                          %v (%v)
 Unseal Price:                  %v (%v)
 Min Price Per Byte:            %v (%v)
+Total Retrieval Price:         %v (%v)
 Payment Address:               %v
 Max Payment Interval:          %v (%v)
 Max Payment Interval Increase: %v (%v)
@@ -538,13 +567,15 @@ Max Payment Interval Increase: %v (%v)
 		pieceCIDFound,
 		query.Size, formatBytes(query.Size),
 		query.UnsealPrice, types.FIL(query.UnsealPrice),
-		query.MinPricePerByte, types.FIL(query.UnsealPrice),
+		query.MinPricePerByte, types.FIL(query.MinPricePerByte),
+		total, types.FIL(total),
 		query.PaymentAddress,
 		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
 		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
 	)
+
 	if query.Message != "" {
-		fmt.Printf("Message:\n\t%v\n", query.Message)
+		fmt.Printf("Message: %v\n", query.Message)
 	}
 }
 
