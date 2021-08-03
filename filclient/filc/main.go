@@ -265,21 +265,26 @@ var infoCmd = &cli.Command{
 			return err
 		}
 
-		fmt.Println("default client address: ", addr)
+		balance := big.NewInt(0)
+		verifiedBalance := big.NewInt(0)
 
 		act, err := api.StateGetActor(cctx.Context, addr, types.EmptyTSK)
 		if err != nil {
-			return err
+			fmt.Println("NOTE - Actor not found on chain")
+		} else {
+			balance = act.Balance
+
+			v, err := api.StateVerifiedClientStatus(cctx.Context, addr, types.EmptyTSK)
+			if err != nil {
+				return err
+			}
+
+			verifiedBalance = *v
 		}
 
-		fmt.Println("Balance: ", types.FIL(act.Balance))
-
-		pow, err := api.StateVerifiedClientStatus(cctx.Context, addr, types.EmptyTSK)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println("verfied client balance: ", pow)
+		fmt.Printf("Default client address: %v\n", addr)
+		fmt.Printf("Balance:                %v\n", types.FIL(balance))
+		fmt.Printf("Verified Balance:       %v\n", types.FIL(verifiedBalance))
 
 		return nil
 	},
