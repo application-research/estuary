@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"time"
@@ -9,17 +8,21 @@ import (
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-fil-markets/storagemarket"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
 	"github.com/mitchellh/go-homedir"
 	cli "github.com/urfave/cli/v2"
+	"github.com/whyrusleeping/estuary/filclient"
 	"github.com/whyrusleeping/estuary/lib/retrievehelper"
 	"golang.org/x/xerrors"
 )
@@ -40,6 +43,7 @@ func main() {
 		listDealsCmd,
 		retrieveFileCmd,
 		queryRetrievalCmd,
+		clearBlockstoreCmd,
 	}
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -63,7 +67,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	app.RunAndExitOnError()
+	if err := app.Run(os.Args); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 }
 
 // Get config directory from CLI metadata
@@ -78,7 +85,9 @@ func ddir(cctx *cli.Context) string {
 }
 
 var makeDealCmd = &cli.Command{
-	Name: "deal",
+	Name:      "deal",
+	Usage:     "Make a storage deal with a miner",
+	ArgsUsage: "<file path>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name: "miner",
@@ -104,10 +113,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		nd, err := setup(ctx, ddir)
+		nd, err := setup(cctx.Context, ddir)
 		if err != nil {
 			return err
 		}
@@ -140,7 +146,7 @@ var makeDealCmd = &cli.Command{
 
 		tpr("File CID: %s", obj.Cid())
 
-		ask, err := fc.GetAsk(ctx, miner)
+		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
 			return err
 		}
@@ -152,7 +158,7 @@ var makeDealCmd = &cli.Command{
 			price = ask.Ask.Ask.VerifiedPrice
 		}
 
-		proposal, err := fc.MakeDeal(ctx, miner, obj.Cid(), price, 0, 2880*365, verified)
+		proposal, err := fc.MakeDeal(cctx.Context, miner, obj.Cid(), price, 0, 2880*365, verified)
 		if err != nil {
 			return err
 		}
@@ -168,7 +174,7 @@ var makeDealCmd = &cli.Command{
 			return err
 		}
 
-		resp, err := fc.SendProposal(ctx, proposal)
+		resp, err := fc.SendProposal(cctx.Context, proposal)
 		if err != nil {
 			return err
 		}
@@ -187,7 +193,7 @@ var makeDealCmd = &cli.Command{
 
 		tpr("starting data transfer... %s", resp.Response.Proposal)
 
-		chanid, err := fc.StartDataTransfer(ctx, miner, resp.Response.Proposal, obj.Cid())
+		chanid, err := fc.StartDataTransfer(cctx.Context, miner, resp.Response.Proposal, obj.Cid())
 		if err != nil {
 			return err
 		}
@@ -195,7 +201,7 @@ var makeDealCmd = &cli.Command{
 		var lastStatus datatransfer.Status
 	loop:
 		for {
-			status, err := fc.TransferStatus(ctx, chanid)
+			status, err := fc.TransferStatus(cctx.Context, chanid)
 			if err != nil {
 				return err
 			}
@@ -237,14 +243,13 @@ var makeDealCmd = &cli.Command{
 }
 
 var infoCmd = &cli.Command{
-	Name: "info",
+	Name:      "info",
+	Usage:     "Display wallet information",
+	ArgsUsage: " ",
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		nd, err := setup(ctx, ddir)
+		nd, err := setup(cctx.Context, ddir)
 		if err != nil {
 			return err
 		}
@@ -260,28 +265,35 @@ var infoCmd = &cli.Command{
 			return err
 		}
 
-		fmt.Println("default client address: ", addr)
+		balance := big.NewInt(0)
+		verifiedBalance := big.NewInt(0)
 
-		act, err := api.StateGetActor(ctx, addr, types.EmptyTSK)
+		act, err := api.StateGetActor(cctx.Context, addr, types.EmptyTSK)
 		if err != nil {
-			return err
+			fmt.Println("NOTE - Actor not found on chain")
+		} else {
+			balance = act.Balance
+
+			v, err := api.StateVerifiedClientStatus(cctx.Context, addr, types.EmptyTSK)
+			if err != nil {
+				return err
+			}
+
+			verifiedBalance = *v
 		}
 
-		fmt.Println("Balance: ", types.FIL(act.Balance))
-
-		pow, err := api.StateVerifiedClientStatus(ctx, addr, types.EmptyTSK)
-		if err != nil {
-			return err
-		}
-
-		fmt.Println("verfied client balance: ", pow)
+		fmt.Printf("Default client address: %v\n", addr)
+		fmt.Printf("Balance:                %v\n", types.FIL(balance))
+		fmt.Printf("Verified Balance:       %v\n", types.FIL(verifiedBalance))
 
 		return nil
 	},
 }
 
 var getAskCmd = &cli.Command{
-	Name: "get-ask",
+	Name:      "get-ask",
+	Usage:     "Query storage deal ask for a miner",
+	ArgsUsage: "<miner>",
 	Action: func(cctx *cli.Context) error {
 		if !cctx.Args().Present() {
 			return fmt.Errorf("please specify miner to query ask of")
@@ -300,24 +312,21 @@ var getAskCmd = &cli.Command{
 		}
 		defer closer()
 
-		ask, err := fc.GetAsk(context.TODO(), miner)
+		ask, err := fc.GetAsk(cctx.Context, miner)
 		if err != nil {
 			return fmt.Errorf("failed to get ask: %s", err)
 		}
 
-		fmt.Println("got back ask: ")
-		fmt.Println("Miner: ", ask.Ask.Ask.Miner)
-		fmt.Println("Price (unverified): ", ask.Ask.Ask.Price)
-		fmt.Println("Price (verified): ", ask.Ask.Ask.VerifiedPrice)
-		fmt.Println("Min PieceSize: ", ask.Ask.Ask.MinPieceSize)
-		fmt.Println("Max PieceSize: ", ask.Ask.Ask.MaxPieceSize)
+		printAskResponse(ask.Ask.Ask)
 
 		return nil
 	},
 }
 
 var listDealsCmd = &cli.Command{
-	Name: "list",
+	Name:      "list",
+	Usage:     "List local storage deal history",
+	ArgsUsage: " ",
 	Action: func(cctx *cli.Context) error {
 		ddir := ddir(cctx)
 
@@ -335,13 +344,14 @@ var listDealsCmd = &cli.Command{
 }
 
 var retrieveFileCmd = &cli.Command{
-	Name: "retrieve",
+	Name:      "retrieve",
+	Usage:     "Retrieve a file by CID from a miner",
+	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
+		&cli.StringFlag{Name: "output", Aliases: []string{"o"}},
 	},
 	Action: func(cctx *cli.Context) error {
-		ctx := context.Background()
-
 		cidStr := cctx.Args().First()
 		if cidStr == "" {
 			return fmt.Errorf("please specify a CID to retrieve")
@@ -350,6 +360,11 @@ var retrieveFileCmd = &cli.Command{
 		minerStr := cctx.String("miner")
 		if minerStr == "" {
 			return fmt.Errorf("must specify a miner with --miner")
+		}
+
+		outputStr := cctx.String("output")
+		if outputStr == "" {
+			outputStr = cidStr
 		}
 
 		c, err := cid.Decode(cidStr)
@@ -364,13 +379,18 @@ var retrieveFileCmd = &cli.Command{
 
 		ddir := ddir(cctx)
 
-		fc, closer, err := getClient(cctx, ddir)
+		node, err := setup(cctx.Context, ddir)
+		if err != nil {
+			return err
+		}
+
+		fc, closer, err := clientFromNode(cctx, node, ddir)
 		if err != nil {
 			return err
 		}
 		defer closer()
 
-		ask, err := fc.RetrievalQuery(ctx, miner, c)
+		ask, err := fc.RetrievalQuery(cctx.Context, miner, c)
 		if err != nil {
 			return err
 		}
@@ -380,26 +400,35 @@ var retrieveFileCmd = &cli.Command{
 			return err
 		}
 
-		stats, err := fc.RetrieveContent(ctx, miner, proposal)
+		stats, err := fc.RetrieveContent(cctx.Context, miner, proposal)
 		if err != nil {
 			return err
 		}
 
-		fmt.Println("retrieved content")
-		fmt.Println("Total Payment: ", stats.TotalPayment)
-		fmt.Println("Num Payments: ", stats.NumPayments)
-		fmt.Println("Size: ", stats.Size)
-		fmt.Println("Duration: ", stats.Duration)
-		fmt.Println("Average Speed: ", stats.AverageSpeed)
-		fmt.Println("Ask Price: ", stats.AskPrice)
-		fmt.Println("Peer: ", stats.Peer)
+		bserv := blockservice.New(node.Blockstore, offline.Exchange(node.Blockstore))
+		dserv := merkledag.NewDAGService(bserv)
+
+		dnode, err := dserv.Get(cctx.Context, c)
+		if err != nil {
+			return err
+		}
+
+		if err := os.WriteFile(outputStr, dnode.RawData(), 0755); err != nil {
+			return err
+		}
+
+		printRetrievalStats(stats)
+
+		fmt.Println("Saved output to", outputStr)
 
 		return nil
 	},
 }
 
 var queryRetrievalCmd = &cli.Command{
-	Name: "query-retrieval",
+	Name:      "query-retrieval",
+	Usage:     "Query retrieval information for a CID",
+	ArgsUsage: "<cid>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "miner", Aliases: []string{"m"}, Required: true},
 	},
@@ -433,20 +462,162 @@ var queryRetrievalCmd = &cli.Command{
 		}
 		defer closer()
 
-		query, err := fc.RetrievalQuery(context.TODO(), miner, cid)
+		query, err := fc.RetrievalQuery(cctx.Context, miner, cid)
 		if err != nil {
 			return err
 		}
 
-		fmt.Println("got retrieval info")
-		fmt.Println("Size: ", query.Size)
-		fmt.Println("Unseal Price: ", query.UnsealPrice)
-		fmt.Println("Min Price Per Byte: ", query.MinPricePerByte)
-		fmt.Println("Payment Address: ", query.PaymentAddress)
-		if query.Message != "" {
-			fmt.Println("Message: ", query.Message)
-		}
+		printQueryResponse(query)
 
 		return nil
 	},
+}
+
+var clearBlockstoreCmd = &cli.Command{
+	Name:      "clear-blockstore",
+	Usage:     "Delete all retrieved file data in the blockstore",
+	ArgsUsage: " ",
+	Action: func(cctx *cli.Context) error {
+		ddir := ddir(cctx)
+
+		fmt.Println("clearing blockstore...")
+
+		if err := os.RemoveAll(blockstorePath(ddir)); err != nil {
+			return err
+		}
+
+		fmt.Println("done")
+
+		return nil
+	},
+}
+
+func printAskResponse(ask *storagemarket.StorageAsk) {
+	fmt.Printf(`ASK RESPONSE
+-----
+Miner: %v
+Price (Unverified): %v (%v)
+Price (Verified): %v (%v)
+Min Piece Size: %v
+Max Piece Size: %v
+`,
+		ask.Miner,
+		ask.Price, types.FIL(ask.Price),
+		ask.VerifiedPrice, types.FIL(ask.VerifiedPrice),
+		ask.MinPieceSize,
+		ask.MaxPieceSize,
+	)
+}
+
+func printRetrievalStats(stats *filclient.RetrievalStats) {
+	fmt.Printf(`RETRIEVAL STATS
+-----
+Size:          %v (%v)
+Total Payment: %v (%v)
+Ask Price:     %v (%v)
+Num Payments:  %v
+Duration:      %v
+Average Speed: %v (%v/s)
+Peer:          %v
+`,
+		stats.Size, formatBytes(stats.Size),
+		stats.TotalPayment, types.FIL(stats.TotalPayment),
+		stats.AskPrice, types.FIL(stats.AskPrice),
+		stats.NumPayments,
+		stats.Duration,
+		stats.AverageSpeed, formatBytes(stats.AverageSpeed),
+		stats.Peer,
+	)
+}
+
+func printQueryResponse(query *retrievalmarket.QueryResponse) {
+	var status string
+	switch query.Status {
+	case retrievalmarket.QueryResponseAvailable:
+		status = "Available"
+	case retrievalmarket.QueryResponseUnavailable:
+		status = "Unavailable"
+	case retrievalmarket.QueryResponseError:
+		status = "Error"
+	default:
+		status = fmt.Sprintf("Unrecognized Status (%d)", query.Status)
+	}
+
+	var pieceCIDFound string
+	switch query.PieceCIDFound {
+	case retrievalmarket.QueryItemAvailable:
+		pieceCIDFound = "Available"
+	case retrievalmarket.QueryItemUnavailable:
+		pieceCIDFound = "Unavailable"
+	case retrievalmarket.QueryItemUnknown:
+		pieceCIDFound = "Unknown"
+	default:
+		pieceCIDFound = fmt.Sprintf("Unrecognized (%d)", query.PieceCIDFound)
+	}
+
+	total := big.Add(query.UnsealPrice, big.Mul(big.NewIntUnsigned(query.Size), query.MinPricePerByte))
+	fmt.Printf(`QUERY RESPONSE
+-----
+Status:                        %v
+Piece CID Found:               %v
+Size:                          %v (%v)
+Unseal Price:                  %v (%v)
+Min Price Per Byte:            %v (%v)
+Total Retrieval Price:         %v (%v)
+Payment Address:               %v
+Max Payment Interval:          %v (%v)
+Max Payment Interval Increase: %v (%v)
+`,
+		status,
+		pieceCIDFound,
+		query.Size, formatBytes(query.Size),
+		query.UnsealPrice, types.FIL(query.UnsealPrice),
+		query.MinPricePerByte, types.FIL(query.MinPricePerByte),
+		total, types.FIL(total),
+		query.PaymentAddress,
+		query.MaxPaymentInterval, formatBytes(query.MaxPaymentInterval),
+		query.MaxPaymentIntervalIncrease, formatBytes(query.MaxPaymentIntervalIncrease),
+	)
+
+	if query.Message != "" {
+		fmt.Printf("Message: %v\n", query.Message)
+	}
+}
+
+func formatBytes(count uint64) string {
+
+	exabyteIndex := uint64(6)
+
+	prefixIndex := uint64(0)
+	prefixMultiplier := uint64(1)
+	for count/prefixMultiplier >= 1024 && prefixIndex < exabyteIndex {
+		prefixIndex++
+		prefixMultiplier *= 1024
+	}
+
+	var unit string
+	switch prefixIndex {
+	case 0:
+		unit = "B"
+	case 1:
+		unit = "kiB"
+	case 2:
+		unit = "MiB"
+	case 3:
+		unit = "GiB"
+	case 4:
+		unit = "TiB"
+	case 5:
+		unit = "PiB"
+	default:
+		unit = "EiB"
+	}
+
+	if prefixIndex == 0 {
+		// If the size is in bytes, just print a whole number
+		return fmt.Sprintf("%d %s", count/prefixMultiplier, unit)
+	} else {
+		// Otherwise, print the number with its first decimal digit
+		return fmt.Sprintf("%d.%d %s", count/prefixMultiplier, (count+5)/(prefixMultiplier/10)%10, unit)
+	}
 }
