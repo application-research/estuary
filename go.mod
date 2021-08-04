@@ -3,7 +3,7 @@ module github.com/whyrusleeping/estuary
 go 1.15
 
 require (
-	github.com/application-research/go-bs-autobatch v0.0.0-20210708014749-a2854e035a24
+	github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
@@ -25,9 +25,11 @@ require (
 	github.com/ipfs/go-blockservice v0.1.4
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.4.5
+	github.com/ipfs/go-ds-badger v0.2.6 // indirect
+	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
-	github.com/ipfs/go-graphsync v0.6.6
-	github.com/ipfs/go-ipfs-blockstore v1.0.4
+	github.com/ipfs/go-graphsync v0.6.5
+	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
@@ -35,6 +37,8 @@ require (
 	github.com/ipfs/go-ipld-format v0.2.0
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-merkledag v0.3.2
+	github.com/ipfs/go-metrics-interface v0.0.1
+	github.com/ipfs/go-metrics-prometheus v0.0.2
 	github.com/ipfs/go-unixfs v0.2.4
 	github.com/ipld/go-car v0.1.1-0.20201119040415-11b6074b6d4d
 	github.com/ipld/go-ipld-prime v0.5.1-0.20201021195245-109253e8a018
@@ -49,8 +53,8 @@ require (
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.18.0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/multiformats/go-multiaddr v0.3.3
-	github.com/spf13/viper v1.7.1
+	github.com/multiformats/go-multiaddr v0.3.1
+	github.com/prometheus/client_golang v1.9.0
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/base32 v0.0.0-20170828182744-c30ac30633cc

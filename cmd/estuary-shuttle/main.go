@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -30,12 +31,15 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs/importer"
+	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/estuary/drpc"
 	"github.com/whyrusleeping/estuary/filclient"
 	node "github.com/whyrusleeping/estuary/node"
@@ -127,9 +131,8 @@ func main() {
 		bsdir := cctx.String("blockstore")
 		if bsdir == "" {
 			bsdir = filepath.Join(ddir, "blocks")
-		} else if bsdir[0] != '/' {
+		} else if bsdir[0] != '/' && bsdir[0] != ':' {
 			bsdir = filepath.Join(ddir, bsdir)
-
 		}
 
 		wlog := cctx.String("write-log")
@@ -148,17 +151,17 @@ func main() {
 			WalletDir:     filepath.Join(ddir, "wallet"),
 		}
 
+		nd, err := node.Setup(context.TODO(), cfg)
+		if err != nil {
+			return err
+		}
+
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
 			return err
 		}
 
 		defer closer()
-
-		nd, err := node.Setup(context.TODO(), cfg)
-		if err != nil {
-			return err
-		}
 
 		defaddr, err := nd.Wallet.GetDefault()
 		if err != nil {
@@ -176,6 +179,8 @@ func main() {
 		}
 
 		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			start := time.Now()
+
 			c, err := cid.Decode(k)
 			if err != nil {
 				return nil, err
@@ -185,6 +190,8 @@ func main() {
 			if err != nil {
 				return nil, err
 			}
+
+			log.Infof("commp generation over %d bytes took: %s", size, time.Since(start))
 
 			res := &commpResult{
 				CommP: commpcid,
@@ -248,6 +255,7 @@ func main() {
 		})
 
 		go func() {
+			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
 				log.Errorf("failed to start http server for pprof endpoints: %s", err)
 			}
@@ -530,6 +538,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
+	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
 
@@ -726,6 +735,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 	return nil
 }
 
+const noDataTimeout = time.Minute * 10
+
 // TODO: mostly copy paste from estuary, dedup code
 func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
@@ -736,6 +747,26 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return err
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	gotData := make(chan struct{}, 1)
+	go func() {
+		nodata := time.NewTimer(noDataTimeout)
+		defer nodata.Stop()
+
+		for {
+			select {
+			case <-nodata.C:
+				cancel()
+			case <-gotData:
+				nodata.Reset(noDataTimeout)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	var objects []*Object
 	var totalSize int64
 	cset := cid.NewSet()
@@ -744,6 +775,11 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
+		}
+
+		select {
+		case gotData <- struct{}{}:
+		case <-ctx.Done():
 		}
 
 		objects = append(objects, &Object{
@@ -997,5 +1033,37 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 		return err
 	}
 
+	return nil
+}
+
+func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
+	cont, err := strconv.Atoi(c.Param("cont"))
+	if err != nil {
+		return err
+	}
+
+	var pin Pin
+	if err := s.DB.First(&pin, "content = ?", cont).Error; err != nil {
+		return err
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	dserv := merkledag.NewDAGService(bserv)
+
+	ctx := context.Background()
+	nd, err := dserv.Get(ctx, pin.Cid.CID)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+	r, err := uio.NewDagReader(ctx, nd, dserv)
+	if err != nil {
+		return c.JSON(400, map[string]string{
+			"error": err.Error(),
+		})
+	}
+
+	io.Copy(c.Response(), r)
 	return nil
 }

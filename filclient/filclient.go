@@ -11,6 +11,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	cario "github.com/filecoin-project/go-commp-utils/pieceio/cario"
+	"github.com/filecoin-project/go-commp-utils/writer"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	dtimpl "github.com/filecoin-project/go-data-transfer/impl"
@@ -446,6 +447,27 @@ func GeneratePieceCommitment(ctx context.Context, payloadCid cid.Cid, bstore blo
 	}
 
 	return commCid, abi.PaddedPieceSize(size).Unpadded(), nil
+}
+
+func GeneratePieceCommitmentFFI(ctx context.Context, payloadCid cid.Cid, bstore blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+	cario := cario.NewCarIO()
+	preparedCar, err := cario.PrepareCar(context.Background(), bstore, payloadCid, shared.AllSelector())
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	commpWriter := &writer.Writer{}
+	err = preparedCar.Dump(commpWriter)
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	dataCIDSize, err := commpWriter.Sum()
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return dataCIDSize.PieceCID, dataCIDSize.PieceSize.Unpadded(), nil
 }
 
 func ZeroPadPieceCommitment(c cid.Cid, curSize abi.UnpaddedPieceSize, toSize abi.UnpaddedPieceSize) (cid.Cid, error) {

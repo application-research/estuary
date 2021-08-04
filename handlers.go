@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,6 +50,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
@@ -132,7 +132,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	content.POST("/add-car", withUser(s.handleAddCar))
-	content.GET("/by-cid/:cid", withUser(s.handleGetContentByCid))
+	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -152,7 +152,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/query/:miner", s.handleQueryAsk)
-	//deals.POST("/make/:miner", s.handleMakeDeal)
+	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
@@ -182,6 +182,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public := e.Group("/public")
 
 	public.GET("/stats", s.handlePublicStats)
+	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -216,6 +217,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
+	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 
 	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
@@ -268,6 +270,7 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
+	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
 	File            string  `json:"file"`
 	BWUsed          int64   `json:"bwUsed"`
@@ -325,6 +328,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
+			ID:   c.ID,
 			Cid:  c.Cid.CID,
 			File: c.Name,
 		}
@@ -501,7 +505,8 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 }
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
-	ctx := c.Request().Context()
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
+	defer span.End()
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		var details string
@@ -603,13 +608,27 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		s.CM.ToCheck <- content.ID
 	}()
 
+	if c.QueryParam("lazy-provide") != "true" {
+		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
+		defer cancel()
+		if err := s.Node.FullRT.Provide(subctx, nd.Cid(), true); err != nil {
+			span.RecordError(fmt.Errorf("provide error: %w", err))
+			log.Errorf("fullrt provide call errored: %s", err)
+		}
+	}
+
 	go func() {
 		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
 			fmt.Println("providing failed: ", err)
 		}
 		fmt.Println("providing complete")
 	}()
-	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+
+	return c.JSON(200, map[string]interface{}{
+		"cid":       nd.Cid().String(),
+		"estuaryId": content.ID,
+		"providers": s.CM.pinDelegatesForContent(*content),
+	})
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -620,16 +639,44 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
+var noDataTimeout = time.Minute * 10
+
 func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	gotData := make(chan struct{}, 1)
+	go func() {
+		nodata := time.NewTimer(noDataTimeout)
+		defer nodata.Stop()
+
+		for {
+			select {
+			case <-nodata.C:
+				cancel()
+			case <-gotData:
+				nodata.Reset(noDataTimeout)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	var objects []*Object
 	cset := cid.NewSet()
+
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
+		}
+
+		select {
+		case gotData <- struct{}{}:
+		case <-ctx.Done():
 		}
 
 		objects = append(objects, &Object{
@@ -748,8 +795,27 @@ type expandedContent struct {
 }
 
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
+
+	var limit int = 20
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		l, err := strconv.Atoi(limstr)
+		if err != nil {
+			return err
+		}
+		limit = l
+	}
+
+	var offset int
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		o, err := strconv.Atoi(offstr)
+		if err != nil {
+			return err
+		}
+		offset = o
+	}
+
 	var contents []Content
-	if err := s.DB.Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -904,7 +970,7 @@ type getContentResponse struct {
 	Deals        []*contentDeal `json:"deals"`
 }
 
-func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
+func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
 		return err
@@ -940,6 +1006,8 @@ func (s *Server) handleGetContentByCid(c echo.Context, u *User) error {
 			return err
 		}
 
+		resp.Deals = deals
+
 		out = append(out, resp)
 	}
 
@@ -965,14 +1033,19 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Cid      cid.Cid        `json:"cid"`
-	Price    types.BigInt   `json:"price"`
-	Duration abi.ChainEpoch `json:"duration"`
-	Verified bool           `json:"verified"`
+	Content uint            `json:"content"`
+	Miner   address.Address `json:"miner"`
 }
 
-func (s *Server) handleMakeDeal(c echo.Context) error {
+func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	if u.Perm < util.PermLevelAdmin {
+		return util.HttpError{
+			Code:    401,
+			Message: util.ERR_INVALID_AUTH,
+		}
+	}
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -984,23 +1057,19 @@ func (s *Server) handleMakeDeal(c echo.Context) error {
 		return err
 	}
 
-	proposal, err := s.FilClient.MakeDeal(ctx, addr, req.Cid, req.Price, 0, req.Duration, req.Verified)
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
+		return err
+	}
+
+	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
 	if err != nil {
 		return err
 	}
 
-	raw, err := json.MarshalIndent(proposal, "", "  ")
-	if err != nil {
-		return err
-	}
-	fmt.Println("deal proposal: ", string(raw))
-
-	resp, err := s.FilClient.SendProposal(ctx, proposal)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(200, resp)
+	return c.JSON(200, map[string]interface{}{
+		"deal": id,
+	})
 }
 
 func (s *Server) handleTransferStatus(c echo.Context) error {
@@ -1459,10 +1528,12 @@ type diskSpaceInfo struct {
 }
 
 func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
-	lmst, err := s.Node.Lmdb.Stat()
-	if err != nil {
-		return err
-	}
+	/*
+		lmst, err := s.Node.Lmdb.Stat()
+		if err != nil {
+			return err
+		}
+	*/
 
 	var st unix.Statfs_t
 	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
@@ -1472,15 +1543,17 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	return c.JSON(200, &diskSpaceInfo{
 		BstoreSize: st.Blocks * uint64(st.Bsize),
 		BstoreFree: st.Bavail * uint64(st.Bsize),
-		LmdbUsage:  uint64(lmst.PSize) * (lmst.BranchPages + lmst.OverflowPages + lmst.LeafPages),
-		LmdbStat: lmdbStat{
-			PSize:         lmst.PSize,
-			Depth:         lmst.Depth,
-			BranchPages:   lmst.BranchPages,
-			LeafPages:     lmst.LeafPages,
-			OverflowPages: lmst.OverflowPages,
-			Entries:       lmst.Entries,
-		},
+		/*
+			LmdbUsage:  uint64(lmst.PSize) * (lmst.BranchPages + lmst.OverflowPages + lmst.LeafPages),
+			LmdbStat: lmdbStat{
+				PSize:         lmst.PSize,
+				Depth:         lmst.Depth,
+				BranchPages:   lmst.BranchPages,
+				LeafPages:     lmst.LeafPages,
+				OverflowPages: lmst.OverflowPages,
+				Entries:       lmst.Entries,
+			},
+		*/
 	})
 }
 
@@ -2104,11 +2177,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Settings: util.UserSettings{
 			Replication:           6,
 			Verified:              true,
-			DealDuration:          2880 * 365,
+			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
-			DealMakingDisabled:    s.CM.dealMakingDisabled,
+			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 		},
 	})
@@ -2283,14 +2356,24 @@ func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
 		r := c.Request()
+
+		attrs := []attribute.KeyValue{
+			semconv.HTTPMethodKey.String(r.Method),
+			semconv.HTTPRouteKey.String(r.URL.Path),
+			semconv.HTTPClientIPKey.String(r.RemoteAddr),
+			semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
+		}
+
+		if reqid := r.Header.Get("EstClientReqID"); reqid != "" {
+			if len(reqid) > 64 {
+				reqid = reqid[:64]
+			}
+			attrs = append(attrs, attribute.String("ClientReqID", reqid))
+		}
+
 		tctx, span := s.tracer.Start(context.Background(),
 			"HTTP "+r.Method+" "+c.Path(),
-			trace.WithAttributes(
-				semconv.HTTPMethodKey.String(r.Method),
-				semconv.HTTPRouteKey.String(r.URL.Path),
-				semconv.HTTPClientIPKey.String(r.RemoteAddr),
-				semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
-			),
+			trace.WithAttributes(attrs...),
 		)
 		defer span.End()
 
@@ -2594,7 +2677,22 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 	return c.JSON(200, out)
 }
 
+type setDealMakingBody struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (s *Server) handleSetDealMaking(c echo.Context) error {
+	var body setDealMakingBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	s.CM.setDealMakingEnabled(body.Enabled)
+	return c.JSON(200, map[string]string{})
+}
+
 func (s *Server) handleContentHealthCheck(c echo.Context) error {
+	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return err
@@ -2603,6 +2701,12 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	var cont Content
 	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
 		return err
+	}
+
+	if cont.Location != "local" {
+		return c.JSON(200, map[string]interface{}{
+			"error": "requested content was not local to this instance, cannot check health right now",
+		})
 	}
 
 	var u User
@@ -2615,6 +2719,32 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
+	_, rootFetchErr := s.Node.Blockstore.Get(cont.Cid.CID)
+	if rootFetchErr != nil {
+		log.Errorf("failed to fetch root: %s", rootFetchErr)
+	}
+
+	if cont.Aggregate && rootFetchErr != nil {
+		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
+		var children []Content
+		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
+			return err
+		}
+
+		nd, err := s.CM.createAggregate(ctx, children)
+		if err != nil {
+			return fmt.Errorf("failed to create aggregate: %w", err)
+		}
+
+		if nd.Cid() != cont.Cid.CID {
+			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
+		}
+
+		if err := s.Node.Blockstore.Put(nd); err != nil {
+			return err
+		}
+	}
+
 	var exch exchange.Interface
 	if c.QueryParam("fetch") != "" {
 		exch = s.Node.Bitswap
@@ -2624,7 +2754,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
-	err = merkledag.Walk(c.Request().Context(), func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+	err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err

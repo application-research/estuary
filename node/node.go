@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 	"time"
 
 	autobatch "github.com/application-research/go-bs-autobatch"
@@ -17,11 +18,14 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	flatfs "github.com/ipfs/go-ds-flatfs"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-ipfs-provider/batched"
 	"github.com/ipfs/go-ipfs-provider/queue"
 	logging "github.com/ipfs/go-log"
+	metri "github.com/ipfs/go-metrics-interface"
+	mprome "github.com/ipfs/go-metrics-prometheus"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -33,6 +37,7 @@ import (
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/estuary/keystore"
+	migratebs "github.com/whyrusleeping/estuary/util/migratebs"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
 )
@@ -49,6 +54,10 @@ var bootstrappers = []string{
 var BootstrapPeers []peer.AddrInfo
 
 func init() {
+	if err := mprome.Inject(); err != nil {
+		panic(err)
+	}
+
 	for _, bsp := range bootstrappers {
 		ma, err := multiaddr.NewMultiaddr(bsp)
 		if err != nil {
@@ -77,7 +86,7 @@ type Node struct {
 	FullRT   *fullrt.FullRT
 	Host     host.Host
 
-	Lmdb      *lmdb.Blockstore
+	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
 	Blockstore      blockstore.Blockstore
@@ -152,35 +161,12 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
-	lmdbs, err := lmdb.Open(&lmdb.Options{
-		Path:   cfg.Blockstore,
-		NoSync: true,
-	})
+	mbs, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog)
 	if err != nil {
 		return nil, err
 	}
 
-	var bstore EstuaryBlockstore = lmdbs
-
-	if cfg.WriteLog != "" {
-		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(cfg.WriteLog))
-		if err != nil {
-			return nil, err
-		}
-
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
-		if err != nil {
-			return nil, err
-		}
-
-		bstore = ab
-	}
-
-	notifbs := NewNotifBs(bstore)
-	mbs := bsm.New("estuary", notifbs)
-
 	var blkst blockstore.Blockstore = mbs
-
 	if cfg.BlockstoreWrap != nil {
 		wrapper, err := cfg.BlockstoreWrap(blkst)
 		if err != nil {
@@ -190,7 +176,9 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
-	bswap := bitswap.New(ctx, bsnet, blkst)
+
+	bsctx := metri.CtxScope(ctx, "estuary.exch")
+	bswap := bitswap.New(bsctx, bsnet, blkst)
 
 	wallet, err := setupWallet(cfg.WalletDir)
 	if err != nil {
@@ -218,13 +206,157 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		Provider:   prov,
 		Host:       h,
 		Blockstore: mbs,
-		Lmdb:       lmdbs,
-		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
-		Wallet:     wallet,
-		Bwc:        bwc,
-		Config:     cfg,
+		//Lmdb:       lmdbs,
+		Datastore: ds,
+		Bitswap:   bswap.(*bitswap.Bitswap),
+		Wallet:    wallet,
+		Bwc:       bwc,
+		Config:    cfg,
 	}, nil
+}
+
+func parseBsCfg(bscfg string) (string, []string, string, error) {
+	if bscfg[0] != ':' {
+		return "", nil, "", fmt.Errorf("cfg must start with colon")
+	}
+
+	var inParen bool
+	var parenStart int
+	var parenEnd int
+	var end int
+	for i := 1; i < len(bscfg); i++ {
+		if inParen {
+			if bscfg[i] == ')' {
+				inParen = false
+				parenEnd = i
+			}
+			continue
+		}
+
+		if bscfg[i] == '(' {
+			inParen = true
+			parenStart = i
+		}
+
+		if bscfg[i] == ':' {
+			end = i
+			break
+		}
+	}
+
+	if parenStart == 0 {
+		return bscfg[1:end], nil, bscfg[end+1:], nil
+	}
+
+	t := bscfg[1:parenStart]
+	params := strings.Split(bscfg[parenStart+1:parenEnd], ",")
+
+	return t, params, bscfg[end+1:], nil
+}
+
+/* format:
+:lmdb:/path/to/thing
+*/
+func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
+	if !strings.HasPrefix(bscfg, ":") {
+		lmdbs, err := lmdb.Open(&lmdb.Options{
+			Path:   bscfg,
+			NoSync: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return lmdbs, nil
+	}
+
+	spec, params, path, err := parseBsCfg(bscfg)
+	if err != nil {
+		return nil, err
+	}
+
+	switch spec {
+	case "lmdb":
+		lmdbs, err := lmdb.Open(&lmdb.Options{
+			Path:   path,
+			NoSync: true,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return lmdbs, nil
+	case "flatfs":
+		if len(params) > 0 {
+			return nil, fmt.Errorf("flatfs params not yet supported")
+		}
+		sf, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/3")
+		if err != nil {
+			return nil, err
+		}
+
+		ds, err := flatfs.CreateOrOpen(path, sf, false)
+		if err != nil {
+			return nil, err
+		}
+
+		return &deleteManyWrap{blockstore.NewBlockstoreNoPrefix(ds)}, nil
+	case "migrate":
+		if len(params) != 2 {
+			return nil, fmt.Errorf("migrate blockstore requires two params (%d given)", len(params))
+		}
+
+		from, err := constructBlockstore(params[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to construct source blockstore for migration: %w", err)
+		}
+
+		to, err := constructBlockstore(params[1])
+		if err != nil {
+			return nil, fmt.Errorf("failed to construct dest blockstore for migration: %w", err)
+		}
+
+		return migratebs.NewBlockstore(from, to, false)
+	default:
+		return nil, fmt.Errorf("unrecognized blockstore spec: %q", spec)
+	}
+}
+
+func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
+	bstore, err := constructBlockstore(bscfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if wal != "" {
+		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(wal))
+		if err != nil {
+			return nil, err
+		}
+
+		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
+		if err != nil {
+			return nil, err
+		}
+
+		bstore = ab
+	}
+
+	ctx := metri.CtxScope(context.TODO(), "estuary.bstore")
+
+	cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
+		HasBloomFilterSize:   512 << 20,
+		HasBloomFilterHashes: 7,
+		HasARCCacheSize:      8 << 20,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	notifbs := NewNotifBs(&deleteManyWrap{cbstore})
+	mbs := bsm.New("estuary.repo", notifbs)
+
+	var blkst blockstore.Blockstore = mbs
+
+	return blkst, nil
 }
 
 func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
@@ -284,4 +416,18 @@ func setupWallet(dir string) (*wallet.LocalWallet, error) {
 	fmt.Println("Wallet address is: ", defaddr)
 
 	return wallet, nil
+}
+
+type deleteManyWrap struct {
+	blockstore.Blockstore
+}
+
+func (dmw *deleteManyWrap) DeleteMany(cids []cid.Cid) error {
+	for _, c := range cids {
+		if err := dmw.Blockstore.DeleteBlock(c); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

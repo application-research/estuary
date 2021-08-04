@@ -48,6 +48,10 @@ import (
 
 const defaultReplication = 6
 
+// Making default deal duration be one week less than the maximum to ensure
+// miners who start their deals early dont run into issues
+const dealDuration = 1555200 - (2880 * 7)
+
 type ContentManager struct {
 	DB        *gorm.DB
 	Api       api.Gateway
@@ -83,7 +87,9 @@ type ContentManager struct {
 	// some behavior flags
 	FailDealOnTransferFailure bool
 
-	dealMakingDisabled         bool
+	dealDisabledLk       sync.Mutex
+	isDealMakingDisabled bool
+
 	contentAddingDisabled      bool
 	localContentAddingDisabled bool
 
@@ -485,17 +491,9 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		loc = k
 	}
 
-	sort.Slice(b.Contents, func(i, j int) bool {
-		return b.Contents[i].ID < b.Contents[j].ID
-	})
-
-	log.Info("aggregating contents in staging zone into new content")
-	dir := unixfs.EmptyDirNode()
-	for _, c := range b.Contents {
-		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
-			Size: uint64(c.Size),
-			Cid:  c.Cid.CID,
-		})
+	dir, err := cm.createAggregate(ctx, b.Contents)
+	if err != nil {
+		return xerrors.Errorf("failed to create aggregate: %w", err)
 	}
 
 	ncid := dir.Cid()
@@ -564,6 +562,23 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	} else {
 		return cm.sendAggregateCmd(ctx, loc, *content, ids, dir.RawData())
 	}
+}
+
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) (*merkledag.ProtoNode, error) {
+	sort.Slice(conts, func(i, j int) bool {
+		return conts[i].ID < conts[j].ID
+	})
+
+	log.Info("aggregating contents in staging zone into new content")
+	dir := unixfs.EmptyDirNode()
+	for _, c := range conts {
+		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
+			Size: uint64(c.Size),
+			Cid:  c.Cid.CID,
+		})
+	}
+
+	return dir, nil
 }
 
 func (cm *ContentManager) startup() error {
@@ -848,6 +863,9 @@ func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Addr
 
 	var sm storageMiner
 	if err := cm.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
 		return err
 	}
 
@@ -1175,7 +1193,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
-		if cm.dealMakingDisabled {
+		if cm.dealMakingDisabled() {
 			log.Warnf("deal making is disabled for now")
 			done(time.Minute * 60)
 			return nil
@@ -1361,6 +1379,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if d.DTChan == "" && content.Location != "local" {
 		log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
+		if time.Since(d.CreatedAt) > time.Hour {
+			return DEAL_CHECK_UNKNOWN, nil
+		}
+
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
@@ -1698,7 +1720,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			price = asks[i].Ask.Ask.VerifiedPrice
 		}
 
-		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, 1000000, verified)
+		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, dealDuration, verified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -1804,6 +1826,115 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	return nil
 }
 
+func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content, miner address.Address, verified bool) (uint, error) {
+	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
+		attribute.Int64("content", int64(content.ID)),
+		attribute.Stringer("miner", miner),
+	))
+	defer span.End()
+
+	if content.Offloaded {
+		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
+
+	ask, err := cm.FilClient.GetAsk(ctx, miner)
+	if err != nil {
+		var apierr *filclient.ApiError
+		if !xerrors.As(err, &apierr) {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   miner,
+				Phase:   "query-ask",
+				Message: err.Error(),
+				Content: content.ID,
+			})
+		}
+
+		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
+	}
+
+	price := ask.Ask.Ask.Price
+	if verified {
+		price = ask.Ask.Ask.VerifiedPrice
+	}
+
+	if cm.priceIsTooHigh(price, verified) {
+		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
+	}
+
+	prop, err := cm.FilClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.Ask.Ask.MinPieceSize, dealDuration, verified)
+	if err != nil {
+		return 0, xerrors.Errorf("failed to construct a deal proposal: %w", err)
+	}
+
+	if err := cm.putProposalRecord(prop.DealProposal); err != nil {
+		return 0, err
+	}
+
+	var deal *contentDeal
+	dealresp, err := cm.FilClient.SendProposal(ctx, prop)
+	if err != nil {
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "send-proposal",
+			Message: err.Error(),
+			Content: content.ID,
+		})
+		return 0, fmt.Errorf("failed to send proposal to miner: %w", err)
+	}
+
+	// TODO: verify signature!
+	switch dealresp.Response.State {
+	case storagemarket.StorageDealError:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: dealresp.Response.Message,
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("deal errored: %s", dealresp.Response.Message)
+	case storagemarket.StorageDealProposalRejected:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: dealresp.Response.Message,
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("deal rejected: %s", dealresp.Response.Message)
+	default:
+		if err := cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "propose",
+			Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
+			Content: content.ID,
+		}); err != nil {
+			return 0, err
+		}
+		return 0, fmt.Errorf("unrecognized proposal response state %d: %s", dealresp.Response.State, dealresp.Response.Message)
+	case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
+
+		deal = &contentDeal{
+			Content:  content.ID,
+			PropCid:  util.DbCID{dealresp.Response.Proposal},
+			Miner:    miner.String(),
+			Verified: verified,
+		}
+
+		if err := cm.DB.Create(deal).Error; err != nil {
+			return 0, xerrors.Errorf("failed to create database entry for deal: %w", err)
+		}
+	}
+
+	if err := cm.StartDataTransfer(ctx, deal); err != nil {
+		return 0, fmt.Errorf("failed to start data transfer: %w", err)
+	}
+
+	return deal.ID, nil
+}
+
 func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal) error {
 	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", cd.Content).Error; err != nil {
@@ -1886,7 +2017,7 @@ type dfeRecord struct {
 	Miner        string `json:"miner"`
 	Phase        string `json:"phase"`
 	Message      string `json:"message"`
-	Content      uint   `json:"content"`
+	Content      uint   `json:"content" gorm:"index"`
 	MinerVersion string `json:"minerVersion"`
 }
 
@@ -2459,4 +2590,16 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 			TakeContent: tc,
 		},
 	})
+}
+
+func (cm *ContentManager) dealMakingDisabled() bool {
+	cm.dealDisabledLk.Lock()
+	defer cm.dealDisabledLk.Unlock()
+	return cm.isDealMakingDisabled
+}
+
+func (cm *ContentManager) setDealMakingEnabled(enable bool) {
+	cm.dealDisabledLk.Lock()
+	defer cm.dealDisabledLk.Unlock()
+	cm.isDealMakingDisabled = !enable
 }

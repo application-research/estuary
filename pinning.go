@@ -35,7 +35,7 @@ func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) 
 		}
 
 		ps := &types.IpfsPinStatus{
-			Requestid: fmt.Sprint(cont),
+			Requestid: fmt.Sprintf("%d", cont.ID),
 			Status:    "pinning",
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
@@ -275,10 +275,6 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		return "", err
 	}
 
-	if user.Flags&4 == 0 {
-		return "local", nil
-	}
-
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
 	for d := range cm.shuttles {
@@ -319,7 +315,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qafter := e.QueryParam("after")
 	qlimit := e.QueryParam("limit")
 
-	q := s.DB.Model(Content{}).Where("user_id = ?", u.ID).Order("created_at desc")
+	q := s.DB.Model(Content{}).Where("user_id = ? and not aggregate", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID

@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -29,5 +30,15 @@ func SetupDatabase(dbval string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	sqldb, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+
+	sqldb.SetMaxIdleConns(80)
+	sqldb.SetMaxOpenConns(100)
+	sqldb.SetConnMaxIdleTime(time.Hour)
+
 	return db, nil
 }
