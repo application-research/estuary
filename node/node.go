@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	migratebs "github.com/application-research/estuary/util/migratebs"
+	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
@@ -36,8 +38,6 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/whyrusleeping/estuary/keystore"
-	migratebs "github.com/whyrusleeping/estuary/util/migratebs"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
 )

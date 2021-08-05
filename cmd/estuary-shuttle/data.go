@@ -3,7 +3,7 @@ package main
 import (
 	"time"
 
-	"github.com/whyrusleeping/estuary/util"
+	"github.com/application-research/estuary/util"
 	"gorm.io/gorm"
 )
 

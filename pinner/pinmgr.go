@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/types"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/whyrusleeping/estuary/types"
 )
 
 var log = logging.Logger("pinner")

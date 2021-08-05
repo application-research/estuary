@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
-	"github.com/whyrusleeping/estuary/util"
 	"golang.org/x/xerrors"
 )
 
