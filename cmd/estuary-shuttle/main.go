@@ -37,6 +37,7 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
@@ -541,6 +542,10 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
+
+	admin := e.Group("/admin")
+	admin.Use(s.AuthRequired(util.PermLevelAdmin))
+	admin.GET("/health/:cid", s.handleContentHealthCheck)
 
 	return e.Start(listen)
 }
@@ -1066,4 +1071,69 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 
 	io.Copy(c.Response(), r)
 	return nil
+}
+
+func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
+	ctx := c.Request().Context()
+	cc, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+
+	var obj Object
+	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
+		return c.JSON(404, map[string]interface{}{
+			"error": "object not found in database",
+		})
+	}
+
+	var pins []Pin
+	if err := s.DB.Model(ObjRef{}).Joins("left join pins on obj_refs.pin = pins.id").Scan(&pins).Error; err != nil {
+		log.Errorf("failed to find pins for cid: %s", err)
+	}
+
+	_, rootFetchErr := s.Node.Blockstore.Get(cc)
+	if rootFetchErr != nil {
+		log.Errorf("failed to fetch root: %s", rootFetchErr)
+	}
+
+	var exch exchange.Interface
+	if c.QueryParam("fetch") != "" {
+		exch = s.Node.Bitswap
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, exch)
+	dserv := merkledag.NewDAGService(bserv)
+
+	cset := cid.NewSet()
+	err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
+		return node.Links(), nil
+	}, cc, cset.Visit, merkledag.Concurrent())
+
+	errstr := ""
+	if err != nil {
+		errstr = err.Error()
+	}
+
+	rferrstr := ""
+	if rootFetchErr != nil {
+		rferrstr = rootFetchErr.Error()
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"pins":          pins,
+		"cid":           cc,
+		"traverseError": errstr,
+		"foundBlocks":   cset.Len(),
+		"rootFetchErr":  rferrstr,
+	})
 }
