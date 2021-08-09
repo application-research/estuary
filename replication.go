@@ -127,10 +127,27 @@ type contentStagingZone struct {
 
 	User uint `json:"user"`
 
+	ContID uint `json:"contentID"`
+
 	lk sync.Mutex
 }
 
-func newContentStagingZone(user uint) *contentStagingZone {
+func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
+	content := &Content{
+		Size:        0,
+		Name:        "aggregate",
+		Active:      false,
+		Pinning:     true,
+		UserID:      user,
+		Replication: defaultReplication,
+		Aggregate:   true,
+		Location:    loc,
+	}
+
+	if err := cm.DB.Create(content).Error; err != nil {
+		return nil, err
+	}
+
 	return &contentStagingZone{
 		ZoneOpened: time.Now(),
 		CloseTime:  time.Now().Add(maxStagingZoneLifetime),
@@ -138,7 +155,8 @@ func newContentStagingZone(user uint) *contentStagingZone {
 		MaxSize:    int64(stagingZoneSizeLimit),
 		MaxItems:   maxBucketItems,
 		User:       user,
-	}
+		ContID:     content.ID,
+	}, nil
 }
 
 // amount of time a staging zone will remain open before we aggregate it into a piece of content
@@ -190,11 +208,17 @@ func (cb *contentStagingZone) hasRoomForContent(c Content) bool {
 	return cb.CurSize+c.Size <= cb.MaxSize
 }
 
-func (cb *contentStagingZone) tryAddContent(c Content) bool {
+func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 	if cb.CurSize+c.Size > cb.MaxSize {
-		return false
+		return false, nil
+	}
+
+	if err := cm.DB.Model(Content{}).
+		Where("id = ?", c.ID).
+		UpdateColumn("aggregated_in", cb.ContID).Error; err != nil {
+		return false, err
 	}
 
 	if len(cb.Contents) == 0 || c.CreatedAt.Before(cb.EarliestContent) {
@@ -209,7 +233,7 @@ func (cb *contentStagingZone) tryAddContent(c Content) bool {
 		cb.CloseTime = nowPlus
 	}
 
-	return true
+	return true, nil
 }
 
 func (cb *contentStagingZone) hasContent(c Content) bool {
@@ -224,11 +248,49 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node) *ContentManager {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node) (*ContentManager, error) {
 
 	cache, err := lru.NewARC(50000)
 	if err != nil {
-		panic(err)
+		return nil, err
+	}
+
+	var stages []Content
+	if err := db.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
+		return nil, err
+	}
+
+	zones := make(map[uint][]*contentStagingZone)
+	for _, c := range stages {
+		z := &contentStagingZone{
+			ZoneOpened: c.CreatedAt,
+			CloseTime:  c.CreatedAt.Add(maxStagingZoneLifetime),
+			MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
+			MaxSize:    int64(stagingZoneSizeLimit),
+			MaxItems:   maxBucketItems,
+			User:       c.UserID,
+			ContID:     c.ID,
+		}
+
+		minClose := time.Now().Add(stagingZoneKeepalive)
+		if z.CloseTime.Before(minClose) {
+			z.CloseTime = minClose
+		}
+
+		var inzone []Content
+		if err := db.Find(&inzone, "aggregated_in = ?", c.ID).Error; err != nil {
+			return nil, err
+		}
+
+		z.Contents = inzone
+
+		for _, zc := range inzone {
+			// TODO: do some sanity checking that we havent messed up and added
+			// too many items to this staging zone
+			z.CurSize += zc.Size
+		}
+
+		zones[c.UserID] = append(zones[c.UserID], z)
 	}
 
 	cm := &ContentManager{
@@ -243,7 +305,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 10),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
-		buckets:              make(map[uint][]*contentStagingZone),
+		buckets:              zones,
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
 		pinMgr:               pinmgr,
 		remoteTransferStatus: cache,
@@ -254,7 +316,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	})
 
 	cm.queueMgr = qm
-	return cm
+	return cm, nil
 }
 
 func (cm *ContentManager) ContentWatcher() {
@@ -502,30 +564,16 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-	// TODO: determine location for aggregate!
-
-	content := &Content{
-		Cid:         util.DbCID{ncid},
-		Size:        int64(size) + b.CurSize,
-		Name:        "aggregate",
-		Active:      false,
-		UserID:      b.Contents[0].UserID,
-		Replication: defaultReplication,
-		Aggregate:   true,
-		Location:    loc,
-	}
-
-	if err := cm.DB.Create(content).Error; err != nil {
+	if err := cm.DB.UpdateColumns(map[string]interface{}{
+		"cid":  util.DbCID{ncid},
+		"size": int64(size) + b.CurSize,
+	}).Error; err != nil {
 		return err
 	}
 
-	var ids []uint
-	for _, c := range b.Contents {
-		ids = append(ids, c.ID)
-	}
-
-	if err := cm.DB.Model(Content{}).Where("id in ?", ids).Update("aggregated_in", content.ID).Error; err != nil {
-		return xerrors.Errorf("failed to mark staged contents as part of aggregate %d: %w", content.ID, err)
+	var content Content
+	if err := cm.DB.First(&content, "id = ?", b.ContID).Error; err != nil {
+		return err
 	}
 
 	if loc == "local" {
@@ -538,7 +586,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		}
 
 		if err := cm.DB.Create(&ObjRef{
-			Content: content.ID,
+			Content: b.ContID,
 			Object:  obj.ID,
 		}).Error; err != nil {
 			return err
@@ -548,19 +596,24 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 			return err
 		}
 
-		if err := cm.DB.Model(Content{}).Where("id = ?", content.ID).UpdateColumns(map[string]interface{}{
-			"active": true,
+		if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
+			"active":  true,
+			"pinning": false,
 		}).Error; err != nil {
 			return err
 		}
 
 		go func() {
-			cm.ToCheck <- content.ID
+			cm.ToCheck <- b.ContID
 		}()
 
 		return nil
 	} else {
-		return cm.sendAggregateCmd(ctx, loc, *content, ids, dir.RawData())
+		var ids []uint
+		for _, c := range b.Contents {
+			ids = append(ids, c.ID)
+		}
+		return cm.sendAggregateCmd(ctx, loc, content, ids, dir.RawData())
 	}
 }
 
@@ -1023,21 +1076,42 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 
 	blist, ok := cm.buckets[content.UserID]
 	if !ok {
-		b := newContentStagingZone(content.UserID)
-		b.tryAddContent(content)
+		b, err := cm.newContentStagingZone(content.UserID, content.Location)
+		if err != nil {
+			return fmt.Errorf("failed to create new staging zone content: %w", err)
+		}
+
+		_, err = cm.tryAddContent(b, content)
+		if err != nil {
+			return fmt.Errorf("failed to add content to staging zone: %w", err)
+		}
+
 		cm.buckets[content.UserID] = []*contentStagingZone{b}
 		return nil
 	}
 
 	for _, b := range blist {
-		if b.tryAddContent(content) {
+		ok, err := cm.tryAddContent(b, content)
+		if err != nil {
+			return err
+		}
+
+		if ok {
 			return nil
 		}
 	}
 
-	b := newContentStagingZone(content.UserID)
-	b.tryAddContent(content)
+	b, err := cm.newContentStagingZone(content.UserID, content.Location)
+	if err != nil {
+		return err
+	}
 	cm.buckets[content.UserID] = append(blist, b)
+
+	_, err = cm.tryAddContent(b, content)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

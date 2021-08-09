@@ -123,6 +123,11 @@ type Content struct {
 	Failed bool `json:"failed"`
 
 	Location string `json:"location"`
+	// TODO: shift location tracking to just use the ID of the shuttle
+	// Also move towards recording content movement intentions in the database,
+	// making that process more resilient to failures
+	//LocID     uint   `json:"locID"`
+	//LocIntent uint   `json:"locIntent"`
 }
 
 type Object struct {
@@ -378,7 +383,11 @@ func main() {
 
 		s.DB = db
 
-		cm := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
+		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
+		if err != nil {
+			return err
+		}
+
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")

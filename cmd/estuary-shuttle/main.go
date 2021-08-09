@@ -952,8 +952,8 @@ func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
 	upd.PinQueueSize = s.PinMgr.PinQueueSize()
 
 	var st unix.Statfs_t
-	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
-		return nil, err
+	if err := unix.Statfs(s.Node.StorageDir, &st); err != nil {
+		log.Errorf("failed to get blockstore disk usage: %s", err)
 	}
 
 	upd.BlockstoreSize = st.Blocks * uint64(st.Bsize)

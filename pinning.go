@@ -133,7 +133,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 
 func (cm *ContentManager) refreshPinQueue() error {
 	var toPin []Content
-	if err := cm.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+	if err := cm.DB.Find(&toPin, "active = false and pinning = true and not aggregate").Error; err != nil {
 		return err
 	}
 

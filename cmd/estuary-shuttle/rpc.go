@@ -155,7 +155,7 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 
 	res, err := d.commpMemo.Do(ctx, cmd.Data.String())
 	if err != nil {
-		return xerrors.Errorf("failed to compute commP: %w", err)
+		return xerrors.Errorf("failed to compute commP for %s: %w", cmd.Data, err)
 	}
 
 	commpRes, ok := res.(*commpResult)

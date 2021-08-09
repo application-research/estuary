@@ -86,6 +86,9 @@ type Node struct {
 	FullRT   *fullrt.FullRT
 	Host     host.Host
 
+	// Set for gathering disk usage
+
+	StorageDir string
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
@@ -161,7 +164,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
-	mbs, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog)
+	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog)
 	if err != nil {
 		return nil, err
 	}
@@ -207,11 +210,12 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		Host:       h,
 		Blockstore: mbs,
 		//Lmdb:       lmdbs,
-		Datastore: ds,
-		Bitswap:   bswap.(*bitswap.Bitswap),
-		Wallet:    wallet,
-		Bwc:       bwc,
-		Config:    cfg,
+		Datastore:  ds,
+		Bitswap:    bswap.(*bitswap.Bitswap),
+		Wallet:     wallet,
+		Bwc:        bwc,
+		Config:     cfg,
+		StorageDir: stordir,
 	}, nil
 }
 
@@ -257,21 +261,21 @@ func parseBsCfg(bscfg string) (string, []string, string, error) {
 /* format:
 :lmdb:/path/to/thing
 */
-func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
+func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	if !strings.HasPrefix(bscfg, ":") {
 		lmdbs, err := lmdb.Open(&lmdb.Options{
 			Path:   bscfg,
 			NoSync: true,
 		})
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
-		return lmdbs, nil
+		return lmdbs, bscfg, nil
 	}
 
 	spec, params, path, err := parseBsCfg(bscfg)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	switch spec {
@@ -281,60 +285,65 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, error) {
 			NoSync: true,
 		})
 		if err != nil {
-			return nil, err
+			return nil, path, err
 		}
-		return lmdbs, nil
+		return lmdbs, "", nil
 	case "flatfs":
 		if len(params) > 0 {
-			return nil, fmt.Errorf("flatfs params not yet supported")
+			return nil, "", fmt.Errorf("flatfs params not yet supported")
 		}
 		sf, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/3")
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		ds, err := flatfs.CreateOrOpen(path, sf, false)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
-		return &deleteManyWrap{blockstore.NewBlockstoreNoPrefix(ds)}, nil
+		return &deleteManyWrap{blockstore.NewBlockstoreNoPrefix(ds)}, path, nil
 	case "migrate":
 		if len(params) != 2 {
-			return nil, fmt.Errorf("migrate blockstore requires two params (%d given)", len(params))
+			return nil, "", fmt.Errorf("migrate blockstore requires two params (%d given)", len(params))
 		}
 
-		from, err := constructBlockstore(params[0])
+		from, _, err := constructBlockstore(params[0])
 		if err != nil {
-			return nil, fmt.Errorf("failed to construct source blockstore for migration: %w", err)
+			return nil, "", fmt.Errorf("failed to construct source blockstore for migration: %w", err)
 		}
 
-		to, err := constructBlockstore(params[1])
+		to, destPath, err := constructBlockstore(params[1])
 		if err != nil {
-			return nil, fmt.Errorf("failed to construct dest blockstore for migration: %w", err)
+			return nil, "", fmt.Errorf("failed to construct dest blockstore for migration: %w", err)
 		}
 
-		return migratebs.NewBlockstore(from, to, false)
+		mgbs, err := migratebs.NewBlockstore(from, to, false)
+		if err != nil {
+			return nil, "", err
+		}
+
+		return mgbs, destPath, nil
 	default:
-		return nil, fmt.Errorf("unrecognized blockstore spec: %q", spec)
+		return nil, "", fmt.Errorf("unrecognized blockstore spec: %q", spec)
 	}
 }
 
-func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
-	bstore, err := constructBlockstore(bscfg)
+func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, string, error) {
+	bstore, dir, err := constructBlockstore(bscfg)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	if wal != "" {
 		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(wal))
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 
 		bstore = ab
@@ -348,7 +357,7 @@ func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
 		HasARCCacheSize:      8 << 20,
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	notifbs := NewNotifBs(&deleteManyWrap{cbstore})
@@ -356,7 +365,7 @@ func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, error) {
 
 	var blkst blockstore.Blockstore = mbs
 
-	return blkst, nil
+	return blkst, dir, nil
 }
 
 func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {

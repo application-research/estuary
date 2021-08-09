@@ -211,6 +211,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
+	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
@@ -1818,6 +1819,13 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, errs)
+}
+
+func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
+	s.CM.bucketLk.Lock()
+	defer s.CM.bucketLk.Unlock()
+
+	return c.JSON(200, s.CM.buckets)
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
