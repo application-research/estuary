@@ -42,6 +42,10 @@ func (dbc *DbCID) Scan(v interface{}) error {
 		return fmt.Errorf("dbcids must get bytes!")
 	}
 
+	if len(b) == 0 {
+		return nil
+	}
+
 	c, err := cid.Cast(b)
 	if err != nil {
 		return err
