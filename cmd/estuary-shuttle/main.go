@@ -534,6 +534,31 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 
 	e.Use(middleware.CORS())
 
+	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
+		log.Errorf("handler error: %s", err)
+		var herr *util.HttpError
+		if xerrors.As(err, &herr) {
+			res := map[string]string{
+				"error": herr.Message,
+			}
+			if herr.Details != "" {
+				res["details"] = herr.Details
+			}
+			ctx.JSON(herr.Code, res)
+			return
+		}
+
+		var echoErr *echo.HTTPError
+		if xerrors.As(err, &echoErr) {
+			ctx.JSON(echoErr.Code, map[string]interface{}{
+				"error": echoErr.Message,
+			})
+			return
+		}
+
+		ctx.NoContent(500)
+	}
+
 	e.GET("/health", s.handleHealth)
 
 	content := e.Group("/content")
