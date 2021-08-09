@@ -1675,7 +1675,7 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "fault",
-			Message: "miner faulted on deal",
+			Message: fmt.Sprintf("miner faulted on deal: %d", d.DealID),
 			Content: d.Content,
 		})
 	}
