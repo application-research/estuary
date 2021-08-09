@@ -28,6 +28,8 @@ type Shuttle struct {
 	Host           string
 	PeerID         string
 
+	Private bool
+
 	Open bool
 }
 
@@ -39,6 +41,8 @@ type shuttleConnection struct {
 	hostname string
 	addrInfo peer.AddrInfo
 	address  address.Address
+
+	private bool
 
 	blockstoreSize uint64
 	blockstoreFree uint64
