@@ -215,6 +215,10 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool
 		return false, nil
 	}
 
+	if len(cb.Contents) >= cb.MaxItems {
+		return false, nil
+	}
+
 	if err := cm.DB.Model(Content{}).
 		Where("id = ?", c.ID).
 		UpdateColumn("aggregated_in", cb.ContID).Error; err != nil {
@@ -357,7 +361,7 @@ func (cm *ContentManager) ContentWatcher() {
 			buckets := cm.popReadyStagingZone()
 			for _, b := range buckets {
 				if err := cm.aggregateContent(context.TODO(), b); err != nil {
-					log.Errorf("content aggregation failed: %s", b)
+					log.Errorf("content aggregation failed (bucket %d): %s", b.ContID, err)
 					continue
 				}
 			}
@@ -1069,6 +1073,10 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content Content) error {
 	ctx, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
+	if content.AggregatedIn > 0 {
+		log.Warnf("attempted to add content to staging zone that was already staged: %d (is in %d)", content.ID, content.AggregatedIn)
+		return nil
+	}
 
 	log.Infof("adding content to staging zone: %d", content.ID)
 	cm.bucketLk.Lock()
@@ -1341,8 +1349,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		}
 
 		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
-			d.SealedAt = time.Now()
-			if err := cm.DB.Save(d).Error; err != nil {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 			return DEAL_CHECK_SECTOR_ON_CHAIN, nil
@@ -1680,9 +1687,10 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 		})
 	}
 	log.Infow("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
-	d.Failed = true
-	d.FailedAt = time.Now()
-	if err := cm.DB.Save(d).Error; err != nil {
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+		"failed":    true,
+		"failed_at": time.Now(),
+	}).Error; err != nil {
 		return err
 	}
 

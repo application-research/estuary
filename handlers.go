@@ -151,6 +151,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	deals := e.Group("/deals")
 	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
+	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
@@ -183,6 +184,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	public.GET("/stats", s.handlePublicStats)
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
+	public.GET("/deals/failures", s.handleStorageFailures)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -350,7 +352,6 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 
 			st.TotalRequests = res.TotalReads
 			st.BWUsed = res.Bw
-
 		}
 
 		if c.Aggregate {
@@ -929,14 +930,44 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	var deal contentDeal
-	if err := s.DB.First(&deal, "id = ?", val).Error; err != nil {
+	dstatus, err := s.dealStatusByID(ctx, uint(val))
+	if err != nil {
 		return err
+	}
+
+	return c.JSON(200, dstatus)
+}
+
+func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
+	propcid, err := cid.Decode(c.Param("propcid"))
+	if err != nil {
+		return err
+	}
+
+	var deal contentDeal
+	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
+		return err
+	}
+
+	dstatus, err := s.dealStatusByID(ctx, deal.ID)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, dstatus)
+}
+
+func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
+	var deal contentDeal
+	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		return nil, err
 	}
 
 	var content Content
 	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	chanst, err := s.CM.GetTransferStatus(ctx, &deal, &content)
@@ -962,7 +993,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 		}
 	}
 
-	return c.JSON(200, dstatus)
+	return &dstatus, nil
 }
 
 type getContentResponse struct {
@@ -2943,8 +2974,28 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 }
 
 func (s *Server) handleStorageFailures(c echo.Context) error {
+	limit := 2000
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		nlim, err := strconv.Atoi(limstr)
+		if err != nil {
+			return err
+		}
+		limit = nlim
+	}
+
+	q := s.DB.Limit(limit).Order("created_at desc")
+
+	if bef := c.QueryParam("before"); bef != "" {
+		beftime, err := time.Parse(time.RFC3339, bef)
+		if err != nil {
+			return err
+		}
+
+		q = q.Where("created_at <= ?", beftime)
+	}
+
 	var recs []dfeRecord
-	if err := s.DB.Limit(2000).Order("created_at desc").Find(&recs).Error; err != nil {
+	if err := q.Scan(&recs).Error; err != nil {
 		return err
 	}
 
