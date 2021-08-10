@@ -1726,6 +1726,11 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	))
 	defer span.End()
 
+	if content.Size < (256 << 10) {
+		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
+
+	}
+
 	if content.Offloaded {
 		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}

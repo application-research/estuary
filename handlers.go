@@ -322,7 +322,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	}
 
 	var contents []Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and active", u.ID).Error; err != nil {
 		return err
 	}
 
