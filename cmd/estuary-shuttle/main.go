@@ -127,6 +127,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "write-log-flush",
 		},
+		&cli.BoolFlag{
+			Name: "write-log-truncate",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -151,6 +154,7 @@ func main() {
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
 			HardFlushWriteLog: cctx.Bool("write-log-flush"),
+			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
 			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),

@@ -110,6 +110,7 @@ type Config struct {
 
 	WriteLog          string
 	HardFlushWriteLog bool
+	WriteLogTruncate  bool
 
 	Libp2pKeyFile string
 
@@ -165,7 +166,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
-	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog)
+	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog, cfg.WriteLogTruncate)
 	if err != nil {
 		return nil, err
 	}
@@ -330,14 +331,17 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	}
 }
 
-func loadBlockstore(bscfg string, wal string, flush bool) (blockstore.Blockstore, string, error) {
+func loadBlockstore(bscfg string, wal string, flush, walTruncate bool) (blockstore.Blockstore, string, error) {
 	bstore, dir, err := constructBlockstore(bscfg)
 	if err != nil {
 		return nil, "", err
 	}
 
 	if wal != "" {
-		writelog, err := badgerbs.Open(badgerbs.DefaultOptions(wal))
+		opts := badgerbs.DefaultOptions(wal)
+		opts.Truncate = walTruncate
+
+		writelog, err := badgerbs.Open(opts)
 		if err != nil {
 			return nil, "", err
 		}
