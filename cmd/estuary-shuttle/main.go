@@ -124,6 +124,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "logging",
 		},
+		&cli.BoolFlag{
+			Name: "write-log-flush",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -145,11 +148,12 @@ func main() {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
 			},
-			Blockstore:    bsdir,
-			WriteLog:      wlog,
-			Libp2pKeyFile: filepath.Join(ddir, "peer.key"),
-			Datastore:     filepath.Join(ddir, "leveldb"),
-			WalletDir:     filepath.Join(ddir, "wallet"),
+			Blockstore:        bsdir,
+			WriteLog:          wlog,
+			HardFlushWriteLog: cctx.Bool("write-log-flush"),
+			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
+			Datastore:         filepath.Join(ddir, "leveldb"),
+			WalletDir:         filepath.Join(ddir, "wallet"),
 		}
 
 		nd, err := node.Setup(context.TODO(), cfg)

@@ -31,6 +31,8 @@ type Shuttle struct {
 	Private bool
 
 	Open bool
+
+	Priority int
 }
 
 type shuttleConnection struct {

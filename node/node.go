@@ -108,7 +108,8 @@ type Config struct {
 
 	Blockstore string
 
-	WriteLog string
+	WriteLog          string
+	HardFlushWriteLog bool
 
 	Libp2pKeyFile string
 
@@ -164,7 +165,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
 	}
 
-	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog)
+	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +330,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	}
 }
 
-func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, string, error) {
+func loadBlockstore(bscfg string, wal string, flush bool) (blockstore.Blockstore, string, error) {
 	bstore, dir, err := constructBlockstore(bscfg)
 	if err != nil {
 		return nil, "", err
@@ -341,9 +342,15 @@ func loadBlockstore(bscfg string, wal string) (blockstore.Blockstore, string, er
 			return nil, "", err
 		}
 
-		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200)
+		ab, err := autobatch.NewBlockstore(bstore, writelog, 200, 200, flush)
 		if err != nil {
 			return nil, "", err
+		}
+
+		if flush {
+			if err := ab.Flush(); err != nil {
+				return nil, "", err
+			}
 		}
 
 		bstore = ab

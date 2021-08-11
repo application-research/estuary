@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
 	"strconv"
 	"strings"
 	"time"
@@ -283,7 +282,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	cm.shuttlesLk.Unlock()
 
 	var shuttles []Shuttle
-	if err := cm.DB.Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
@@ -298,9 +297,44 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	// TODO: take into account existing staging zones and their primary
 	// locations while choosing
+	ploc, err := cm.primaryStagingLocation(ctx, uid)
+	if err != nil {
+		return "", err
+	}
 
-	n := rand.Intn(len(shuttles))
-	return shuttles[n].Handle, nil
+	if ploc != "" {
+		for _, sh := range shuttles {
+			if sh.Handle == ploc {
+				return ploc, nil
+			}
+		}
+
+		// TODO: maybe we should just assign the pin to the preferred shuttle
+		// anyways, this could be the case where theres a small amount of
+		// downtime from rebooting or something
+		log.Warnf("preferred shuttle %q not online", ploc)
+	}
+
+	// since they are ordered by priority, just take the first
+	return shuttles[0].Handle, nil
+}
+
+func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) (string, error) {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+	zones, ok := cm.buckets[uid]
+	if !ok {
+		return "", nil
+	}
+
+	// TODO: maybe we could make this more complex, but for now, if we have a
+	// staging zone opened in a particular location, just keep using that one
+	for _, z := range zones {
+		return z.Location, nil
+	}
+
+	log.Warnf("empty staging zone set for user %d", uid)
+	return "", nil
 }
 
 // pinning api /pins endpoint

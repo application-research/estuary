@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,7 +23,9 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/chain/types"
+	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/specs-actors/actors/builtin/market"
 	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
@@ -127,6 +130,13 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
 	user.GET("/stats", withUser(s.handleGetUserStats))
 
+	userMiner := user.Group("/miner")
+	userMiner.POST("/claim", withUser(s.handleUserClaimMiner))
+	userMiner.GET("/claim/:miner", withUser(s.handleUserGetClaimMinerMsg))
+	userMiner.POST("/suspend/:miner", withUser(s.handleSuspendMiner))
+	userMiner.PUT("/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
+	userMiner.PUT("/set-info/:miner", withUser(s.handleMinersSetInfo))
+
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
@@ -189,6 +199,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
 
+	netw := public.Group("/net")
+	netw.GET("/peers", s.handleNetPeers)
+	netw.GET("/addrs", s.handleNetAddrs)
+
 	miners := public.Group("/miners")
 	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
@@ -203,14 +217,17 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/dealstats", s.handleDealStats)
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
 	admin.GET("/stats", s.handleAdminStats)
+
+	// miners
 	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
 	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
-	admin.POST("/miners/suspend/:miner", s.handleAdminSuspendMiner)
-	admin.PUT("/miners/unsuspend/:miner", s.handleAdminUnsuspendMiner)
+	admin.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
+	admin.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
+	admin.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
-	admin.PUT("/miners/set-info/:miner", s.handleAdminMinersSetInfo)
 
+	admin.GET("/cm/progress", s.handleAdminGetProgress)
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
 	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
@@ -222,6 +239,9 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 
+	admnetw := admin.Group("/net")
+	admnetw.GET("/peers", s.handleNetPeers)
+
 	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
 	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
 
@@ -230,10 +250,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	admin.GET("/fixdeals", s.handleFixupDeals)
 	admin.POST("/loglevel", s.handleLogLevel)
-
-	netw := admin.Group("/net")
-	netw.GET("/peers", s.handleNetPeers)
-	netw.GET("/addrs", s.handleNetAddrs)
 
 	users := admin.Group("/users")
 	users.GET("", s.handleAdminGetUsers)
@@ -1399,10 +1415,22 @@ type minerSetInfoParams struct {
 	Name string `json:"name"`
 }
 
-func (s *Server) handleAdminMinersSetInfo(c echo.Context) error {
+func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
+	}
+
+	var sm storageMiner
+	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		return err
+	}
+
+	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
 	}
 
 	var params minerSetInfoParams
@@ -1434,10 +1462,22 @@ type suspendMinerBody struct {
 	Reason string `json:"reason"`
 }
 
-func (s *Server) handleAdminSuspendMiner(c echo.Context) error {
+func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
+	}
+
+	var sm storageMiner
+	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		return err
+	}
+
+	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
 	}
 
 	var body suspendMinerBody
@@ -1455,10 +1495,22 @@ func (s *Server) handleAdminSuspendMiner(c echo.Context) error {
 	return c.JSON(200, map[string]string{})
 }
 
-func (s *Server) handleAdminUnsuspendMiner(c echo.Context) error {
+func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
+	}
+
+	var sm storageMiner
+	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		return err
+	}
+
+	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
 	}
 
 	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
@@ -3035,4 +3087,126 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	return c.JSON(200, createContentResponse{
 		ID: content.ID,
 	})
+}
+
+type claimMinerBody struct {
+	Miner address.Address `json:"miner"`
+	Claim string          `json:"claim"`
+}
+
+func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
+	var cmb claimMinerBody
+	if err := c.Bind(&cmb); err != nil {
+		return err
+	}
+
+	var sm storageMiner
+	if err := s.DB.First(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
+		return err
+	}
+
+	minfo, err := s.Api.StateMinerInfo(ctx, cmb.Miner, types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	acckey, err := s.Api.StateAccountKey(ctx, minfo.Worker, types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	sigb, err := hex.DecodeString(cmb.Claim)
+	if err != nil {
+		return err
+	}
+
+	if len(sigb) < 2 {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_INVALID_INPUT,
+		}
+	}
+
+	sig := &crypto.Signature{
+		Type: crypto.SigType(sigb[0]),
+		Data: sigb[1:],
+	}
+
+	msg := s.msgForMinerClaim(cmb.Miner, u.ID)
+
+	if err := sigs.Verify(sig, acckey, msg); err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(storageMiner{}).Where("id = ?", sm.ID).UpdateColumn("owner", u.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{
+		"hexmsg": hex.EncodeToString(s.msgForMinerClaim(m, u.ID)),
+	})
+}
+
+func (s *Server) msgForMinerClaim(miner address.Address, uid uint) []byte {
+	return []byte(fmt.Sprintf("---- user %d owns miner %s ----", uid, miner))
+}
+
+type progressResponse struct {
+	GoodContents []uint
+	InProgress   []uint
+	NoDeals      []uint
+
+	TotalTopLevel int64
+	TotalPinning  int64
+}
+
+type contCheck struct {
+	ID       uint
+	NumDeals int
+}
+
+func (s *Server) handleAdminGetProgress(c echo.Context) error {
+	var out progressResponse
+	if err := s.DB.Model(Content{}).Where("not aggregated_in > 0 AND (pinning OR active) AND not failed").Count(&out.TotalTopLevel).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(Content{}).Where("pinning and not failed").Count(&out.TotalPinning).Error; err != nil {
+		return err
+	}
+
+	var conts []contCheck
+	if err := s.DB.Model(Content{}).Where("not aggregated_in > 0 and active").
+		Select("id, (?) as num_deals",
+			s.DB.Model(contentDeal{}).
+				Where("content = contents.id and deal_id > 0 and not failed").
+				Select("count(1)"),
+		).Scan(&conts).Error; err != nil {
+		return err
+	}
+
+	for _, c := range conts {
+		if c.NumDeals >= defaultReplication {
+			out.GoodContents = append(out.GoodContents, c.ID)
+		} else if c.NumDeals > 0 {
+			out.InProgress = append(out.InProgress, c.ID)
+		} else {
+			out.NoDeals = append(out.NoDeals, c.ID)
+		}
+	}
+
+	return c.JSON(200, out)
 }

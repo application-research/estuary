@@ -16,6 +16,7 @@ var log = logging.Logger("pinner")
 
 type PinFunc func(context.Context, *PinningOperation) error
 
+type PinProgressCB func(int, int64)
 type PinStatusFunc func(uint, string)
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc) *PinManager {

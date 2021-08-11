@@ -127,7 +127,8 @@ type contentStagingZone struct {
 
 	User uint `json:"user"`
 
-	ContID uint `json:"contentID"`
+	ContID   uint   `json:"contentID"`
+	Location string `json:"location"`
 
 	lk sync.Mutex
 }
@@ -156,6 +157,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		MaxItems:   maxBucketItems,
 		User:       user,
 		ContID:     content.ID,
+		Location:   content.Location,
 	}, nil
 }
 
@@ -274,6 +276,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 			MaxItems:   maxBucketItems,
 			User:       c.UserID,
 			ContID:     c.ID,
+			Location:   c.Location,
 		}
 
 		minClose := time.Now().Add(stagingZoneKeepalive)
