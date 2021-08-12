@@ -357,6 +357,10 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate bool) (blocksto
 			}
 		}
 
+		if walTruncate {
+			return nil, "", fmt.Errorf("truncation and full flush complete, halting execution")
+		}
+
 		bstore = ab
 	}
 
