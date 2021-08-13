@@ -571,7 +571,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-	if err := cm.DB.UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
 		"cid":  util.DbCID{ncid},
 		"size": int64(size) + b.CurSize,
 	}).Error; err != nil {
