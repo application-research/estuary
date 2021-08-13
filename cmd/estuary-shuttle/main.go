@@ -1121,7 +1121,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	var pins []Pin
-	if err := s.DB.Model(ObjRef{}).Joins("left join pins on obj_refs.pin = pins.content").Where("object = ?", obj.ID).Scan(&pins).Error; err != nil {
+	if err := s.DB.Model(ObjRef{}).Joins("left join pins on obj_refs.pin = pins.id").Where("object = ?", obj.ID).Select("pins.*").Scan(&pins).Error; err != nil {
 		log.Errorf("failed to find pins for cid: %s", err)
 	}
 
