@@ -3,7 +3,7 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174
+	github.com/application-research/filclient v0.0.0-20210813195619-943df4b7cb99
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/docker/go-units v0.4.0
