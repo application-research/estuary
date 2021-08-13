@@ -659,7 +659,7 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -691,6 +691,8 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		if err != nil {
 			return nil, err
 		}
+
+		cb(int64(len(node.RawData())))
 
 		select {
 		case gotData <- struct{}{}:
@@ -737,7 +739,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root); err != nil {
+	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root, func(int64) {}); err != nil {
 		return nil, err
 	}
 

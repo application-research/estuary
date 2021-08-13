@@ -14,9 +14,9 @@ import (
 
 var log = logging.Logger("pinner")
 
-type PinFunc func(context.Context, *PinningOperation) error
+type PinFunc func(context.Context, *PinningOperation, PinProgressCB) error
 
-type PinProgressCB func(int, int64)
+type PinProgressCB func(int64)
 type PinStatusFunc func(uint, string)
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc) *PinManager {
@@ -115,8 +115,11 @@ func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
 			Name: po.Name,
 			Meta: po.Meta,
 		},
+		Info: map[string]interface{}{
+			"obj_fetched":  po.NumFetched,
+			"size_fetched": po.SizeFetched,
+		},
 	}
-
 }
 
 const maxActivePerUser = 15
@@ -148,7 +151,12 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 	op.SetStatus("pinning")
 	pm.StatusChangeFunc(op.ContId, "pinning")
 
-	if err := pm.RunPinFunc(ctx, op); err != nil {
+	if err := pm.RunPinFunc(ctx, op, func(size int64) {
+		op.lk.Lock()
+		defer op.lk.Unlock()
+		op.NumFetched++
+		op.SizeFetched += size
+	}); err != nil {
 		op.fail(err)
 		pm.StatusChangeFunc(op.ContId, "failed")
 		return err

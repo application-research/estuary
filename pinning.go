@@ -90,7 +90,7 @@ func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
 	}
 }
 
-func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
+func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -105,7 +105,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation) err
 
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj); err != nil {
+	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj, cb); err != nil {
 		return err
 	}
 
@@ -669,7 +669,8 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		}
 	}
 
-	if err := s.CM.RemoveContent(ctx, uint(id), true); err != nil {
+	// TODO: what if we delete a pin that was in progress?
+	if err := s.CM.unpinContent(ctx, uint(id)); err != nil {
 		return err
 	}
 

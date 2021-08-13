@@ -145,10 +145,7 @@ github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174 h1:Xlx+/fxyHSzZ9NIQG3pjSyikdXzPhByjpoJXsPELAMI=
 github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174/go.mod h1:rcZiPq9fRmVhVb4mP3geynOfCrbKS6+YgfdGN3hhZvQ=
-github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb h1:Blw+pHwrjflCcezIPpI+8xqb2ZbtL+r1DJNlMrPuInM=
 github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
-github.com/application-research/go-bs-autobatch v0.0.0-20210809133255-05877b036e69 h1:+JrpApih+6wBgU+fjYSxESl7D/B1o9ggHR3LaU5IUKA=
-github.com/application-research/go-bs-autobatch v0.0.0-20210809133255-05877b036e69/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
