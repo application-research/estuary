@@ -38,8 +38,8 @@ func SetupDatabase(dbval string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	sqldb.SetMaxIdleConns(10)
-	sqldb.SetMaxOpenConns(30)
+	sqldb.SetMaxIdleConns(80)
+	sqldb.SetMaxOpenConns(99)
 	sqldb.SetConnMaxIdleTime(time.Hour)
 
 	return db, nil
