@@ -26,7 +26,9 @@ func SetupDatabase(dbval string) (*gorm.DB, error) {
 		return nil, fmt.Errorf("unsupported or unrecognized db type: %s", parts[0])
 	}
 
-	db, err := gorm.Open(dial, &gorm.Config{})
+	db, err := gorm.Open(dial, &gorm.Config{
+		SkipDefaultTransaction: true,
+	})
 	if err != nil {
 		return nil, err
 	}
