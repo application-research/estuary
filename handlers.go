@@ -2796,12 +2796,6 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	if cont.Location != "local" {
-		return c.JSON(200, map[string]interface{}{
-			"error": "requested content was not local to this instance, cannot check health right now",
-		})
-	}
-
 	var u User
 	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return err
@@ -2810,32 +2804,6 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	var deals []contentDeal
 	if err := s.DB.Find(&deals, "content = ?", cont.ID).Error; err != nil {
 		return err
-	}
-
-	_, rootFetchErr := s.Node.Blockstore.Get(cont.Cid.CID)
-	if rootFetchErr != nil {
-		log.Errorf("failed to fetch root: %s", rootFetchErr)
-	}
-
-	if cont.Aggregate && rootFetchErr != nil {
-		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
-		var children []Content
-		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
-
-		nd, err := s.CM.createAggregate(ctx, children)
-		if err != nil {
-			return fmt.Errorf("failed to create aggregate: %w", err)
-		}
-
-		if nd.Cid() != cont.Cid.CID {
-			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
-		}
-
-		if err := s.Node.Blockstore.Put(nd); err != nil {
-			return err
-		}
 	}
 
 	var fixedAggregateSize bool
@@ -2870,6 +2838,39 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 		fixedAggregateSize = true
+	}
+
+	if cont.Location != "local" {
+		return c.JSON(200, map[string]interface{}{
+			"error":              "requested content was not local to this instance, cannot check health right now",
+			"fixedAggregateSize": fixedAggregateSize,
+		})
+	}
+
+	_, rootFetchErr := s.Node.Blockstore.Get(cont.Cid.CID)
+	if rootFetchErr != nil {
+		log.Errorf("failed to fetch root: %s", rootFetchErr)
+	}
+
+	if cont.Aggregate && rootFetchErr != nil {
+		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
+		var children []Content
+		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
+			return err
+		}
+
+		nd, err := s.CM.createAggregate(ctx, children)
+		if err != nil {
+			return fmt.Errorf("failed to create aggregate: %w", err)
+		}
+
+		if nd.Cid() != cont.Cid.CID {
+			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
+		}
+
+		if err := s.Node.Blockstore.Put(nd); err != nil {
+			return err
+		}
 	}
 
 	var exch exchange.Interface
