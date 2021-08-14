@@ -2838,6 +2838,40 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 	}
 
+	var fixedAggregateSize bool
+	if cont.Aggregate && cont.Size == 0 {
+		// if this is an aggregate and its size is zero, then that means we
+		// failed at some point while updating the aggregate, we can fix that
+		var children []Content
+		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
+			return err
+		}
+
+		nd, err := s.CM.createAggregate(ctx, children)
+		if err != nil {
+			return fmt.Errorf("failed to create aggregate: %w", err)
+		}
+
+		// just to be safe, put it into the blockstore again
+		if err := s.Node.Blockstore.Put(nd); err != nil {
+			return err
+		}
+
+		size, err := nd.Size()
+		if err != nil {
+			return err
+		}
+
+		// now, update size and cid
+		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"cid":  util.DbCID{nd.Cid()},
+			"size": size,
+		}).Error; err != nil {
+			return err
+		}
+		fixedAggregateSize = true
+	}
+
 	var exch exchange.Interface
 	if c.QueryParam("fetch") != "" {
 		exch = s.Node.Bitswap
@@ -2866,13 +2900,14 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"user":          u.Username,
-		"filename":      cont.Name,
-		"size":          cont.Size,
-		"cid":           cont.Cid.CID,
-		"deals":         deals,
-		"traverseError": errstr,
-		"foundBlocks":   cset.Len(),
+		"user":               u.Username,
+		"filename":           cont.Name,
+		"size":               cont.Size,
+		"cid":                cont.Cid.CID,
+		"deals":              deals,
+		"traverseError":      errstr,
+		"foundBlocks":        cset.Len(),
+		"fixedAggregateSize": fixedAggregateSize,
 	})
 }
 
