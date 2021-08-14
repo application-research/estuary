@@ -283,6 +283,21 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		return err
 	}
 
+	obj := &Object{
+		Cid:  util.DbCID{blk.Cid()},
+		Size: len(blk.RawData()),
+	}
+	if err := d.DB.Create(obj).Error; err != nil {
+		return err
+	}
+	ref := &ObjRef{
+		Pin:    pin.ID,
+		Object: obj.ID,
+	}
+	if err := d.DB.Create(ref).Error; err != nil {
+		return err
+	}
+
 	go d.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, nil)
 	return nil
 }

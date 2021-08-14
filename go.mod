@@ -13,7 +13,7 @@ require (
 	github.com/filecoin-project/go-data-transfer v1.7.3
 	github.com/filecoin-project/go-fil-markets v1.6.2
 	github.com/filecoin-project/go-padreader v0.0.0-20210723183308-812a16dc01b1
-	github.com/filecoin-project/go-state-types v0.1.1-0.20210722133031-ad9bfe54c124
+	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e
 	github.com/filecoin-project/lotus v1.10.1
 	github.com/filecoin-project/specs-actors v0.9.14
 	github.com/google/uuid v1.2.0
@@ -30,6 +30,7 @@ require (
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
+	github.com/ipfs/go-ipfs-pinner v0.1.2
 	github.com/ipfs/go-ipfs-provider v0.5.1
 	github.com/ipfs/go-ipld-format v0.2.0
 	github.com/ipfs/go-log v1.0.5
@@ -50,6 +51,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.3.3
 	github.com/prometheus/client_golang v1.10.0
+	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210219115102-f37d292932f2

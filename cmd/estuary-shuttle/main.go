@@ -653,7 +653,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid()); err != nil {
+	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {}); err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
@@ -725,7 +725,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
 	ctx, span := Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -739,7 +739,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj); err != nil {
+	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
 		// pinning failed, we wont try again. mark pin as dead
 		/* maybe its fine if we retry later?
 		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
@@ -776,7 +776,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation) er
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
 	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -814,6 +814,8 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		if err != nil {
 			return nil, err
 		}
+
+		cb(int64(len(node.RawData())))
 
 		select {
 		case gotData <- struct{}{}:
