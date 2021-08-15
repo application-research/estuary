@@ -233,7 +233,9 @@ func main() {
 			shuttleHandle: cctx.String("handle"),
 			shuttleToken:  cctx.String("auth-token"),
 		}
-		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate)
+		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate, &pinner.PinManagerOpts{
+			MaxActivePerUser: 30,
+		})
 
 		go d.PinMgr.Run(100)
 

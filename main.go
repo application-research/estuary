@@ -353,9 +353,11 @@ func main() {
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, nil)
+		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
+			MaxActivePerUser: 20,
+		})
 
-		go pinmgr.Run(30)
+		go pinmgr.Run(50)
 
 		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {

@@ -19,10 +19,14 @@ type PinFunc func(context.Context, *PinningOperation, PinProgressCB) error
 type PinProgressCB func(int64)
 type PinStatusFunc func(uint, string)
 
-func NewPinManager(pinfunc PinFunc, scf PinStatusFunc) *PinManager {
+func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
 		scf = func(uint, string) {}
 	}
+	if opts == nil {
+		opts = DefaultOpts
+	}
+
 	return &PinManager{
 		pinQueue:         make(map[uint][]*PinningOperation),
 		activePins:       make(map[uint]int),
@@ -31,7 +35,16 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc) *PinManager {
 		pinComplete:      make(chan *PinningOperation, 64),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
+		maxActivePerUser: opts.MaxActivePerUser,
 	}
+}
+
+var DefaultOpts = &PinManagerOpts{
+	MaxActivePerUser: 15,
+}
+
+type PinManagerOpts struct {
+	MaxActivePerUser int
 }
 
 type PinManager struct {
@@ -44,6 +57,8 @@ type PinManager struct {
 
 	RunPinFunc       PinFunc
 	StatusChangeFunc func(uint, string)
+
+	maxActivePerUser int
 }
 
 // TODO: some of these fields are overkill for the generalized pin manager
@@ -122,8 +137,6 @@ func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
 	}
 }
 
-const maxActivePerUser = 15
-
 func (pm *PinManager) PinQueueSize() int {
 	var count int
 	pm.pinQueueLk.Lock()
@@ -186,7 +199,7 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		user = 0
 	}
 
-	if minCount >= maxActivePerUser && user != 0 {
+	if minCount >= pm.maxActivePerUser && user != 0 {
 		return nil
 	}
 

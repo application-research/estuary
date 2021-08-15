@@ -730,6 +730,16 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return nil
 	}
 
+	if cont.Aggregate {
+		if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"active":  true,
+			"pinning": false,
+		}).Error; err != nil {
+			return xerrors.Errorf("failed to update content in database: %w", err)
+		}
+		return nil
+	}
+
 	objects := make([]*Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
 		objects = append(objects, &Object{

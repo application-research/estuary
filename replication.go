@@ -571,6 +571,10 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
+	if size == 0 {
+		log.Warnf("content %d aggregate dir apparent size is zero", b.ContID)
+	}
+
 	if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
 		"cid":  util.DbCID{ncid},
 		"size": size,
