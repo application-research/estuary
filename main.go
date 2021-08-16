@@ -30,6 +30,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var log = logging.Logger("estuary")
@@ -229,6 +230,13 @@ func main() {
 					return err
 				}
 
+				// Create a session to turn off gorm logging. For this command,
+				// it is expected for no admin user entry to exist, which
+				// normally causes gorm to print an annoying error message
+				db = db.Session(&gorm.Session{
+					Logger: logger.Discard,
+				})
+
 				username := "admin"
 				passHash := ""
 
@@ -255,7 +263,7 @@ func main() {
 					return fmt.Errorf("admin token creation failed: %w", err)
 				}
 
-				fmt.Printf("Auth Token: %v", authToken.Token)
+				fmt.Printf("Auth Token: %v\n", authToken.Token)
 
 				return nil
 			},
