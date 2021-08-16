@@ -103,7 +103,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 			return
 		}
 
-		ctx.NoContent(500)
+		// TODO: returning all errors out to the user smells potentially bad
+		_ = ctx.JSON(500, map[string]interface{}{
+			"error": err.Error(),
+		})
 	}
 
 	e.GET("/debug/pprof/:prof", serveProfile)

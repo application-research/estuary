@@ -30,6 +30,8 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		return d.handleRpcAggregateContent(ctx, cmd.Params.AggregateContent)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
+	case drpc.CMD_ReqTxStatus:
+		return d.handleRpcReqTxStatus(ctx, cmd.Params.ReqTxStatus)
 	default:
 		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
 	}
@@ -355,4 +357,27 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	}); err != nil {
 		log.Errorf("failed to send transfer status update: %s", err)
 	}
+}
+
+func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatus) error {
+	go func() {
+		ctx := context.TODO()
+		st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
+		if err != nil {
+			log.Errorf("failed to get requested transfer status: %s", err)
+			return
+		}
+
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			Chanid: req.ChanID.String(),
+
+			// NB: this parameter is only here because
+			//its wanted on the other side. We could probably just look up by
+			//channel ID instead.
+			DealDBID: req.DealDBID,
+
+			State: st,
+		})
+	}()
+	return nil
 }

@@ -1482,7 +1482,20 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	if status == nil {
 		// no status for transfer, could be because the remote hasnt reported it to us yet?
 		log.Errorf("no status for deal: %d", d)
-		return DEAL_CHECK_UNKNOWN, nil // for now, failing this case
+		if d.DTChan == "" {
+			// No channel ID yet, shouldnt be able to get here actually
+			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
+		} else {
+			chid, err := d.ChannelID()
+			if err != nil {
+				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: %w", d.ID, err)
+			}
+			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, chid); err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+
+			return DEAL_CHECK_PROGRESS, nil
+		}
 	}
 
 	switch status.Status {
@@ -1563,7 +1576,8 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
 	if !ok {
-		return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		//return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		return nil, nil
 	}
 
 	tsr, ok := val.(*transferStatusRecord)
@@ -2645,6 +2659,18 @@ func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont
 				Contents: aggr,
 				Root:     cont.Cid.CID,
 				ObjData:  blob,
+			},
+		},
+	})
+}
+
+func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid datatransfer.ChannelID) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_ReqTxStatus,
+		Params: drpc.CmdParams{
+			ReqTxStatus: &drpc.ReqTxStatus{
+				DealDBID: dealid,
+				ChanID:   chid,
 			},
 		},
 	})
