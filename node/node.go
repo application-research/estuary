@@ -320,7 +320,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 			return nil, "", fmt.Errorf("failed to construct dest blockstore for migration: %w", err)
 		}
 
-		mgbs, err := migratebs.NewBlockstore(from, to, false)
+		mgbs, err := migratebs.NewBlockstore(from, to, true)
 		if err != nil {
 			return nil, "", err
 		}

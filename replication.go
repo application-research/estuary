@@ -1220,36 +1220,63 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	}
 
 	// check on each of the existing deals, see if they need fixing
+	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
-	for _, d := range deals {
-		status, err := cm.checkDeal(ctx, &d)
-		if err != nil {
-			var dfe *DealFailureError
-			if xerrors.As(err, &dfe) {
-				cm.recordDealFailure(dfe)
-				continue
-			} else {
-				return err
+	errs := make([]error, len(deals))
+	var wg sync.WaitGroup
+	for i := range deals {
+		wg.Add(1)
+		go func(i int) {
+			d := deals[i]
+			defer wg.Done()
+			status, err := cm.checkDeal(ctx, &d)
+			if err != nil {
+				var dfe *DealFailureError
+				if xerrors.As(err, &dfe) {
+					cm.recordDealFailure(dfe)
+					return
+				} else {
+					errs[i] = err
+					return
+				}
 			}
-		}
 
-		switch status {
-		case DEAL_CHECK_UNKNOWN:
-			if err := cm.repairDeal(&d); err != nil {
-				return xerrors.Errorf("repairing deal failed: %w", err)
+			countLk.Lock()
+			defer countLk.Unlock()
+			switch status {
+			case DEAL_CHECK_UNKNOWN:
+				if err := cm.repairDeal(&d); err != nil {
+					errs[i] = xerrors.Errorf("repairing deal failed: %w", err)
+					return
+				}
+			case DEAL_CHECK_SECTOR_ON_CHAIN:
+				numSealed++
+			case DEAL_CHECK_DEALID_ON_CHAIN:
+				numPublished++
+			case DEAL_CHECK_PROGRESS:
+				numProgress++
+			default:
+				log.Errorf("unrecognized deal check status: %d", status)
 			}
-		case DEAL_CHECK_SECTOR_ON_CHAIN:
-			numSealed++
-		case DEAL_CHECK_DEALID_ON_CHAIN:
-			numPublished++
-		case DEAL_CHECK_PROGRESS:
-			numProgress++
-		default:
-			log.Errorf("unrecognized deal check status: %d", status)
+		}(i)
+	}
+	wg.Wait()
+	// return the last error found, log the rest
+	var retErr error
+	for _, err := range errs {
+		if err != nil {
+			if retErr != nil {
+				log.Errorf("check deal failure: %s", err)
+			}
+			retErr = err
 		}
 	}
+	if retErr != nil {
+		return retErr
+	}
 
-	if len(deals) < replicationFactor {
+	goodDeals := numSealed + numPublished + numProgress
+	if goodDeals < replicationFactor {
 		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil {
 			return err
