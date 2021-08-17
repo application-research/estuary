@@ -232,7 +232,8 @@ func main() {
 
 				// Create a session to turn off gorm logging. For this command,
 				// it is expected for no admin user entry to exist, which
-				// normally causes gorm to print an annoying error message
+				// normally causes gorm to print an annoying error message.
+				// UPDATE - not smart approach, will be replaced
 				db = db.Session(&gorm.Session{
 					Logger: logger.Discard,
 				})
@@ -240,6 +241,7 @@ func main() {
 				username := "admin"
 				passHash := ""
 
+				// + UserExistsByUsername
 				if err := db.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
 				}
@@ -250,6 +252,7 @@ func main() {
 					PassHash: passHash,
 					Perm:     100,
 				}
+				// + CreateUser
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
@@ -259,6 +262,7 @@ func main() {
 					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
 				}
+				// + CreateAuthToken
 				if err := db.Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)
 				}
@@ -305,6 +309,7 @@ func main() {
 			go func() {
 				defer close(out)
 
+				// + GetActiveContents
 				var contents []Content
 				if err := db.Find(&contents, "active").Error; err != nil {
 					log.Errorf("failed to load contents for reproviding: %s", err)
@@ -548,6 +553,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 	return nil
 }
 
+// + ObjectExistsWithCid
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
 	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
