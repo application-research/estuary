@@ -51,6 +51,7 @@ func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
 }
 
 func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
+	// + ObjectExistsWithCid
 	var count int64
 	if err := cm.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -62,6 +63,7 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	return count > 0, nil
 }
 
+// + ...DB UPDATE - abstracting this anonymous struct??????
 func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) error {
 	ctx, span := cm.tracer.Start(ctx, "RemoveContent")
 	defer span.End()
@@ -69,6 +71,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
+	// + DeleteContentByID
 	if err := cm.DB.Delete(&Content{}, c).Error; err != nil {
 		return fmt.Errorf("failed to delete content from db: %w", err)
 	}
@@ -138,6 +141,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 }
 
 func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
+	// + GetContentByID
 	var pin Content
 	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
 		return err
@@ -148,10 +152,12 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
+	// + DeleteContentByID
 	if err := cm.DB.Delete(Content{}, pin.ID).Error; err != nil {
 		return err
 	}
 
+	// + DeleteObjRefByPinID
 	if err := cm.DB.Where("pin = ?", pin.ID).Delete(ObjRef{}).Error; err != nil {
 		return err
 	}
@@ -177,6 +183,8 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
+	// + GetObjectByID (checking both id and cid is no longer a thing that needs
+	// to be done)
 	var c int64
 	if err := cm.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
 		return err
@@ -187,6 +195,8 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 	return nil
 }
 
+// TODO: optimization - this function shouldn't take a list of objects if it
+// only needs IDs, it should take a list of object IDs instead
 func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
 	var ids []uint
 	for _, o := range objs {
@@ -195,6 +205,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
+	// + DeleteUnreferencedObjects
 	if err := cm.DB.Where("(?) = 0 and id in ?",
 		cm.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
 		Delete(Object{}).Error; err != nil {
@@ -205,6 +216,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 }
 
 func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*Object, error) {
+	// +
 	var objects []*Object
 	if err := cm.DB.Model(ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").

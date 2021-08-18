@@ -124,14 +124,19 @@ func (mgr *DBMgr) UserExistsWithUsername(username string) (bool, error) {
 // AUTH TOKENS
 
 func (mgr *DBMgr) CreateAuthToken(authToken *AuthToken) error {
-	if err := mgr.db.Create(authToken).Error; err != nil {
-		return err
-	}
-
-	return nil
+	return mgr.db.Create(authToken).Error
 }
 
 // CONTENTS
+
+func (mgr *DBMgr) GetContentByID(id uint) (Content, error) {
+	var content Content
+	if err := mgr.db.First(&content, "id = ?", id).Error; err != nil {
+		return Content{}, err
+	}
+
+	return content, nil
+}
 
 func (mgr *DBMgr) GetActiveContents() ([]Content, error) {
 	var contents []Content
@@ -142,13 +147,17 @@ func (mgr *DBMgr) GetActiveContents() ([]Content, error) {
 	return contents, nil
 }
 
-func (mgr *DBMgr) GetContentsWithUserID(userID uint) ([]Content, error) {
+func (mgr *DBMgr) GetContentsByUserID(userID uint) ([]Content, error) {
 	var contents []Content
 	if err := mgr.db.Find(&contents, "user_id = ?", userID).Error; err != nil {
 		return nil, err
 	}
 
 	return contents, nil
+}
+
+func (mgr *DBMgr) DeleteContentByID(id uint) error {
+	return mgr.db.Delete(&Content{}, id).Error
 }
 
 // OBJECTS
@@ -164,4 +173,28 @@ func (mgr *DBMgr) ObjectExistsWithCid(cid cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
+}
+
+func (mgr *DBMgr) DeleteUnreferencedObjects(ids []uint) error {
+	return mgr.db.Where(
+		"(?) = 0 and id in ?",
+		mgr.db.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids,
+	).Delete(Object{}).Error
+}
+
+// OBJ REFS
+
+func (mgr *DBMgr) DeleteObjRefByPinID(pinID uint) error {
+	return mgr.db.Where("pin = ?", pinID).Delete(ObjRef{}).Error
+}
+
+// DEALS
+
+func (mgr *DBMgr) GetDealsByContentIDs(contentIDs []uint) ([]contentDeal, error) {
+	var deals []contentDeal
+	if err := mgr.db.Find(&deals, "content in ?", contentIDs).Error; err != nil {
+		return nil, err
+	}
+
+	return deals, nil
 }
