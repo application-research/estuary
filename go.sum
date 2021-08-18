@@ -394,6 +394,8 @@ github.com/filecoin-project/go-data-transfer v1.7.0/go.mod h1:GLRr5BmLEqsLwXfiRD
 github.com/filecoin-project/go-data-transfer v1.7.2/go.mod h1:GLRr5BmLEqsLwXfiRDG7uJvph22KGL2M4iOuF8EINaU=
 github.com/filecoin-project/go-data-transfer v1.7.3 h1:2F3K1LmT6Q97+Bq9gBv/VVqFZ/0FHsRPqYDbCzrGaYg=
 github.com/filecoin-project/go-data-transfer v1.7.3/go.mod h1:Cbl9lzKOuAyyIxp1tE+VbV5Aix4bxzA7uJGA9wGM4fM=
+github.com/filecoin-project/go-data-transfer v1.7.4 h1:NICNZSVVXSFnLdIcGlE404tZX7gHjBsZM/dBQdjiKg8=
+github.com/filecoin-project/go-data-transfer v1.7.4/go.mod h1:Cbl9lzKOuAyyIxp1tE+VbV5Aix4bxzA7uJGA9wGM4fM=
 github.com/filecoin-project/go-ds-versioning v0.1.0 h1:y/X6UksYTsK8TLCI7rttCKEvl8btmWxyFMEeeWGUxIQ=
 github.com/filecoin-project/go-ds-versioning v0.1.0/go.mod h1:mp16rb4i2QPmxBnmanUx8i/XANp+PFCCJWiAb+VW4/s=
 github.com/filecoin-project/go-fil-commcid v0.0.0-20200716160307-8f644712406f/go.mod h1:Eaox7Hvus1JgPrL5+M3+h7aSPHc0cVqpSxA+TxIEpZQ=

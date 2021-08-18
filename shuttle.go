@@ -82,6 +82,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		"host":            hello.Host,
 		"peer_id":         hello.AddrInfo.ID.String(),
 		"last_connection": time.Now(),
+		"private":         hello.Private,
 	}).Error; err != nil {
 		return nil, nil, err
 	}
@@ -93,6 +94,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		hostname: hello.Host,
 		cmds:     make(chan *drpc.Command, 32),
 		closing:  make(chan struct{}),
+		private:  hello.Private,
 	}
 
 	cm.shuttles[handle] = d

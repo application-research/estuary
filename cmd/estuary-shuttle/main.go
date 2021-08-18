@@ -130,6 +130,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "write-log-truncate",
 		},
+		&cli.BoolFlag{
+			Name: "private",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -221,6 +224,7 @@ func main() {
 			DB:         db,
 			Filc:       filc,
 			StagingMgr: sbm,
+			Private:    cctx.Bool("private"),
 
 			commpMemo: commpMemo,
 
@@ -334,6 +338,8 @@ type Shuttle struct {
 
 	outgoing chan *drpc.Message
 
+	Private bool
+
 	hostname      string
 	estuaryHost   string
 	shuttleHandle string
@@ -426,6 +432,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 		Host:    d.hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),
 		Address: addr,
+		Private: d.Private,
 		AddrInfo: peer.AddrInfo{
 			ID:    d.Node.Host.ID(),
 			Addrs: d.Node.Host.Addrs(),

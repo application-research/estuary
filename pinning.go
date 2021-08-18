@@ -276,8 +276,10 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
-	for d := range cm.shuttles {
-		activeShuttles = append(activeShuttles, d)
+	for d, sh := range cm.shuttles {
+		if !sh.private {
+			activeShuttles = append(activeShuttles, d)
+		}
 	}
 	cm.shuttlesLk.Unlock()
 

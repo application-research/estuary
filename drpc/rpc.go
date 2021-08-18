@@ -17,6 +17,7 @@ type Hello struct {
 
 	Address  address.Address
 	AddrInfo peer.AddrInfo
+	Private  bool
 }
 
 type Command struct {
