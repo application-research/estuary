@@ -591,6 +591,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
+	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
 
 	return e.Start(listen)
 }
@@ -1183,4 +1184,26 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		"foundBlocks":   cset.Len(),
 		"rootFetchErr":  rferrstr,
 	})
+}
+
+func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
+	ctx := c.Request().Context()
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var p Pin
+	if err := s.DB.First(&p, "content = ?", cont).Error; err != nil {
+		return err
+	}
+
+	objects, err := s.objectsForPin(ctx, p.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get objects for pin: %w", err)
+	}
+
+	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
+
+	return c.JSON(200, map[string]string{})
 }
