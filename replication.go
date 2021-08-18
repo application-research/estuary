@@ -2531,7 +2531,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	return nil
 }
 
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -2555,9 +2555,10 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	)
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
-		"active":  true,
-		"size":    totalSize,
-		"pinning": false,
+		"active":   true,
+		"size":     totalSize,
+		"pinning":  false,
+		"location": loc,
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update content in database: %w", err)
 	}

@@ -717,7 +717,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		return err
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, cont, objects); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
 		return err
 	}
 
@@ -3119,7 +3119,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Pinning:     false,
 		UserID:      u.ID,
 		Replication: defaultReplication,
-		Location:    "local",
+		Location:    req.Location,
 	}
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
