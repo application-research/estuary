@@ -14,6 +14,30 @@ import (
 
 type DBMgr struct{ *gorm.DB }
 
+func (mgr *DBMgr) Users() *UsersQuery {
+	return NewUsersQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) AuthTokens() *AuthTokensQuery {
+	return NewAuthTokensQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) Contents() *ContentsQuery {
+	return NewContentsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) Objects() *ObjectsQuery {
+	return NewObjectsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) ObjRefs() *ObjRefsQuery {
+	return NewObjRefsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) Deals() *DealsQuery {
+	return NewDealsQuery(mgr.DB)
+}
+
 func NewDBMgr(dbval string) (*DBMgr, error) {
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
@@ -124,6 +148,20 @@ func (q *UsersQuery) Exists() (bool, error) {
 	return count > 0, nil
 }
 
+// Errors if none were deleted
+func (q *UsersQuery) ExpectDelete() error {
+	var count int64
+	if err := q.DB.Count(&count).Delete(&User{}).Error; err != nil {
+		return err
+	}
+
+	if count == 0 {
+		return gorm.ErrRecordNotFound
+	}
+
+	return nil
+}
+
 // AUTH TOKENS
 
 type AuthTokensQuery struct{ DB *gorm.DB }
@@ -210,35 +248,35 @@ func (q *ObjectsQuery) DeleteUnreferenced(ids []uint) error {
 
 // OBJ REFS
 
-type ObjRefQuery struct{ DB *gorm.DB }
+type ObjRefsQuery struct{ DB *gorm.DB }
 
-func NewObjRefQuery(db *gorm.DB) *ObjRefQuery {
-	return &ObjRefQuery{DB: db.Model(&ObjRef{})}
+func NewObjRefsQuery(db *gorm.DB) *ObjRefsQuery {
+	return &ObjRefsQuery{DB: db.Model(&ObjRef{})}
 }
 
-func (q *ObjRefQuery) WithPinID(pinID uint) *ObjRefQuery {
+func (q *ObjRefsQuery) WithPinID(pinID uint) *ObjRefsQuery {
 	q.DB = q.DB.Where("pin = ?", pinID)
 	return q
 }
 
-func (q *ObjRefQuery) Delete() error {
+func (q *ObjRefsQuery) Delete() error {
 	return q.DB.Delete(&ObjRef{}).Error
 }
 
 // DEALS
 
-type DealQuery struct{ DB *gorm.DB }
+type DealsQuery struct{ DB *gorm.DB }
 
-func NewDealQuery(db *gorm.DB) *DealQuery {
-	return &DealQuery{DB: db.Model(&DealQuery{})}
+func NewDealsQuery(db *gorm.DB) *DealsQuery {
+	return &DealsQuery{DB: db.Model(&DealsQuery{})}
 }
 
-func (q *DealQuery) WithContentIDs(contentIDs []uint) *DealQuery {
+func (q *DealsQuery) WithContentIDs(contentIDs []uint) *DealsQuery {
 	q.DB = q.DB.Where("content in ?", contentIDs)
 	return q
 }
 
-func (q *DealQuery) GetAll() ([]contentDeal, error) {
+func (q *DealsQuery) GetAll() ([]contentDeal, error) {
 	var deals []contentDeal
 	if err := q.DB.Find(&deals).Error; err != nil {
 		return nil, err
