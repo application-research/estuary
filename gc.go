@@ -216,7 +216,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 }
 
 func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*Object, error) {
-	// +
+	// + TODO (what does this query mean? what does it have to do with pins?)
 	var objects []*Object
 	if err := cm.DB.Model(ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,9 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type DBMgr struct {
-	db *gorm.DB
-}
+type DBMgr struct{ *gorm.DB }
 
 func NewDBMgr(dbval string) (*DBMgr, error) {
 	parts := strings.SplitN(dbval, "=", 2)
@@ -91,110 +88,136 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 
 // USERS
 
-func (mgr *DBMgr) CreateUser(user *User) error {
-	if err := mgr.db.Create(user).Error; err != nil {
-		return fmt.Errorf("error creating user: %w", err)
-	}
+type UsersQuery struct{ DB *gorm.DB }
 
-	return nil
+func (q *UsersQuery) WithUsername(username string) *UsersQuery {
+	q.DB = q.DB.Where("username = ?", username)
+	return q
 }
 
-func (mgr *DBMgr) GetUserByUsername(username string) (*User, error) {
-	var user *User
-	if err := mgr.db.First(user, "username = ?", username).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, fmt.Errorf("user does not exist with username '%s'", username)
-		}
+func (q *UsersQuery) WithID(id uint) *UsersQuery {
+	q.DB = q.DB.Where("id = ?", id)
+	return q
+}
 
-		return nil, err
+func (q *UsersQuery) Create(user User) error {
+	return q.DB.Create(&user).Error
+}
+
+func (q *UsersQuery) Get() (User, error) {
+	var user User
+	if err := q.DB.Take(&user).Error; err != nil {
+		return User{}, err
 	}
-
 	return user, nil
 }
 
-func (mgr *DBMgr) UserExistsWithUsername(username string) (bool, error) {
+func (q *UsersQuery) Exists() (bool, error) {
 	var count int64
-	if err := mgr.db.Model(&User{}).Where("username = ?", username).Count(&count).Error; err != nil {
+	if err := q.DB.Count(&count).Error; err != nil {
 		return false, err
 	}
-
 	return count > 0, nil
 }
 
 // AUTH TOKENS
 
-func (mgr *DBMgr) CreateAuthToken(authToken *AuthToken) error {
-	return mgr.db.Create(authToken).Error
+type AuthTokensQuery struct{ DB *gorm.DB }
+
+func (q *AuthTokensQuery) Create(authToken AuthToken) error {
+	return q.DB.Create(&authToken).Error
 }
 
 // CONTENTS
 
-func (mgr *DBMgr) GetContentByID(id uint) (Content, error) {
+type ContentsQuery struct{ DB *gorm.DB }
+
+func (q *ContentsQuery) WithID(id uint) *ContentsQuery {
+	q.DB = q.DB.Where("id = ?", id)
+	return q
+}
+
+func (q *ContentsQuery) WithActive(active bool) *ContentsQuery {
+	q.DB = q.DB.Where("active")
+	return q
+}
+
+func (q *ContentsQuery) WithUserID(userID uint) *ContentsQuery {
+	q.DB = q.DB.Where("user_id = ?", userID)
+	return q
+}
+
+func (q *ContentsQuery) Get() (Content, error) {
 	var content Content
-	if err := mgr.db.First(&content, "id = ?", id).Error; err != nil {
+	if err := q.DB.Take(&content).Error; err != nil {
 		return Content{}, err
 	}
-
 	return content, nil
 }
 
-func (mgr *DBMgr) GetActiveContents() ([]Content, error) {
+func (q *ContentsQuery) GetAll() ([]Content, error) {
 	var contents []Content
-	if err := mgr.db.Find(&contents, "active").Error; err != nil {
-		return nil, err
+	if err := q.DB.Find(&contents).Error; err != nil {
+		return nil, nil
 	}
-
 	return contents, nil
 }
 
-func (mgr *DBMgr) GetContentsByUserID(userID uint) ([]Content, error) {
-	var contents []Content
-	if err := mgr.db.Find(&contents, "user_id = ?", userID).Error; err != nil {
-		return nil, err
-	}
-
-	return contents, nil
-}
-
-func (mgr *DBMgr) DeleteContentByID(id uint) error {
-	return mgr.db.Delete(&Content{}, id).Error
+func (q *ContentsQuery) Delete() error {
+	return q.DB.Delete(&Content{}).Error
 }
 
 // OBJECTS
 
-func (mgr *DBMgr) ObjectExistsWithCid(cid cid.Cid) (bool, error) {
-	var count int64
-	if err := mgr.db.Model(&Object{}).Where("cid = ?", cid.Bytes()).Count(&count).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, fmt.Errorf("object does not exist with cid '%s'", cid)
-		}
+type ObjectsQuery struct{ DB *gorm.DB }
 
+func (q *ObjectsQuery) WithCid(cid cid.Cid) *ObjectsQuery {
+	q.DB = q.DB.Where("cid = ?", cid.Bytes())
+	return q
+}
+
+func (q *ObjectsQuery) Exists() (bool, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
 		return false, err
 	}
-
 	return count > 0, nil
 }
 
-func (mgr *DBMgr) DeleteUnreferencedObjects(ids []uint) error {
-	return mgr.db.Where(
+// TODO: simplify by using other abstracted functions instead
+func (q *ObjectsQuery) DeleteUnreferenced(ids []uint) error {
+	return q.DB.Where(
 		"(?) = 0 and id in ?",
-		mgr.db.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids,
+		q.DB.Model(&ObjRef{}).Where("object = objects.id").Select("count(1)"), ids,
 	).Delete(Object{}).Error
 }
 
 // OBJ REFS
 
-func (mgr *DBMgr) DeleteObjRefByPinID(pinID uint) error {
-	return mgr.db.Where("pin = ?", pinID).Delete(ObjRef{}).Error
+type ObjRefQuery struct{ DB *gorm.DB }
+
+func (q *ObjRefQuery) WithPinID(pinID uint) *ObjRefQuery {
+	q.DB = q.DB.Where("pin = ?", pinID)
+	return q
+}
+
+func (q *ObjRefQuery) Delete() error {
+	return q.DB.Delete(&ObjRef{}).Error
 }
 
 // DEALS
 
-func (mgr *DBMgr) GetDealsByContentIDs(contentIDs []uint) ([]contentDeal, error) {
+type DealQuery struct{ DB *gorm.DB }
+
+func (q *DealQuery) WithContentIDs(contentIDs []uint) *DealQuery {
+	q.DB = q.DB.Where("content in ?", contentIDs)
+	return q
+}
+
+func (q *DealQuery) GetAll() ([]contentDeal, error) {
 	var deals []contentDeal
-	if err := mgr.db.Find(&deals, "content in ?", contentIDs).Error; err != nil {
+	if err := q.DB.Find(&deals).Error; err != nil {
 		return nil, err
 	}
-
 	return deals, nil
 }
