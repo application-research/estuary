@@ -130,6 +130,9 @@ func main() {
 		&cli.BoolFlag{
 			Name: "write-log-truncate",
 		},
+		&cli.BoolFlag{
+			Name: "private",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -221,6 +224,7 @@ func main() {
 			DB:         db,
 			Filc:       filc,
 			StagingMgr: sbm,
+			Private:    cctx.Bool("private"),
 
 			commpMemo: commpMemo,
 
@@ -334,6 +338,8 @@ type Shuttle struct {
 
 	outgoing chan *drpc.Message
 
+	Private bool
+
 	hostname      string
 	estuaryHost   string
 	shuttleHandle string
@@ -426,6 +432,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 		Host:    d.hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),
 		Address: addr,
+		Private: d.Private,
 		AddrInfo: peer.AddrInfo{
 			ID:    d.Node.Host.ID(),
 			Addrs: d.Node.Host.Addrs(),
@@ -566,7 +573,10 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 			return
 		}
 
-		ctx.NoContent(500)
+		// TODO: returning all errors out to the user smells potentially bad
+		_ = ctx.JSON(500, map[string]interface{}{
+			"error": err.Error(),
+		})
 	}
 
 	e.GET("/health", s.handleHealth)
@@ -581,6 +591,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
+	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
 
 	return e.Start(listen)
 }
@@ -1173,4 +1184,26 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		"foundBlocks":   cset.Len(),
 		"rootFetchErr":  rferrstr,
 	})
+}
+
+func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
+	ctx := c.Request().Context()
+	cont, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var p Pin
+	if err := s.DB.First(&p, "content = ?", cont).Error; err != nil {
+		return err
+	}
+
+	objects, err := s.objectsForPin(ctx, p.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get objects for pin: %w", err)
+	}
+
+	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
+
+	return c.JSON(200, map[string]string{})
 }

@@ -276,8 +276,10 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
-	for d := range cm.shuttles {
-		activeShuttles = append(activeShuttles, d)
+	for d, sh := range cm.shuttles {
+		if !sh.private {
+			activeShuttles = append(activeShuttles, d)
+		}
 	}
 	cm.shuttlesLk.Unlock()
 
@@ -732,8 +734,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	if cont.Aggregate {
 		if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"active":  true,
-			"pinning": false,
+			"active":   true,
+			"pinning":  false,
+			"location": handle,
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
@@ -748,7 +751,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		})
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 

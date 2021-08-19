@@ -3,14 +3,14 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174
+	github.com/application-research/filclient v0.0.0-20210813195619-943df4b7cb99
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cheggaaa/pb/v3 v3.0.6
 	github.com/docker/go-units v0.4.0
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
-	github.com/filecoin-project/go-data-transfer v1.7.3
+	github.com/filecoin-project/go-data-transfer v1.7.4
 	github.com/filecoin-project/go-fil-markets v1.6.2
 	github.com/filecoin-project/go-padreader v0.0.0-20210723183308-812a16dc01b1
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e

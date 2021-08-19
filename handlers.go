@@ -103,7 +103,10 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 			return
 		}
 
-		ctx.NoContent(500)
+		// TODO: returning all errors out to the user smells potentially bad
+		_ = ctx.JSON(500, map[string]interface{}{
+			"error": err.Error(),
+		})
 	}
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -714,7 +717,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		return err
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, cont, objects); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
 		return err
 	}
 
@@ -3116,7 +3119,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Pinning:     false,
 		UserID:      u.ID,
 		Replication: defaultReplication,
-		Location:    "local",
+		Location:    req.Location,
 	}
 	if err := s.DB.Create(content).Error; err != nil {
 		return err

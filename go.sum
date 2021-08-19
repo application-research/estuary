@@ -145,6 +145,8 @@ github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174 h1:Xlx+/fxyHSzZ9NIQG3pjSyikdXzPhByjpoJXsPELAMI=
 github.com/application-research/filclient v0.0.0-20210805233950-62d1f1f89174/go.mod h1:rcZiPq9fRmVhVb4mP3geynOfCrbKS6+YgfdGN3hhZvQ=
+github.com/application-research/filclient v0.0.0-20210813195619-943df4b7cb99 h1:9ZDy/glQ+xPNIXzk/HCKOuCAq1UyCc66PqpcIb7PwA4=
+github.com/application-research/filclient v0.0.0-20210813195619-943df4b7cb99/go.mod h1:u75YQibXDuUx69LO5GI+ltUyO3fZKFZ8VOR7wwzU/yI=
 github.com/application-research/go-bs-autobatch v0.0.0-20210729042039-1b0907f8e6fb/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
@@ -396,6 +398,8 @@ github.com/filecoin-project/go-data-transfer v1.7.0/go.mod h1:GLRr5BmLEqsLwXfiRD
 github.com/filecoin-project/go-data-transfer v1.7.2/go.mod h1:GLRr5BmLEqsLwXfiRDG7uJvph22KGL2M4iOuF8EINaU=
 github.com/filecoin-project/go-data-transfer v1.7.3 h1:2F3K1LmT6Q97+Bq9gBv/VVqFZ/0FHsRPqYDbCzrGaYg=
 github.com/filecoin-project/go-data-transfer v1.7.3/go.mod h1:Cbl9lzKOuAyyIxp1tE+VbV5Aix4bxzA7uJGA9wGM4fM=
+github.com/filecoin-project/go-data-transfer v1.7.4 h1:NICNZSVVXSFnLdIcGlE404tZX7gHjBsZM/dBQdjiKg8=
+github.com/filecoin-project/go-data-transfer v1.7.4/go.mod h1:Cbl9lzKOuAyyIxp1tE+VbV5Aix4bxzA7uJGA9wGM4fM=
 github.com/filecoin-project/go-ds-versioning v0.1.0 h1:y/X6UksYTsK8TLCI7rttCKEvl8btmWxyFMEeeWGUxIQ=
 github.com/filecoin-project/go-ds-versioning v0.1.0/go.mod h1:mp16rb4i2QPmxBnmanUx8i/XANp+PFCCJWiAb+VW4/s=
 github.com/filecoin-project/go-fil-commcid v0.0.0-20200716160307-8f644712406f/go.mod h1:Eaox7Hvus1JgPrL5+M3+h7aSPHc0cVqpSxA+TxIEpZQ=

@@ -886,8 +886,8 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 
 	netask, err := cm.FilClient.GetAsk(ctx, m)
 	if err != nil {
-		var apierr *filclient.ApiError
-		if !xerrors.As(err, &apierr) {
+		var clientErr *filclient.Error
+		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   m,
 				Phase:   "query-ask",
@@ -1220,36 +1220,63 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	}
 
 	// check on each of the existing deals, see if they need fixing
+	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
-	for _, d := range deals {
-		status, err := cm.checkDeal(ctx, &d)
-		if err != nil {
-			var dfe *DealFailureError
-			if xerrors.As(err, &dfe) {
-				cm.recordDealFailure(dfe)
-				continue
-			} else {
-				return err
+	errs := make([]error, len(deals))
+	var wg sync.WaitGroup
+	for i := range deals {
+		wg.Add(1)
+		go func(i int) {
+			d := deals[i]
+			defer wg.Done()
+			status, err := cm.checkDeal(ctx, &d)
+			if err != nil {
+				var dfe *DealFailureError
+				if xerrors.As(err, &dfe) {
+					cm.recordDealFailure(dfe)
+					return
+				} else {
+					errs[i] = err
+					return
+				}
 			}
-		}
 
-		switch status {
-		case DEAL_CHECK_UNKNOWN:
-			if err := cm.repairDeal(&d); err != nil {
-				return xerrors.Errorf("repairing deal failed: %w", err)
+			countLk.Lock()
+			defer countLk.Unlock()
+			switch status {
+			case DEAL_CHECK_UNKNOWN:
+				if err := cm.repairDeal(&d); err != nil {
+					errs[i] = xerrors.Errorf("repairing deal failed: %w", err)
+					return
+				}
+			case DEAL_CHECK_SECTOR_ON_CHAIN:
+				numSealed++
+			case DEAL_CHECK_DEALID_ON_CHAIN:
+				numPublished++
+			case DEAL_CHECK_PROGRESS:
+				numProgress++
+			default:
+				log.Errorf("unrecognized deal check status: %d", status)
 			}
-		case DEAL_CHECK_SECTOR_ON_CHAIN:
-			numSealed++
-		case DEAL_CHECK_DEALID_ON_CHAIN:
-			numPublished++
-		case DEAL_CHECK_PROGRESS:
-			numProgress++
-		default:
-			log.Errorf("unrecognized deal check status: %d", status)
+		}(i)
+	}
+	wg.Wait()
+	// return the last error found, log the rest
+	var retErr error
+	for _, err := range errs {
+		if err != nil {
+			if retErr != nil {
+				log.Errorf("check deal failure: %s", err)
+			}
+			retErr = err
 		}
 	}
+	if retErr != nil {
+		return retErr
+	}
 
-	if len(deals) < replicationFactor {
+	goodDeals := numSealed + numPublished + numProgress
+	if goodDeals < replicationFactor {
 		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil {
 			return err
@@ -1482,7 +1509,20 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	if status == nil {
 		// no status for transfer, could be because the remote hasnt reported it to us yet?
 		log.Errorf("no status for deal: %d", d)
-		return DEAL_CHECK_UNKNOWN, nil // for now, failing this case
+		if d.DTChan == "" {
+			// No channel ID yet, shouldnt be able to get here actually
+			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
+		} else {
+			chid, err := d.ChannelID()
+			if err != nil {
+				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: %w", d.ID, err)
+			}
+			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, chid); err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+
+			return DEAL_CHECK_PROGRESS, nil
+		}
 	}
 
 	switch status.Status {
@@ -1563,7 +1603,8 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
 	if !ok {
-		return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		//return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		return nil, nil
 	}
 
 	tsr, ok := val.(*transferStatusRecord)
@@ -1766,8 +1807,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	for _, m := range minerpool {
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
-			var apierr *filclient.ApiError
-			if !xerrors.As(err, &apierr) {
+			var clientErr *filclient.Error
+			if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
 				cm.recordDealFailure(&DealFailureError{
 					Miner:   m,
 					Phase:   "query-ask",
@@ -1933,8 +1974,8 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
 	if err != nil {
-		var apierr *filclient.ApiError
-		if !xerrors.As(err, &apierr) {
+		var clientErr *filclient.Error
+		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   miner,
 				Phase:   "query-ask",
@@ -2490,7 +2531,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	return nil
 }
 
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -2514,9 +2555,10 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	)
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
-		"active":  true,
-		"size":    totalSize,
-		"pinning": false,
+		"active":   true,
+		"size":     totalSize,
+		"pinning":  false,
+		"location": loc,
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
@@ -2645,6 +2687,18 @@ func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont
 				Contents: aggr,
 				Root:     cont.Cid.CID,
 				ObjData:  blob,
+			},
+		},
+	})
+}
+
+func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid datatransfer.ChannelID) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_ReqTxStatus,
+		Params: drpc.CmdParams{
+			ReqTxStatus: &drpc.ReqTxStatus{
+				DealDBID: dealid,
+				ChanID:   chid,
 			},
 		},
 	})

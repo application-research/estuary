@@ -3,6 +3,7 @@ package drpc
 import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -16,6 +17,7 @@ type Hello struct {
 
 	Address  address.Address
 	AddrInfo peer.AddrInfo
+	Private  bool
 }
 
 type Command struct {
@@ -29,6 +31,7 @@ type CmdParams struct {
 	TakeContent      *TakeContent      `json:",omitempty"`
 	AggregateContent *AggregateContent `json:",omitempty"`
 	StartTransfer    *StartTransfer    `json:",omitempty"`
+	ReqTxStatus      *ReqTxStatus      `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -71,6 +74,13 @@ type StartTransfer struct {
 	Miner     address.Address
 	PropCid   cid.Cid
 	DataCid   cid.Cid
+}
+
+const CMD_ReqTxStatus = "ReqTxStatus"
+
+type ReqTxStatus struct {
+	DealDBID uint
+	ChanID   datatransfer.ChannelID
 }
 
 type ContentFetch struct {
