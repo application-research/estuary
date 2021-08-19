@@ -90,6 +90,10 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 
 type UsersQuery struct{ DB *gorm.DB }
 
+func NewUsersQuery(db *gorm.DB) *UsersQuery {
+	return &UsersQuery{DB: db.Model(&User{})}
+}
+
 func (q *UsersQuery) WithUsername(username string) *UsersQuery {
 	q.DB = q.DB.Where("username = ?", username)
 	return q
@@ -124,6 +128,10 @@ func (q *UsersQuery) Exists() (bool, error) {
 
 type AuthTokensQuery struct{ DB *gorm.DB }
 
+func NewAuthTokensQuery(db *gorm.DB) *AuthTokensQuery {
+	return &AuthTokensQuery{DB: db.Model(&AuthToken{})}
+}
+
 func (q *AuthTokensQuery) Create(authToken AuthToken) error {
 	return q.DB.Create(&authToken).Error
 }
@@ -131,6 +139,10 @@ func (q *AuthTokensQuery) Create(authToken AuthToken) error {
 // CONTENTS
 
 type ContentsQuery struct{ DB *gorm.DB }
+
+func NewContentsQuery(db *gorm.DB) *ContentsQuery {
+	return &ContentsQuery{DB: db.Model(&Content{})}
+}
 
 func (q *ContentsQuery) WithID(id uint) *ContentsQuery {
 	q.DB = q.DB.Where("id = ?", id)
@@ -171,6 +183,10 @@ func (q *ContentsQuery) Delete() error {
 
 type ObjectsQuery struct{ DB *gorm.DB }
 
+func NewObjectsQuery(db *gorm.DB) *ObjectsQuery {
+	return &ObjectsQuery{DB: db.Model(&Object{})}
+}
+
 func (q *ObjectsQuery) WithCid(cid cid.Cid) *ObjectsQuery {
 	q.DB = q.DB.Where("cid = ?", cid.Bytes())
 	return q
@@ -196,6 +212,10 @@ func (q *ObjectsQuery) DeleteUnreferenced(ids []uint) error {
 
 type ObjRefQuery struct{ DB *gorm.DB }
 
+func NewObjRefQuery(db *gorm.DB) *ObjRefQuery {
+	return &ObjRefQuery{DB: db.Model(&ObjRef{})}
+}
+
 func (q *ObjRefQuery) WithPinID(pinID uint) *ObjRefQuery {
 	q.DB = q.DB.Where("pin = ?", pinID)
 	return q
@@ -208,6 +228,10 @@ func (q *ObjRefQuery) Delete() error {
 // DEALS
 
 type DealQuery struct{ DB *gorm.DB }
+
+func NewDealQuery(db *gorm.DB) *DealQuery {
+	return &DealQuery{DB: db.Model(&DealQuery{})}
+}
 
 func (q *DealQuery) WithContentIDs(contentIDs []uint) *DealQuery {
 	q.DB = q.DB.Where("content in ?", contentIDs)
