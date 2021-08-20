@@ -140,9 +140,17 @@ func (q *UsersQuery) Get() (User, error) {
 	return user, nil
 }
 
-func (q *UsersQuery) Exists() (bool, error) {
+func (q *UsersQuery) Count() (int64, error) {
 	var count int64
 	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (q *UsersQuery) Exists() (bool, error) {
+	count, err := q.Count()
+	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
@@ -150,12 +158,12 @@ func (q *UsersQuery) Exists() (bool, error) {
 
 // Errors if none were deleted
 func (q *UsersQuery) ExpectDelete() error {
-	var count int64
-	if err := q.DB.Count(&count).Delete(&User{}).Error; err != nil {
+	res := q.DB.Delete(&User{})
+	if err := res.Error; err != nil {
 		return err
 	}
 
-	if count == 0 {
+	if res.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
 	}
 

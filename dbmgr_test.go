@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func initDB() (*DBMgr, func()) {
@@ -22,15 +24,24 @@ func TestUsersQuery(t *testing.T) {
 	mgr, finish := initDB()
 	defer finish()
 
+	a := assert.New(t)
+
 	// Creation
 	userIn := User{
 		Username: "test_user",
 		PassHash: "",
 	}
-	if err := mgr.Users().Create(userIn); err != nil {
+	fmt.Printf("creating user: %+v\n", userIn)
+	a.NoError(mgr.Users().Create(userIn))
+
+	// Checking existence
+	userExists, err := mgr.Users().WithUsername("Test_user").Exists()
+	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Printf("creating user: %+v\n", userIn)
+	if !userExists {
+		t.Fatal("user doesn't exist")
+	}
 
 	// Getting by username
 	userOut, err := mgr.Users().WithUsername(userIn.Username).Get()
