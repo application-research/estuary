@@ -88,3 +88,9 @@ type ViewerResponse struct {
 
 	Settings UserSettings `json:"settings"`
 }
+
+type AddFileResponse struct {
+	Cid       string   `json:"cid"`
+	EstuaryId uint     `json:"estuaryId"`
+	Providers []string `json:"providers"`
+}
