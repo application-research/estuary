@@ -23,7 +23,6 @@ import (
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -239,6 +238,7 @@ func main() {
 				}
 				if userExists {
 					fmt.Println("An admin user already exists")
+					return nil
 				}
 
 				// Register an admin user and auth token in the database
@@ -293,7 +293,7 @@ func main() {
 			}
 		}
 
-		db, err := setupDatabase(cctx)
+		db, err := NewDBMgr(cctx.String("database"))
 		if err != nil {
 			return err
 		}
@@ -305,8 +305,8 @@ func main() {
 				defer close(out)
 
 				// + GetActiveContents
-				var contents []Content
-				if err := db.Find(&contents, "active").Error; err != nil {
+				contents, err := db.Contents().WithActive(true).GetAll()
+				if err != nil {
 					log.Errorf("failed to load contents for reproviding: %s", err)
 					return
 				}
@@ -326,7 +326,7 @@ func main() {
 
 		var trackingBstore *TrackingBlockstore
 		cfg.BlockstoreWrap = func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-			trackingBstore = NewTrackingBlockstore(bs, db)
+			trackingBstore = NewTrackingBlockstore(bs, db.DB)
 			return trackingBstore, nil
 		}
 
@@ -393,7 +393,7 @@ func main() {
 
 		s.DB = db
 
-		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
+		cm, err := NewContentManager(db.DB, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
 		if err != nil {
 			return err
 		}
@@ -434,54 +434,10 @@ func main() {
 	}
 }
 
-func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
-	dbval := cctx.String("database")
-	db, err := util.SetupDatabase(dbval)
-	if err != nil {
-		return nil, err
-	}
-
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
-
-	db.AutoMigrate(&contentDeal{})
-	db.AutoMigrate(&dfeRecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&retrievalFailureRecord{})
-	db.AutoMigrate(&retrievalSuccessRecord{})
-
-	db.AutoMigrate(&minerStorageAsk{})
-	db.AutoMigrate(&storageMiner{})
-
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
-
-	db.AutoMigrate(&Shuttle{})
-
-	var count int64
-	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
-		return nil, err
-	}
-
-	if count == 0 {
-		fmt.Println("adding default miner list to database...")
-		for _, m := range defaultMiners {
-			db.Create(&storageMiner{Address: util.DbAddr{m}})
-		}
-
-	}
-	return db, nil
-}
-
 type Server struct {
 	tracer     trace.Tracer
 	Node       *node.Node
-	DB         *gorm.DB
+	DB         *DBMgr
 	FilClient  *filclient.FilClient
 	Api        api.Gateway
 	CM         *ContentManager
@@ -550,15 +506,11 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 // + ObjectExistsWithCid
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
-	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
+	exists, err := s.DB.Objects().WithCid(c).Exists()
+	if err != nil {
 		return false, err
 	}
-
-	return count > 0, nil
+	return exists, nil
 }
 
 func jsondump(o interface{}) {

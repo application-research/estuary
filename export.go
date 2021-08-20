@@ -15,9 +15,8 @@ type ExportVersion1 struct {
 }
 
 func (s *Server) exportUserData(uid uint) (*DataExport, error) {
-	// + GetContentsWithUserID
-	var contents []Content
-	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
+	contents, err := s.DB.Contents().WithUserID(uid).GetAll()
+	if err != nil {
 		return nil, err
 	}
 
@@ -27,8 +26,8 @@ func (s *Server) exportUserData(uid uint) (*DataExport, error) {
 	}
 
 	// + GetDealsByContentIDs
-	var deals []contentDeal
-	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
+	deals, err := s.DB.Deals().WithContentIDs(conts).GetAll()
+	if err != nil {
 		return nil, err
 	}
 

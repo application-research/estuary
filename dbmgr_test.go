@@ -21,7 +21,7 @@ func initDB() (*DBMgr, func()) {
 }
 
 func TestUsersQuery(t *testing.T) {
-	mgr, finish := initDB()
+	db, finish := initDB()
 	defer finish()
 
 	a := assert.New(t)
@@ -32,10 +32,10 @@ func TestUsersQuery(t *testing.T) {
 		PassHash: "",
 	}
 	fmt.Printf("creating user: %+v\n", userIn)
-	a.NoError(mgr.Users().Create(userIn))
+	a.NoError(db.Users().Create(userIn))
 
 	// Checking existence
-	userExists, err := mgr.Users().WithUsername("Test_user").Exists()
+	userExists, err := db.Users().WithUsername("Test_user").Exists()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,14 +44,39 @@ func TestUsersQuery(t *testing.T) {
 	}
 
 	// Getting by username
-	userOut, err := mgr.Users().WithUsername(userIn.Username).Get()
+	userOut, err := db.Users().WithUsername(userIn.Username).Get()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("retrieved user: %+v\n", userOut)
 
 	// Deletion by ID
-	if err := mgr.Users().WithID(userOut.ID).ExpectDelete(); err != nil {
+	if err := db.Users().WithID(userOut.ID).ExpectDelete(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestContentsQuery(t *testing.T) {
+	db, finish := initDB()
+	defer finish()
+
+	a := assert.New(t)
+
+	// Creation
+	contents := []Content{
+		{
+			Name: "a",
+		},
+		{
+			Name: "b",
+		},
+		{
+			Name: "c",
+		},
+	}
+	a.NoError(db.Contents().CreateAll(contents))
+
+	count, err := db.Contents().Count()
+	a.NoError(err)
+	a.Equal(count, int64(3))
 }

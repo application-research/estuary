@@ -205,6 +205,10 @@ func (q *ContentsQuery) WithUserID(userID uint) *ContentsQuery {
 	return q
 }
 
+func (q *ContentsQuery) CreateAll(contents []Content) error {
+	return q.DB.Create(contents).Error
+}
+
 func (q *ContentsQuery) Get() (Content, error) {
 	var content Content
 	if err := q.DB.Take(&content).Error; err != nil {
@@ -219,6 +223,14 @@ func (q *ContentsQuery) GetAll() ([]Content, error) {
 		return nil, nil
 	}
 	return contents, nil
+}
+
+func (q *ContentsQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (q *ContentsQuery) Delete() error {
@@ -238,9 +250,17 @@ func (q *ObjectsQuery) WithCid(cid cid.Cid) *ObjectsQuery {
 	return q
 }
 
-func (q *ObjectsQuery) Exists() (bool, error) {
+func (q *ObjectsQuery) Count() (int64, error) {
 	var count int64
 	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (q *ObjectsQuery) Exists() (bool, error) {
+	count, err := q.Count()
+	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
