@@ -40,11 +40,12 @@ func (bs *Blockstore) migrateData() {
 		return
 	}
 
+	log.Infof("starting blockstore migration...")
 	var count int
 	var fails int
 	for c := range ch {
 		count++
-		if count%500 == 499 {
+		if count%20 == 0 {
 			log.Infof("migration progress: %d (%d)", count, fails)
 		}
 		blk, err := bs.src.Get(c)
