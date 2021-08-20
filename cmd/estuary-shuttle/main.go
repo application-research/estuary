@@ -681,6 +681,20 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		fmt.Println("providing complete")
 	}()
 	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
+
+	return c.JSON(200, &util.AddFileResponse{
+		Cid:       nd.Cid().String(),
+		EstuaryId: contid,
+		Providers: s.addrsForShuttle(),
+	})
+}
+
+func (s *Shuttle) addrsForShuttle() []string {
+	var out []string
+	for _, a := range s.Node.Host.Addrs() {
+		out = append(out, fmt.Sprintf("%s/p2p/%s", a, s.Node.Host.ID()))
+	}
+	return out
 }
 
 type createContentBody struct {
