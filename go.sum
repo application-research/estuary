@@ -145,6 +145,8 @@ github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/application-research/filclient v0.0.0-20210819202846-99b2aad48485 h1:fsiIesRDQwHkZKVtq2riuWdilvB9K1VFwHPt8rm1QWk=
 github.com/application-research/filclient v0.0.0-20210819202846-99b2aad48485/go.mod h1:Q+RjHartqufndj/ewKDVqfceudbvBNF9n90vNQ0Lf0E=
+github.com/application-research/filclient v0.0.0-20210820032644-22262a5c9945 h1:ThGzzavskPx1+XG99d48Dj5MLtzrKxnY82CgJXYezXg=
+github.com/application-research/filclient v0.0.0-20210820032644-22262a5c9945/go.mod h1:Q+RjHartqufndj/ewKDVqfceudbvBNF9n90vNQ0Lf0E=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
