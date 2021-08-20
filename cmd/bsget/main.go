@@ -88,7 +88,7 @@ func main() {
 			return node.Links(), nil
 
 		}
-		if err := merkledag.Walk(ctx, getLinks, root, cset.Visit, merkledag.Concurrency(8)); err != nil {
+		if err := merkledag.Walk(ctx, getLinks, root, cset.Visit, merkledag.Concurrency(64)); err != nil {
 			return err
 		}
 

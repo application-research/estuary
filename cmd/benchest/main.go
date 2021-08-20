@@ -39,6 +39,7 @@ func getFile(cctx *cli.Context) (io.ReadCloser, string, error) {
 }
 
 type benchResult struct {
+	BenchStart      time.Time
 	FileCID         string
 	AddFileRespTime time.Duration
 	AddFileTime     time.Duration
@@ -138,6 +139,7 @@ var benchAddFileCmd = &cli.Command{
 		chkresp := <-chk
 
 		outstats := &benchResult{
+			BenchStart:      addReqStart,
 			FileCID:         rbody.Cid,
 			AddFileRespTime: addRespAt.Sub(addReqStart),
 			AddFileTime:     readBodyTime.Sub(addReqStart),
@@ -156,7 +158,8 @@ var benchAddFileCmd = &cli.Command{
 }
 
 type fetchStats struct {
-	GatewayURL string
+	RequestStart time.Time
+	GatewayURL   string
 
 	GatewayHost string
 	StatusCode  int
@@ -199,8 +202,9 @@ func benchFetch(c string) (*fetchStats, error) {
 	endTime := time.Now()
 
 	return &fetchStats{
-		GatewayURL: url,
-		StatusCode: status,
+		RequestStart: start,
+		GatewayURL:   url,
+		StatusCode:   status,
 
 		GatewayHost: gwayhost,
 

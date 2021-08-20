@@ -71,6 +71,7 @@ func main() {
 	logging.SetLogLevel("data_transfer_network", "debug")
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
+	logging.SetLogLevel("bs-migrate", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
