@@ -674,13 +674,18 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+	if err := s.Node.Dht.Provide(subCtx, nd.Cid(), true); err != nil {
+		log.Warnf("failed to provide newly added content: %s", err)
+	}
+
 	go func() {
 		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
 			fmt.Println("providing failed: ", err)
 		}
 		fmt.Println("providing complete")
 	}()
-	return c.JSON(200, map[string]string{"cid": nd.Cid().String()})
 
 	return c.JSON(200, &util.AddFileResponse{
 		Cid:       nd.Cid().String(),
