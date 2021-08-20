@@ -3,10 +3,9 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20210813195619-943df4b7cb99
+	github.com/application-research/filclient v0.0.0-20210820032644-22262a5c9945
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cheggaaa/pb/v3 v3.0.6
-	github.com/docker/go-units v0.4.0
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
 	github.com/filecoin-project/go-cbor-util v0.0.0-20191219014500-08c40a1e63a2
@@ -54,7 +53,6 @@ require (
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
-	github.com/whyrusleeping/cbor-gen v0.0.0-20210219115102-f37d292932f2
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7
 	github.com/whyrusleeping/memo v0.0.0-20210319212142-d69afb686d15
 	go.opentelemetry.io/otel v0.18.0

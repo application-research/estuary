@@ -645,10 +645,10 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		fmt.Println("providing complete")
 	}()
 
-	return c.JSON(200, map[string]interface{}{
-		"cid":       nd.Cid().String(),
-		"estuaryId": content.ID,
-		"providers": s.CM.pinDelegatesForContent(*content),
+	return c.JSON(200, &util.AddFileResponse{
+		Cid:       nd.Cid().String(),
+		EstuaryId: content.ID,
+		Providers: s.CM.pinDelegatesForContent(*content),
 	})
 }
 
@@ -3076,7 +3076,7 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 		limit = nlim
 	}
 
-	q := s.DB.Limit(limit).Order("created_at desc")
+	q := s.DB.Model(dfeRecord{}).Limit(limit).Order("created_at desc")
 
 	if bef := c.QueryParam("before"); bef != "" {
 		beftime, err := time.Parse(time.RFC3339, bef)
