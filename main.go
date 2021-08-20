@@ -30,7 +30,6 @@ import (
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
 var log = logging.Logger("estuary")
@@ -225,47 +224,43 @@ func main() {
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
-				db, err := setupDatabase(cctx)
+				db, err := NewDBMgr(cctx.String("database"))
 				if err != nil {
 					return err
 				}
 
-				// Create a session to turn off gorm logging. For this command,
-				// it is expected for no admin user entry to exist, which
-				// normally causes gorm to print an annoying error message.
-				// UPDATE - not smart approach, will be replaced
-				db = db.Session(&gorm.Session{
-					Logger: logger.Discard,
-				})
-
 				username := "admin"
-				passHash := ""
 
-				// + UserExistsByUsername
-				if err := db.First(&User{}, "username = ?", username).Error; err == nil {
-					return fmt.Errorf("an admin user already exists")
+				// Make sure there isn't already an admin user
+
+				userExists, err := db.Users().WithUsername(username).Exists()
+				if err != nil {
+					return fmt.Errorf("error checking for existing admin user: %w", err)
+				}
+				if userExists {
+					fmt.Println("An admin user already exists")
 				}
 
-				newUser := &User{
+				// Register an admin user and auth token in the database
+
+				adminUser := User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					PassHash: passHash,
 					Perm:     100,
 				}
-				// + CreateUser
-				if err := db.Create(newUser).Error; err != nil {
-					return fmt.Errorf("admin user creation failed: %w", err)
+				if err := db.Users().Create(adminUser); err != nil {
+					return fmt.Errorf("error creating admin user: %w", err)
 				}
-
-				authToken := &AuthToken{
+				authToken := AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   newUser.ID,
+					User:   adminUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
 				}
-				// + CreateAuthToken
-				if err := db.Create(authToken).Error; err != nil {
-					return fmt.Errorf("admin token creation failed: %w", err)
+				if err := db.AuthTokens().Create(authToken); err != nil {
+					return fmt.Errorf("error creating auth token: %w", err)
 				}
+
+				// Print the generated auth token
 
 				fmt.Printf("Auth Token: %v\n", authToken.Token)
 
