@@ -240,6 +240,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
+	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 
 	admnetw := admin.Group("/net")
@@ -2519,26 +2520,46 @@ type publicStatsResponse struct {
 }
 
 func (s *Server) handlePublicStats(c echo.Context) error {
-	val, ok := s.checkCache("public/stats", time.Minute)
+	val, ok := s.checkCache("public/stats", time.Minute*2)
 	if ok {
 		return c.JSON(200, val)
 	}
 
+	if val != nil {
+		// TODO: memoize this
+		go func() {
+			_, err := s.computePublicStats()
+			if err != nil {
+				log.Errorf("failed to compute public stats: %s", err)
+			}
+		}()
+		return c.JSON(200, val)
+	}
+
+	stats, err := s.computePublicStats()
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, stats)
+}
+
+func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 	var stats publicStatsResponse
 	if err := s.DB.Model(Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage").Scan(&stats).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	s.setCache("public/stats", stats)
-	return c.JSON(200, stats)
+	return &stats, nil
 }
 
 func (s *Server) handleGetBucketDiag(c echo.Context) error {
@@ -2912,6 +2933,71 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		"traverseError":      errstr,
 		"foundBlocks":        cset.Len(),
 		"fixedAggregateSize": fixedAggregateSize,
+	})
+}
+
+func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
+	ctx := c.Request().Context()
+	cc, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+
+	var obj Object
+	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
+		return c.JSON(404, map[string]interface{}{
+			"error": "object not found in database",
+		})
+	}
+
+	var contents []Content
+	if err := s.DB.Model(ObjRef{}).Joins("left join pins on obj_refs.pin = pins.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
+		log.Errorf("failed to find contents for cid: %s", err)
+	}
+
+	_, rootFetchErr := s.Node.Blockstore.Get(cc)
+	if rootFetchErr != nil {
+		log.Errorf("failed to fetch root: %s", rootFetchErr)
+	}
+
+	var exch exchange.Interface
+	if c.QueryParam("fetch") != "" {
+		exch = s.Node.Bitswap
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, exch)
+	dserv := merkledag.NewDAGService(bserv)
+
+	cset := cid.NewSet()
+	err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		node, err := dserv.Get(ctx, c)
+		if err != nil {
+			return nil, err
+		}
+
+		if c.Type() == cid.Raw {
+			return nil, nil
+		}
+
+		return node.Links(), nil
+	}, cc, cset.Visit, merkledag.Concurrent())
+
+	errstr := ""
+	if err != nil {
+		errstr = err.Error()
+	}
+
+	rferrstr := ""
+	if rootFetchErr != nil {
+		rferrstr = rootFetchErr.Error()
+	}
+
+	return c.JSON(200, map[string]interface{}{
+		"contents":      contents,
+		"cid":           cc,
+		"traverseError": errstr,
+		"foundBlocks":   cset.Len(),
+		"rootFetchErr":  rferrstr,
 	})
 }
 

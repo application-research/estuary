@@ -501,7 +501,7 @@ func (s *Server) checkCache(endpoint string, ttl time.Duration) (interface{}, bo
 		return ec.val, true
 	}
 
-	return nil, false
+	return ec.val, false
 }
 
 func (s *Server) setCache(endpoint string, val interface{}) {
