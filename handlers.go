@@ -2897,6 +2897,50 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 	}
 
+	var aggrLocs map[string]int
+	var fixedAggregateLocation bool
+	if c.QueryParam("check-locations") != "" && cont.Aggregate {
+		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
+		var aggr []Content
+		if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
+			return err
+		}
+
+		aggrLocs = make(map[string]int)
+		for _, child := range aggr {
+			aggrLocs[child.Location]++
+		}
+
+		switch len(aggrLocs) {
+		case 0:
+			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+		case 1:
+			loc := aggr[0].Location
+
+			if loc != cont.Location {
+				// should be safe to send a re-aggregate command to the shuttle in question
+				var ids []uint
+				for _, c := range aggr {
+					ids = append(ids, c.ID)
+				}
+
+				dir, err := s.CM.createAggregate(ctx, aggr)
+				if err != nil {
+					return err
+				}
+
+				if err := s.CM.sendAggregateCmd(ctx, loc, cont, ids, dir.RawData()); err != nil {
+					return err
+				}
+
+				fixedAggregateLocation = true
+			}
+		default:
+			// well that sucks
+			log.Warnf("content %d has messed up aggregation", cont.ID)
+		}
+	}
+
 	var exch exchange.Interface
 	if c.QueryParam("fetch") != "" {
 		exch = s.Node.Bitswap
@@ -2924,16 +2968,19 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		errstr = err.Error()
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	out := map[string]interface{}{
 		"user":               u.Username,
-		"filename":           cont.Name,
-		"size":               cont.Size,
-		"cid":                cont.Cid.CID,
+		"content":            cont,
 		"deals":              deals,
 		"traverseError":      errstr,
 		"foundBlocks":        cset.Len(),
 		"fixedAggregateSize": fixedAggregateSize,
-	})
+	}
+	if aggrLocs != nil {
+		out["aggregatedContentLocations"] = aggrLocs
+		out["fixedAggregateLocation"] = fixedAggregateLocation
+	}
+	return c.JSON(200, out)
 }
 
 func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
@@ -2947,6 +2994,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
 		return c.JSON(404, map[string]interface{}{
 			"error": "object not found in database",
+			"cid":   cc.String(),
 		})
 	}
 
