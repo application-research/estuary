@@ -45,7 +45,7 @@ func (box *Box) isExternal(link *ipld.Link) bool {
 	return false
 }
 
-type builder struct {
+type Builder struct {
 	// Service to fetch the nodes in the DAGs and query its links.
 	dagService ipld.DAGService
 
@@ -63,6 +63,17 @@ type builder struct {
 	boxUsedSize uint64
 }
 
+func NewBuilder(dserv ipld.DAGService, chunksize uint64, minSubgraphSize uint64) *Builder {
+	bb := &Builder{
+		dagService:      dserv,
+		boxMaxSize:      chunksize,
+		minSubgraphSize: minSubgraphSize,
+		boxes:           make([]*Box, 0),
+	}
+	bb.newBox()
+	return bb
+}
+
 func getSingleNodeSize(node ipld.Node) uint64 {
 	// FIXME: How to check the size of the parent node without taking into
 	//  account the children? The Node interface doesn't seem to account for
@@ -74,7 +85,7 @@ func getSingleNodeSize(node ipld.Node) uint64 {
 	return uint64(len(node.RawData()))
 }
 
-func (b *builder) getTreeSize(nd ipld.Node) (uint64, error) {
+func (b *Builder) getTreeSize(nd ipld.Node) (uint64, error) {
 	switch n := nd.(type) {
 	case *mdag.RawNode:
 		return uint64(len(n.RawData())), nil
@@ -114,17 +125,17 @@ func (b *builder) getTreeSize(nd ipld.Node) (uint64, error) {
 
 // Get current box we are packing into. By definition now this is always the
 // last created box.
-func (b *builder) boxID() int {
+func (b *Builder) boxID() int {
 	return len(b.boxes) - 1
 }
 
 // Get current box we are packing into.
-// FIXME: Make sure from the construction of the builder that there is always one.
-func (b *builder) box() *Box {
+// FIXME: Make sure from the construction of the Builder that there is always one.
+func (b *Builder) box() *Box {
 	return b.boxes[b.boxID()]
 }
 
-func (b *builder) newBox() {
+func (b *Builder) newBox() {
 	b.boxes = append(b.boxes, new(Box))
 	b.boxUsedSize = 0
 }
@@ -134,46 +145,46 @@ func (b *builder) newBox() {
 //  return a negative value if we over-packed. This is not nice as we
 //  end up mixing signed and unsigned values, for now this is contained
 //  in `fits()` only.
-func (b *builder) boxRemainingSize() int64 {
+func (b *Builder) boxRemainingSize() int64 {
 	return int64(b.boxMaxSize) - int64(b.used())
 }
 
-func (b *builder) used() uint64 {
+func (b *Builder) used() uint64 {
 	return b.boxUsedSize
 }
 
-func (b *builder) print(msg string) {
+func (b *Builder) print(msg string) {
 	status := fmt.Sprintf("[BOX %d] <%s>:",
 		b.boxID(), units.BytesSize(float64(b.used())))
 	fmt.Fprintf(os.Stderr, "%s %s\n", status, msg)
 }
 
-func (b *builder) emptyBox() bool {
+func (b *Builder) emptyBox() bool {
 	// FIXME: Assert this is always `0 <= ret <= max_size`.
 	return b.used() == 0
 }
 
 // Check this size fits in the current box.
-func (b *builder) fits(size uint64) bool {
+func (b *Builder) fits(size uint64) bool {
 	return int64(size) <= b.boxRemainingSize()
 }
 
-func (b *builder) addSize(size uint64) {
+func (b *Builder) addSize(size uint64) {
 	// FIXME: Maybe assert size (`fits`).
 	b.boxUsedSize += size
 }
 
-func (b *builder) packRoot(c cid.Cid) {
+func (b *Builder) packRoot(c cid.Cid) {
 	b.box().Roots = append(b.box().Roots, c)
 }
 
-func (b *builder) addExternalLink(node cid.Cid) {
+func (b *Builder) addExternalLink(node cid.Cid) {
 	b.box().External = append(b.box().External, node)
 }
 
 // Pack a DAG delimited by `initialRoot` in boxes. To enforce the maximum
 // box size the DAG will be decomposed into smaller sub-DAGs if necessary.
-func (b *builder) add(ctx context.Context, initialRoot cid.Cid) error {
+func (b *Builder) Add(ctx context.Context, initialRoot cid.Cid) error {
 	// LIFO queue with the roots that need to be scanned and boxed.
 	// LIFO(-ish, node links pushed in reverse) should result in slightly better
 	// data layout (less fragmentation in leaves) than FIFO.
@@ -349,7 +360,7 @@ var Cmd = &cli.Command{
 		}
 		cbs := &countBs{Blockstore: bs}
 
-		bb := builder{
+		bb := Builder{
 			dagService:      mdag.NewDAGService(blockservice.New(cbs, nil)),
 			boxMaxSize:      uint64(chunk),
 			minSubgraphSize: uint64(cctx.Int("minSubgraphSize")),

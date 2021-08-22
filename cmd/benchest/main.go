@@ -216,6 +216,7 @@ func benchFetch(c string) (*fetchStats, error) {
 }
 
 type checkResp struct {
+	CheckTook                time.Duration
 	CheckRequestError        string
 	ConnectionError          string
 	PeerFoundInDHT           map[string]int
@@ -228,9 +229,11 @@ type checkResp struct {
 }
 
 func ipfsCheck(c string, maddr string) *checkResp {
+	start := time.Now()
 	resp, err := http.DefaultClient.Get(fmt.Sprintf("https://ipfs-check-backend.ipfs.io/?cid=%s&multiaddr=%s", c, maddr))
 	if err != nil {
 		return &checkResp{
+			CheckTook:         time.Since(start),
 			CheckRequestError: err.Error(),
 		}
 	}
@@ -238,8 +241,10 @@ func ipfsCheck(c string, maddr string) *checkResp {
 	defer resp.Body.Close()
 
 	var out checkResp
+	out.CheckTook = time.Since(start)
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return &checkResp{
+			CheckTook:         time.Since(start),
 			CheckRequestError: err.Error(),
 		}
 	}

@@ -183,7 +183,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 
 	bsctx := metri.CtxScope(ctx, "estuary.exch")
-	bswap := bitswap.New(bsctx, bsnet, blkst)
+	bswap := bitswap.New(bsctx, bsnet, blkst, bitswap.EngineBlockstoreWorkerCount(400))
 
 	wallet, err := setupWallet(cfg.WalletDir)
 	if err != nil {

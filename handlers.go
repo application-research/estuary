@@ -2999,7 +2999,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	}
 
 	var contents []Content
-	if err := s.DB.Model(ObjRef{}).Joins("left join pins on obj_refs.pin = pins.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
+	if err := s.DB.Model(ObjRef{}).Joins("left join contents on obj_refs.content = contents.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
 		log.Errorf("failed to find contents for cid: %s", err)
 	}
 
