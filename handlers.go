@@ -657,7 +657,7 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	_, span := s.tracer.Start(ctx, "importFile")
 	defer span.End()
 
-	spl := chunker.DefaultSplitter(fi)
+	spl := chunker.NewSizeSplitter(fi, 1024*1024)
 	return importer.BuildDagFromReader(dserv, spl)
 }
 

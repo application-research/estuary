@@ -978,7 +978,7 @@ func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.R
 	_, span := Tracer.Start(ctx, "importFile")
 	defer span.End()
 
-	spl := chunker.DefaultSplitter(fi)
+	spl := chunker.NewSizeSplitter(fi, 1024*1024)
 	return importer.BuildDagFromReader(dserv, spl)
 }
 
