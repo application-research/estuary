@@ -186,7 +186,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	bswap := bitswap.New(bsctx, bsnet, blkst,
 		bitswap.EngineBlockstoreWorkerCount(600),
 		bitswap.TaskWorkerCount(600),
-		bitswap.MaxOutstandingBytesPerPeer(5 << 20)
+		bitswap.MaxOutstandingBytesPerPeer(5<<20),
 	)
 
 	wallet, err := setupWallet(cfg.WalletDir)
