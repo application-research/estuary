@@ -304,7 +304,6 @@ func main() {
 			go func() {
 				defer close(out)
 
-				// + GetActiveContents
 				contents, err := db.Contents().WithActive(true).GetAll()
 				if err != nil {
 					log.Errorf("failed to load contents for reproviding: %s", err)
@@ -504,7 +503,6 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 	return nil
 }
 
-// + ObjectExistsWithCid
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	exists, err := s.DB.Objects().WithCid(c).Exists()
 	if err != nil {

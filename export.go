@@ -25,7 +25,6 @@ func (s *Server) exportUserData(uid uint) (*DataExport, error) {
 		conts = append(conts, c.ID)
 	}
 
-	// + GetDealsByContentIDs
 	deals, err := s.DB.Deals().WithContentIDs(conts).GetAll()
 	if err != nil {
 		return nil, err

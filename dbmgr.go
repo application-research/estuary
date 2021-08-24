@@ -6,13 +6,20 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
-	"github.com/ipfs/go-cid"
+	gocid "github.com/ipfs/go-cid"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
-type DBMgr struct{ *gorm.DB }
+type DBSortOrder int
+
+const (
+	OrderDescending DBSortOrder = 0
+	OrderAscending  DBSortOrder = 1
+)
+
+type DBMgr struct{ DB *gorm.DB }
 
 func (mgr *DBMgr) Users() *UsersQuery {
 	return NewUsersQuery(mgr.DB)
@@ -36,6 +43,14 @@ func (mgr *DBMgr) ObjRefs() *ObjRefsQuery {
 
 func (mgr *DBMgr) Deals() *DealsQuery {
 	return NewDealsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) Collections() *CollectionsQuery {
+	return NewCollectionsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) CollectionRefs() *CollectionRefsQuery {
+	return NewCollectionRefsQuery(mgr.DB)
 }
 
 func NewDBMgr(dbval string) (*DBMgr, error) {
@@ -196,7 +211,11 @@ func (q *ContentsQuery) WithID(id uint) *ContentsQuery {
 }
 
 func (q *ContentsQuery) WithActive(active bool) *ContentsQuery {
-	q.DB = q.DB.Where("active")
+	if active {
+		q.DB = q.DB.Where("active")
+	} else {
+		q.DB = q.DB.Where("NOT active")
+	}
 	return q
 }
 
@@ -205,8 +224,61 @@ func (q *ContentsQuery) WithUserID(userID uint) *ContentsQuery {
 	return q
 }
 
+func (q *ContentsQuery) WithCid(cid gocid.Cid) *ContentsQuery {
+	q.DB = q.DB.Where("cid = ?", cidToBytes(cid))
+	return q
+}
+
+func (q *ContentsQuery) WithCids(cids []gocid.Cid) *ContentsQuery {
+	q.DB = q.DB.Where("cid IN ?", cidsToBytes(cids))
+	return q
+}
+
+func (q *ContentsQuery) WithAggregate(aggregate bool) *ContentsQuery {
+	if aggregate {
+		q.DB = q.DB.Where("aggregate")
+	} else {
+		q.DB = q.DB.Where("NOT aggregate")
+	}
+	return q
+}
+
+func (q *ContentsQuery) WithAggregatedIn(contentID uint) *ContentsQuery {
+	q.DB = q.DB.Where("aggregated_in = ?", contentID)
+	return q
+}
+
+func (q *ContentsQuery) Limit(limit int) *ContentsQuery {
+	q.DB = q.DB.Limit(limit)
+	return q
+}
+
+func (q *ContentsQuery) Offset(offset int) *ContentsQuery {
+	q.DB = q.DB.Offset(offset)
+	return q
+}
+
+// TODO: order functions can probably be simplified
+func (q *ContentsQuery) OrderByCreationDate(order DBSortOrder) *ContentsQuery {
+	if order == OrderDescending {
+		q.DB = q.DB.Order("created_at DESC")
+	} else {
+		q.DB = q.DB.Order("created_at ASC")
+	}
+	return q
+}
+
+func (q *ContentsQuery) OrderByID(order DBSortOrder) *ContentsQuery {
+	if order == OrderDescending {
+		q.DB = q.DB.Order("id DESC")
+	} else {
+		q.DB = q.DB.Order("id ASC")
+	}
+	return q
+}
+
 func (q *ContentsQuery) CreateAll(contents []Content) error {
-	return q.DB.Create(contents).Error
+	return q.DB.Create(&contents).Error
 }
 
 func (q *ContentsQuery) Get() (Content, error) {
@@ -245,8 +317,8 @@ func NewObjectsQuery(db *gorm.DB) *ObjectsQuery {
 	return &ObjectsQuery{DB: db.Model(&Object{})}
 }
 
-func (q *ObjectsQuery) WithCid(cid cid.Cid) *ObjectsQuery {
-	q.DB = q.DB.Where("cid = ?", cid.Bytes())
+func (q *ObjectsQuery) WithCid(cid gocid.Cid) *ObjectsQuery {
+	q.DB = q.DB.Where("cid = ?", cidToBytes(cid))
 	return q
 }
 
@@ -269,7 +341,7 @@ func (q *ObjectsQuery) Exists() (bool, error) {
 // TODO: simplify by using other abstracted functions instead
 func (q *ObjectsQuery) DeleteUnreferenced(ids []uint) error {
 	return q.DB.Where(
-		"(?) = 0 and id in ?",
+		"(?) = 0 AND id in ?",
 		q.DB.Model(&ObjRef{}).Where("object = objects.id").Select("count(1)"), ids,
 	).Delete(Object{}).Error
 }
@@ -296,11 +368,16 @@ func (q *ObjRefsQuery) Delete() error {
 type DealsQuery struct{ DB *gorm.DB }
 
 func NewDealsQuery(db *gorm.DB) *DealsQuery {
-	return &DealsQuery{DB: db.Model(&DealsQuery{})}
+	return &DealsQuery{DB: db.Model(&contentDeal{})}
+}
+
+func (q *DealsQuery) WithContentID(contentID uint) *DealsQuery {
+	q.DB = q.DB.Where("content = ?", contentID)
+	return q
 }
 
 func (q *DealsQuery) WithContentIDs(contentIDs []uint) *DealsQuery {
-	q.DB = q.DB.Where("content in ?", contentIDs)
+	q.DB = q.DB.Where("content IN ?", contentIDs)
 	return q
 }
 
@@ -310,4 +387,84 @@ func (q *DealsQuery) GetAll() ([]contentDeal, error) {
 		return nil, err
 	}
 	return deals, nil
+}
+
+// COLLECTIONS
+
+type CollectionsQuery struct{ DB *gorm.DB }
+
+func NewCollectionsQuery(db *gorm.DB) *CollectionsQuery {
+	return &CollectionsQuery{DB: db.Model(&Collection{})}
+}
+
+func (q *CollectionsQuery) WithUUID(uuid string) *CollectionsQuery {
+	q.DB = q.DB.Where("uuid = ?", uuid)
+	return q
+}
+
+func (q *CollectionsQuery) WithUserID(userID uint) *CollectionsQuery {
+	q.DB = q.DB.Where("user_id = ?", userID)
+	return q
+}
+
+func (q *CollectionsQuery) Get() (Collection, error) {
+	var collection Collection
+	if err := q.DB.Take(&collection).Error; err != nil {
+		return Collection{}, err
+	}
+
+	return collection, nil
+}
+
+// COLLECTION REFS
+
+type CollectionRefsQuery struct{ DB *gorm.DB }
+
+func NewCollectionRefsQuery(db *gorm.DB) *CollectionRefsQuery {
+	return &CollectionRefsQuery{DB: db.Model(&CollectionRef{})}
+}
+
+func (q *CollectionRefsQuery) Create(collectionRef CollectionRef) error {
+	return q.DB.Create(&collectionRef).Error
+}
+
+// HELPER FUNCTIONS
+
+func bytesToCid(bytes []byte) (gocid.Cid, error) {
+	if len(bytes) == 0 {
+		return gocid.Undef, nil
+	}
+
+	cid, err := gocid.Cast(bytes)
+	if err != nil {
+		return gocid.Undef, err
+	}
+
+	return cid, nil
+}
+
+func bytesToCids(bytesList [][]byte) ([]gocid.Cid, error) {
+	var cids []gocid.Cid
+	for _, bytes := range bytesList {
+		cid, err := bytesToCid(bytes)
+		if err != nil {
+			return nil, err
+		}
+		cids = append(cids, cid)
+	}
+
+	return cids, nil
+}
+
+func cidToBytes(cid gocid.Cid) []byte {
+	return cid.Bytes()
+}
+
+func cidsToBytes(cids []gocid.Cid) [][]byte {
+	var bytesList [][]byte
+	for _, cid := range cids {
+		bytesList = append(bytesList, cidToBytes(cid))
+	}
+
+	return bytesList
 }

@@ -342,8 +342,15 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		}
 	}
 
-	var contents []Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and active", u.ID).Error; err != nil {
+	contents, err := s.DB.
+		Contents().
+		WithUserID(u.ID).
+		WithActive(true).
+		Limit(limit).
+		Offset(offset).
+		OrderByCreationDate(OrderDescending).
+		GetAll()
+	if err != nil {
 		return err
 	}
 
@@ -374,9 +381,11 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		}
 
 		if c.Aggregate {
-			if err := s.DB.Model(Content{}).Where("aggregated_in = ?", c.ID).Count(&st.AggregatedFiles).Error; err != nil {
+			count, err := s.DB.Contents().WithAggregatedIn(c.ID).Count()
+			if err != nil {
 				return err
 			}
+			st.AggregatedFiles = count
 		}
 
 		out = append(out, st)
@@ -409,8 +418,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 	var cols []*Collection
 	if params.Collection != "" {
-		var srchCol Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+		srchCol, err := s.DB.Collections().WithUUID(params.Collection).WithUserID(u.ID).Get()
+		if err != nil {
 			return err
 		}
 
@@ -433,10 +442,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	}
 
 	if c.QueryParam("ignore-dupes") == "true" {
-		var count int64
-		if err := s.DB.Model(Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
+		count, err := s.DB.Contents().WithCid(rcid).WithUserID(u.ID).Count()
+		if err != nil {
 			return err
 		}
+
 		if count > 0 {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
@@ -580,8 +590,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	collection := c.FormValue("collection")
 	var col *Collection
 	if collection != "" {
-		var srchCol Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", collection, u.ID).Error; err != nil {
+		srchCol, err := s.DB.Collections().WithUUID(collection).WithUserID(u.ID).Get()
+		if err != nil {
 			return err
 		}
 
@@ -607,7 +617,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if col != nil {
-		if err := s.DB.Create(&CollectionRef{
+		if err := s.DB.CollectionRefs().Create(CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 		}).Error; err != nil {
@@ -792,8 +802,8 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 		return err
 	}
 
-	var content Content
-	if err := s.DB.Find(&content, "cid = ?", data.Bytes()).Error; err != nil {
+	content, err := s.DB.Contents().WithCid(data).Get()
+	if err != nil {
 		return err
 	}
 
@@ -804,8 +814,8 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 }
 
 func (s *Server) handleListContent(c echo.Context, u *User) error {
-	var contents []Content
-	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
+	contents, err := s.DB.Contents().WithActive(true).WithUserID(u.ID).GetAll()
+	if err != nil {
 		return err
 	}
 
@@ -837,8 +847,8 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 		offset = o
 	}
 
-	var contents []Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	contents, err := s.DB.Contents().Limit(limit).Offset(offset).OrderByID(OrderDescending).WithActive(true).GetAll()
+	if err != nil {
 		return err
 	}
 
@@ -849,10 +859,12 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 				Content: cont,
 			}
 			if cont.Aggregate {
-				if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				count, err := s.DB.Contents().WithAggregatedIn(cont.ID).Count()
+				if err != nil {
 					return err
 				}
 
+				ec.AggregatedFiles = count
 			}
 			out = append(out, ec)
 		}
@@ -880,13 +892,13 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
-	if err := s.DB.First(&content, "id = ? and user_id = ?", val, u.ID).Error; err != nil {
+	content, err := s.DB.Contents().WithID(uint(val)).WithUserID(u.ID).Get()
+	if err != nil {
 		return err
 	}
 
-	var deals []contentDeal
-	if err := s.DB.Find(&deals, "content = ?", content.ID).Error; err != nil {
+	deals, err := s.DB.Deals().WithContentID(content.ID).GetAll()
+	if err != nil {
 		return err
 	}
 
