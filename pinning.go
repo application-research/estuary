@@ -148,7 +148,8 @@ func (cm *ContentManager) refreshPinQueue() error {
 			cm.addPinToQueue(c, nil, 0)
 		} else {
 			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location); err != nil {
-				return err
+				log.Errorf("failed to send pin message to shuttle: %s", err)
+				time.Sleep(time.Millisecond * 100)
 			}
 		}
 	}

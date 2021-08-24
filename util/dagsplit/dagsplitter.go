@@ -85,6 +85,10 @@ func getSingleNodeSize(node ipld.Node) uint64 {
 	return uint64(len(node.RawData()))
 }
 
+func (b *Builder) Boxes() []*Box {
+	return b.boxes
+}
+
 func (b *Builder) getTreeSize(nd ipld.Node) (uint64, error) {
 	switch n := nd.(type) {
 	case *mdag.RawNode:
@@ -121,6 +125,57 @@ func (b *Builder) getTreeSize(nd ipld.Node) (uint64, error) {
 	default:
 		return 0, uio.ErrUnkownNodeType
 	}
+}
+
+func (b *Builder) Pack(ctx context.Context, root cid.Cid) error {
+
+	stack := []cid.Cid{root}
+
+	for len(stack) > 0 {
+
+		cur := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		nd, err := b.dagService.Get(ctx, cur)
+		if err != nil {
+			return err
+		}
+
+		size, err := b.getTreeSize(nd)
+		if err != nil {
+			return err
+		}
+
+		if b.fits(uint64(size)) {
+			b.packRoot(cur)
+			b.addSize(uint64(size))
+			continue
+		} else if b.fits(uint64(len(nd.RawData()))) {
+			// this tree doesnt fit in the box, so lets add the node as 'raw' and recurse
+			// TODO: check if its a good candidate for going into its own new box
+			pref := cur.Prefix()
+			pref.Codec = cid.Raw
+
+			ncid, err := pref.Sum(nd.RawData())
+			if err != nil {
+				return err
+			}
+
+			b.addExternalLink(ncid)
+			b.addSize(uint64(len(nd.RawData())))
+
+			//  TODO: this means we traverse them in reverse order, not sure if thats the best way forward
+			for _, l := range nd.Links() {
+				stack = append(stack, l.Cid)
+			}
+		} else {
+			// need a new box, throw this one back on the stack and move on
+			stack = append(stack, cur)
+			b.newBox()
+		}
+	}
+
+	return nil
 }
 
 // Get current box we are packing into. By definition now this is always the

@@ -27,12 +27,15 @@ require (
 	github.com/ipfs/go-datastore v0.4.5
 	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
+	github.com/ipfs/go-filestore v1.0.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
+	github.com/ipfs/go-ipfs-files v0.0.8
 	github.com/ipfs/go-ipfs-pinner v0.1.2
 	github.com/ipfs/go-ipfs-provider v0.5.1
+	github.com/ipfs/go-ipld-cbor v0.0.5
 	github.com/ipfs/go-ipld-format v0.2.0
 	github.com/ipfs/go-log v1.0.5
 	github.com/ipfs/go-merkledag v0.3.2

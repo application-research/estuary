@@ -412,6 +412,11 @@ func main() {
 
 		if !cm.contentAddingDisabled {
 			go func() {
+				// wait for shuttles to reconnect
+				// This is a bit of a hack, and theres probably a better way to
+				// solve this. but its good enough for now
+				time.Sleep(time.Second * 10)
+
 				if err := cm.refreshPinQueue(); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)
 				}
