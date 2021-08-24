@@ -81,10 +81,11 @@ type UserSettings struct {
 }
 
 type ViewerResponse struct {
-	Username string `json:"username"`
-	Perms    int    `json:"perms"`
-	ID       uint   `json:"id"`
-	Address  string `json:"address,omitempty"`
+	Username string   `json:"username"`
+	Perms    int      `json:"perms"`
+	ID       uint     `json:"id"`
+	Address  string   `json:"address,omitempty"`
+	Miners   []string `json:"miners"`
 
 	Settings UserSettings `json:"settings"`
 }

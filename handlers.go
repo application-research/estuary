@@ -2268,6 +2268,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Username: u.Username,
 		Perms:    u.Perm,
 		Address:  u.Address.Addr.String(),
+		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
 			Replication:           6,
 			Verified:              true,
@@ -2279,6 +2280,21 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			UploadEndpoints:       uep,
 		},
 	})
+}
+
+func (s *Server) getMinersOwnedByUser(u *User) []string {
+	var miners []storageMiner
+	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
+		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
+		return nil
+	}
+
+	var out []string
+	for _, m := range miners {
+		out = append(out, m.Address.Addr.String())
+	}
+
+	return out
 }
 
 func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
