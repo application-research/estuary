@@ -50,11 +50,11 @@ func main() {
 	}
 }
 
-func getFile(cctx *cli.Context) (io.ReadCloser, string, error) {
+func getFile(cctx *cli.Context) (io.Reader, string, error) {
 	buf := make([]byte, 1024*1024)
 	rand.Read(buf)
 
-	return io.NopCloser(bytes.NewReader(buf)), fmt.Sprintf("goodfile-%x", buf[:4]), nil
+	return bytes.NewReader(buf), fmt.Sprintf("goodfile-%x", buf[:4]), nil
 }
 
 type benchResult struct {
@@ -81,6 +81,10 @@ var benchAddFileCmd = &cli.Command{
 		&cli.StringFlag{
 			Name: "push-metrics-auth",
 		},
+		&cli.DurationFlag{
+			Name:  "every",
+			Usage: "run benchmark in a loop on the specified interval",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		estToken := os.Getenv("ESTUARY_TOKEN")
@@ -88,32 +92,51 @@ var benchAddFileCmd = &cli.Command{
 			return fmt.Errorf("no estuary token found")
 		}
 
-		fi, name, err := getFile(cctx)
-		if err != nil {
-			return err
-		}
-
-		defer fi.Close()
-
 		host := cctx.String("host")
 
-		outstats, err := RunBench(name, fi, host, estToken)
-		if err != nil {
-			return err
-		}
-
-		b, err := json.MarshalIndent(outstats, "", "  ")
-		if err != nil {
-			return err
-		}
-		fmt.Println(string(b))
-
+		var p *push.Pusher
 		pmetrics := cctx.String("push-metrics")
 		pmauth := cctx.String("push-metrics-auth")
-
 		if pmetrics != "" {
-			if err := sendMetrics(pmetrics, pmauth, outstats); err != nil {
+			auth := strings.SplitN(pmauth, ":", 2)
+			registry := prometheus.NewRegistry()
+			registry.MustRegister(addTime, timeToFirstByte, reqDur)
+			p = push.New(pmetrics, "gateway_monitoring_estuary").BasicAuth(auth[0], auth[1]).Gatherer(registry)
+		}
+
+		interval := cctx.Duration("every")
+
+		for {
+			start := time.Now()
+			fi, name, err := getFile(cctx)
+			if err != nil {
 				return err
+			}
+
+			outstats, err := RunBench(name, fi, host, estToken)
+			if err != nil {
+				return err
+			}
+
+			b, err := json.MarshalIndent(outstats, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(b))
+
+			if pmetrics != "" {
+				recordMetrics(outstats)
+				if err := p.Push(); err != nil {
+					return err
+				}
+			}
+
+			if interval == 0 {
+				return nil
+			}
+			took := time.Since(start)
+			if took < interval {
+				time.Sleep(interval - took)
 			}
 		}
 
@@ -295,17 +318,10 @@ func ipfsCheck(c string, maddr string) *checkResp {
 	return &out
 }
 
-func sendMetrics(pmhost string, pmauth string, data *benchResult) error {
+func recordMetrics(data *benchResult) {
 
 	addTime.Set(data.AddFileTime.Seconds())
 	timeToFirstByte.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TimeToFirstByte.Seconds())
 	reqDur.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TotalElapsed.Seconds())
 
-	auth := strings.SplitN(pmauth, ":", 2)
-
-	registry := prometheus.NewRegistry()
-	registry.MustRegister(addTime, timeToFirstByte, reqDur)
-	p := push.New(pmhost, "gateway_monitoring_estuary").BasicAuth(auth[0], auth[1]).Gatherer(registry)
-
-	return p.Push()
 }

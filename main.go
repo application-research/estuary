@@ -218,6 +218,9 @@ func main() {
 		&cli.StringFlag{
 			Name: "blockstore",
 		},
+		&cli.BoolFlag{
+			Name: "write-log-truncate",
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -272,10 +275,11 @@ func main() {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			Blockstore:    bstore,
-			Libp2pKeyFile: filepath.Join(ddir, "estuary-peer.key"),
-			Datastore:     filepath.Join(ddir, "estuary-leveldb"),
-			WalletDir:     filepath.Join(ddir, "estuary-wallet"),
+			Blockstore:       bstore,
+			Libp2pKeyFile:    filepath.Join(ddir, "estuary-peer.key"),
+			Datastore:        filepath.Join(ddir, "estuary-leveldb"),
+			WalletDir:        filepath.Join(ddir, "estuary-wallet"),
+			WriteLogTruncate: cctx.Bool("write-log-truncate"),
 		}
 
 		if wl := cctx.String("write-log"); wl != "" {
