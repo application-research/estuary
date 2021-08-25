@@ -62,6 +62,7 @@ type benchResult struct {
 	FileCID         string
 	AddFileRespTime time.Duration
 	AddFileTime     time.Duration
+	AddFileError    string
 
 	FetchStats *fetchStats
 	IpfsCheck  *checkResp
@@ -174,8 +175,10 @@ func RunBench(name string, fi io.Reader, host string, estToken string) (*benchRe
 		if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
 			fmt.Println(err)
 		}
-		fmt.Println("error body: ", m)
-		return nil, fmt.Errorf("got invalid status code: %d", resp.StatusCode)
+		fmt.Fprintln(os.Stderr, "error body: ", m)
+		return &benchResult{
+			AddFileError: fmt.Sprintf("got invalid status code: %d", resp.StatusCode),
+		}, nil
 	}
 
 	var rbody util.AddFileResponse
@@ -184,7 +187,7 @@ func RunBench(name string, fi io.Reader, host string, estToken string) (*benchRe
 	}
 	readBodyTime := time.Now()
 
-	fmt.Println("file added, cid: ", rbody.Cid)
+	fmt.Fprintln(os.Stderr, "file added, cid: ", rbody.Cid)
 
 	chk := make(chan *checkResp)
 	go func() {
@@ -227,8 +230,9 @@ type fetchStats struct {
 	RequestStart time.Time
 	GatewayURL   string
 
-	GatewayHost string
-	StatusCode  int
+	GatewayHost  string
+	StatusCode   int
+	RequestError string
 
 	ResponseTime      time.Duration
 	TimeToFirstByte   time.Duration
@@ -247,7 +251,11 @@ func benchFetch(c string) (*fetchStats, error) {
 	resp, err := http.DefaultClient.Do(req)
 	afterDo := time.Now()
 	if err != nil {
-		return nil, fmt.Errorf("response errored: %s", err)
+		return &fetchStats{
+			RequestStart: start,
+			TotalElapsed: time.Since(start),
+			RequestError: err.Error(),
+		}, nil
 	}
 
 	gwayhost := resp.Header.Get("x-ipfs-gateway-host")

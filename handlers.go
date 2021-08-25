@@ -2879,6 +2879,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	if cont.Location != "local" {
 		return c.JSON(200, map[string]interface{}{
+			"content":            cont,
 			"error":              "requested content was not local to this instance, cannot check health right now",
 			"fixedAggregateSize": fixedAggregateSize,
 		})
