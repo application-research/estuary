@@ -14,7 +14,26 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/push"
 	cli "github.com/urfave/cli/v2"
+)
+
+var (
+	addTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "file_add_provide_seconds",
+		Help: "time to add and provide file",
+	})
+	timeToFirstByte = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "time_to_first_byte_seconds",
+		Help:    "time to first byte for fetching newly added data",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"gateway", "status_code"})
+	reqDur = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "request_duration_seconds",
+		Help:    "The latency of the entire request",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"gateway", "status_code"})
 )
 
 func main() {
@@ -55,6 +74,13 @@ var benchAddFileCmd = &cli.Command{
 			Name:  "host",
 			Value: "api.estuary.tech",
 		},
+		&cli.StringFlag{
+			Name:  "push-metrics",
+			Usage: "push metrics to the configured server",
+		},
+		&cli.StringFlag{
+			Name: "push-metrics-auth",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		estToken := os.Getenv("ESTUARY_TOKEN")
@@ -71,90 +97,107 @@ var benchAddFileCmd = &cli.Command{
 
 		host := cctx.String("host")
 
-		buf := new(bytes.Buffer)
-		mw := multipart.NewWriter(buf)
-		part, err := mw.CreateFormFile("data", name)
-		if err != nil {
-			return err
-		}
-		io.Copy(part, fi)
-		mw.Close()
-
-		req, err := http.NewRequest("POST", fmt.Sprintf("https://%s/content/add", host), buf)
+		outstats, err := RunBench(name, fi, host, estToken)
 		if err != nil {
 			return err
 		}
 
-		req.Header.Add("Content-Type", mw.FormDataContentType())
-		req.Header.Set("Authorization", "Bearer "+estToken)
-
-		addReqStart := time.Now()
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		addRespAt := time.Now()
-
-		if resp.StatusCode != 200 {
-			var m map[string]interface{}
-			if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
-				fmt.Println(err)
-			}
-			fmt.Println("error body: ", m)
-			return fmt.Errorf("got invalid status code: %d", resp.StatusCode)
-		}
-
-		var rbody util.AddFileResponse
-		if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-			return err
-		}
-		readBodyTime := time.Now()
-
-		fmt.Println("file added, cid: ", rbody.Cid)
-
-		chk := make(chan *checkResp)
-		go func() {
-			if len(rbody.Providers) == 0 {
-				chk <- &checkResp{
-					CheckRequestError: "no addresses back from add response",
-				}
-				return
-			}
-
-			addr := rbody.Providers[0]
-			for _, a := range rbody.Providers {
-				if !strings.Contains(a, "127.0.0.1") {
-					addr = a
-				}
-			}
-
-			chk <- ipfsCheck(rbody.Cid, addr)
-		}()
-
-		st, err := benchFetch(rbody.Cid)
-		if err != nil {
-			return err
-		}
-
-		chkresp := <-chk
-
-		outstats := &benchResult{
-			BenchStart:      addReqStart,
-			FileCID:         rbody.Cid,
-			AddFileRespTime: addRespAt.Sub(addReqStart),
-			AddFileTime:     readBodyTime.Sub(addReqStart),
-
-			FetchStats: st,
-			IpfsCheck:  chkresp,
-		}
 		b, err := json.MarshalIndent(outstats, "", "  ")
 		if err != nil {
 			return err
 		}
 		fmt.Println(string(b))
 
+		pmetrics := cctx.String("push-metrics")
+		pmauth := cctx.String("push-metrics-auth")
+
+		if pmetrics != "" {
+			if err := sendMetrics(pmetrics, pmauth, outstats); err != nil {
+				return err
+			}
+		}
+
 		return nil
 	},
+}
+
+func RunBench(name string, fi io.Reader, host string, estToken string) (*benchResult, error) {
+	buf := new(bytes.Buffer)
+	mw := multipart.NewWriter(buf)
+	part, err := mw.CreateFormFile("data", name)
+	if err != nil {
+		return nil, err
+	}
+	io.Copy(part, fi)
+	mw.Close()
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s/content/add", host), buf)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+estToken)
+
+	addReqStart := time.Now()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	addRespAt := time.Now()
+
+	if resp.StatusCode != 200 {
+		var m map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+			fmt.Println(err)
+		}
+		fmt.Println("error body: ", m)
+		return nil, fmt.Errorf("got invalid status code: %d", resp.StatusCode)
+	}
+
+	var rbody util.AddFileResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
+		return nil, err
+	}
+	readBodyTime := time.Now()
+
+	fmt.Println("file added, cid: ", rbody.Cid)
+
+	chk := make(chan *checkResp)
+	go func() {
+		if len(rbody.Providers) == 0 {
+			chk <- &checkResp{
+				CheckRequestError: "no addresses back from add response",
+			}
+			return
+		}
+
+		addr := rbody.Providers[0]
+		for _, a := range rbody.Providers {
+			if !strings.Contains(a, "127.0.0.1") {
+				addr = a
+			}
+		}
+
+		chk <- ipfsCheck(rbody.Cid, addr)
+	}()
+
+	st, err := benchFetch(rbody.Cid)
+	if err != nil {
+		return nil, err
+	}
+
+	chkresp := <-chk
+
+	return &benchResult{
+		BenchStart:      addReqStart,
+		FileCID:         rbody.Cid,
+		AddFileRespTime: addRespAt.Sub(addReqStart),
+		AddFileTime:     readBodyTime.Sub(addReqStart),
+
+		FetchStats: st,
+		IpfsCheck:  chkresp,
+	}, nil
 }
 
 type fetchStats struct {
@@ -250,4 +293,19 @@ func ipfsCheck(c string, maddr string) *checkResp {
 	}
 
 	return &out
+}
+
+func sendMetrics(pmhost string, pmauth string, data *benchResult) error {
+
+	addTime.Set(data.AddFileTime.Seconds())
+	timeToFirstByte.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TimeToFirstByte.Seconds())
+	reqDur.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TotalElapsed.Seconds())
+
+	auth := strings.SplitN(pmauth, ":", 2)
+
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(addTime, timeToFirstByte, reqDur)
+	p := push.New(pmhost, "gateway_monitoring_estuary").BasicAuth(auth[0], auth[1]).Gatherer(registry)
+
+	return p.Push()
 }
