@@ -130,10 +130,12 @@ func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
 			Name: po.Name,
 			Meta: po.Meta,
 		},
+		/* Ref: https://github.com/ipfs/go-pinning-service-http-client/issues/12
 		Info: map[string]interface{}{
 			"obj_fetched":  po.NumFetched,
 			"size_fetched": po.SizeFetched,
 		},
+		*/
 	}
 }
 

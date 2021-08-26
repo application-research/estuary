@@ -675,7 +675,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
-	if err := s.Node.Dht.Provide(subCtx, nd.Cid(), true); err != nil {
+	if err := s.Node.FullRT.Provide(subCtx, nd.Cid(), true); err != nil {
 		log.Warnf("failed to provide newly added content: %s", err)
 	}
 

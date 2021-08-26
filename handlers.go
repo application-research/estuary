@@ -1030,7 +1030,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	// TODO: check both cidv0 and v1 for dag-pb cids
 
 	var contents []Content
-	if err := s.DB.Find(&contents, "cid = ?", obj.Bytes()).Error; err != nil {
+	if err := s.DB.Find(&contents, "cid = ? and active", obj.Bytes()).Error; err != nil {
 		return err
 	}
 
@@ -3004,11 +3004,17 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		return err
 	}
 
+	var roots []Content
+	if err := s.DB.Find(&roots, "cid = ?", cc.Bytes()).Error; err != nil {
+		return err
+	}
+
 	var obj Object
 	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
 		return c.JSON(404, map[string]interface{}{
-			"error": "object not found in database",
-			"cid":   cc.String(),
+			"error":                "object not found in database",
+			"cid":                  cc.String(),
+			"matchingRootContents": roots,
 		})
 	}
 
@@ -3055,11 +3061,12 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]interface{}{
-		"contents":      contents,
-		"cid":           cc,
-		"traverseError": errstr,
-		"foundBlocks":   cset.Len(),
-		"rootFetchErr":  rferrstr,
+		"contents":             contents,
+		"cid":                  cc,
+		"traverseError":        errstr,
+		"foundBlocks":          cset.Len(),
+		"rootFetchErr":         rferrstr,
+		"matchingRootContents": roots,
 	})
 }
 

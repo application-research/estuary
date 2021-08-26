@@ -14,26 +14,10 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/push"
+	pgd "github.com/jinzhu/gorm/dialects/postgres"
 	cli "github.com/urfave/cli/v2"
-)
-
-var (
-	addTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "file_add_provide_seconds",
-		Help: "time to add and provide file",
-	})
-	timeToFirstByte = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "time_to_first_byte_seconds",
-		Help:    "time to first byte for fetching newly added data",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"gateway", "status_code"})
-	reqDur = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "request_duration_seconds",
-		Help:    "The latency of the entire request",
-		Buckets: prometheus.DefBuckets,
-	}, []string{"gateway", "status_code"})
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -42,6 +26,7 @@ func main() {
 	app.Name = "benchest"
 	app.Commands = []*cli.Command{
 		benchAddFileCmd,
+		benchAddResultCmd,
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -58,6 +43,7 @@ func getFile(cctx *cli.Context) (io.Reader, string, error) {
 }
 
 type benchResult struct {
+	Runner          string
 	BenchStart      time.Time
 	FileCID         string
 	AddFileRespTime time.Duration
@@ -76,11 +62,12 @@ var benchAddFileCmd = &cli.Command{
 			Value: "api.estuary.tech",
 		},
 		&cli.StringFlag{
-			Name:  "push-metrics",
-			Usage: "push metrics to the configured server",
+			Name:  "runner",
+			Value: "",
 		},
 		&cli.StringFlag{
-			Name: "push-metrics-auth",
+			Name:  "postgres",
+			Value: "",
 		},
 		&cli.DurationFlag{
 			Name:  "every",
@@ -94,18 +81,17 @@ var benchAddFileCmd = &cli.Command{
 		}
 
 		host := cctx.String("host")
-
-		var p *push.Pusher
-		pmetrics := cctx.String("push-metrics")
-		pmauth := cctx.String("push-metrics-auth")
-		if pmetrics != "" {
-			auth := strings.SplitN(pmauth, ":", 2)
-			registry := prometheus.NewRegistry()
-			registry.MustRegister(addTime, timeToFirstByte, reqDur)
-			p = push.New(pmetrics, "gateway_monitoring_estuary").BasicAuth(auth[0], auth[1]).Gatherer(registry)
-		}
-
 		interval := cctx.Duration("every")
+		runner := cctx.String("runner")
+
+		var resdb *gorm.DB
+		if pg := cctx.String("postgres"); pg != "" {
+			db, err := openDB(pg)
+			if err != nil {
+				return err
+			}
+			resdb = db
+		}
 
 		for {
 			start := time.Now()
@@ -119,15 +105,16 @@ var benchAddFileCmd = &cli.Command{
 				return err
 			}
 
+			outstats.Runner = runner
+
 			b, err := json.MarshalIndent(outstats, "", "  ")
 			if err != nil {
 				return err
 			}
 			fmt.Println(string(b))
 
-			if pmetrics != "" {
-				recordMetrics(outstats)
-				if err := p.Push(); err != nil {
+			if resdb != nil {
+				if err := addResultsToDatabase(resdb, outstats); err != nil {
 					return err
 				}
 			}
@@ -138,6 +125,46 @@ var benchAddFileCmd = &cli.Command{
 			took := time.Since(start)
 			if took < interval {
 				time.Sleep(interval - took)
+			}
+		}
+
+		return nil
+	},
+}
+
+var benchAddResultCmd = &cli.Command{
+	Name: "add-result",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "postgres",
+			Value: "",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if !cctx.Args().Present() {
+			return fmt.Errorf("must pass filename")
+		}
+
+		db, err := openDB(cctx.String("postgres"))
+		if err != nil {
+			return fmt.Errorf("failed to open db: %w", err)
+		}
+
+		fi, err := os.Open(cctx.Args().First())
+		if err != nil {
+			return err
+		}
+		defer fi.Close()
+
+		dec := json.NewDecoder(fi)
+		for {
+			var res benchResult
+			if err := dec.Decode(&res); err != nil {
+				return fmt.Errorf("json decode: %w", err)
+			}
+
+			if err := addResultsToDatabase(db, &res); err != nil {
+				return err
 			}
 		}
 
@@ -259,6 +286,10 @@ func benchFetch(c string) (*fetchStats, error) {
 	}
 
 	gwayhost := resp.Header.Get("x-ipfs-gateway-host")
+	xpop := resp.Header.Get("x-ipfs-pop")
+	if gwayhost == "" {
+		gwayhost = xpop
+	}
 
 	status := resp.StatusCode
 
@@ -326,10 +357,33 @@ func ipfsCheck(c string, maddr string) *checkResp {
 	return &out
 }
 
-func recordMetrics(data *benchResult) {
+type DBBenchResult struct {
+	ID     uint
+	Result pgd.Jsonb
+}
 
-	addTime.Set(data.AddFileTime.Seconds())
-	timeToFirstByte.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TimeToFirstByte.Seconds())
-	reqDur.WithLabelValues(data.FetchStats.GatewayHost, fmt.Sprint(data.FetchStats.StatusCode)).Observe(data.FetchStats.TotalElapsed.Seconds())
+func openDB(dbstr string) (*gorm.DB, error) {
+	db, err := gorm.Open(postgres.Open(dbstr), &gorm.Config{})
+	if err != nil {
+		return nil, err
+	}
 
+	/*
+		if err := db.AutoMigrate(&DBBenchResult{}); err != nil {
+			return nil, err
+		}
+	*/
+
+	return db, nil
+}
+
+func addResultsToDatabase(db *gorm.DB, data *benchResult) error {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	return db.Create(&DBBenchResult{
+		Result: pgd.Jsonb{RawMessage: json.RawMessage(b)},
+	}).Error
 }
