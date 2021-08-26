@@ -152,7 +152,7 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := cm.DB.Where("pin = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
 		return err
 	}
 
