@@ -178,7 +178,7 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 	defer cm.contentLk.Unlock()
 
 	var c int64
-	if err := cm.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
+	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
 		return err
 	}
 	if c == 0 {
