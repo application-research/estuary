@@ -53,6 +53,30 @@ func (mgr *DBMgr) CollectionRefs() *CollectionRefsQuery {
 	return NewCollectionRefsQuery(mgr.DB)
 }
 
+func (mgr *DBMgr) DFERecords() *DFERecordsQuery {
+	return NewDFERecordsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) ProposalRecords() *ProposalRecordsQuery {
+	return NewProposalRecordsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) InviteCodes() *InviteCodesQuery {
+	return NewInviteCodesQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) StorageMiners() *StorageMinersQuery {
+	return NewStorageMinersQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) RetrievalSuccessRecords() *RetrievalSuccessRecordsQuery {
+	return NewRetrievalSuccessRecordsQuery(mgr.DB)
+}
+
+func (mgr *DBMgr) RetrievalFailureRecords() *RetrievalFailureRecordsQuery {
+	return NewRetrievalFailureRecordsQuery(mgr.DB)
+}
+
 func NewDBMgr(dbval string) (*DBMgr, error) {
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
@@ -371,6 +395,34 @@ func NewDealsQuery(db *gorm.DB) *DealsQuery {
 	return &DealsQuery{DB: db.Model(&contentDeal{})}
 }
 
+func (q *DealsQuery) WithID(id uint) *DealsQuery {
+	q.DB = q.DB.Where("id = ?", id)
+	return q
+}
+
+func (q *DealsQuery) WithSuccessful(valid bool) *DealsQuery {
+	if valid {
+		q.DB = q.DB.Where("deal_id > 0")
+	} else {
+		q.DB = q.DB.Where("deal_id <= 0")
+	}
+	return q
+}
+
+func (q *DealsQuery) WithFailed(failed bool) *DealsQuery {
+	if failed {
+		q.DB = q.DB.Where("failed")
+	} else {
+		q.DB = q.DB.Where("not failed")
+	}
+	return q
+}
+
+func (q *DealsQuery) WithPropCid(propCid gocid.Cid) *DealsQuery {
+	q.DB = q.DB.Where("prop_cid = ?", cidToBytes(propCid))
+	return q
+}
+
 func (q *DealsQuery) WithContentID(contentID uint) *DealsQuery {
 	q.DB = q.DB.Where("content = ?", contentID)
 	return q
@@ -381,12 +433,28 @@ func (q *DealsQuery) WithContentIDs(contentIDs []uint) *DealsQuery {
 	return q
 }
 
+func (q *DealsQuery) Get() (contentDeal, error) {
+	var deal contentDeal
+	if err := q.DB.Take(&deal).Error; err != nil {
+		return contentDeal{}, err
+	}
+	return deal, nil
+}
+
 func (q *DealsQuery) GetAll() ([]contentDeal, error) {
 	var deals []contentDeal
 	if err := q.DB.Find(&deals).Error; err != nil {
 		return nil, err
 	}
 	return deals, nil
+}
+
+func (q *DealsQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // COLLECTIONS
@@ -426,6 +494,126 @@ func NewCollectionRefsQuery(db *gorm.DB) *CollectionRefsQuery {
 
 func (q *CollectionRefsQuery) Create(collectionRef CollectionRef) error {
 	return q.DB.Create(&collectionRef).Error
+}
+
+// DFE RECORDS
+
+type DFERecordsQuery struct{ DB *gorm.DB }
+
+func NewDFERecordsQuery(db *gorm.DB) *DFERecordsQuery {
+	return &DFERecordsQuery{DB: db.Model(&dfeRecord{})}
+}
+
+func (q *DFERecordsQuery) WithContent(contentID uint) *DFERecordsQuery {
+	q.DB = q.DB.Where("content = ?", contentID)
+	return q
+}
+
+func (q *DFERecordsQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// PROPOSAL RECORDS
+
+type ProposalRecordsQuery struct{ DB *gorm.DB }
+
+func NewProposalRecordsQuery(db *gorm.DB) *ProposalRecordsQuery {
+	return &ProposalRecordsQuery{DB: db.Model(&proposalRecord{})}
+}
+
+func (q *ProposalRecordsQuery) WithPropCid(cid gocid.Cid) *ProposalRecordsQuery {
+	q.DB = q.DB.Where("prop_cid = ?", cidToBytes(cid))
+	return q
+}
+
+func (q *ProposalRecordsQuery) Get() (proposalRecord, error) {
+	var record proposalRecord
+	if err := q.DB.Take(&record).Error; err != nil {
+		return proposalRecord{}, err
+	}
+	return record, nil
+}
+
+// INVITE CODES
+
+type InviteCodesQuery struct{ DB *gorm.DB }
+
+func NewInviteCodesQuery(db *gorm.DB) *InviteCodesQuery {
+	return &InviteCodesQuery{DB: db.Model(&InviteCode{})}
+}
+
+type ClaimedInvite struct {
+	Code      string
+	Username  string
+	ClaimedBy string
+}
+
+func (q *InviteCodesQuery) GetClaimedInvites() ([]ClaimedInvite, error) {
+	var invites []ClaimedInvite
+	if err := q.DB.
+		Select("code, username, (?) as claimed_by", q.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
+		//Where("claimed_by IS NULL").
+		Joins("left join users on users.id = invite_codes.created_by").
+		Scan(&invites).Error; err != nil {
+		return nil, err
+	}
+	return invites, nil
+}
+
+func (q *InviteCodesQuery) Create(invite InviteCode) error {
+	return q.DB.Create(&invite).Error
+}
+
+// STORAGE MINERS
+
+type StorageMinersQuery struct{ DB *gorm.DB }
+
+func NewStorageMinersQuery(db *gorm.DB) *StorageMinersQuery {
+	return &StorageMinersQuery{DB: db.Model(&storageMiner{})}
+}
+
+func (q *StorageMinersQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// RETRIEVAL SUCCESS RECORDS
+
+type RetrievalSuccessRecordsQuery struct{ DB *gorm.DB }
+
+func NewRetrievalSuccessRecordsQuery(db *gorm.DB) *RetrievalSuccessRecordsQuery {
+	return &RetrievalSuccessRecordsQuery{DB: db.Model(&retrievalSuccessRecord{})}
+}
+
+func (q *RetrievalSuccessRecordsQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+// RETRIEVAL FAILURE RECORDS
+
+type RetrievalFailureRecordsQuery struct{ DB *gorm.DB }
+
+func NewRetrievalFailureRecordsQuery(db *gorm.DB) *RetrievalFailureRecordsQuery {
+	return &RetrievalFailureRecordsQuery{DB: db.Model(&retrievalFailureRecord{})}
+}
+
+func (q *RetrievalFailureRecordsQuery) Count() (int64, error) {
+	var count int64
+	if err := q.DB.Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // HELPER FUNCTIONS

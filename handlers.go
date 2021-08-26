@@ -943,8 +943,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return ds[i].Deal.CreatedAt.Before(ds[j].Deal.CreatedAt)
 	})
 
-	var failCount int64
-	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
+	failCount, err := s.DB.DFERecords().Count()
+	if err != nil {
 		return err
 	}
 
@@ -979,8 +979,8 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 		return err
 	}
 
-	var deal contentDeal
-	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
+	deal, err := s.DB.Deals().WithPropCid(propcid).Get()
+	if err != nil {
 		return err
 	}
 
@@ -993,13 +993,13 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 }
 
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
-	var deal contentDeal
-	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+	deal, err := s.DB.Deals().WithID(dealid).Get()
+	if err != nil {
 		return nil, err
 	}
 
-	var content Content
-	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
+	content, err := s.DB.Contents().WithID(deal.Content).Get()
+	if err != nil {
 		return nil, err
 	}
 
@@ -1030,9 +1030,9 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 }
 
 type getContentResponse struct {
-	Content      *Content       `json:"content"`
-	AggregatedIn *Content       `json:"aggregatedIn,omitempty"`
-	Deals        []*contentDeal `json:"deals"`
+	Content      Content       `json:"content"`
+	AggregatedIn Content       `json:"aggregatedIn,omitempty"`
+	Deals        []contentDeal `json:"deals"`
 }
 
 func (s *Server) handleGetContentByCid(c echo.Context) error {
@@ -1043,31 +1043,31 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 
 	// TODO: check both cidv0 and v1 for dag-pb cids
 
-	var contents []Content
-	if err := s.DB.Find(&contents, "cid = ?", obj.Bytes()).Error; err != nil {
+	contents, err := s.DB.Contents().WithCid(obj).GetAll()
+	if err != nil {
 		return err
 	}
 
 	var out []getContentResponse
 	for i, cont := range contents {
 		resp := getContentResponse{
-			Content: &contents[i],
+			Content: contents[i],
 		}
 
 		id := cont.ID
 
 		if cont.AggregatedIn > 0 {
-			var aggr Content
-			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
+			aggr, err := s.DB.Contents().WithID(cont.AggregatedIn).Get()
+			if err != nil {
 				return err
 			}
 
-			resp.AggregatedIn = &aggr
+			resp.AggregatedIn = aggr
 			id = cont.AggregatedIn
 		}
 
-		var deals []*contentDeal
-		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
+		deals, err := s.DB.Deals().WithContentID(id).WithSuccessful(true).WithFailed(false).GetAll()
+		if err != nil {
 			return err
 		}
 
@@ -1122,12 +1122,12 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	var cont Content
-	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
+	content, err := s.DB.Contents().WithID(req.Content).Get()
+	if err != nil {
 		return err
 	}
 
-	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
+	id, err := s.CM.makeDealWithMiner(ctx, content, addr, true)
 	if err != nil {
 		return err
 	}
@@ -1232,8 +1232,8 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 		return err
 	}
 
-	var proprec proposalRecord
-	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+	proprec, err := s.DB.ProposalRecords().WithPropCid(propCid).Get()
+	if err != nil {
 		return err
 	}
 
@@ -1259,32 +1259,43 @@ func (s *Server) handleGetDealInfo(c echo.Context) error {
 	return c.JSON(200, deal)
 }
 
-type getInvitesResp struct {
-	Code      string `json:"code"`
-	Username  string `json:"createdBy"`
-	ClaimedBy string `json:"claimedBy"`
-}
-
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
-	var invites []getInvitesResp
-	if err := s.DB.Debug().Model(&InviteCode{}).
-		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
-		//Where("claimed_by IS NULL").
-		Joins("left join users on users.id = invite_codes.created_by").
-		Scan(&invites).Error; err != nil {
+	invites, err := s.DB.InviteCodes().GetClaimedInvites()
+	if err != nil {
 		return err
 	}
 
-	return c.JSON(200, invites)
+	// We make an anonymous struct array containing the same fields as
+	// ClaimedInvite from dbmgr, but tagged with JSON names. This is a bit more
+	// verbose than just putting the JSON metadata in the original ClaimedInvite
+	// struct, but it minimizes spaghetti by keeping functionality where it's
+	// supposed to be (database interaction in dbmgr, JSON serialization in
+	// handlers)
+	invitesRes := make([]struct {
+		Code      string `json:"code"`
+		Username  string `json:"createdBy"`
+		ClaimedBy string `json:"claimedBy"`
+	}, len(invites))
+
+	for i, invr := range invitesRes {
+		inv := &invites[i]
+
+		invr.Code = inv.Code
+		invr.Username = inv.Username
+		invr.ClaimedBy = inv.ClaimedBy
+	}
+
+	return c.JSON(200, invitesRes)
 }
 
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
 	code := c.Param("code")
-	invite := &InviteCode{
+	invite := InviteCode{
 		Code:      code,
 		CreatedBy: u.ID,
 	}
-	if err := s.DB.Create(invite).Error; err != nil {
+
+	if err := s.DB.InviteCodes().Create(invite); err != nil {
 		return err
 	}
 
@@ -1334,48 +1345,48 @@ type adminStatsResponse struct {
 
 func (s *Server) handleAdminStats(c echo.Context) error {
 
-	var dealsTotal int64
-	if err := s.DB.Model(&contentDeal{}).Count(&dealsTotal).Error; err != nil {
+	dealsTotal, err := s.DB.Deals().Count()
+	if err != nil {
 		return err
 	}
 
-	var dealsSuccessful int64
-	if err := s.DB.Model(&contentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
+	dealsSuccessful, err := s.DB.Deals().WithSuccessful(true).Count()
+	if err != nil {
 		return err
 	}
 
-	var dealsFailed int64
-	if err := s.DB.Model(&contentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
+	dealsFailed, err := s.DB.Deals().WithFailed(true).Count()
+	if err != nil {
 		return err
 	}
 
-	var numMiners int64
-	if err := s.DB.Model(&storageMiner{}).Count(&numMiners).Error; err != nil {
+	numMiners, err := s.DB.StorageMiners().Count()
+	if err != nil {
 		return err
 	}
 
-	var numUsers int64
-	if err := s.DB.Model(&User{}).Count(&numUsers).Error; err != nil {
+	numUsers, err := s.DB.Users().Count()
+	if err != nil {
 		return err
 	}
 
-	var numFiles int64
-	if err := s.DB.Model(&Content{}).Where("active").Count(&numFiles).Error; err != nil {
+	numFiles, err := s.DB.Contents().WithActive(true).Count()
+	if err != nil {
 		return err
 	}
 
-	var numRetrievals int64
-	if err := s.DB.Model(&retrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
+	numRetrievals, err := s.DB.RetrievalSuccessRecords().Count()
+	if err != nil {
 		return err
 	}
 
-	var numRetrievalFailures int64
-	if err := s.DB.Model(&retrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
+	numRetrievalFailures, err := s.DB.RetrievalFailureRecords().Count()
+	if err != nil {
 		return err
 	}
 
-	var numStorageFailures int64
-	if err := s.DB.Model(&dfeRecord{}).Count(&numStorageFailures).Error; err != nil {
+	numStorageFailures, err := s.DB.DFERecords().Count()
+	if err != nil {
 		return err
 	}
 
