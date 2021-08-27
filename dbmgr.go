@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
+	"github.com/filecoin-project/go-address"
 	gocid "github.com/ipfs/go-cid"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -383,6 +384,27 @@ func (q *ObjRefsQuery) WithPinID(pinID uint) *ObjRefsQuery {
 	return q
 }
 
+func (q *ObjRefsQuery) WithContentID(contentID uint) *ObjRefsQuery {
+	q.DB = q.DB.Where("content = ?", contentID)
+	return q
+}
+
+type ObjRefStats struct {
+	Bandwidth  int64
+	TotalReads int64
+}
+
+func (q *ObjRefsQuery) GetStats() (ObjRefStats, error) {
+	var stats ObjRefStats
+	if err := q.DB.Model(ObjRef{}).
+		Select("SUM(size * reads) as bandwidth, SUM(reads) as total_reads").
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&stats).Error; err != nil {
+		return ObjRefStats{}, err
+	}
+	return stats, nil
+}
+
 func (q *ObjRefsQuery) Delete() error {
 	return q.DB.Delete(&ObjRef{}).Error
 }
@@ -576,12 +598,41 @@ func NewStorageMinersQuery(db *gorm.DB) *StorageMinersQuery {
 	return &StorageMinersQuery{DB: db.Model(&storageMiner{})}
 }
 
+func (q *StorageMinersQuery) WithAddress(addr address.Address) *StorageMinersQuery {
+	q.DB = q.DB.Where("address = ?", addr.String())
+	return q
+}
+
+func (q *StorageMinersQuery) SetName(name string) error {
+	return q.DB.Update("name", name).Error
+}
+
+func (q *StorageMinersQuery) Get() (storageMiner, error) {
+	var miner storageMiner
+	if err := q.DB.Take(&miner).Error; err != nil {
+		return storageMiner{}, err
+	}
+	return miner, nil
+}
+
+func (q *StorageMinersQuery) GetAll() ([]storageMiner, error) {
+	var miners []storageMiner
+	if err := q.DB.Find(&miners).Error; err != nil {
+		return nil, err
+	}
+	return miners, nil
+}
+
 func (q *StorageMinersQuery) Count() (int64, error) {
 	var count int64
 	if err := q.DB.Count(&count).Error; err != nil {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (q *StorageMinersQuery) Delete() error {
+	return q.DB.Delete(&storageMiner{}).Error
 }
 
 // RETRIEVAL SUCCESS RECORDS

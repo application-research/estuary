@@ -363,21 +363,13 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		}
 
 		if false {
-			var res struct {
-				Bw         int64
-				TotalReads int64
-			}
-
-			if err := s.DB.Model(ObjRef{}).
-				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
-				Where("obj_refs.content = ?", c.ID).
-				Joins("left join objects on obj_refs.object = objects.id").
-				Scan(&res).Error; err != nil {
+			stats, err := s.DB.ObjRefs().WithContentID(c.ID).GetStats()
+			if err != nil {
 				return err
 			}
 
-			st.TotalRequests = res.TotalReads
-			st.BWUsed = res.Bw
+			st.TotalRequests = stats.TotalReads
+			st.BWUsed = stats.Bandwidth
 		}
 
 		if c.Aggregate {
@@ -1404,21 +1396,20 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	})
 }
 
-type minerResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
-}
-
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
-	var miners []storageMiner
-	if err := s.DB.Find(&miners).Error; err != nil {
+	miners, err := s.DB.StorageMiners().GetAll()
+	if err != nil {
 		return err
 	}
 
-	out := make([]minerResp, len(miners))
+	out := make([]struct {
+		Addr            address.Address `json:"addr"`
+		Name            string          `json:"name"`
+		Suspended       bool            `json:"suspended"`
+		SuspendedReason string          `json:"suspendedReason,omitempty"`
+		Version         string          `json:"version"`
+	}, len(miners))
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
@@ -1449,8 +1440,8 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+	sm, err := s.DB.StorageMiners().WithAddress(m).Get()
+	if err != nil {
 		return err
 	}
 
@@ -1466,7 +1457,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+	if err := s.DB.StorageMiners().WithAddress(m).SetName(params.Name); err != nil {
 		return err
 	}
 
@@ -1479,7 +1470,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+	if err := s.DB.StorageMiners().WithAddress(m).Delete(); err != nil {
 		return err
 	}
 
@@ -1496,8 +1487,8 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+	sm, err := s.DB.StorageMiners().WithAddress(m).Get()
+	if err != nil {
 		return err
 	}
 
