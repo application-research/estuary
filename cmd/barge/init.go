@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	cli "github.com/urfave/cli/v2"
 )
@@ -10,7 +12,19 @@ import (
 var initCmd = &cli.Command{
 	Name:  "init",
 	Usage: "initialize a barge repo in the current directory",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "collection",
+			Usage: "specify an alternative name for this collection of data",
+		},
+		&cli.StringFlag{
+			Name:  "description",
+			Usage: "optionally set a description for this collection of data",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
+		ctx := cctx.Context
+
 		inited, err := repoIsInitialized()
 		if err != nil {
 			return err
@@ -21,12 +35,47 @@ var initCmd = &cli.Command{
 			return nil
 		}
 
+		c, err := loadClient(cctx)
+		if err != nil {
+			return err
+		}
+
 		if err := os.Mkdir(".barge", 0775); err != nil {
 			return err
 		}
 
-		// other stuff?
-		return nil
+		r, err := openRepo(cctx)
+		if err != nil {
+			return err
+		}
+
+		colname := cctx.String("collection")
+		desc := cctx.String("description")
+
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		if colname == "" {
+			buf := make([]byte, 3)
+			rand.Read(buf)
+
+			colname = fmt.Sprintf("%s-%x", filepath.Base(wd), buf)
+		}
+		if desc == "" {
+			desc = wd
+		}
+
+		col, err := c.CollectionsCreate(ctx, colname, desc)
+		if err != nil {
+			return err
+		}
+
+		r.Cfg.Set("collection.uuid", col.UUID)
+		r.Cfg.Set("collection.name", col.Name)
+
+		return r.Cfg.SafeWriteConfig()
 	},
 }
 

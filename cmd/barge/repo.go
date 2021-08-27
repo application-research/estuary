@@ -11,6 +11,7 @@ import (
 	"github.com/ipfs/go-filestore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/mitchellh/go-homedir"
+	"github.com/spf13/viper"
 	cli "github.com/urfave/cli/v2"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -20,6 +21,8 @@ type Repo struct {
 	DB        *gorm.DB
 	Filestore *filestore.Filestore
 	Dir       string
+
+	Cfg *viper.Viper
 }
 
 type File struct {
@@ -84,6 +87,22 @@ func openRepo(cctx *cli.Context) (*Repo, error) {
 
 	reporoot := filepath.Dir(dir)
 
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("json")
+	v.AddConfigPath(dir)
+
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			if err := v.WriteConfigAs("config"); err != nil {
+				return nil, err
+			}
+		} else {
+			fmt.Printf("read err: %#v\n", err)
+			return nil, err
+		}
+	}
+
 	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "barge.db")), &gorm.Config{})
 	if err != nil {
 		return nil, err
@@ -112,5 +131,6 @@ func openRepo(cctx *cli.Context) (*Repo, error) {
 		DB:        db,
 		Filestore: fstore,
 		Dir:       reporoot,
+		Cfg:       v,
 	}, nil
 }

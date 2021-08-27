@@ -546,17 +546,15 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	/*
-		var col *Collection
-		if params.Collection != "" {
-			var srchCol Collection
-			if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
-				return err
-			}
-
-			col = &srchCol
+	var cols []*Collection
+	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
+		var srchCol Collection
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
+			return err
 		}
-	*/
+
+		cols = []*Collection{&srchCol}
+	}
 
 	var addrInfos []peer.AddrInfo
 	for _, p := range pin.Origins {
@@ -573,7 +571,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, 0, pin.Meta)
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta)
 	if err != nil {
 		return err
 	}
