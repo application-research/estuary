@@ -46,16 +46,3 @@ type ObjRef struct {
 	Object uint
 	//Offloaded bool
 }
-
-func setupDatabase(dbval string) (*gorm.DB, error) {
-	db, err := util.SetupDatabase(dbval)
-	if err != nil {
-		return nil, err
-	}
-
-	db.AutoMigrate(&Pin{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-
-	return db, nil
-}

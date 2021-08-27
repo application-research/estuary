@@ -21,8 +21,8 @@ import (
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
-	"gorm.io/gorm"
 
+	"github.com/application-research/estuary/dbmgr"
 	"github.com/application-research/estuary/drpc"
 	node "github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -185,7 +185,7 @@ func main() {
 			return err
 		}
 
-		db, err := setupDatabase(cctx.String("database"))
+		db, err := dbmgr.NewDBMgr(cctx.String("database"))
 		if err != nil {
 			return err
 		}
@@ -326,7 +326,7 @@ func main() {
 type Shuttle struct {
 	Node       *node.Node
 	Api        api.Gateway
-	DB         *gorm.DB
+	DB         *dbmgr.DBMgr
 	PinMgr     *pinner.PinManager
 	Filc       *filclient.FilClient
 	StagingMgr *stagingbs.StagingBSMgr
