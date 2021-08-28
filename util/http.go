@@ -87,6 +87,8 @@ type ViewerResponse struct {
 	Address  string   `json:"address,omitempty"`
 	Miners   []string `json:"miners"`
 
+	AuthExpiry time.Time
+
 	Settings UserSettings `json:"settings"`
 }
 
