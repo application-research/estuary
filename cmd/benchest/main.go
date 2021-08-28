@@ -102,7 +102,9 @@ var benchAddFileCmd = &cli.Command{
 
 			outstats, err := RunBench(name, fi, host, estToken)
 			if err != nil {
-				return err
+				fmt.Fprintln(os.Stderr, "failed to run bench: ", err)
+				time.Sleep(time.Second * 15)
+				continue
 			}
 
 			outstats.Runner = runner

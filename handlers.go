@@ -240,6 +240,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
+	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -3405,4 +3406,12 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
+	aggr, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
 }

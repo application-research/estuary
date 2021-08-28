@@ -28,7 +28,7 @@ func ImportFile(dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 
 		CidBuilder: cidutil.InlineBuilder{
 			Builder: prefix,
-			Limit:   126,
+			Limit:   32,
 		},
 
 		Dagserv: dserv,
