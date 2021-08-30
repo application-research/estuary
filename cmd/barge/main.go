@@ -34,6 +34,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
@@ -554,13 +555,15 @@ func connectToDelegates(ctx context.Context, h host.Host, delegates []string) er
 	}
 
 	for p := range peers {
-		if err := h.Connect(ctx, peer.AddrInfo{
-			ID: p,
-		}); err != nil {
-			return err
-		}
+		if h.Network().Connectedness(p) != network.Connected {
+			if err := h.Connect(ctx, peer.AddrInfo{
+				ID: p,
+			}); err != nil {
+				return err
+			}
 
-		h.ConnManager().Protect(p, "pinning")
+			h.ConnManager().Protect(p, "pinning")
+		}
 	}
 
 	return nil
@@ -955,6 +958,7 @@ var bargeSyncCmd = &cli.Command{
 				}
 
 				checks++
+				fmt.Println("checking pin status: ", p.RequestID)
 				status, err := c.PinStatus(ctx, p.RequestID)
 				if err != nil {
 					fmt.Println("error getting pin status: ", err)
@@ -972,11 +976,10 @@ var bargeSyncCmd = &cli.Command{
 				default:
 				}
 
-				/*
-					if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
-						fmt.Println("failed to connect to pin delegates: ", err)
-					}
-				*/
+				if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
+					fmt.Println("failed to connect to pin delegates: ", err)
+				}
+
 				if checks%50 == 0 {
 					fmt.Printf("pinned: %d, pinning: %d, failed: %d\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed))
 				}

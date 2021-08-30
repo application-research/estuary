@@ -3414,4 +3414,31 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return err
 	}
 
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
+		return err
+	}
+
+	if !cont.Aggregate {
+		return fmt.Errorf("content %d is not an aggregate", aggr)
+	}
+
+	var children []Content
+	if err := s.DB.Find(&children, "aggregated_in = ?", aggr).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(Content{}).Where("aggregated_in = ?", aggr).UpdateColumns(map[string]interface{}{
+		"aggregated_in": 0,
+	}).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(Content{}).Where("id = ?", aggr).UpdateColumns(map[string]interface{}{
+		"active": false,
+	}).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }
