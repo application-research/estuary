@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/cheggaaa/pb/v3"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -24,7 +27,6 @@ import (
 	"github.com/ipfs/go-filestore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
-	files "github.com/ipfs/go-ipfs-files"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
@@ -339,6 +341,7 @@ type filestoreFile struct {
 	*os.File
 	absPath string
 	st      os.FileInfo
+	cb      func(int64)
 }
 
 func (ff *filestoreFile) AbsPath() string {
@@ -358,7 +361,13 @@ func (ff *filestoreFile) Stat() os.FileInfo {
 	return ff.st
 }
 
-func newFF(fpath string) (*filestoreFile, error) {
+func (ff *filestoreFile) Read(b []byte) (int, error) {
+	n, err := ff.File.Read(b)
+	ff.cb(int64(n))
+	return n, err
+}
+
+func newFF(fpath string, cb func(int64)) (*filestoreFile, error) {
 	fi, err := os.Open(fpath)
 	if err != nil {
 		return nil, err
@@ -378,6 +387,7 @@ func newFF(fpath string) (*filestoreFile, error) {
 		File:    fi,
 		absPath: absp,
 		st:      st,
+		cb:      cb,
 	}, nil
 }
 
@@ -407,7 +417,8 @@ var plumbSplitAddFileCmd = &cli.Command{
 
 		fname := cctx.Args().First()
 
-		fcid, err := filestoreAdd(fstore, fname)
+		progcb := func(int64) {}
+		fcid, err := filestoreAdd(fstore, fname, progcb)
 		if err != nil {
 			return err
 		}
@@ -524,13 +535,12 @@ var plumbSplitAddFileCmd = &cli.Command{
 	},
 }
 
-func filestoreAdd(fstore *filestore.Filestore, fpath string) (cid.Cid, error) {
-	ff, err := newFF(fpath)
+func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64)) (cid.Cid, error) {
+	ff, err := newFF(fpath, progcb)
 	if err != nil {
 		return cid.Undef, err
 	}
-
-	var _ files.FileInfo = ff
+	defer ff.Close()
 
 	dserv := merkledag.NewDAGService(blockservice.New(fstore, nil))
 	nd, err := importFile(dserv, ff)
@@ -618,6 +628,7 @@ var bargeAddCmd = &cli.Command{
 			}
 
 			for _, m := range matches {
+				// TODO: reuse these stats...
 				st, err := os.Stat(m)
 				if err != nil {
 					return err
@@ -636,43 +647,132 @@ var bargeAddCmd = &cli.Command{
 			}
 		}
 
-		for i, f := range paths {
-			if progress {
-				fmt.Printf("                                        \r")
-				fmt.Printf("[%d/%d] adding files...", i, len(paths))
+		progcb := func(int64) {}
+		incrTotal := func(int64) {}
+		finish := func() {}
+
+		if progress {
+			bar := pb.New64(0)
+
+			bar.Set(pb.Bytes, true)
+			bar.SetTemplate(pb.Full)
+			bar.Start()
+
+			progcb = func(amt int64) {
+				bar.Add64(amt)
 			}
 
-			st, err := os.Stat(f)
-			if err != nil {
-				return err
+			var total int64
+			var totlk sync.Mutex
+
+			incrTotal = func(amt int64) {
+				totlk.Lock()
+				total += amt
+				bar.SetTotal(total)
+				totlk.Unlock()
 			}
 
-			var found []File
-			if err := r.DB.Find(&found, "path = ?", f).Error; err != nil {
-				return err
+			finish = func() {
+				bar.Finish()
 			}
 
-			if len(found) > 0 {
-				existing := found[0]
+		}
 
-				// have it already... check if its changed
-				if st.ModTime().Equal(existing.Mtime) {
-					// mtime the same, assume its the same file...
-					continue
+		type addJob struct {
+			Path  string
+			Found []File
+			Stat  os.FileInfo
+		}
+
+		type updateJob struct {
+			Path  string
+			Found []File
+			Stat  os.FileInfo
+			Cid   cid.Cid
+		}
+
+		tocheck := make(chan string, 1)
+		toadd := make(chan addJob, 128)
+		toupdate := make(chan updateJob, 1)
+
+		go func() {
+			defer close(tocheck)
+			for _, f := range paths {
+				tocheck <- f
+			}
+		}()
+
+		go func() {
+			defer close(toadd)
+			for p := range tocheck {
+				st, err := os.Stat(p)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				incrTotal(st.Size())
+
+				var found []File
+				if err := r.DB.Find(&found, "path = ?", p).Error; err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				if len(found) > 0 {
+					existing := found[0]
+
+					// have it already... check if its changed
+					if st.ModTime().Equal(existing.Mtime) {
+						// mtime the same, assume its the same file...
+						continue
+					}
+				}
+
+				toadd <- addJob{
+					Path:  p,
+					Found: found,
+					Stat:  st,
 				}
 			}
+		}()
 
-			fcid, err := filestoreAdd(r.Filestore, f)
-			if err != nil {
-				return err
-			}
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
 
-			if len(found) > 0 {
-				existing := found[0]
-				if existing.Cid != fcid.String() {
+			go func() {
+				defer wg.Done()
+				for aj := range toadd {
+					fcid, err := filestoreAdd(r.Filestore, aj.Path, progcb)
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+
+					toupdate <- updateJob{
+						Path:  aj.Path,
+						Found: aj.Found,
+						Cid:   fcid,
+						Stat:  aj.Stat,
+					}
+				}
+			}()
+		}
+
+		go func() {
+			wg.Wait()
+			close(toupdate)
+		}()
+
+		var batchCreates []*File
+		for uj := range toupdate {
+			if len(uj.Found) > 0 {
+				existing := uj.Found[0]
+				if existing.Cid != uj.Cid.String() {
 					if err := r.DB.Model(File{}).Where("id = ?", existing.ID).UpdateColumns(map[string]interface{}{
-						"cid":   fcid.String(),
-						"mtime": st.ModTime(),
+						"cid":   uj.Cid.String(),
+						"mtime": uj.Stat.ModTime(),
 					}).Error; err != nil {
 						return err
 					}
@@ -681,7 +781,7 @@ var bargeAddCmd = &cli.Command{
 				continue
 			}
 
-			abs, err := filepath.Abs(f)
+			abs, err := filepath.Abs(uj.Path)
 			if err != nil {
 				return err
 			}
@@ -691,14 +791,18 @@ var bargeAddCmd = &cli.Command{
 				return err
 			}
 
-			if err := r.DB.Create(&File{
+			batchCreates = append(batchCreates, &File{
 				Path:  rel,
-				Cid:   fcid.String(),
-				Mtime: st.ModTime(),
-			}).Error; err != nil {
-				return err
-			}
+				Cid:   uj.Cid.String(),
+				Mtime: uj.Stat.ModTime(),
+			})
 		}
+
+		if err := r.DB.CreateInBatches(batchCreates, 100).Error; err != nil {
+			return err
+		}
+
+		finish()
 
 		return nil
 	},
@@ -805,6 +909,16 @@ var bargeStatusCmd = &cli.Command{
 	},
 }
 
+type fileWithPin struct {
+	FileID uint
+	PinID  uint
+
+	Cid       string
+	Path      string
+	Status    string
+	RequestID string
+}
+
 var bargeSyncCmd = &cli.Command{
 	Name: "sync",
 	Action: func(cctx *cli.Context) error {
@@ -819,8 +933,15 @@ var bargeSyncCmd = &cli.Command{
 			return err
 		}
 
-		var files []File
-		if err := r.DB.Find(&files).Error; err != nil {
+		/*
+			var files []File
+			if err := r.DB.Find(&files).Error; err != nil {
+				return err
+			}
+		*/
+
+		var filespins []fileWithPin
+		if err := r.DB.Model(File{}).Joins("left join pins on pins.file = files.id AND pins.cid = files.cid").Select("files.id as file_id, pins.id as pin_id, path, status, request_id, files.cid as cid").Scan(&filespins).Error; err != nil {
 			return err
 		}
 
@@ -834,40 +955,69 @@ var bargeSyncCmd = &cli.Command{
 			addrs = append(addrs, fmt.Sprintf("%s/p2p/%s", a, h.ID()))
 		}
 
-		var pinComplete []File
-		var needsNewPin []File
+		var pinComplete []fileWithPin
+		var needsNewPin []fileWithPin
 		var inProgress []*Pin
-		for _, f := range files {
-			var pin Pin
-			if err := r.DB.Find(&pin, "file = ? AND cid = ?", f.ID, f.Cid).Error; err != nil {
-				return err
-			}
-			if pin.ID == 0 {
+		var checkProgress []fileWithPin
+		for _, f := range filespins {
+			if f.PinID == 0 {
 				needsNewPin = append(needsNewPin, f)
 				continue
 			}
 
-			if pin.Status == "pinned" {
+			if f.Status == "pinned" {
 				// TODO: add flag to allow a forced rechecking
 				continue
 			}
 
-			st, err := c.PinStatus(ctx, pin.RequestID)
+			checkProgress = append(checkProgress, f)
+		}
+
+		batchSize := 500
+		fmt.Printf("need to check progress of %d pins\n", len(checkProgress))
+		for i := 0; i < len(checkProgress); i += batchSize {
+			log.Printf("getting pin statuses: %d / %d\n", i, len(checkProgress))
+			end := i + batchSize
+			if end > len(checkProgress) {
+				end = len(checkProgress)
+			}
+
+			var reqids []string
+			for _, p := range checkProgress[i:end] {
+				reqids = append(reqids, p.RequestID)
+			}
+
+			resp, err := c.PinStatuses(ctx, reqids)
 			if err != nil {
 				return err
 			}
 
-			switch st.Status {
-			case "pinned":
-				if err := r.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumn("status", st.Status).Error; err != nil {
-					return err
+			for _, fp := range checkProgress[i:end] {
+				st, ok := resp[fp.RequestID]
+				if !ok {
+					return fmt.Errorf("did not get status back for requestid %s", fp.RequestID)
 				}
-				pinComplete = append(pinComplete, f)
-			case "failed":
-				needsNewPin = append(needsNewPin, f)
-			default:
-				// pin is technically in progress? do nothing for now
-				inProgress = append(inProgress, &pin)
+
+				switch st.Status {
+				case "pinned":
+					pinComplete = append(pinComplete, fp)
+					if err := r.DB.Model(Pin{}).Where("id = ?", fp.PinID).UpdateColumn("status", st.Status).Error; err != nil {
+						return err
+					}
+				case "failed":
+					needsNewPin = append(needsNewPin, fp)
+					if err := r.DB.Delete(Pin{ID: fp.PinID}).Error; err != nil {
+						return err
+					}
+				default:
+					// pin is technically in progress? do nothing for now
+					inProgress = append(inProgress, &Pin{
+						ID:        fp.PinID,
+						File:      fp.FileID,
+						Status:    fp.Status,
+						RequestID: fp.RequestID,
+					})
+				}
 			}
 		}
 
@@ -914,7 +1064,7 @@ var bargeSyncCmd = &cli.Command{
 				dplk.Unlock()
 
 				p := &Pin{
-					File:      f.ID,
+					File:      f.FileID,
 					Cid:       fcid.String(),
 					RequestID: resp.Requestid,
 					Status:    resp.Status,
@@ -951,42 +1101,76 @@ var bargeSyncCmd = &cli.Command{
 		complete := make(map[string]bool)
 		failed := make(map[string]bool)
 		for range time.Tick(time.Second * 2) {
-			checks := 0
+
+		loopstart:
+			var tocheck []string
 			for _, p := range inProgress {
 				if complete[p.RequestID] || failed[p.RequestID] {
 					continue
 				}
 
-				checks++
-				fmt.Println("checking pin status: ", p.RequestID)
-				status, err := c.PinStatus(ctx, p.RequestID)
-				if err != nil {
-					fmt.Println("error getting pin status: ", err)
+				tocheck = append(tocheck, p.RequestID)
+
+				if len(tocheck) >= 300 {
+					break
+				}
+			}
+
+			// if we have a lot of pins still to check, start randomly selecting some to look at
+			if len(inProgress)-(len(complete)+len(failed)) > batchSize*2 {
+				for i := 0; i < 200; i++ {
+					p := inProgress[rand.Intn(len(inProgress))]
+					if complete[p.RequestID] || failed[p.RequestID] {
+						continue
+					}
+
+					tocheck = append(tocheck, p.RequestID)
+				}
+			}
+
+			statuses, err := c.PinStatuses(ctx, tocheck)
+			if err != nil {
+				return err
+			}
+
+			var newdone int
+			for _, req := range tocheck {
+				status, ok := statuses[req]
+				if !ok {
+					fmt.Printf("didnt get expected pin status back in request: %s\n", req)
 					continue
 				}
 
 				switch status.Status {
 				case "pinned":
-					complete[p.RequestID] = true
-					if err := r.DB.Model(Pin{}).Where("id = ?", p.ID).UpdateColumn("status", "pinned").Error; err != nil {
+					newdone++
+					complete[req] = true
+					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).UpdateColumn("status", "pinned").Error; err != nil {
 						return err
 					}
 				case "failed":
-					failed[p.RequestID] = true
+					newdone++
+					failed[req] = true
+					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).Delete(Pin{}).Error; err != nil {
+						return err
+					}
 				default:
 				}
 
 				if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
 					fmt.Println("failed to connect to pin delegates: ", err)
 				}
-
-				if checks%50 == 0 {
-					fmt.Printf("pinned: %d, pinning: %d, failed: %d\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed))
-				}
 			}
+
+			fmt.Printf("pinned: %d, pinning: %d, failed: %d\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed))
 
 			if len(failed)+len(complete) >= len(inProgress) {
 				break
+			}
+
+			// dont wait if we get a high enough proportion of new info
+			if newdone > 100 {
+				goto loopstart
 			}
 		}
 

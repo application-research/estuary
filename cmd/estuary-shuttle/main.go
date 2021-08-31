@@ -41,6 +41,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -311,6 +312,20 @@ func main() {
 				}
 			}
 
+		}()
+
+		// setup metrics...
+		activeTransfers := metrics.New("active_transfers", "total number of active data transfers").Gauge()
+
+		go func() {
+			for range time.Tick(time.Second * 10) {
+				txs, err := d.Filc.TransfersInProgress(context.TODO())
+				if err != nil {
+					log.Errorf("failed to get transfers in progress: %s", err)
+					continue
+				}
+
+			}
 		}()
 
 		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))

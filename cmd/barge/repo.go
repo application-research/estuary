@@ -37,17 +37,19 @@ func (r *Repo) Close() error {
 }
 
 type File struct {
-	gorm.Model
-	Path  string
-	Cid   string
-	Mtime time.Time
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	Path      string `gorm:"index"`
+	Cid       string
+	Mtime     time.Time
 }
 
 type Pin struct {
-	gorm.Model
-	File      uint
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	File      uint `gorm:"index"`
 	Cid       string
-	RequestID string
+	RequestID string `gorm:"index"`
 	Status    string
 }
 

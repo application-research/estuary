@@ -1535,7 +1535,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if status == nil {
 		// no status for transfer, could be because the remote hasnt reported it to us yet?
-		log.Errorf("no status for deal: %d", d)
+		log.Warnf("no status for deal: %d", d.ID)
 		if d.DTChan == "" {
 			// No channel ID yet, shouldnt be able to get here actually
 			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")

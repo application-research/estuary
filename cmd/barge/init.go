@@ -98,7 +98,7 @@ var initCmd = &cli.Command{
 		r.Cfg.Set("collection.uuid", col.UUID)
 		r.Cfg.Set("collection.name", col.Name)
 
-		return r.Cfg.SafeWriteConfig()
+		return r.Cfg.WriteConfig()
 	},
 }
 

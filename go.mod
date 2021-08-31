@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/application-research/filclient v0.0.0-20210820032644-22262a5c9945
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
-	github.com/cheggaaa/pb/v3 v3.0.6
+	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
