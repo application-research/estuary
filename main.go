@@ -30,6 +30,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var log = logging.Logger("estuary")
@@ -232,10 +233,14 @@ func main() {
 					return err
 				}
 
+				quietdb := db.Session(&gorm.Session{
+					Logger: logger.Discard,
+				})
+
 				username := "admin"
 				passHash := ""
 
-				if err := db.First(&User{}, "username = ?", username).Error; err == nil {
+				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
 				}
 
@@ -258,7 +263,7 @@ func main() {
 					return fmt.Errorf("admin token creation failed: %w", err)
 				}
 
-				fmt.Printf("Auth Token: %v", authToken.Token)
+				fmt.Printf("Auth Token: %v\n", authToken.Token)
 
 				return nil
 			},
