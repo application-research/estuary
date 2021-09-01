@@ -651,7 +651,7 @@ func (cm *ContentManager) startup() error {
 
 func (cm *ContentManager) queueAllContent() error {
 	var allcontent []Content
-	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
+	if err := cm.DB.Find(&allcontent, "active AND (aggregated_in > 0 == dag_split) ").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
 
