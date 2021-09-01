@@ -440,7 +440,7 @@ func (q *ContentsQuery) OrderByID(order DBSortOrder) *ContentsQuery {
 }
 
 func (q *ContentsQuery) CreateAll(contents []Content) error {
-	return q.DB.Create(&contents).Error
+	return q.DB.Create(contents).Error
 }
 
 func (q *ContentsQuery) Get() (Content, error) {
