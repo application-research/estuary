@@ -351,6 +351,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qbefore := e.QueryParam("before")
 	qafter := e.QueryParam("after")
 	qlimit := e.QueryParam("limit")
+	qreqids := e.QueryParam("requestid")
 
 	q := s.DB.Model(Content{}).Where("user_id = ? and not aggregate", u.ID).Order("created_at desc")
 
@@ -387,6 +388,20 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		}
 
 		q = q.Where("created_at > ?", aftime)
+	}
+
+	if qreqids != "" {
+		var ids []int
+		for _, rs := range strings.Split(qreqids, ",") {
+			id, err := strconv.Atoi(rs)
+			if err != nil {
+				return err
+			}
+
+			ids = append(ids, id)
+		}
+
+		q = q.Where("id in ?", ids)
 	}
 
 	var lim int

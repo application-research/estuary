@@ -240,6 +240,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
+	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -684,6 +685,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		}
 	}()
 
+	var objlk sync.Mutex
 	var objects []*Object
 	cset := cid.NewSet()
 
@@ -700,10 +702,12 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		case <-ctx.Done():
 		}
 
+		objlk.Lock()
 		objects = append(objects, &Object{
 			Cid:  util.DbCID{c},
 			Size: len(node.RawData()),
 		})
+		objlk.Unlock()
 
 		if c.Type() == cid.Raw {
 			return nil, nil
@@ -2839,7 +2843,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	var deals []contentDeal
-	if err := s.DB.Find(&deals, "content = ?", cont.ID).Error; err != nil {
+	if err := s.DB.Find(&deals, "content = ? and not failed", cont.ID).Error; err != nil {
 		return err
 	}
 
@@ -2879,6 +2883,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	if cont.Location != "local" {
 		return c.JSON(200, map[string]interface{}{
+			"deals":              deals,
 			"content":            cont,
 			"error":              "requested content was not local to this instance, cannot check health right now",
 			"fixedAggregateSize": fixedAggregateSize,
@@ -3405,4 +3410,75 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
+	ctx := c.Request().Context()
+	aggr, err := strconv.Atoi(c.Param("content"))
+	if err != nil {
+		return err
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
+		return err
+	}
+
+	if !cont.Aggregate {
+		return fmt.Errorf("content %d is not an aggregate", aggr)
+	}
+
+	var children []Content
+	if err := s.DB.Find(&children, "aggregated_in = ?", aggr).Error; err != nil {
+		return err
+	}
+
+	if c.QueryParam("check-missing-children") != "" {
+		var childRes []map[string]interface{}
+		bserv := blockservice.New(s.Node.Blockstore, nil)
+		dserv := merkledag.NewDAGService(bserv)
+
+		for _, c := range children {
+
+			cset := cid.NewSet()
+			err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+				node, err := dserv.Get(ctx, c)
+				if err != nil {
+					return nil, err
+				}
+
+				if c.Type() == cid.Raw {
+					return nil, nil
+				}
+
+				return node.Links(), nil
+			}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
+			res := map[string]interface{}{
+				"content":     c,
+				"foundBlocks": cset.Len(),
+			}
+			if err != nil {
+				res["walkErr"] = err.Error()
+			}
+			childRes = append(childRes, res)
+		}
+
+		return c.JSON(200, map[string]interface{}{
+			"children": childRes,
+		})
+	}
+
+	if err := s.DB.Model(Content{}).Where("aggregated_in = ?", aggr).UpdateColumns(map[string]interface{}{
+		"aggregated_in": 0,
+	}).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(Content{}).Where("id = ?", aggr).UpdateColumns(map[string]interface{}{
+		"active": false,
+	}).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
 }

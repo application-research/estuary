@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/viper"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -20,6 +21,10 @@ var initCmd = &cli.Command{
 		&cli.StringFlag{
 			Name:  "description",
 			Usage: "optionally set a description for this collection of data",
+		},
+		&cli.StringFlag{
+			Name:  "dbdir",
+			Usage: "set the location of the barge repo database",
 		},
 	},
 	Action: func(cctx *cli.Context) error {
@@ -41,6 +46,24 @@ var initCmd = &cli.Command{
 		}
 
 		if err := os.Mkdir(".barge", 0775); err != nil {
+			return err
+		}
+
+		cwd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
+
+		v := viper.New()
+		v.SetConfigName("config")
+		v.SetConfigType("json")
+		v.AddConfigPath(filepath.Join(cwd, ".barge"))
+
+		if dbdir := cctx.String("dbdir"); dbdir != "" {
+			v.Set("database.directory", dbdir)
+		}
+
+		if err := v.WriteConfigAs(filepath.Join(filepath.Join(cwd, ".barge", "config.json"))); err != nil {
 			return err
 		}
 
@@ -75,7 +98,7 @@ var initCmd = &cli.Command{
 		r.Cfg.Set("collection.uuid", col.UUID)
 		r.Cfg.Set("collection.name", col.Name)
 
-		return r.Cfg.SafeWriteConfig()
+		return r.Cfg.WriteConfig()
 	},
 }
 

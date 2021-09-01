@@ -651,7 +651,7 @@ func (cm *ContentManager) startup() error {
 
 func (cm *ContentManager) queueAllContent() error {
 	var allcontent []Content
-	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
+	if err := cm.DB.Find(&allcontent, "active AND (aggregated_in > 0 == dag_split) ").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
 
@@ -1399,9 +1399,26 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	defer cancel()
 	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
 	if err != nil {
+		log.Warnf("failed to check deal status with miner %s: %s", maddr, err)
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
-		return DEAL_CHECK_UNKNOWN, xerrors.Errorf("checking deal status through client failed: %w", err)
+		expired, err := cm.dealHasExpired(ctx, d)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to check if deal was expired: %w", err)
+		}
+		if expired {
+			// deal expired, miner didnt start it in time
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   maddr,
+				Phase:   "check-status",
+				Message: "was unable to check deal status with miner and now deal has expired",
+				Content: d.Content,
+			})
+			return DEAL_CHECK_UNKNOWN, nil
+		}
+
+		// dont fail it out until they run out of time, they might just be offline momentarily
+		return DEAL_CHECK_PROGRESS, nil
 	}
 
 	content, err := cm.getContent(d.Content)
@@ -1477,6 +1494,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if provds.Proposal == nil {
 		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID)
+		if time.Since(d.CreatedAt) > time.Hour*24*14 {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   maddr,
+				Phase:   "check-status",
+				Message: "miner returned nil response proposal and deal expired",
+				Content: d.Content,
+			})
+			return DEAL_CHECK_UNKNOWN, nil
+
+		}
 		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner for deal status check")
 	}
 
@@ -1508,7 +1535,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if status == nil {
 		// no status for transfer, could be because the remote hasnt reported it to us yet?
-		log.Errorf("no status for deal: %d", d)
+		log.Warnf("no status for deal: %d", d.ID)
 		if d.DTChan == "" {
 			// No channel ID yet, shouldnt be able to get here actually
 			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
@@ -1585,6 +1612,30 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	return DEAL_CHECK_PROGRESS, nil
+}
+
+func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (bool, error) {
+	prop, err := cm.getProposalRecord(d.PropCid.CID)
+	if err != nil {
+		log.Warnf("failed to get proposal record for deal %d: %s", d.ID, err)
+
+		if time.Since(d.CreatedAt) > time.Hour*24*14 {
+			return true, nil
+		}
+
+		return false, err
+	}
+
+	head, err := cm.Api.ChainHead(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	if prop.Proposal.StartEpoch < head.Height() {
+		return true, nil
+	}
+
+	return false, nil
 }
 
 type transferStatusRecord struct {
@@ -2125,6 +2176,20 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	}
 
 	return nil
+}
+
+func (cm *ContentManager) getProposalRecord(propCid cid.Cid) (*market.ClientDealProposal, error) {
+	var proprec proposalRecord
+	if err := cm.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		return nil, err
+	}
+
+	var prop market.ClientDealProposal
+	if err := prop.UnmarshalCBOR(bytes.NewReader(proprec.Data)); err != nil {
+		return nil, err
+	}
+
+	return &prop, nil
 }
 
 func (cm *ContentManager) recordDealFailure(dfe *DealFailureError) error {

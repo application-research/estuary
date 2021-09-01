@@ -41,6 +41,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -189,7 +190,12 @@ func main() {
 			return err
 		}
 
+		metCtx := metrics.CtxScope(context.Background(), "shuttle")
+		activeCommp := metrics.NewCtx(metCtx, "active_commp", "number of active piece commitment calculations ongoing").Gauge()
 		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			activeCommp.Inc()
+			defer activeCommp.Dec()
+
 			start := time.Now()
 
 			c, err := cid.Decode(k)
@@ -310,7 +316,21 @@ func main() {
 					log.Errorf("failed to send shuttle update: %s", err)
 				}
 			}
+		}()
 
+		// setup metrics...
+		activeTransfers := metrics.NewCtx(metCtx, "active_transfers", "total number of active data transfers").Gauge()
+
+		go func() {
+			for range time.Tick(time.Second * 10) {
+				txs, err := d.Filc.TransfersInProgress(context.TODO())
+				if err != nil {
+					log.Errorf("failed to get transfers in progress: %s", err)
+					continue
+				}
+
+				activeTransfers.Set(float64(len(txs)))
+			}
 		}()
 
 		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
@@ -836,6 +856,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		}
 	}()
 
+	var objlk sync.Mutex
 	var objects []*Object
 	var totalSize int64
 	cset := cid.NewSet()
@@ -853,12 +874,14 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		case <-ctx.Done():
 		}
 
+		objlk.Lock()
 		objects = append(objects, &Object{
 			Cid:  util.DbCID{c},
 			Size: len(node.RawData()),
 		})
 
 		totalSize += int64(len(node.RawData()))
+		objlk.Unlock()
 
 		if c.Type() == cid.Raw {
 			return nil, nil

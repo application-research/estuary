@@ -13,7 +13,7 @@ type Pin struct {
 	UpdatedAt time.Time      `json:"-"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Content uint
+	Content uint `gorm:"index"`
 
 	Cid util.DbCID `json:"cid"`
 	//Name        string     `json:"name"`

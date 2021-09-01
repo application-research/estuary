@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/application-research/estuary/types"
@@ -193,4 +194,24 @@ func (c *EstClient) PinStatus(ctx context.Context, reqid string) (*types.IpfsPin
 	}
 
 	return &resp, nil
+}
+
+type listPinsResp struct {
+	Count   int
+	Results []*types.IpfsPinStatus
+}
+
+func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[string]*types.IpfsPinStatus, error) {
+	var resp listPinsResp
+	_, err := c.doRequest(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]*types.IpfsPinStatus)
+	for _, res := range resp.Results {
+		out[res.Requestid] = res
+	}
+
+	return out, nil
 }

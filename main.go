@@ -30,6 +30,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var log = logging.Logger("estuary")
@@ -114,6 +115,8 @@ type Content struct {
 	Offloaded   bool       `json:"offloaded"`
 	Replication int        `json:"replication"`
 
+	// TODO: shift most of the 'state' booleans in here into a single state
+	// field, should make reasoning about things much simpler
 	AggregatedIn uint `json:"aggregatedIn"`
 	Aggregate    bool `json:"aggregate"`
 
@@ -128,6 +131,14 @@ type Content struct {
 	// making that process more resilient to failures
 	//LocID     uint   `json:"locID"`
 	//LocIntent uint   `json:"locIntent"`
+
+	// If set, this content is part of a split dag.
+	// In such a case, the 'root' content should be advertised on the dht, but
+	// not have deals made for it, and the children should have deals made for
+	// them (unlike with aggregates)
+	// For efficiencys sake, we will reuse the aggregate fields for describing
+	// the structure of splitdags
+	DagSplit bool `json:"dagSplit"`
 }
 
 type Object struct {
@@ -232,10 +243,14 @@ func main() {
 					return err
 				}
 
+				quietdb := db.Session(&gorm.Session{
+					Logger: logger.Discard,
+				})
+
 				username := "admin"
 				passHash := ""
 
-				if err := db.First(&User{}, "username = ?", username).Error; err == nil {
+				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
 				}
 
@@ -258,7 +273,7 @@ func main() {
 					return fmt.Errorf("admin token creation failed: %w", err)
 				}
 
-				fmt.Printf("Auth Token: %v", authToken.Token)
+				fmt.Printf("Auth Token: %v\n", authToken.Token)
 
 				return nil
 			},

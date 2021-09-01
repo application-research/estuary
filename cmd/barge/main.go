@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"math/rand"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 
+	"github.com/cheggaaa/pb/v3"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -23,7 +27,6 @@ import (
 	"github.com/ipfs/go-filestore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
-	files "github.com/ipfs/go-ipfs-files"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
@@ -33,6 +36,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
@@ -58,6 +62,7 @@ func main() {
 		bargeAddCmd,
 		bargeStatusCmd,
 		bargeSyncCmd,
+		bargeCheckCmd,
 	}
 	app.Before = func(cctx *cli.Context) error {
 		if err := loadConfig(); err != nil {
@@ -317,7 +322,7 @@ func importFile(dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 
 		CidBuilder: cidutil.InlineBuilder{
 			Builder: prefix,
-			Limit:   126,
+			Limit:   32,
 		},
 
 		Dagserv: dserv,
@@ -336,6 +341,7 @@ type filestoreFile struct {
 	*os.File
 	absPath string
 	st      os.FileInfo
+	cb      func(int64)
 }
 
 func (ff *filestoreFile) AbsPath() string {
@@ -355,7 +361,13 @@ func (ff *filestoreFile) Stat() os.FileInfo {
 	return ff.st
 }
 
-func newFF(fpath string) (*filestoreFile, error) {
+func (ff *filestoreFile) Read(b []byte) (int, error) {
+	n, err := ff.File.Read(b)
+	ff.cb(int64(n))
+	return n, err
+}
+
+func newFF(fpath string, cb func(int64)) (*filestoreFile, error) {
 	fi, err := os.Open(fpath)
 	if err != nil {
 		return nil, err
@@ -375,6 +387,7 @@ func newFF(fpath string) (*filestoreFile, error) {
 		File:    fi,
 		absPath: absp,
 		st:      st,
+		cb:      cb,
 	}, nil
 }
 
@@ -404,7 +417,8 @@ var plumbSplitAddFileCmd = &cli.Command{
 
 		fname := cctx.Args().First()
 
-		fcid, err := filestoreAdd(fstore, fname)
+		progcb := func(int64) {}
+		fcid, err := filestoreAdd(fstore, fname, progcb)
 		if err != nil {
 			return err
 		}
@@ -521,13 +535,12 @@ var plumbSplitAddFileCmd = &cli.Command{
 	},
 }
 
-func filestoreAdd(fstore *filestore.Filestore, fpath string) (cid.Cid, error) {
-	ff, err := newFF(fpath)
+func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64)) (cid.Cid, error) {
+	ff, err := newFF(fpath, progcb)
 	if err != nil {
 		return cid.Undef, err
 	}
-
-	var _ files.FileInfo = ff
+	defer ff.Close()
 
 	dserv := merkledag.NewDAGService(blockservice.New(fstore, nil))
 	nd, err := importFile(dserv, ff)
@@ -552,13 +565,15 @@ func connectToDelegates(ctx context.Context, h host.Host, delegates []string) er
 	}
 
 	for p := range peers {
-		if err := h.Connect(ctx, peer.AddrInfo{
-			ID: p,
-		}); err != nil {
-			return err
-		}
+		if h.Network().Connectedness(p) != network.Connected {
+			if err := h.Connect(ctx, peer.AddrInfo{
+				ID: p,
+			}); err != nil {
+				return err
+			}
 
-		h.ConnManager().Protect(p, "pinning")
+			h.ConnManager().Protect(p, "pinning")
+		}
 	}
 
 	return nil
@@ -592,13 +607,21 @@ func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (host.Host,
 
 var bargeAddCmd = &cli.Command{
 	Name: "add",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name: "progress",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		r, err := openRepo(cctx)
 		if err != nil {
 			return err
 		}
 
+		progress := cctx.Bool("progress")
+
 		var paths []string
+		// TODO: this expansion could be done in parallel to speed things up on large directories
 		for _, f := range cctx.Args().Slice() {
 			matches, err := filepath.Glob(f)
 			if err != nil {
@@ -606,6 +629,7 @@ var bargeAddCmd = &cli.Command{
 			}
 
 			for _, m := range matches {
+				// TODO: reuse these stats...
 				st, err := os.Stat(m)
 				if err != nil {
 					return err
@@ -624,38 +648,171 @@ var bargeAddCmd = &cli.Command{
 			}
 		}
 
-		for _, f := range paths {
-			st, err := os.Stat(f)
-			if err != nil {
-				return err
+		progcb := func(int64) {}
+		incrTotal := func(int64) {}
+		finish := func() {}
+
+		if progress {
+			bar := pb.New64(0)
+
+			bar.Set(pb.Bytes, true)
+			bar.SetTemplate(pb.Full)
+			bar.Start()
+
+			progcb = func(amt int64) {
+				bar.Add64(amt)
 			}
 
-			var found []File
-			if err := r.DB.Find(&found, "path = ?", f).Error; err != nil {
-				return err
+			var total int64
+			var totlk sync.Mutex
+
+			incrTotal = func(amt int64) {
+				totlk.Lock()
+				total += amt
+				bar.SetTotal(total)
+				totlk.Unlock()
 			}
 
-			if len(found) > 0 {
-				existing := found[0]
+			finish = func() {
+				bar.Finish()
+			}
 
-				// have it already... check if its changed
-				if st.ModTime().Equal(existing.Mtime) {
-					// mtime the same, assume its the same file...
-					continue
+		}
+
+		type addJob struct {
+			Path  string
+			Found []File
+			Stat  os.FileInfo
+		}
+
+		type updateJob struct {
+			Path  string
+			Found []File
+			Stat  os.FileInfo
+			Cid   cid.Cid
+		}
+
+		tocheck := make(chan string, 1)
+		tobuffer := make(chan *addJob, 128)
+		toadd := make(chan *addJob)
+		toupdate := make(chan updateJob, 128)
+
+		go func() {
+			defer close(tocheck)
+			for _, f := range paths {
+				tocheck <- f
+			}
+		}()
+
+		go func() {
+			defer close(tobuffer)
+			for p := range tocheck {
+				st, err := os.Stat(p)
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				incrTotal(st.Size())
+
+				var found []File
+				if err := r.DB.Find(&found, "path = ?", p).Error; err != nil {
+					fmt.Println(err)
+					return
+				}
+
+				if len(found) > 0 {
+					existing := found[0]
+
+					// have it already... check if its changed
+					if st.ModTime().Equal(existing.Mtime) {
+						// mtime the same, assume its the same file...
+						continue
+					}
+				}
+
+				tobuffer <- &addJob{
+					Path:  p,
+					Found: found,
+					Stat:  st,
 				}
 			}
+		}()
 
-			fcid, err := filestoreAdd(r.Filestore, f)
-			if err != nil {
-				return err
+		go func() {
+			defer close(toadd)
+			var next *addJob
+			var buffer []*addJob
+			var out chan *addJob
+			var inputDone bool
+
+			for {
+				select {
+				case aj, ok := <-tobuffer:
+					if !ok {
+						inputDone = true
+						if next == nil && len(buffer) == 0 {
+							return
+						}
+						continue
+					}
+					if out == nil {
+						next = aj
+						out = toadd
+					} else {
+						buffer = append(buffer, aj)
+					}
+				case out <- next:
+					if len(buffer) > 0 {
+						next = buffer[0]
+						buffer = buffer[1:]
+					} else {
+						out = nil
+						next = nil
+						if inputDone {
+							return
+						}
+					}
+				}
 			}
+		}()
 
-			if len(found) > 0 {
-				existing := found[0]
-				if existing.Cid != fcid.String() {
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+
+			go func() {
+				defer wg.Done()
+				for aj := range toadd {
+					fcid, err := filestoreAdd(r.Filestore, aj.Path, progcb)
+					if err != nil {
+						fmt.Println(err)
+						return
+					}
+
+					toupdate <- updateJob{
+						Path:  aj.Path,
+						Found: aj.Found,
+						Cid:   fcid,
+						Stat:  aj.Stat,
+					}
+				}
+			}()
+		}
+
+		go func() {
+			wg.Wait()
+			close(toupdate)
+		}()
+
+		var batchCreates []*File
+		for uj := range toupdate {
+			if len(uj.Found) > 0 {
+				existing := uj.Found[0]
+				if existing.Cid != uj.Cid.String() {
 					if err := r.DB.Model(File{}).Where("id = ?", existing.ID).UpdateColumns(map[string]interface{}{
-						"cid":   fcid.String(),
-						"mtime": st.ModTime(),
+						"cid":   uj.Cid.String(),
+						"mtime": uj.Stat.ModTime(),
 					}).Error; err != nil {
 						return err
 					}
@@ -664,7 +821,7 @@ var bargeAddCmd = &cli.Command{
 				continue
 			}
 
-			abs, err := filepath.Abs(f)
+			abs, err := filepath.Abs(uj.Path)
 			if err != nil {
 				return err
 			}
@@ -674,14 +831,25 @@ var bargeAddCmd = &cli.Command{
 				return err
 			}
 
-			if err := r.DB.Create(&File{
+			batchCreates = append(batchCreates, &File{
 				Path:  rel,
-				Cid:   fcid.String(),
-				Mtime: st.ModTime(),
-			}).Error; err != nil {
-				return err
+				Cid:   uj.Cid.String(),
+				Mtime: uj.Stat.ModTime(),
+			})
+
+			if len(batchCreates) > 200 {
+				if err := r.DB.CreateInBatches(batchCreates, 100).Error; err != nil {
+					return err
+				}
+				batchCreates = nil
 			}
 		}
+
+		if err := r.DB.CreateInBatches(batchCreates, 100).Error; err != nil {
+			return err
+		}
+
+		finish()
 
 		return nil
 	},
@@ -788,6 +956,16 @@ var bargeStatusCmd = &cli.Command{
 	},
 }
 
+type fileWithPin struct {
+	FileID uint
+	PinID  uint
+
+	Cid       string
+	Path      string
+	Status    string
+	RequestID string
+}
+
 var bargeSyncCmd = &cli.Command{
 	Name: "sync",
 	Action: func(cctx *cli.Context) error {
@@ -802,8 +980,15 @@ var bargeSyncCmd = &cli.Command{
 			return err
 		}
 
-		var files []File
-		if err := r.DB.Find(&files).Error; err != nil {
+		/*
+			var files []File
+			if err := r.DB.Find(&files).Error; err != nil {
+				return err
+			}
+		*/
+
+		var filespins []fileWithPin
+		if err := r.DB.Model(File{}).Joins("left join pins on pins.file = files.id AND pins.cid = files.cid").Select("files.id as file_id, pins.id as pin_id, path, status, request_id, files.cid as cid").Scan(&filespins).Error; err != nil {
 			return err
 		}
 
@@ -817,98 +1002,254 @@ var bargeSyncCmd = &cli.Command{
 			addrs = append(addrs, fmt.Sprintf("%s/p2p/%s", a, h.ID()))
 		}
 
-		var pinComplete []File
-		var needsNewPin []File
-		var inProgress []Pin
-		for _, f := range files {
-			var pin Pin
-			if err := r.DB.Find(&pin, "file = ? AND cid = ?", f.ID, f.Cid).Error; err != nil {
-				return err
-			}
-			if pin.ID == 0 {
+		var pinComplete []fileWithPin
+		var needsNewPin []fileWithPin
+		var inProgress []*Pin
+		var checkProgress []fileWithPin
+		for _, f := range filespins {
+			if f.PinID == 0 {
 				needsNewPin = append(needsNewPin, f)
 				continue
 			}
 
-			st, err := c.PinStatus(ctx, pin.RequestID)
+			if f.Status == "pinned" {
+				// TODO: add flag to allow a forced rechecking
+				continue
+			}
+
+			checkProgress = append(checkProgress, f)
+		}
+
+		batchSize := 500
+		fmt.Printf("need to check progress of %d pins\n", len(checkProgress))
+		for i := 0; i < len(checkProgress); i += batchSize {
+			log.Printf("getting pin statuses: %d / %d\n", i, len(checkProgress))
+			end := i + batchSize
+			if end > len(checkProgress) {
+				end = len(checkProgress)
+			}
+
+			var reqids []string
+			for _, p := range checkProgress[i:end] {
+				reqids = append(reqids, p.RequestID)
+			}
+
+			resp, err := c.PinStatuses(ctx, reqids)
 			if err != nil {
 				return err
 			}
 
-			switch st.Status {
-			case "complete":
-				pinComplete = append(pinComplete, f)
-			case "failed":
-				needsNewPin = append(needsNewPin, f)
-			default:
-				// pin is technically in progress? do nothing for now
-				inProgress = append(inProgress, pin)
+			for _, fp := range checkProgress[i:end] {
+				st, ok := resp[fp.RequestID]
+				if !ok {
+					return fmt.Errorf("did not get status back for requestid %s", fp.RequestID)
+				}
+
+				switch st.Status {
+				case "pinned":
+					pinComplete = append(pinComplete, fp)
+					if err := r.DB.Model(Pin{}).Where("id = ?", fp.PinID).UpdateColumn("status", st.Status).Error; err != nil {
+						return err
+					}
+				case "failed":
+					needsNewPin = append(needsNewPin, fp)
+					if err := r.DB.Delete(Pin{ID: fp.PinID}).Error; err != nil {
+						return err
+					}
+				default:
+					// pin is technically in progress? do nothing for now
+					inProgress = append(inProgress, &Pin{
+						ID:        fp.PinID,
+						File:      fp.FileID,
+						Status:    fp.Status,
+						RequestID: fp.RequestID,
+					})
+				}
 			}
 		}
 
-		for _, f := range needsNewPin {
-			fcid, err := cid.Decode(f.Cid)
-			if err != nil {
-				return err
-			}
+		fmt.Printf("need to make %d new pins\n", len(needsNewPin))
 
-			fmt.Printf("creating new pin for %s (%s)\n", f.Path, fcid)
-			resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, nil)
-			if err != nil {
-				return err
-			}
+		var dplk sync.Mutex
+		var donePins int
+		var wg sync.WaitGroup
+		newpins := make([]*Pin, len(needsNewPin))
+		errs := make([]error, len(needsNewPin))
+		sema := make(chan struct{}, 20)
+		for i := range needsNewPin {
+			wg.Add(1)
+			go func(ix int) {
+				defer wg.Done()
 
-			if err := connectToDelegates(ctx, h, resp.Delegates); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to connect to deletegates for new pin: %s\n", err)
-			}
+				f := needsNewPin[ix]
 
-			p := Pin{
-				File:      f.ID,
-				Cid:       fcid.String(),
-				RequestID: resp.Requestid,
-				Status:    resp.Status,
-			}
-			if err := r.DB.Create(&p).Error; err != nil {
-				return err
-			}
-
-			inProgress = append(inProgress, p)
-		}
-
-		for range time.Tick(time.Second * 2) {
-			var pinning, queued, pinned, failed int
-			for _, p := range inProgress {
-				status, err := c.PinStatus(ctx, p.RequestID)
+				fcid, err := cid.Decode(f.Cid)
 				if err != nil {
-					fmt.Println("error getting pin status: ", err)
+					errs[ix] = err
+					return
+				}
+
+				sema <- struct{}{}
+				defer func() {
+					<-sema
+				}()
+
+				resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, nil)
+				if err != nil {
+					errs[ix] = err
+					return
+				}
+
+				if err := connectToDelegates(ctx, h, resp.Delegates); err != nil {
+					fmt.Fprintf(os.Stderr, "failed to connect to deletegates for new pin: %s\n", err)
+				}
+
+				dplk.Lock()
+				donePins++
+				fmt.Printf("                                                 \r")
+				fmt.Printf("creating new pins %d/%d", donePins, len(needsNewPin))
+				dplk.Unlock()
+
+				p := &Pin{
+					File:      f.FileID,
+					Cid:       fcid.String(),
+					RequestID: resp.Requestid,
+					Status:    resp.Status,
+				}
+
+				newpins[ix] = p
+			}(i)
+		}
+		wg.Wait()
+
+		var tocreate []*Pin
+		for _, p := range newpins {
+			if p != nil {
+				tocreate = append(tocreate, p)
+				inProgress = append(inProgress, p)
+			}
+		}
+
+		if len(tocreate) > 0 {
+			if err := r.DB.CreateInBatches(tocreate, 100).Error; err != nil {
+				return err
+			}
+		}
+
+		for _, err := range errs {
+			if err != nil {
+				return err
+			}
+		}
+
+		fmt.Println()
+		fmt.Println("transferring data...")
+
+		complete := make(map[string]bool)
+		failed := make(map[string]bool)
+		for range time.Tick(time.Second * 2) {
+
+		loopstart:
+			var tocheck []string
+			for _, p := range inProgress {
+				if complete[p.RequestID] || failed[p.RequestID] {
+					continue
+				}
+
+				tocheck = append(tocheck, p.RequestID)
+
+				if len(tocheck) >= 300 {
+					break
+				}
+			}
+
+			// if we have a lot of pins still to check, start randomly selecting some to look at
+			if len(inProgress)-(len(complete)+len(failed)) > batchSize*2 {
+				for i := 0; i < 200; i++ {
+					p := inProgress[rand.Intn(len(inProgress))]
+					if complete[p.RequestID] || failed[p.RequestID] {
+						continue
+					}
+
+					tocheck = append(tocheck, p.RequestID)
+				}
+			}
+
+			statuses, err := c.PinStatuses(ctx, tocheck)
+			if err != nil {
+				return err
+			}
+
+			var newdone int
+			for _, req := range tocheck {
+				status, ok := statuses[req]
+				if !ok {
+					fmt.Printf("didnt get expected pin status back in request: %s\n", req)
 					continue
 				}
 
 				switch status.Status {
 				case "pinned":
-					pinned++
+					newdone++
+					complete[req] = true
+					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).UpdateColumn("status", "pinned").Error; err != nil {
+						return err
+					}
 				case "failed":
-					failed++
-				case "pinning":
-					pinning++
-				case "queued":
-					queued++
+					newdone++
+					failed[req] = true
+					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).Delete(Pin{}).Error; err != nil {
+						return err
+					}
+				default:
 				}
 
-				/*
-					if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
-						fmt.Println("failed to connect to pin delegates: ", err)
-					}
-				*/
+				if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
+					fmt.Println("failed to connect to pin delegates: ", err)
+				}
 			}
 
-			fmt.Printf("pinned: %d, pinning: %d, queued: %d, failed: %d (num conns: %d)\n", pinned, pinning, queued, failed, len(h.Network().Conns()))
-			if failed+pinned >= len(inProgress) {
+			fmt.Printf("pinned: %d, pinning: %d, failed: %d\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed))
+
+			if len(failed)+len(complete) >= len(inProgress) {
 				break
+			}
+
+			// dont wait if we get a high enough proportion of new info
+			if newdone > 100 {
+				goto loopstart
 			}
 		}
 
 		return nil
 
+	},
+}
+
+var bargeCheckCmd = &cli.Command{
+	Name: "check",
+	Action: func(cctx *cli.Context) error {
+		r, err := openRepo(cctx)
+		if err != nil {
+			return err
+		}
+
+		for _, path := range cctx.Args().Slice() {
+			var file File
+			if err := r.DB.First(&file, "path = ?", path).Error; err != nil {
+				return err
+			}
+
+			fcid, err := cid.Decode(file.Cid)
+			if err != nil {
+				return err
+			}
+
+			lres := filestore.Verify(r.Filestore, fcid)
+			fmt.Println(lres.Status.String())
+			fmt.Println(lres.ErrorMsg)
+		}
+
+		return nil
 	},
 }

@@ -22,21 +22,34 @@ type Repo struct {
 	Filestore *filestore.Filestore
 	Dir       string
 
+	leveldb *leveldb.Datastore
+
 	Cfg *viper.Viper
 }
 
+func (r *Repo) Close() error {
+
+	if err := r.leveldb.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to close leveldb: ", err)
+	}
+
+	return nil
+}
+
 type File struct {
-	gorm.Model
-	Path  string
-	Cid   string
-	Mtime time.Time
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	Path      string `gorm:"index"`
+	Cid       string
+	Mtime     time.Time
 }
 
 type Pin struct {
-	gorm.Model
-	File      uint
+	ID        uint `gorm:"primarykey"`
+	CreatedAt time.Time
+	File      uint `gorm:"index"`
 	Cid       string
-	RequestID string
+	RequestID string `gorm:"index"`
 	Status    string
 }
 
@@ -103,7 +116,13 @@ func openRepo(cctx *cli.Context) (*Repo, error) {
 		}
 	}
 
-	db, err := gorm.Open(sqlite.Open(filepath.Join(dir, "barge.db")), &gorm.Config{})
+	dbdir := dir
+	cfgdbdir, ok := v.Get("database.directory").(string)
+	if ok && cfgdbdir != "" {
+		dbdir = cfgdbdir
+	}
+
+	db, err := gorm.Open(sqlite.Open(filepath.Join(dbdir, "barge.db")), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +130,9 @@ func openRepo(cctx *cli.Context) (*Repo, error) {
 	db.AutoMigrate(&File{})
 	db.AutoMigrate(&Pin{})
 
-	lds, err := leveldb.NewDatastore(filepath.Join(dir, "leveldb"), nil)
+	lds, err := leveldb.NewDatastore(filepath.Join(dbdir, "leveldb"), &leveldb.Options{
+		NoSync: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +140,7 @@ func openRepo(cctx *cli.Context) (*Repo, error) {
 	fsmgr := filestore.NewFileManager(lds, reporoot)
 	fsmgr.AllowFiles = true
 
-	ffs, err := flatfs.CreateOrOpen(filepath.Join(dir, "flatfs"), flatfs.IPFS_DEF_SHARD, false)
+	ffs, err := flatfs.CreateOrOpen(filepath.Join(dbdir, "flatfs"), flatfs.IPFS_DEF_SHARD, false)
 	if err != nil {
 		return nil, err
 	}

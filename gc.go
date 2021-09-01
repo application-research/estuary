@@ -177,11 +177,11 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	var c int64
-	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
+	var objs []Object
+	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
 		return err
 	}
-	if c == 0 {
+	if len(objs) == 0 {
 		return cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
 	}
 	return nil

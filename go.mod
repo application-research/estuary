@@ -5,7 +5,7 @@ go 1.16
 require (
 	github.com/application-research/filclient v0.0.0-20210820032644-22262a5c9945
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
-	github.com/cheggaaa/pb/v3 v3.0.6
+	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/filecoin-project/go-address v0.0.5
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
@@ -14,7 +14,7 @@ require (
 	github.com/filecoin-project/go-fil-markets v1.8.1
 	github.com/filecoin-project/go-padreader v0.0.0-20210723183308-812a16dc01b1
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210810190654-139e0e79e69e
-	github.com/filecoin-project/lotus v1.10.1
+	github.com/filecoin-project/lotus v1.11.1
 	github.com/filecoin-project/specs-actors v0.9.14
 	github.com/google/uuid v1.2.0
 	github.com/hashicorp/golang-lru v0.5.4
@@ -32,7 +32,6 @@ require (
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
-	github.com/ipfs/go-ipfs-files v0.0.8
 	github.com/ipfs/go-ipfs-pinner v0.1.2
 	github.com/ipfs/go-ipfs-provider v0.5.1
 	github.com/ipfs/go-ipld-cbor v0.0.5
@@ -51,6 +50,7 @@ require (
 	github.com/libp2p/go-libp2p-crypto v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.12.2
 	github.com/libp2p/go-libp2p-quic-transport v0.11.2
+	github.com/libp2p/go-libp2p-record v0.1.3
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.20.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -76,8 +76,4 @@ require (
 
 replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1
 
-replace github.com/filecoin-project/lotus => ../lotus
-
-replace github.com/filecoin-project/filecoin-ffi => ../lotus/extern/filecoin-ffi
-
-replace github.com/application-research/estuary => ./
+replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
