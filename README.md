@@ -7,7 +7,7 @@
 Requirements:
 - go (1.15 or higher)
 
-1. Run `make all` inside the estuary directory
+1. Run `make clean all` inside the estuary directory
 
 ## Running
 
