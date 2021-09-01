@@ -35,7 +35,7 @@ func TestUsersQuery(t *testing.T) {
 	a.NoError(db.Users().Create(userIn))
 
 	// Checking existence
-	userExists, err := db.Users().WithUsername("Test_user").Exists()
+	userExists, err := db.Users().WithUsername("test_user").Exists()
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -270,11 +270,11 @@ func (q *UsersQuery) Count() (int64, error) {
 }
 
 func (q *UsersQuery) Exists() (bool, error) {
-	count, err := q.Count()
-	if err != nil {
+	var exists bool
+	if err := q.DB.Raw("SELECT EXISTS(?)", q.DB).Take(&exists).Error; err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return exists, nil
 }
 
 // Errors if none were deleted
@@ -477,11 +477,11 @@ func (q *ObjectsQuery) Count() (int64, error) {
 }
 
 func (q *ObjectsQuery) Exists() (bool, error) {
-	count, err := q.Count()
-	if err != nil {
+	var exists bool
+	if err := q.DB.Raw("SELECT EXISTS(?)", q.DB).Take(&exists).Error; err != nil {
 		return false, err
 	}
-	return count > 0, nil
+	return exists, nil
 }
 
 // TODO: simplify by using other abstracted functions instead
