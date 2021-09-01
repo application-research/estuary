@@ -1,6 +1,7 @@
 package dbmgr
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,6 +13,10 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+)
+
+var (
+	ErrNotFiltered = errors.New("actions requires query to be filtered, but no filters were applied")
 )
 
 type DBSortOrder int
@@ -216,7 +221,10 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 
 // USERS
 
-type UsersQuery struct{ DB *gorm.DB }
+type UsersQuery struct {
+	DB       *gorm.DB
+	filtered bool
+}
 type UserID uint
 type User struct {
 	gorm.Model
@@ -241,11 +249,13 @@ func NewUsersQuery(db *gorm.DB) *UsersQuery {
 
 func (q *UsersQuery) WithUsername(username string) *UsersQuery {
 	q.DB = q.DB.Where("username = ?", username)
+	q.filtered = true
 	return q
 }
 
 func (q *UsersQuery) WithID(id uint) *UsersQuery {
 	q.DB = q.DB.Where("id = ?", id)
+	q.filtered = true
 	return q
 }
 
@@ -279,6 +289,10 @@ func (q *UsersQuery) Exists() (bool, error) {
 
 // Errors if none were deleted
 func (q *UsersQuery) ExpectDelete() error {
+	if !q.filtered {
+		return ErrNotFiltered
+	}
+
 	res := q.DB.Delete(&User{})
 	if err := res.Error; err != nil {
 		return err
@@ -311,7 +325,10 @@ func (q *AuthTokensQuery) Create(authToken AuthToken) error {
 
 // CONTENTS
 
-type ContentsQuery struct{ DB *gorm.DB }
+type ContentsQuery struct {
+	DB       *gorm.DB
+	filtered bool
+}
 type ContentID uint
 type Content struct {
 	ID        uint `gorm:"primarykey"`
@@ -345,6 +362,7 @@ func NewContentsQuery(db *gorm.DB) *ContentsQuery {
 
 func (q *ContentsQuery) WithID(id uint) *ContentsQuery {
 	q.DB = q.DB.Where("id = ?", id)
+	q.filtered = true
 	return q
 }
 
@@ -354,21 +372,25 @@ func (q *ContentsQuery) WithActive(active bool) *ContentsQuery {
 	} else {
 		q.DB = q.DB.Where("NOT active")
 	}
+	q.filtered = true
 	return q
 }
 
 func (q *ContentsQuery) WithUserID(userID uint) *ContentsQuery {
 	q.DB = q.DB.Where("user_id = ?", userID)
+	q.filtered = true
 	return q
 }
 
 func (q *ContentsQuery) WithCid(cid gocid.Cid) *ContentsQuery {
 	q.DB = q.DB.Where("cid = ?", cidToBytes(cid))
+	q.filtered = true
 	return q
 }
 
 func (q *ContentsQuery) WithCids(cids []gocid.Cid) *ContentsQuery {
 	q.DB = q.DB.Where("cid IN ?", cidsToBytes(cids))
+	q.filtered = true
 	return q
 }
 
@@ -378,11 +400,13 @@ func (q *ContentsQuery) WithAggregate(aggregate bool) *ContentsQuery {
 	} else {
 		q.DB = q.DB.Where("NOT aggregate")
 	}
+	q.filtered = true
 	return q
 }
 
 func (q *ContentsQuery) WithAggregatedIn(contentID uint) *ContentsQuery {
 	q.DB = q.DB.Where("aggregated_in = ?", contentID)
+	q.filtered = true
 	return q
 }
 
@@ -444,6 +468,10 @@ func (q *ContentsQuery) Count() (int64, error) {
 }
 
 func (q *ContentsQuery) Delete() error {
+	if !q.filtered {
+		return ErrNotFiltered
+	}
+
 	return q.DB.Delete(&Content{}).Error
 }
 
@@ -494,7 +522,10 @@ func (q *ObjectsQuery) DeleteUnreferenced(ids []uint) error {
 
 // OBJ REFS
 
-type ObjRefsQuery struct{ DB *gorm.DB }
+type ObjRefsQuery struct {
+	DB       *gorm.DB
+	filtered bool
+}
 type ObjRefID uint
 type ObjRef struct {
 	ID        ObjRefID `gorm:"primarykey"`
@@ -509,11 +540,13 @@ func NewObjRefsQuery(db *gorm.DB) *ObjRefsQuery {
 
 func (q *ObjRefsQuery) WithPinID(pinID uint) *ObjRefsQuery {
 	q.DB = q.DB.Where("pin = ?", pinID)
+	q.filtered = true
 	return q
 }
 
 func (q *ObjRefsQuery) WithContentID(contentID uint) *ObjRefsQuery {
 	q.DB = q.DB.Where("content = ?", contentID)
+	q.filtered = true
 	return q
 }
 
@@ -534,6 +567,9 @@ func (q *ObjRefsQuery) GetStats() (ObjRefStats, error) {
 }
 
 func (q *ObjRefsQuery) Delete() error {
+	if !q.filtered {
+		return ErrNotFiltered
+	}
 	return q.DB.Delete(&ObjRef{}).Error
 }
 
@@ -777,7 +813,10 @@ func (q *InviteCodesQuery) Create(invite InviteCode) error {
 
 // STORAGE MINERS
 
-type StorageMinersQuery struct{ DB *gorm.DB }
+type StorageMinersQuery struct {
+	DB       *gorm.DB
+	filtered bool
+}
 type StorageMinerID uint
 type StorageMiner struct {
 	gorm.Model
@@ -797,6 +836,7 @@ func NewStorageMinersQuery(db *gorm.DB) *StorageMinersQuery {
 
 func (q *StorageMinersQuery) WithAddress(addr address.Address) *StorageMinersQuery {
 	q.DB = q.DB.Where("address = ?", addr.String())
+	q.filtered = true
 	return q
 }
 
@@ -829,6 +869,9 @@ func (q *StorageMinersQuery) Count() (int64, error) {
 }
 
 func (q *StorageMinersQuery) Delete() error {
+	if !q.filtered {
+		return ErrNotFiltered
+	}
 	return q.DB.Delete(&StorageMiner{}).Error
 }
 
