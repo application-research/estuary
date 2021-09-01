@@ -604,7 +604,7 @@ func (q *DealsQuery) WithID(id uint) *DealsQuery {
 	return q
 }
 
-func (q *DealsQuery) WithSuccessful(valid bool) *DealsQuery {
+func (q *DealsQuery) WithDealOnChain(valid bool) *DealsQuery {
 	if valid {
 		q.DB = q.DB.Where("deal_id > 0")
 	} else {
