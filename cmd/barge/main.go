@@ -621,6 +621,7 @@ var bargeAddCmd = &cli.Command{
 		progress := cctx.Bool("progress")
 
 		var paths []string
+		// TODO: this expansion could be done in parallel to speed things up on large directories
 		for _, f := range cctx.Args().Slice() {
 			matches, err := filepath.Glob(f)
 			if err != nil {
@@ -692,8 +693,9 @@ var bargeAddCmd = &cli.Command{
 		}
 
 		tocheck := make(chan string, 1)
-		toadd := make(chan addJob, 128)
-		toupdate := make(chan updateJob, 1)
+		tobuffer := make(chan *addJob, 128)
+		toadd := make(chan *addJob)
+		toupdate := make(chan updateJob, 128)
 
 		go func() {
 			defer close(tocheck)
@@ -703,7 +705,7 @@ var bargeAddCmd = &cli.Command{
 		}()
 
 		go func() {
-			defer close(toadd)
+			defer close(tobuffer)
 			for p := range tocheck {
 				st, err := os.Stat(p)
 				if err != nil {
@@ -729,10 +731,48 @@ var bargeAddCmd = &cli.Command{
 					}
 				}
 
-				toadd <- addJob{
+				tobuffer <- &addJob{
 					Path:  p,
 					Found: found,
 					Stat:  st,
+				}
+			}
+		}()
+
+		go func() {
+			defer close(toadd)
+			var next *addJob
+			var buffer []*addJob
+			var out chan *addJob
+			var inputDone bool
+
+			for {
+				select {
+				case aj, ok := <-tobuffer:
+					if !ok {
+						inputDone = true
+						if next == nil && len(buffer) == 0 {
+							return
+						}
+						continue
+					}
+					if out == nil {
+						next = aj
+						out = toadd
+					} else {
+						buffer = append(buffer, aj)
+					}
+				case out <- next:
+					if len(buffer) > 0 {
+						next = buffer[0]
+						buffer = buffer[1:]
+					} else {
+						out = nil
+						next = nil
+						if inputDone {
+							return
+						}
+					}
 				}
 			}
 		}()
@@ -796,6 +836,13 @@ var bargeAddCmd = &cli.Command{
 				Cid:   uj.Cid.String(),
 				Mtime: uj.Stat.ModTime(),
 			})
+
+			if len(batchCreates) > 200 {
+				if err := r.DB.CreateInBatches(batchCreates, 100).Error; err != nil {
+					return err
+				}
+				batchCreates = nil
+			}
 		}
 
 		if err := r.DB.CreateInBatches(batchCreates, 100).Error; err != nil {

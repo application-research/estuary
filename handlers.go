@@ -685,6 +685,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		}
 	}()
 
+	var objlk sync.Mutex
 	var objects []*Object
 	cset := cid.NewSet()
 
@@ -701,10 +702,12 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		case <-ctx.Done():
 		}
 
+		objlk.Lock()
 		objects = append(objects, &Object{
 			Cid:  util.DbCID{c},
 			Size: len(node.RawData()),
 		})
+		objlk.Unlock()
 
 		if c.Type() == cid.Raw {
 			return nil, nil

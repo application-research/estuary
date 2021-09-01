@@ -856,6 +856,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		}
 	}()
 
+	var objlk sync.Mutex
 	var objects []*Object
 	var totalSize int64
 	cset := cid.NewSet()
@@ -873,12 +874,14 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		case <-ctx.Done():
 		}
 
+		objlk.Lock()
 		objects = append(objects, &Object{
 			Cid:  util.DbCID{c},
 			Size: len(node.RawData()),
 		})
 
 		totalSize += int64(len(node.RawData()))
+		objlk.Unlock()
 
 		if c.Type() == cid.Raw {
 			return nil, nil
