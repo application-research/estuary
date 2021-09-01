@@ -7,9 +7,7 @@
 Requirements:
 - go (1.15 or higher)
 
-1. Clone and build the lotus codebase adjacent to this repo (so that its at `../lotus`)
-  - `git clone https://github.com/filecoin-project/lotus`
-2. Run `go build`
+1. Run `make all` inside the estuary directory
 
 ## Running
 
