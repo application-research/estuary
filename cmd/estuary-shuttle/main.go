@@ -190,7 +190,12 @@ func main() {
 			return err
 		}
 
+		metCtx := metrics.CtxScope(context.Background(), "shuttle")
+		activeCommp := metrics.NewCtx(metCtx, "active_commp", "number of active piece commitment calculations ongoing").Gauge()
 		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+			activeCommp.Inc()
+			defer activeCommp.Dec()
+
 			start := time.Now()
 
 			c, err := cid.Decode(k)
@@ -311,11 +316,10 @@ func main() {
 					log.Errorf("failed to send shuttle update: %s", err)
 				}
 			}
-
 		}()
 
 		// setup metrics...
-		activeTransfers := metrics.New("active_transfers", "total number of active data transfers").Gauge()
+		activeTransfers := metrics.NewCtx(metCtx, "active_transfers", "total number of active data transfers").Gauge()
 
 		go func() {
 			for range time.Tick(time.Second * 10) {
@@ -325,6 +329,7 @@ func main() {
 					continue
 				}
 
+				activeTransfers.Set(float64(len(txs)))
 			}
 		}()
 

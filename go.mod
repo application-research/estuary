@@ -32,7 +32,6 @@ require (
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
-	github.com/ipfs/go-ipfs-files v0.0.8
 	github.com/ipfs/go-ipfs-pinner v0.1.2
 	github.com/ipfs/go-ipfs-provider v0.5.1
 	github.com/ipfs/go-ipld-cbor v0.0.5
@@ -51,6 +50,7 @@ require (
 	github.com/libp2p/go-libp2p-crypto v0.1.0
 	github.com/libp2p/go-libp2p-kad-dht v0.12.2
 	github.com/libp2p/go-libp2p-quic-transport v0.11.2
+	github.com/libp2p/go-libp2p-record v0.1.3
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.20.0
 	github.com/mitchellh/go-homedir v1.1.0

@@ -20,6 +20,7 @@ import (
 	bsnet "github.com/ipfs/go-bitswap/network"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	nsds "github.com/ipfs/go-datastore/namespace"
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	levelds "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -37,6 +38,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
+	record "github.com/libp2p/go-libp2p-record"
 	"github.com/multiformats/go-multiaddr"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
@@ -84,6 +86,7 @@ type Node struct {
 	Dht      *dht.IpfsDHT
 	Provider *batched.BatchProvidingSystem
 	FullRT   *fullrt.FullRT
+	FilDht   *dht.IpfsDHT
 	Host     host.Host
 
 	// Set for gathering disk usage
@@ -104,7 +107,8 @@ type Node struct {
 }
 
 type Config struct {
-	ListenAddrs []string
+	ListenAddrs   []string
+	AnnounceAddrs []string
 
 	Blockstore string
 
@@ -136,7 +140,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
-	h, err := libp2p.New(ctx,
+	opts := []libp2p.Option{
 		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
 		libp2p.NATPortMap(),
 		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
@@ -144,7 +148,23 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
 		libp2p.Transport(libp2pquic.NewTransport),
-	)
+	}
+
+	if len(cfg.AnnounceAddrs) > 0 {
+		var addrs []multiaddr.Multiaddr
+		for _, anna := range cfg.AnnounceAddrs {
+			a, err := multiaddr.NewMultiaddr(anna)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse announce addr: %w", err)
+			}
+			addrs = append(addrs, a)
+		}
+		opts = append(opts, libp2p.AddrsFactory(func([]multiaddr.Multiaddr) []multiaddr.Multiaddr {
+			return addrs
+		}))
+	}
+
+	h, err := libp2p.New(ctx, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -161,9 +181,24 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, xerrors.Errorf("constructing fullrt: %w", err)
 	}
 
-	dht, err := dht.New(ctx, h, dht.Datastore(ds))
+	ipfsdht, err := dht.New(ctx, h, dht.Datastore(ds))
 	if err != nil {
 		return nil, xerrors.Errorf("constructing dht: %w", err)
+	}
+
+	filopts := []dht.Option{dht.Mode(dht.ModeAuto),
+		dht.Datastore(nsds.Wrap(ds, datastore.NewKey("fildht"))),
+		dht.Validator(record.NamespacedValidator{
+			"pk": record.PublicKeyValidator{},
+		}),
+		dht.ProtocolPrefix("/fil/kad/testnetnet"),
+		dht.QueryFilter(dht.PublicQueryFilter),
+		dht.RoutingTableFilter(dht.PublicRoutingTableFilter),
+		dht.DisableProviders(),
+		dht.DisableValues()}
+	fildht, err := dht.New(ctx, h, filopts...)
+	if err != nil {
+		return nil, err
 	}
 
 	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog, cfg.WriteLogTruncate)
@@ -210,7 +245,8 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	prov.Run() // TODO: call close at some point
 
 	return &Node{
-		Dht:        dht,
+		Dht:        ipfsdht,
+		FilDht:     fildht,
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
