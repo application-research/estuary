@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/ipfs/go-cid"
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-filestore"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/mitchellh/go-homedir"
+	wnfspriv "github.com/qri-io/wnfs-go/private"
 	"github.com/spf13/viper"
 	cli "github.com/urfave/cli/v2"
 	"gorm.io/driver/sqlite"
@@ -25,6 +28,76 @@ type Repo struct {
 	leveldb *leveldb.Datastore
 
 	Cfg *viper.Viper
+}
+
+func (r *Repo) isPrivate() bool {
+	return r.Cfg.IsSet("private.key")
+}
+
+func (r *Repo) initPrivateRoot(ctx context.Context, name string) (*wnfspriv.Root, error) {
+	store, err := wnfspriv.NewStore(ctx, r.Filestore.MainBlockstore())
+	if err != nil {
+		return nil, err
+	}
+
+	key := wnfspriv.NewKey()
+	root, err := wnfspriv.NewEmptyRoot(ctx, store, name, key)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := root.Put(); err != nil {
+		return nil, err
+	}
+
+	return root, nil
+}
+
+func (r *Repo) setPrivateConfig(root *wnfspriv.Root) error {
+	r.Cfg.Set("private.key", root.Key())
+	pn, err := root.PrivateName()
+	if err != nil {
+		return err
+	}
+	r.Cfg.Set("private.privateName", string(pn))
+	r.Cfg.Set("private.cid", root.Cid().String())
+	return nil
+}
+
+func (r *Repo) loadPrivate(ctx context.Context) (*wnfspriv.Root, error) {
+	store, err := wnfspriv.NewStore(ctx, r.Filestore.MainBlockstore())
+	if err != nil {
+		return nil, err
+	}
+
+	rootKey := &wnfspriv.Key{}
+	if keystr := r.Cfg.GetString("private.key"); keystr == "" {
+		return nil, fmt.Errorf("private key is missing")
+	} else {
+		if err := rootKey.Decode(keystr); err != nil {
+			return nil, fmt.Errorf("invalid private key: %w", err)
+		}
+	}
+
+	var privateName wnfspriv.Name
+	if namestr := r.Cfg.GetString("private.privateName"); namestr == "" {
+		return nil, fmt.Errorf("private name is missing")
+	} else {
+		privateName = wnfspriv.Name(namestr)
+	}
+
+	var hamtCID cid.Cid
+	if id := r.Cfg.GetString("private.cid"); id == "" {
+		return nil, fmt.Errorf("private cid is missing")
+	} else {
+		hamtCID, err = cid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("invalid private CID: %w", err)
+		}
+	}
+
+	name := r.Cfg.GetString("collection.name")
+	return wnfspriv.LoadRoot(ctx, store, name, hamtCID, *rootKey, privateName)
 }
 
 func (r *Repo) Close() error {

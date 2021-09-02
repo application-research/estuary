@@ -26,6 +26,10 @@ var initCmd = &cli.Command{
 			Name:  "dbdir",
 			Usage: "set the location of the barge repo database",
 		},
+		&cli.BoolFlag{
+			Name:  "private",
+			Usage: "encrypt content at rest",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -97,6 +101,15 @@ var initCmd = &cli.Command{
 
 		r.Cfg.Set("collection.uuid", col.UUID)
 		r.Cfg.Set("collection.name", col.Name)
+
+		if cctx.Bool("private") {
+			fmt.Println("!!!! WARNING !!!!\n\nThis is not private. Not secure. Don't use this. You've been warned.")
+			root, err := r.initPrivateRoot(ctx, col.Name)
+			if err != nil {
+				return err
+			}
+			r.setPrivateConfig(root)
+		}
 
 		return r.Cfg.WriteConfig()
 	},

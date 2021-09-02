@@ -42,6 +42,8 @@ import (
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
 	"github.com/mitchellh/go-homedir"
 	mh "github.com/multiformats/go-multihash"
+	wnfsbase "github.com/qri-io/wnfs-go/base"
+	wnfspriv "github.com/qri-io/wnfs-go/private"
 	"github.com/spf13/viper"
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
@@ -357,8 +359,8 @@ func (ff *filestoreFile) Size() (int64, error) {
 	return finfo.Size(), nil
 }
 
-func (ff *filestoreFile) Stat() os.FileInfo {
-	return ff.st
+func (ff *filestoreFile) Stat() (os.FileInfo, error) {
+	return ff.st, nil
 }
 
 func (ff *filestoreFile) Read(b []byte) (int, error) {
@@ -535,6 +537,26 @@ var plumbSplitAddFileCmd = &cli.Command{
 	},
 }
 
+func addPrivate(root *wnfspriv.Root, fpath string, progcb func(int64)) (cid.Cid, error) {
+	ff, err := newFF(fpath, progcb)
+	if err != nil {
+		return cid.Undef, err
+	}
+	defer ff.Close()
+
+	p, err := wnfsbase.NewPath(fpath)
+	if err != nil {
+		fmt.Println(err)
+		return cid.Undef, err
+	}
+	res, err := root.Add(p, ff)
+	if err != nil {
+		fmt.Println(err)
+		return cid.Undef, err
+	}
+	return res.CID(), nil
+}
+
 func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64)) (cid.Cid, error) {
 	ff, err := newFF(fpath, progcb)
 	if err != nil {
@@ -619,6 +641,14 @@ var bargeAddCmd = &cli.Command{
 		}
 
 		progress := cctx.Bool("progress")
+		private := r.isPrivate()
+		var privateRoot *wnfspriv.Root
+		if private {
+			privateRoot, err = r.loadPrivate(cctx.Context)
+			if err != nil {
+				return err
+			}
+		}
 
 		var paths []string
 		// TODO: this expansion could be done in parallel to speed things up on large directories
@@ -784,7 +814,16 @@ var bargeAddCmd = &cli.Command{
 			go func() {
 				defer wg.Done()
 				for aj := range toadd {
-					fcid, err := filestoreAdd(r.Filestore, aj.Path, progcb)
+					var (
+						fcid cid.Cid
+						err  error
+					)
+					if private {
+						fcid, err = addPrivate(privateRoot, aj.Path, progcb)
+					} else {
+						fcid, err = filestoreAdd(r.Filestore, aj.Path, progcb)
+					}
+
 					if err != nil {
 						fmt.Println(err)
 						return
@@ -850,6 +889,9 @@ var bargeAddCmd = &cli.Command{
 		}
 
 		finish()
+		if private {
+			r.setPrivateConfig(privateRoot)
+		}
 
 		return nil
 	},
