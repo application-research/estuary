@@ -69,9 +69,9 @@ install: estuary
 
 .PHONY: install-estuary-service
 install-estuary-service:
-	cp scripts/estuary.service /etc/systemd/system/estuary.service
-	cp scripts/config.env /etc/estuary/config.env
-	cp scripts/log.env /etc/estuary/log.env
+	cp scripts/estuary-service/estuary.service /etc/systemd/system/estuary.service
+	cp scripts/estuary-service/config.env /etc/estuary/config.env
+	cp scripts/estuary-service/log.env /etc/estuary/log.env
 	systemctl daemon-reload
 	echo "Edit config values in /etc/estuary/config.env before enabling and starting estuary service"
 	echo "Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service"
