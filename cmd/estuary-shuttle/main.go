@@ -631,6 +631,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	}
 
 	e.GET("/health", s.handleHealth)
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
@@ -1278,4 +1279,12 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
 
 	return c.JSON(200, map[string]string{})
+}
+
+func (s *Shuttle) handleGetViewer(c echo.Context, u *User) error {
+	return c.JSON(200, &util.ViewerResponse{
+		ID:       u.ID,
+		Username: u.Username,
+		Perms:    u.Perms,
+	})
 }
