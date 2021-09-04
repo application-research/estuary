@@ -419,7 +419,7 @@ func main() {
 
 		cm.tracer = otel.Tracer("replicator")
 
-		if cctx.Bool("enable-auto-retrive") {
+		if cctx.Bool("enable-auto-retrieve") {
 			trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 

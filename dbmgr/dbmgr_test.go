@@ -44,14 +44,14 @@ func TestUsersQuery(t *testing.T) {
 	}
 
 	// Getting by username
-	userOut, err := db.Users().WithUsername(userIn.Username).Get()
+	userOut, err := db.Users().WithUsername(userIn.Username).GetSingle()
 	if err != nil {
 		t.Fatal(err)
 	}
 	fmt.Printf("retrieved user: %+v\n", userOut)
 
 	// Deletion by ID
-	if err := db.Users().WithID(userOut.ID).ExpectDelete(); err != nil {
+	if err := db.Users().WithID(userOut.ID).DeleteSingle(); err != nil {
 		t.Fatal(err)
 	}
 }

@@ -17,6 +17,7 @@ import (
 
 var (
 	ErrNotFiltered = errors.New("actions requires query to be filtered, but no filters were applied")
+	ErrNotFound    = errors.New("query did not return a result")
 )
 
 type DBSortOrder int
@@ -263,9 +264,12 @@ func (q *UsersQuery) Create(user User) error {
 	return q.DB.Create(&user).Error
 }
 
-func (q *UsersQuery) Get() (User, error) {
+func (q *UsersQuery) GetSingle() (User, error) {
 	var user User
 	if err := q.DB.Take(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return User{}, ErrNotFound
+		}
 		return User{}, err
 	}
 	return user, nil
@@ -288,18 +292,18 @@ func (q *UsersQuery) Exists() (bool, error) {
 }
 
 // Errors if none were deleted
-func (q *UsersQuery) ExpectDelete() error {
+func (q *UsersQuery) DeleteSingle() error {
 	if !q.filtered {
 		return ErrNotFiltered
 	}
 
-	res := q.DB.Delete(&User{})
+	res := q.DB.Limit(1).Delete(&User{})
 	if err := res.Error; err != nil {
 		return err
 	}
 
 	if res.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return ErrNotFound
 	}
 
 	return nil
@@ -404,7 +408,7 @@ func (q *ContentsQuery) WithAggregate(aggregate bool) *ContentsQuery {
 	return q
 }
 
-func (q *ContentsQuery) WithAggregatedIn(contentID uint) *ContentsQuery {
+func (q *ContentsQuery) WithAggregatedIn(contentID ContentID) *ContentsQuery {
 	q.DB = q.DB.Where("aggregated_in = ?", contentID)
 	q.filtered = true
 	return q
@@ -443,15 +447,18 @@ func (q *ContentsQuery) CreateAll(contents []Content) error {
 	return q.DB.Create(contents).Error
 }
 
-func (q *ContentsQuery) Get() (Content, error) {
+func (q *ContentsQuery) GetSingle() (Content, error) {
 	var content Content
 	if err := q.DB.Take(&content).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Content{}, ErrNotFound
+		}
 		return Content{}, err
 	}
 	return content, nil
 }
 
-func (q *ContentsQuery) GetAll() ([]Content, error) {
+func (q *ContentsQuery) Get() ([]Content, error) {
 	var contents []Content
 	if err := q.DB.Find(&contents).Error; err != nil {
 		return nil, nil
@@ -494,6 +501,17 @@ func NewObjectsQuery(db *gorm.DB) *ObjectsQuery {
 func (q *ObjectsQuery) WithCid(cid gocid.Cid) *ObjectsQuery {
 	q.DB = q.DB.Where("cid = ?", cidToBytes(cid))
 	return q
+}
+
+func (q *ObjectsQuery) GetSingle() (Object, error) {
+	var object Object
+	if err := q.DB.Take(&object).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Object{}, ErrNotFound
+		}
+		return Object{}, err
+	}
+	return object, nil
 }
 
 func (q *ObjectsQuery) Count() (int64, error) {
@@ -544,10 +562,35 @@ func (q *ObjRefsQuery) WithPinID(pinID uint) *ObjRefsQuery {
 	return q
 }
 
-func (q *ObjRefsQuery) WithContentID(contentID uint) *ObjRefsQuery {
+func (q *ObjRefsQuery) WithContentID(contentID ContentID) *ObjRefsQuery {
 	q.DB = q.DB.Where("content = ?", contentID)
 	q.filtered = true
 	return q
+}
+
+func (q *ObjRefsQuery) WithObjectID(objectID ObjectID) *ObjRefsQuery {
+	q.DB = q.DB.Where("object = ?", objectID)
+	q.filtered = true
+	return q
+}
+
+func (q *ObjRefsQuery) GetSingle() (ObjRef, error) {
+	var objRef ObjRef
+	if err := q.DB.Take(&objRef).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ObjRef{}, ErrNotFound
+		}
+		return ObjRef{}, err
+	}
+	return objRef, nil
+}
+
+func (q *ObjRefsQuery) Get() ([]ObjRef, error) {
+	var objRefs []ObjRef
+	if err := q.DB.Find(objRefs).Error; err != nil {
+		return nil, err
+	}
+	return objRefs, nil
 }
 
 type ObjRefStats struct {
@@ -627,25 +670,28 @@ func (q *DealsQuery) WithPropCid(propCid gocid.Cid) *DealsQuery {
 	return q
 }
 
-func (q *DealsQuery) WithContentID(contentID uint) *DealsQuery {
+func (q *DealsQuery) WithContentID(contentID ContentID) *DealsQuery {
 	q.DB = q.DB.Where("content = ?", contentID)
 	return q
 }
 
-func (q *DealsQuery) WithContentIDs(contentIDs []uint) *DealsQuery {
+func (q *DealsQuery) WithContentIDs(contentIDs []ContentID) *DealsQuery {
 	q.DB = q.DB.Where("content IN ?", contentIDs)
 	return q
 }
 
-func (q *DealsQuery) Get() (Deal, error) {
+func (q *DealsQuery) GetSingle() (Deal, error) {
 	var deal Deal
 	if err := q.DB.Take(&deal).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Deal{}, ErrNotFound
+		}
 		return Deal{}, err
 	}
 	return deal, nil
 }
 
-func (q *DealsQuery) GetAll() ([]Deal, error) {
+func (q *DealsQuery) Get() ([]Deal, error) {
 	var deals []Deal
 	if err := q.DB.Find(&deals).Error; err != nil {
 		return nil, err
@@ -690,9 +736,12 @@ func (q *CollectionsQuery) WithUserID(userID uint) *CollectionsQuery {
 	return q
 }
 
-func (q *CollectionsQuery) Get() (Collection, error) {
+func (q *CollectionsQuery) GetSingle() (Collection, error) {
 	var collection Collection
 	if err := q.DB.Take(&collection).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Collection{}, ErrNotFound
+		}
 		return Collection{}, err
 	}
 
@@ -735,7 +784,7 @@ func NewDFERecordsQuery(db *gorm.DB) *DFERecordsQuery {
 	return &DFERecordsQuery{DB: db.Model(DFERecord{})}
 }
 
-func (q *DFERecordsQuery) WithContent(contentID uint) *DFERecordsQuery {
+func (q *DFERecordsQuery) WithContent(contentID ContentID) *DFERecordsQuery {
 	q.DB = q.DB.Where("content = ?", contentID)
 	return q
 }
@@ -765,9 +814,12 @@ func (q *ProposalRecordsQuery) WithPropCid(cid gocid.Cid) *ProposalRecordsQuery 
 	return q
 }
 
-func (q *ProposalRecordsQuery) Get() (ProposalRecord, error) {
+func (q *ProposalRecordsQuery) GetSingle() (ProposalRecord, error) {
 	var record ProposalRecord
 	if err := q.DB.Take(&record).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ProposalRecord{}, ErrNotFound
+		}
 		return ProposalRecord{}, err
 	}
 	return record, nil
@@ -844,15 +896,18 @@ func (q *StorageMinersQuery) SetName(name string) error {
 	return q.DB.Update("name", name).Error
 }
 
-func (q *StorageMinersQuery) Get() (StorageMiner, error) {
+func (q *StorageMinersQuery) GetSingle() (StorageMiner, error) {
 	var miner StorageMiner
 	if err := q.DB.Take(&miner).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return StorageMiner{}, ErrNotFound
+		}
 		return StorageMiner{}, err
 	}
 	return miner, nil
 }
 
-func (q *StorageMinersQuery) GetAll() ([]StorageMiner, error) {
+func (q *StorageMinersQuery) Get() ([]StorageMiner, error) {
 	var miners []StorageMiner
 	if err := q.DB.Find(&miners).Error; err != nil {
 		return nil, err
