@@ -16,10 +16,10 @@ type User struct {
 
 	UserEmail string
 
-	Address util.DbAddr
-
-	Perm  int
-	Flags int
+	Address   util.DbAddr
+	authToken AuthToken
+	Perm      int
+	Flags     int
 
 	StorageDisabled bool
 }

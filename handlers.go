@@ -2036,6 +2036,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
+	user.authToken = authToken
 	return &user, nil
 }
 
@@ -2283,6 +2284,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 		},
+		AuthExpiry: u.authToken.Expiry,
 	})
 }
 

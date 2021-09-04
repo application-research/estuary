@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
+
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
@@ -223,6 +225,12 @@ func main() {
 			return err
 		}
 
+		// TODO: Paramify this?
+		cache, err := lru.New2Q(1000)
+		if err != nil {
+			return err
+		}
+
 		d := &Shuttle{
 			Node:       nd,
 			Api:        api,
@@ -235,7 +243,8 @@ func main() {
 
 			trackingChannels: make(map[string]*chanTrack),
 
-			outgoing: make(chan *drpc.Message),
+			outgoing:  make(chan *drpc.Message),
+			authCache: cache,
 
 			hostname:      cctx.String("host"),
 			estuaryHost:   cctx.String("estuary-api"),
@@ -365,6 +374,8 @@ type Shuttle struct {
 	shuttleToken  string
 
 	commpMemo *memo.Memoizer
+
+	authCache *lru.TwoQueueCache
 }
 
 type chanTrack struct {
@@ -482,9 +493,25 @@ type User struct {
 
 	AuthToken       string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
 	StorageDisabled bool
+	AuthExpiry      time.Time
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
+
+	val, ok := d.authCache.Get(token)
+	if ok {
+		usr, ok := val.(*User)
+		if !ok {
+			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", val)
+		}
+
+		if usr.AuthExpiry.After(time.Now()) {
+			d.authCache.Remove(token)
+		} else {
+			return usr, nil
+		}
+	}
+
 	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
@@ -513,13 +540,18 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
-	return &User{
+	usr := &User{
 		ID:              out.ID,
 		Username:        out.Username,
 		Perms:           out.Perms,
 		AuthToken:       token,
+		AuthExpiry:      out.AuthExpiry,
 		StorageDisabled: out.Settings.ContentAddingDisabled,
-	}, nil
+	}
+
+	d.authCache.Add(token, usr)
+
+	return usr, nil
 }
 
 func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
