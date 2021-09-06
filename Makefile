@@ -80,7 +80,8 @@ install-estuary-service:
 
 	systemctl daemon-reload
 
-	#Edit config values in /etc/estuary/config.env before enabling and starting estuary service
+	#Edit config values in /etc/estuary/config.env before running any estuary service files
+	#Run 'sudo systemctl start estuary-setup.service' to complete setup
 	#Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service
 
 .PHONY: clean
