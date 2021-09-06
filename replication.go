@@ -887,7 +887,7 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 	netask, err := cm.FilClient.GetAsk(ctx, m)
 	if err != nil {
 		var clientErr *filclient.Error
-		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   m,
 				Phase:   "query-ask",
@@ -1859,7 +1859,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
 			var clientErr *filclient.Error
-			if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+			if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 				cm.recordDealFailure(&DealFailureError{
 					Miner:   m,
 					Phase:   "query-ask",
@@ -2026,7 +2026,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
 	if err != nil {
 		var clientErr *filclient.Error
-		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   miner,
 				Phase:   "query-ask",
