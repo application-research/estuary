@@ -18,7 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"

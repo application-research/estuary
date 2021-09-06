@@ -67,6 +67,23 @@ estuary:
 install: estuary
 	cp estuary /usr/local/bin/estuary
 
+.PHONY: install-estuary-service
+install-estuary-service:
+	cp scripts/estuary-service/estuary-setup.service /etc/systemd/system/estuary-setup.service
+	cp scripts/estuary-service/estuary.service /etc/systemd/system/estuary.service
+	mkdir -p /etc/estuary
+	cp scripts/estuary-service/config.env /etc/estuary/config.env
+	mkdir -p /var/log/estuary
+	cp scripts/estuary-service/log.env /etc/estuary/log.env
+
+	#TODO: if service changes to estuary user/group, need to chown the /etc/estuary dir and contents
+
+	systemctl daemon-reload
+
+	#Edit config values in /etc/estuary/config.env before running any estuary service files
+	#Run 'sudo systemctl start estuary-setup.service' to complete setup
+	#Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service
+
 .PHONY: clean
 clean:
 	rm -rf $(CLEAN) $(BINS)

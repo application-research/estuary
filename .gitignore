@@ -13,3 +13,5 @@ estuary-write-log/*
 estuary.db
 
 cidlistsdir/*
+
+build/.*
