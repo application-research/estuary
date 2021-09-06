@@ -7,6 +7,7 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
+	mh "github.com/multiformats/go-multihash"
 )
 
 type DbAddr struct {
@@ -76,4 +77,67 @@ func (dbc *DbCID) UnmarshalJSON(b []byte) error {
 
 	dbc.CID = c
 	return nil
+}
+
+type DbHash struct {
+	Hash mh.Multihash
+}
+
+func DbHashFromDbCID(c *DbCID) DbHash {
+	return DbHash{
+		Hash: c.CID.Hash(),
+	}
+}
+
+func DbHashFromCid(c cid.Cid) DbHash {
+	return DbHash{
+		Hash: c.Hash(),
+	}
+}
+
+func (d *DbHash) Scan(v interface{}) error {
+	b, ok := v.([]byte)
+	if !ok {
+		return fmt.Errorf("dbhashes must get bytes!")
+	}
+
+	if len(b) == 0 {
+		return nil
+	}
+
+	h, err := mh.Cast(b)
+	if err != nil {
+		return err
+	}
+
+	d.Hash = h
+	return nil
+}
+
+func (d DbHash) Value() (driver.Value, error) {
+	return d.Hash, nil
+}
+
+func (d DbHash) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.Hash.String())
+}
+
+func (d *DbHash) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+
+	h, err := mh.FromHexString(s)
+	if err != nil {
+		return err
+	}
+
+	d.Hash = h
+	return nil
+}
+
+func (d *DbHash) Cid() cid.Cid {
+	// TODO: is cid.Raw appropriate?
+	return cid.NewCidV1(cid.Raw, d.Hash)
 }

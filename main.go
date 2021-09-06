@@ -144,8 +144,8 @@ type Content struct {
 }
 
 type Object struct {
-	ID         uint       `gorm:"primarykey"`
-	Cid        util.DbCID `gorm:"index"`
+	ID         uint        `gorm:"primarykey"`
+	Hash       util.DbHash `gorm:"index"`
 	Size       int
 	Reads      int
 	LastAccess time.Time
@@ -484,7 +484,51 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	}
 
 	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
+
+	// Check if we need to migrate cid to hash.
+	if db.Migrator().HasColumn(&Object{}, "hash") {
+		db.AutoMigrate(&Object{})
+	} else {
+		// Migration from cid to hash is needed
+		fmt.Println("migrating object cids to multihashes")
+		type cidrow struct {
+			ID  uint
+			Cid util.DbCID
+		}
+		rows, err := db.Raw("select id, cid from objects").Rows()
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Migrator().AddColumn(&Object{}, "hash"); err != nil {
+				return err
+			}
+			count := 0
+			for rows.Next() {
+				count++
+				if count%1000 == 0 {
+					fmt.Printf("  migrated %d rows\n", count)
+				}
+				var cr cidrow
+				rows.Scan(&cr.ID, &cr.Cid)
+				hash := util.DbHashFromDbCID(&cr.Cid)
+				if err := tx.Exec("update objects set hash=? where id=?", hash, cr.ID).Error; err != nil {
+					return err
+				}
+			}
+			fmt.Printf("  migrated %d rows...done\n", count)
+			if err := tx.Migrator().DropColumn(&Object{}, "cid"); err != nil {
+				return err
+			}
+
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	db.AutoMigrate(&ObjRef{})
 	db.AutoMigrate(&Collection{})
 	db.AutoMigrate(&CollectionRef{})

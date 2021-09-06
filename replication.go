@@ -618,7 +618,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if loc == "local" {
 		obj := &Object{
-			Cid:  util.DbCID{ncid},
+			Hash: util.DbHashFromCid(ncid),
 			Size: int(size),
 		}
 		if err := cm.DB.Create(obj).Error; err != nil {

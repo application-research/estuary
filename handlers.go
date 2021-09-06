@@ -158,10 +158,10 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
-	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	// deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
-	//deals.POST("/transfer/restart", s.handleTransferRestart)
+	// deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
@@ -694,7 +694,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Hash: util.DbHashFromCid(c),
 			Size: len(node.RawData()),
 		})
 		objlk.Unlock()
@@ -810,7 +810,6 @@ type expandedContent struct {
 }
 
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
-
 	var limit int = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		l, err := strconv.Atoi(limstr)
@@ -844,7 +843,6 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 				if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
 					return err
 				}
-
 			}
 			out = append(out, ec)
 		}
@@ -1256,7 +1254,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Debug().Model(&InviteCode{}).
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
-		//Where("claimed_by IS NULL").
+		// Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Scan(&invites).Error; err != nil {
 		return err
@@ -1320,7 +1318,6 @@ type adminStatsResponse struct {
 }
 
 func (s *Server) handleAdminStats(c echo.Context) error {
-
 	var dealsTotal int64
 	if err := s.DB.Model(&contentDeal{}).Count(&dealsTotal).Error; err != nil {
 		return err
@@ -1678,7 +1675,6 @@ func (s *Server) handleRetrievalCheck(c echo.Context) error {
 	}
 
 	return c.JSON(200, "We did a thing")
-
 }
 
 type estimateDealBody struct {
@@ -2500,7 +2496,6 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-
 		r := c.Request()
 
 		attrs := []attribute.KeyValue{
@@ -2781,7 +2776,6 @@ type dealPairs struct {
 }
 
 func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
-
 	begin := time.Now().Add(time.Hour * 24)
 	duration := time.Hour * 24
 

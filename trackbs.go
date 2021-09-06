@@ -98,7 +98,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 		case req := <-tbs.countsReq:
 			resp := make([]int, len(req.req))
 			for i, o := range req.req {
-				resp[i] = tbs.buffer[o.Cid.CID].Get
+				resp[i] = tbs.buffer[o.Hash.Cid()].Get
 			}
 			req.resp <- resp
 		case req := <-tbs.accessReq:
