@@ -797,6 +797,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	objects := make([]*Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
 		objects = append(objects, &Object{
+			Cid:  util.DbCID{CID: o.Cid},
 			Hash: util.DbHashFromCid(o.Cid),
 			Size: o.Size,
 		})

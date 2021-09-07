@@ -138,6 +138,5 @@ func (d *DbHash) UnmarshalJSON(b []byte) error {
 }
 
 func (d *DbHash) Cid() cid.Cid {
-	// TODO: is cid.Raw appropriate?
 	return cid.NewCidV1(cid.Raw, d.Hash)
 }

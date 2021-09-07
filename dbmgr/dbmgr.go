@@ -15,9 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	ErrNotFiltered = errors.New("actions requires query to be filtered, but no filters were applied")
-)
+var ErrNotFiltered = errors.New("actions requires query to be filtered, but no filters were applied")
 
 type DBSortOrder int
 
@@ -155,7 +153,7 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 		return nil, err
 	}
 
-	//miners from minerX spreadsheet
+	// miners from minerX spreadsheet
 	minerStrs := []string{
 		"f02620",
 		"f023971",
@@ -225,23 +223,26 @@ type UsersQuery struct {
 	DB       *gorm.DB
 	filtered bool
 }
-type UserID uint
-type User struct {
-	gorm.Model
 
-	UUID     string `gorm:"unique"`
-	Username string `gorm:"unique"`
-	PassHash string
+type (
+	UserID uint
+	User   struct {
+		gorm.Model
 
-	UserEmail string
+		UUID     string `gorm:"unique"`
+		Username string `gorm:"unique"`
+		PassHash string
 
-	Address util.DbAddr
+		UserEmail string
 
-	Perm  int
-	Flags int
+		Address util.DbAddr
 
-	StorageDisabled bool
-}
+		Perm  int
+		Flags int
+
+		StorageDisabled bool
+	}
+)
 
 func NewUsersQuery(db *gorm.DB) *UsersQuery {
 	return &UsersQuery{DB: db.Model(User{})}
@@ -308,6 +309,7 @@ func (q *UsersQuery) ExpectDelete() error {
 // AUTH TOKENS
 
 type AuthTokensQuery struct{ DB *gorm.DB }
+
 type AuthToken struct {
 	gorm.Model
 	Token  string `gorm:"unique"`
@@ -329,32 +331,35 @@ type ContentsQuery struct {
 	DB       *gorm.DB
 	filtered bool
 }
-type ContentID uint
-type Content struct {
-	ID        uint `gorm:"primarykey"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	Cid         util.DbCID
-	Name        string
-	UserID      UserID
-	Description string
-	Size        int64
-	Active      bool
-	Offloaded   bool
-	Replication int
+type (
+	ContentID uint
+	Content   struct {
+		ID        uint `gorm:"primarykey"`
+		CreatedAt time.Time
+		UpdatedAt time.Time
+		DeletedAt gorm.DeletedAt `gorm:"index"`
 
-	AggregatedIn ContentID
-	Aggregate    bool
+		Cid         util.DbCID
+		Name        string
+		UserID      UserID
+		Description string
+		Size        int64
+		Active      bool
+		Offloaded   bool
+		Replication int
 
-	Pinning bool
-	PinMeta string
+		AggregatedIn ContentID
+		Aggregate    bool
 
-	Failed bool
+		Pinning bool
+		PinMeta string
 
-	Location string
-}
+		Failed bool
+
+		Location string
+	}
+)
 
 func NewContentsQuery(db *gorm.DB) *ContentsQuery {
 	return &ContentsQuery{DB: db.Model(Content{})}
@@ -477,22 +482,25 @@ func (q *ContentsQuery) Delete() error {
 
 // OBJECTS
 
-type ObjectsQuery struct{ DB *gorm.DB }
-type ObjectID uint
-type Object struct {
-	ID         ObjectID   `gorm:"primarykey"`
-	Cid        util.DbCID `gorm:"index"`
-	Size       int
-	Reads      int
-	LastAccess time.Time
-}
+type (
+	ObjectsQuery struct{ DB *gorm.DB }
+	ObjectID     uint
+	Object       struct {
+		ID         ObjectID    `gorm:"primarykey"`
+		Cid        util.DbCID  `gorm:"index"`
+		Hash       util.DbHash `gorm:"index"`
+		Size       int
+		Reads      int
+		LastAccess time.Time
+	}
+)
 
 func NewObjectsQuery(db *gorm.DB) *ObjectsQuery {
 	return &ObjectsQuery{DB: db.Model(Object{})}
 }
 
 func (q *ObjectsQuery) WithCid(cid gocid.Cid) *ObjectsQuery {
-	q.DB = q.DB.Where("cid = ?", cidToBytes(cid))
+	q.DB = q.DB.Where("hash = ? OR cid = ?", cid.Hash(), cidToBytes(cid))
 	return q
 }
 
@@ -526,13 +534,16 @@ type ObjRefsQuery struct {
 	DB       *gorm.DB
 	filtered bool
 }
-type ObjRefID uint
-type ObjRef struct {
-	ID        ObjRefID `gorm:"primarykey"`
-	Content   ContentID
-	Object    ObjectID
-	Offloaded uint
-}
+
+type (
+	ObjRefID uint
+	ObjRef   struct {
+		ID        ObjRefID `gorm:"primarykey"`
+		Content   ContentID
+		Object    ObjectID
+		Offloaded uint
+	}
+)
 
 func NewObjRefsQuery(db *gorm.DB) *ObjRefsQuery {
 	return &ObjRefsQuery{DB: db.Model(ObjRef{})}
@@ -575,25 +586,27 @@ func (q *ObjRefsQuery) Delete() error {
 
 // DEALS
 
-type DealsQuery struct{ DB *gorm.DB }
-type DealID uint
-type Deal struct {
-	gorm.Model
+type (
+	DealsQuery struct{ DB *gorm.DB }
+	DealID     uint
+	Deal       struct {
+		gorm.Model
 
-	Content          uint
-	PropCid          util.DbCID
-	Miner            string
-	DealID           int64
-	Failed           bool
-	Verified         bool
-	FailedAt         time.Time
-	DTChan           string
-	TransferStarted  time.Time
-	TransferFinished time.Time
+		Content          uint
+		PropCid          util.DbCID
+		Miner            string
+		DealID           int64
+		Failed           bool
+		Verified         bool
+		FailedAt         time.Time
+		DTChan           string
+		TransferStarted  time.Time
+		TransferFinished time.Time
 
-	OnChainAt time.Time
-	SealedAt  time.Time
-}
+		OnChainAt time.Time
+		SealedAt  time.Time
+	}
+)
 
 func NewDealsQuery(db *gorm.DB) *DealsQuery {
 	return &DealsQuery{DB: db.Model(Deal{})}
@@ -663,18 +676,20 @@ func (q *DealsQuery) Count() (int64, error) {
 
 // COLLECTIONS
 
-type CollectionsQuery struct{ DB *gorm.DB }
-type CollectionID uint
-type Collection struct {
-	ID        CollectionID `gorm:"primarykey"`
-	CreatedAt time.Time
+type (
+	CollectionsQuery struct{ DB *gorm.DB }
+	CollectionID     uint
+	Collection       struct {
+		ID        CollectionID `gorm:"primarykey"`
+		CreatedAt time.Time
 
-	UUID string `gorm:"index"`
+		UUID string `gorm:"index"`
 
-	Name        string `gorm:"unique"`
-	Description string
-	UserID      UserID
-}
+		Name        string `gorm:"unique"`
+		Description string
+		UserID      UserID
+	}
+)
 
 func NewCollectionsQuery(db *gorm.DB) *CollectionsQuery {
 	return &CollectionsQuery{DB: db.Model(Collection{})}
@@ -701,14 +716,16 @@ func (q *CollectionsQuery) Get() (Collection, error) {
 
 // COLLECTION REFS
 
-type CollectionRefsQuery struct{ DB *gorm.DB }
-type CollectionRefID uint
-type CollectionRef struct {
-	ID         CollectionRefID `gorm:"primarykey"`
-	CreatedAt  time.Time
-	Collection CollectionID
-	Content    ContentID
-}
+type (
+	CollectionRefsQuery struct{ DB *gorm.DB }
+	CollectionRefID     uint
+	CollectionRef       struct {
+		ID         CollectionRefID `gorm:"primarykey"`
+		CreatedAt  time.Time
+		Collection CollectionID
+		Content    ContentID
+	}
+)
 
 func NewCollectionRefsQuery(db *gorm.DB) *CollectionRefsQuery {
 	return &CollectionRefsQuery{DB: db.Model(CollectionRef{})}
@@ -721,6 +738,7 @@ func (q *CollectionRefsQuery) Create(collectionRef CollectionRef) error {
 // DFE RECORDS
 
 type DFERecordsQuery struct{ DB *gorm.DB }
+
 type DFERecord struct {
 	gorm.Model
 
@@ -751,6 +769,7 @@ func (q *DFERecordsQuery) Count() (int64, error) {
 // PROPOSAL RECORDS
 
 type ProposalRecordsQuery struct{ DB *gorm.DB }
+
 type ProposalRecord struct {
 	PropCid util.DbCID
 	Data    []byte
@@ -775,15 +794,17 @@ func (q *ProposalRecordsQuery) Get() (ProposalRecord, error) {
 
 // INVITE CODES
 
-type InviteCodesQuery struct{ DB *gorm.DB }
-type InviteCodeID uint
-type InviteCode struct {
-	gorm.Model
+type (
+	InviteCodesQuery struct{ DB *gorm.DB }
+	InviteCodeID     uint
+	InviteCode       struct {
+		gorm.Model
 
-	Code      string `gorm:"unique"`
-	CreatedBy uint
-	ClaimedBy uint
-}
+		Code      string `gorm:"unique"`
+		CreatedBy uint
+		ClaimedBy uint
+	}
+)
 
 func NewInviteCodesQuery(db *gorm.DB) *InviteCodesQuery {
 	return &InviteCodesQuery{DB: db.Model(InviteCode{})}
@@ -799,7 +820,7 @@ func (q *InviteCodesQuery) GetClaimedInvites() ([]ClaimedInvite, error) {
 	var invites []ClaimedInvite
 	if err := q.DB.
 		Select("code, username, (?) as claimed_by", q.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
-		//Where("claimed_by IS NULL").
+		// Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Scan(&invites).Error; err != nil {
 		return nil, err
@@ -817,18 +838,21 @@ type StorageMinersQuery struct {
 	DB       *gorm.DB
 	filtered bool
 }
-type StorageMinerID uint
-type StorageMiner struct {
-	gorm.Model
 
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           UserID
-}
+type (
+	StorageMinerID uint
+	StorageMiner   struct {
+		gorm.Model
+
+		Address         util.DbAddr `gorm:"unique"`
+		Suspended       bool
+		SuspendedReason string
+		Name            string
+		Version         string
+		Location        string
+		Owner           UserID
+	}
+)
 
 func NewStorageMinersQuery(db *gorm.DB) *StorageMinersQuery {
 	return &StorageMinersQuery{DB: db.Model(StorageMiner{})}
@@ -877,23 +901,25 @@ func (q *StorageMinersQuery) Delete() error {
 
 // RETRIEVAL SUCCESS RECORDS
 
-type RetrievalSuccessRecordsQuery struct{ DB *gorm.DB }
-type RetrievalSuccessRecordID uint
-type RetrievalSuccessRecord struct {
-	ID        uint `gorm:"primarykey"`
-	CreatedAt time.Time
+type (
+	RetrievalSuccessRecordsQuery struct{ DB *gorm.DB }
+	RetrievalSuccessRecordID     uint
+	RetrievalSuccessRecord       struct {
+		ID        uint `gorm:"primarykey"`
+		CreatedAt time.Time
 
-	Cid   util.DbCID
-	Miner string
+		Cid   util.DbCID
+		Miner string
 
-	Peer         string
-	Size         uint64
-	DurationMs   int64
-	AverageSpeed uint64
-	TotalPayment string
-	NumPayments  int
-	AskPrice     string
-}
+		Peer         string
+		Size         uint64
+		DurationMs   int64
+		AverageSpeed uint64
+		TotalPayment string
+		NumPayments  int
+		AskPrice     string
+	}
+)
 
 func NewRetrievalSuccessRecordsQuery(db *gorm.DB) *RetrievalSuccessRecordsQuery {
 	return &RetrievalSuccessRecordsQuery{DB: db.Model(RetrievalSuccessRecord{})}
@@ -909,17 +935,19 @@ func (q *RetrievalSuccessRecordsQuery) Count() (int64, error) {
 
 // RETRIEVAL FAILURE RECORDS
 
-type RetrievalFailureRecordsQuery struct{ DB *gorm.DB }
-type RetrievalFailureRecordID uint
-type RetrievalFailureRecord struct {
-	gorm.Model
+type (
+	RetrievalFailureRecordsQuery struct{ DB *gorm.DB }
+	RetrievalFailureRecordID     uint
+	RetrievalFailureRecord       struct {
+		gorm.Model
 
-	Miner   string
-	Phase   string
-	Message string
-	Content ContentID
-	Cid     util.DbCID
-}
+		Miner   string
+		Phase   string
+		Message string
+		Content ContentID
+		Cid     util.DbCID
+	}
+)
 
 func NewRetrievalFailureRecordsQuery(db *gorm.DB) *RetrievalFailureRecordsQuery {
 	return &RetrievalFailureRecordsQuery{DB: db.Model(RetrievalFailureRecord{})}
@@ -936,6 +964,7 @@ func (q *RetrievalFailureRecordsQuery) Count() (int64, error) {
 // PIECE COMM RECORDS
 
 type PieceCommRecordsQuery struct{ DB *gorm.DB }
+
 type PieceCommRecord struct {
 	Data  util.DbCID `gorm:"unique"`
 	Piece util.DbCID
@@ -948,17 +977,19 @@ func NewPieceCommRecordsQuery(db *gorm.DB) *PieceCommRecordsQuery {
 
 // MINER STORAGE ASKS
 
-type MinerStorageAsksQuery struct{ DB *gorm.DB }
-type MinerStorageAskID uint
-type MinerStorageAsk struct {
-	gorm.Model
+type (
+	MinerStorageAsksQuery struct{ DB *gorm.DB }
+	MinerStorageAskID     uint
+	MinerStorageAsk       struct {
+		gorm.Model
 
-	Miner         string `gorm:"unique"`
-	Price         string
-	VerifiedPrice string
-	MinPieceSize  abi.PaddedPieceSize
-	MaxPieceSize  abi.PaddedPieceSize
-}
+		Miner         string `gorm:"unique"`
+		Price         string
+		VerifiedPrice string
+		MinPieceSize  abi.PaddedPieceSize
+		MaxPieceSize  abi.PaddedPieceSize
+	}
+)
 
 func NewMinerStorageAsksQuery(db *gorm.DB) *MinerStorageAsksQuery {
 	return &MinerStorageAsksQuery{DB: db.Model(MinerStorageAsk{})}
@@ -966,21 +997,23 @@ func NewMinerStorageAsksQuery(db *gorm.DB) *MinerStorageAsksQuery {
 
 // SHUTTLES
 
-type ShuttlesQuery struct{ DB *gorm.DB }
-type ShuttleID uint
-type Shuttle struct {
-	gorm.Model
+type (
+	ShuttlesQuery struct{ DB *gorm.DB }
+	ShuttleID     uint
+	Shuttle       struct {
+		gorm.Model
 
-	Handle string `gorm:"unique"`
-	Host   string
-	PeerID string
+		Handle string `gorm:"unique"`
+		Host   string
+		PeerID string
 
-	Private bool
+		Private bool
 
-	Open bool
+		Open bool
 
-	Priority int
-}
+		Priority int
+	}
+)
 
 func NewShuttlesQuery(db *gorm.DB) *ShuttlesQuery {
 	return &ShuttlesQuery{DB: db.Model(Shuttle{})}

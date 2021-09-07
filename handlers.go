@@ -694,6 +694,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		objlk.Lock()
 		objects = append(objects, &Object{
+			Cid:  util.DbCID{CID: c},
 			Hash: util.DbHashFromCid(c),
 			Size: len(node.RawData()),
 		})
@@ -721,7 +722,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	defer span.End()
 
 	content := &Content{
-		Cid:         util.DbCID{root},
+		Cid:         util.DbCID{CID: root},
 		Name:        fname,
 		Active:      false,
 		Pinning:     true,
@@ -3041,10 +3042,12 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	}
 
 	var obj Object
-	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
+	hash := cc.Hash()
+	if err := s.DB.First(&obj, "hash = ? OR cid = ?", hash, cc.Bytes()).Error; err != nil {
 		return c.JSON(404, map[string]interface{}{
 			"error":                "object not found in database",
 			"cid":                  cc.String(),
+			"hash":                 hash.String(),
 			"matchingRootContents": roots,
 		})
 	}

@@ -52,7 +52,7 @@ func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
 
 func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
-	if err := cm.DB.Model(&Object{}).Where("hash = ?", c.Hash()).Count(&count).Error; err != nil {
+	if err := cm.DB.Model(&Object{}).Where("hash = ? or cid = ?", c.Hash(), c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -178,11 +178,11 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 	defer cm.contentLk.Unlock()
 
 	var objs []Object
-	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR hash = ?", o.ID, o.Hash).Find(&objs).Error; err != nil {
+	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR hash = ? OR cid = ?", o.ID, o.Hash, o.Cid).Find(&objs).Error; err != nil {
 		return err
 	}
 	if len(objs) == 0 {
-		return cm.Node.Blockstore.DeleteBlock(o.Hash.Cid())
+		return cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
 	}
 	return nil
 }

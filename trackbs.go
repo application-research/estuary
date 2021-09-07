@@ -98,7 +98,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 		case req := <-tbs.countsReq:
 			resp := make([]int, len(req.req))
 			for i, o := range req.req {
-				resp[i] = tbs.buffer[o.Hash.Cid()].Get
+				resp[i] = tbs.buffer[o.Cid.CID].Get
 			}
 			req.resp <- resp
 		case req := <-tbs.accessReq:
@@ -115,7 +115,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
 	for c, acc := range buf {
 		if acc.Get > 0 {
-			err := tbs.db.Model(&Object{}).Where("hash = ?", c.Hash()).Updates(map[string]interface{}{
+			err := tbs.db.Model(&Object{}).Where("hash = ? OR cid = ?", c.Hash(), c.Bytes()).Updates(map[string]interface{}{
 				"reads":       gorm.Expr("reads + ?", acc.Get),
 				"last_access": acc.Last,
 			}).Error
@@ -164,7 +164,7 @@ func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	if err != nil {
 		if xerrors.Is(err, blockstore.ErrNotFound) {
 			var obj Object
-			if dberr := tbs.db.First(&obj, "where cid = ?", c.Bytes()).Error; dberr != nil {
+			if dberr := tbs.db.First(&obj, "where hash = ? OR cid = ?", c.Hash(), c.Bytes()).Error; dberr != nil {
 				if xerrors.Is(dberr, gorm.ErrRecordNotFound) {
 					// explicitly return original error
 					return nil, err

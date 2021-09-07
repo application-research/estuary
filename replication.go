@@ -618,6 +618,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if loc == "local" {
 		obj := &Object{
+			Cid:  util.DbCID{CID: ncid},
 			Hash: util.DbHashFromCid(ncid),
 			Size: int(size),
 		}
@@ -2375,7 +2376,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 	defer span.End()
 
 	var obj Object
-	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
+	if err := cm.DB.First(&obj, "hash = ? OR cid = ?", c.Hash(), c.Bytes()).Error; err != nil {
 		return nil, xerrors.Errorf("failed to get object from db: ", err)
 	}
 

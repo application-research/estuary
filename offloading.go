@@ -84,6 +84,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 
 	return result, nil
 }
+
 func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []removalCandidateInfo) ([]offloadCandidate, error) {
 	ctx, span := cm.tracer.Start(ctx, "getLastAccesses")
 	defer span.End()
@@ -113,7 +114,7 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 // additionally, for aggregates, we should check each aggregated item under the root
 func (cm *ContentManager) getLastAccessForContent(cont Content) (time.Time, error) {
 	var obj Object
-	if err := cm.DB.First(&obj, "cid = ?", cont.Cid).Error; err != nil {
+	if err := cm.DB.First(&obj, "hash = ? OR cid = ?", cont.Cid.CID.Hash(), cont.Cid).Error; err != nil {
 		return time.Time{}, err
 	}
 
