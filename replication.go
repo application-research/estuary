@@ -133,6 +133,26 @@ type contentStagingZone struct {
 	lk sync.Mutex
 }
 
+func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+	cb2 := &contentStagingZone{
+		ZoneOpened:      cb.ZoneOpened,
+		EarliestContent: cb.EarliestContent,
+		CloseTime:       cb.CloseTime,
+		Contents:        make([]Content, len(cb.Contents)),
+		MinSize:         cb.MinSize,
+		MaxSize:         cb.MaxSize,
+		MaxItems:        cb.MaxItems,
+		CurSize:         cb.CurSize,
+		User:            cb.User,
+		ContID:          cb.ContID,
+		Location:        cb.Location,
+	}
+	copy(cb2.Contents, cb.Contents)
+	return cb2
+}
+
 func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
 	content := &Content{
 		Size:        0,
@@ -255,7 +275,6 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node) (*ContentManager, error) {
-
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -766,8 +785,8 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 	}
 
 	return n - (n / 2), n / 2
-
 }
+
 func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
 	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
 		attribute.Int("count", n),
@@ -1052,8 +1071,7 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 
 	var out []*contentStagingZone
 	for _, b := range blist {
-		cp := *b
-		out = append(out, &cp)
+		out = append(out, b.DeepCopy())
 	}
 
 	return out
@@ -1068,8 +1086,7 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 		var copylist []*contentStagingZone
 
 		for _, b := range blist {
-			cp := *b
-			copylist = append(copylist, &cp)
+			copylist = append(copylist, b.DeepCopy())
 		}
 
 		out[u] = copylist
@@ -1577,7 +1594,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	case datatransfer.Failing:
 		// I guess we just wait until its failed all the way?
 	case datatransfer.Requested:
-		//fmt.Println("transfer is requested, hasnt started yet")
+		// fmt.Println("transfer is requested, hasnt started yet")
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
@@ -1592,7 +1609,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		}
 
 		// these are all okay
-		//fmt.Println("transfer is finished-ish!", status.Status)
+		// fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
 		//fmt.Println("transfer status is ongoing!")
 		/* For now, dont call restart?
@@ -1654,7 +1671,7 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
 	if !ok {
-		//return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		// return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
 		return nil, nil
 	}
 
@@ -1835,7 +1852,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 	if content.Size < (256 << 10) {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
-
 	}
 
 	if content.Offloaded {
@@ -2166,7 +2182,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	if err != nil {
 		return err
 	}
-	//fmt.Println("proposal cid: ", nd.Cid())
+	// fmt.Println("proposal cid: ", nd.Cid())
 
 	if err := cm.DB.Create(&proposalRecord{
 		PropCid: util.DbCID{nd.Cid()},
@@ -2636,7 +2652,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 }
 
 func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []Content) error {
-
 	for _, c := range toMove {
 		if err := cm.migrateContentToLocalNode(ctx, c); err != nil {
 			return err
@@ -2719,7 +2734,6 @@ func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, err
 	}
 
 	return &conn.addrInfo, nil
-
 }
 
 func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *contentDeal, datacid cid.Cid) error {
@@ -2739,7 +2753,6 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 			},
 		},
 	})
-
 }
 
 func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont Content, aggr []uint, blob []byte) error {
