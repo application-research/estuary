@@ -115,7 +115,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
 	for c, acc := range buf {
 		if acc.Get > 0 {
-			err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
+			err := tbs.db.Model(&Object{}).Where("hash = ?", c.Hash()).Updates(map[string]interface{}{
 				"reads":       gorm.Expr("reads + ?", acc.Get),
 				"last_access": acc.Last,
 			}).Error

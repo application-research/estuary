@@ -636,7 +636,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := s.DB.Model(&Object{}).Where("hash = ?", c.Hash()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
