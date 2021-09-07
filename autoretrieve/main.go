@@ -6,25 +6,20 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"sort"
 	"sync"
 
 	"github.com/application-research/estuary/dbmgr"
+	"github.com/application-research/estuary/node"
 	"github.com/application-research/filclient"
-	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
-	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
-	"github.com/ipfs/go-bitswap"
-	bsnet "github.com/ipfs/go-bitswap/network"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
-	flatfs "github.com/ipfs/go-ds-flatfs"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	"github.com/libp2p/go-libp2p"
 	"github.com/urfave/cli/v2"
 )
 
@@ -33,80 +28,52 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
-			Name:    "database",
-			Value:   "sqlite=../estuary.db", // Uses same database from base Estuary dir
-			EnvVars: []string{"ESTUARY_AR_DATABASE"},
+			Name:    "datadir",
+			Value:   ".",
+			EnvVars: []string{"ESTUARY_AR_DATADIR"},
 		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
-		// Connect to database
+		ddir := cctx.String("datadir")
 
-		dbval := cctx.String("database")
-		db, err := dbmgr.NewDBMgr(dbval)
+		cfg := node.Config{
+			ListenAddrs: []string{
+				"/ip4/0.0.0.0/tcp/6744",
+			},
+			Blockstore:       filepath.Join(ddir, "estuary-ar-blocks"),
+			Libp2pKeyFile:    filepath.Join(ddir, "estuary-ar-peer-key"),
+			Datastore:        filepath.Join(ddir, "estuary-ar-leveldb"),
+			WalletDir:        filepath.Join(ddir, "estuary-ar-wallet"),
+			WriteLogTruncate: cctx.Bool("estuary-ar-write-log-truncate"),
+
+			BlockstoreWrap: func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
+				return autoRetrieveBlockstore{Blockstore: bs}, nil
+			},
+		}
+
+		nd, err := node.Setup(cctx.Context, &cfg)
 		if err != nil {
 			return err
 		}
 
-		// Initialize libp2p host
-
-		h, err := libp2p.New(cctx.Context)
-		if err != nil {
-			return err
-		}
-		defer h.Close()
-
-		// Open blockstore
-
-		ds, err := flatfs.Open("blocks", false)
-		if err != nil {
-			return err
-		}
-		defer ds.Close()
-
-		// Set up client
-
+		// Set the blockstore filclient instance
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
 			return err
 		}
 		defer closer()
 
-		ddir := "."
-
-		walletDir := path.Join(ddir, "wallet")
-		ks, err := keystore.OpenOrInitKeystore(walletDir)
+		addr, err := nd.Wallet.GetDefault()
 		if err != nil {
 			return err
 		}
 
-		wallet, err := wallet.NewWallet(ks)
+		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}
-
-		walletAddr, err := wallet.GetDefault()
-		if err != nil {
-			return err
-		}
-
-		fc, err := filclient.NewClient(h, api, wallet, walletAddr, blockstore.NewBlockstore(ds), ds, ddir)
-		if err != nil {
-			return err
-		}
-
-		// Set up auto retrieve blockstore interface
-
-		bs := AutoRetrieveBlockstore{
-			blockstore.NewBlockstore(ds),
-			db,
-			fc,
-		}
-
-		// Start bitswap
-
-		bsnet := bsnet.NewFromIpfsHost(h, nil)
-		bitswap.New(cctx.Context, bsnet, bs)
+		nd.Blockstore.(*autoRetrieveBlockstore).fc = fc
 
 		return nil
 	}
@@ -117,13 +84,12 @@ func main() {
 	}
 }
 
-type AutoRetrieveBlockstore struct {
+type autoRetrieveBlockstore struct {
 	blockstore.Blockstore
-	db *dbmgr.DBMgr
 	fc *filclient.FilClient
 }
 
-func (bs AutoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
+func (bs autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	// Try to get this cid from the local blockstore
 	block, bsErr := bs.Blockstore.Get(c)
 
@@ -140,21 +106,17 @@ func (bs AutoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 				return nil, err
 			}
 
-			// And if it is (and it's not in the blockstore, since we're
-			// here), then we can retrieve it and add it to the blockstore!
-			bs.retrieve(object)
+			// And if it is (and it's not in the blockstore, since we're here),
+			// then we can retrieve it!
+			return bs.retrieve(object)
 		}
 	}
 
 	return block, nil
 }
 
-func (bs AutoRetrieveBlockstore) Put(block blocks.Block) error {
-
-	bs.Blockstore.Put(block)
-}
-
-func (bs *AutoRetrieveBlockstore) retrieve(object dbmgr.Object) (blocks.Block, error) {
+// Retrieve an item, add it to the blockstore, and return that new block.
+func (bs *autoRetrieveBlockstore) retrieve(ctx context.Context, fc *filclient.FilClient, object dbmgr.Object) (blocks.Block, error) {
 	objRefs, err := bs.db.ObjRefs().WithObjectID(object.ID).Get()
 	if err != nil {
 		return nil, err
@@ -167,7 +129,7 @@ func (bs *AutoRetrieveBlockstore) retrieve(object dbmgr.Object) (blocks.Block, e
 	if objRefCount == 0 {
 		// If no object refs in the database, there's no way to know what to
 		// fetch!
-		return nil, fmt.Errorf("no reference objects for object with cid %s", object.Cid)
+		return nil, fmt.Errorf("no references for object with cid %s", object.Cid)
 	} else if objRefCount == 1 {
 		// If only one object ref, obviously we'll use that one
 		contentToRetrieve = objRefs[0].Content
@@ -210,11 +172,18 @@ func (bs *AutoRetrieveBlockstore) retrieve(object dbmgr.Object) (blocks.Block, e
 		}
 	}
 
+	// Retrieve the content from one of those miners
+	if err := bs.retrieveFromCandidates(ctx, fc, object.Cid.CID, minerAddrs); err != nil {
+		return nil, err
+	}
+
+	// Wait for the block to show up, and return it
+
 	return blocks, nil
 }
 
 // Select the most preferable miner to retrieve from and execute the retrieval
-func (bs *AutoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, c cid.Cid, minerAddrs []address.Address) error {
+func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, fc *filclient.FilClient, c cid.Cid, minerAddrs []address.Address) error {
 	// This does not currently need a mutex because each goroutine gets its own
 	// dedicated index to write to, but be aware!
 	type result struct {
@@ -231,7 +200,7 @@ func (bs *AutoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, c 
 	wg.Add(len(minerAddrs))
 	for _, maddr := range minerAddrs {
 		go func() {
-			ask, err := bs.fc.RetrievalQuery(ctx, maddr, c)
+			ask, err := fc.RetrievalQuery(ctx, maddr, c)
 
 			if err != nil {
 				fmt.Printf("retrieval query for miner %s failed: %v\n", maddr, err)
@@ -265,7 +234,7 @@ func (bs *AutoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, c 
 	})
 
 	for _, res := range results {
-		_, err := bs.fc.RetrieveContent(ctx, res.maddr, res.proposal)
+		_, err := fc.RetrieveContent(ctx, res.maddr, res.proposal)
 		if err != nil {
 			fmt.Printf("retrieval failed: %v", err)
 			continue
