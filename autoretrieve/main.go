@@ -1,4 +1,4 @@
-package autoretrieve
+package main
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/application-research/estuary/dbmgr"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
@@ -37,6 +36,7 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
 
+		var arbs *autoRetrieveBlockstore
 		cfg := node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
@@ -48,7 +48,8 @@ func main() {
 			WriteLogTruncate: cctx.Bool("estuary-ar-write-log-truncate"),
 
 			BlockstoreWrap: func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-				return autoRetrieveBlockstore{Blockstore: bs}, nil
+				arbs = &autoRetrieveBlockstore{Blockstore: bs}
+				return arbs, nil
 			},
 		}
 
@@ -56,6 +57,8 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		arbs.notifBlockstore = nd.NotifBlockstore
 
 		// Set the blockstore filclient instance
 		api, closer, err := lcli.GetGatewayAPI(cctx)
@@ -73,7 +76,8 @@ func main() {
 		if err != nil {
 			return err
 		}
-		nd.Blockstore.(*autoRetrieveBlockstore).fc = fc
+
+		arbs.fc = fc
 
 		return nil
 	}
@@ -84,9 +88,15 @@ func main() {
 	}
 }
 
+type retrievalCandidate struct {
+	maddr   address.Address
+	rootCid cid.Cid
+}
+
 type autoRetrieveBlockstore struct {
 	blockstore.Blockstore
-	fc *filclient.FilClient
+	notifBlockstore *node.NotifyBlockstore
+	fc              *filclient.FilClient
 }
 
 func (bs autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
@@ -97,93 +107,36 @@ func (bs autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	if bsErr != nil {
 		// ...maybe it wasn't present
 		if errors.Is(bsErr, blockstore.ErrNotFound) {
-			// In which case, we check if the cid is tracked in the database
-			object, err := bs.db.Objects().WithCid(c).GetSingle()
+			// In which case, we hit the api endpoint and ask which miners have this information
+			candidates, err := bs.getRetrievalCandidates(context.Background(), c)
 			if err != nil {
-				if errors.Is(err, dbmgr.ErrNotFound) {
-					return nil, fmt.Errorf("cid %s not tracked: %w", c, bsErr)
-				}
 				return nil, err
 			}
 
-			// And if it is (and it's not in the blockstore, since we're here),
-			// then we can retrieve it!
-			return bs.retrieve(object)
+			if err := bs.retrieveFromCandidates(context.Background(), candidates); err != nil {
+				return nil, err
+			}
+
+			// Wait for the requested cid to show up in the blockstore
+			blockCh := bs.notifBlockstore.WaitFor(c)
+
+			<-blockCh
+
+			return block, nil
 		}
 	}
 
+	// If there was no error getting the block locally, just return that
 	return block, nil
 }
 
-// Retrieve an item, add it to the blockstore, and return that new block.
-func (bs *autoRetrieveBlockstore) retrieve(ctx context.Context, fc *filclient.FilClient, object dbmgr.Object) (blocks.Block, error) {
-	objRefs, err := bs.db.ObjRefs().WithObjectID(object.ID).Get()
-	if err != nil {
-		return nil, err
-	}
-
-	objRefCount := len(objRefs)
-
-	// Determine which content to fetch
-	var contentToRetrieve dbmgr.ContentID
-	if objRefCount == 0 {
-		// If no object refs in the database, there's no way to know what to
-		// fetch!
-		return nil, fmt.Errorf("no references for object with cid %s", object.Cid)
-	} else if objRefCount == 1 {
-		// If only one object ref, obviously we'll use that one
-		contentToRetrieve = objRefs[0].Content
-	} else {
-		// If there are multiple object refs, we check and see if one of them is
-		// registered as a root content in the database by checking if any have
-		// the requested cid. Root contents are preferable because as of
-		// implementation (2 Sep 2021), most miners aren't able to respond to
-		// partial content requests.
-
-		contents, err := bs.db.Contents().WithCid(object.Cid.CID).Get()
-		if err != nil {
-			return nil, err
-		}
-
-		// Check if we found any contents from the database with the requested
-		// cid, and if so...
-		if len(contents) > 0 {
-			// ...it's a root content, so we should get that one
-			contentToRetrieve = dbmgr.ContentID(contents[0].ID)
-		} else {
-			// Otherwise, no root contents were found, so we have no choice but
-			// to just try to retrieve an arbitrary partial content
-			contentToRetrieve = objRefs[0].Content
-		}
-	}
-
-	// Identify the miners that have the requested content
-
-	deals, err := bs.db.Deals().WithContentID(contentToRetrieve).WithFailed(false).Get()
-	if err != nil {
-		return nil, err
-	}
-
-	minerAddrs := make([]address.Address, len(deals))
-	for i, deal := range deals {
-		minerAddrs[i], err = address.NewFromString(deal.Miner)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Retrieve the content from one of those miners
-	if err := bs.retrieveFromCandidates(ctx, fc, object.Cid.CID, minerAddrs); err != nil {
-		return nil, err
-	}
-
-	// Wait for the block to show up, and return it
-
-	return blocks, nil
+func (bs *autoRetrieveBlockstore) getRetrievalCandidates(ctx context.Context, c cid.Cid) ([]retrievalCandidate, error) {
+	panic("todo")
 }
 
 // Select the most preferable miner to retrieve from and execute the retrieval
-func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, fc *filclient.FilClient, c cid.Cid, minerAddrs []address.Address) error {
+func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, candidates []retrievalCandidate) error {
+
 	// This does not currently need a mutex because each goroutine gets its own
 	// dedicated index to write to, but be aware!
 	type result struct {
@@ -197,22 +150,22 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, fc
 	// Run retrieval queries for each miner candidate in parallel, and collect
 	// them into results
 	var wg sync.WaitGroup
-	wg.Add(len(minerAddrs))
-	for _, maddr := range minerAddrs {
+	wg.Add(len(candidates))
+	for _, candidate := range candidates {
 		go func() {
-			ask, err := fc.RetrievalQuery(ctx, maddr, c)
+			ask, err := bs.fc.RetrievalQuery(ctx, candidate.maddr, candidate.rootCid)
 
 			if err != nil {
-				fmt.Printf("retrieval query for miner %s failed: %v\n", maddr, err)
+				fmt.Printf("retrieval query for miner %s failed: %v\n", candidate.maddr, err)
 			} else {
-				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
+				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, candidate.rootCid, nil)
 				if err != nil {
 					fmt.Printf("failed to create retrieval proposal for ask: %v\n", err)
 				}
 				resultsLk.Lock()
 				results = append(results, result{
 					proposal,
-					maddr,
+					candidate.maddr,
 				})
 				resultsLk.Unlock()
 			}
@@ -224,7 +177,7 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, fc
 
 	// If none of the retrieval queries succeeded, we can exit early
 	if len(results) == 0 {
-		return fmt.Errorf("all retrieval queries failed for cid %s", c)
+		return fmt.Errorf("all retrieval queries failed")
 	}
 
 	// Sort the results from lowest to highest proposal price
@@ -234,7 +187,7 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, fc
 	})
 
 	for _, res := range results {
-		_, err := fc.RetrieveContent(ctx, res.maddr, res.proposal)
+		_, err := bs.fc.RetrieveContent(ctx, res.maddr, res.proposal)
 		if err != nil {
 			fmt.Printf("retrieval failed: %v", err)
 			continue
