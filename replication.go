@@ -283,7 +283,6 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 }
 
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, hostname string) (*ContentManager, error) {
-
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -1000,7 +999,7 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 
 type contentDeal struct {
 	gorm.Model
-	Content          uint       `json:"content"`
+	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
 	Miner            string     `json:"miner"`
 	DealID           int64      `json:"dealId"`
@@ -1203,7 +1202,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	// its too big, need to split it up into chunks
 	if content.Size > cm.contentSizeLimit {
 		return fmt.Errorf("content too big (splitting will be implemented soon)")
-		//return cm.splitContent(ctx, content, cm.contentSizeLimit)
+		// return cm.splitContent(ctx, content, cm.contentSizeLimit)
 	}
 
 	// check if content has enough deals made for it
