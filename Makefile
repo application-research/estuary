@@ -84,6 +84,30 @@ install-estuary-service:
 	#Run 'sudo systemctl start estuary-setup.service' to complete setup
 	#Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service
 
+.PHONY: shuttle
+shuttle:
+	go build ./cmd/estuary-shuttle
+
+.PHONY: install-shuttle
+install-shuttle: shuttle
+	cp estuary-shuttle /usr/local/bin/estuary-shuttle
+
+.PHONY: install-estuary-shuttle-service
+install-estuary-shuttle-service:
+	cp scripts/est-shuttle-service/estuary-shuttle.service /etc/systemd/system/estuary-shuttle.service
+	mkdir -p /etc/estuary-shuttle
+	cp scripts/est-shuttle-service/config.env /etc/estuary-shuttle/config.env
+	mkdir -p /var/log/estuary-shuttle
+	cp scripts/est-shuttle-service/log.env /etc/estuary-shuttle/log.env
+
+	#TODO: if service changes to estuary user/group, need to chown the /etc/estuary dir and contents
+
+	systemctl daemon-reload
+
+	#Edit config values in /etc/estuary/config.env before running any estuary service files
+	#Run 'sudo systemctl start estuary-setup.service' to complete setup
+	#Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service
+
 .PHONY: clean
 clean:
 	rm -rf $(CLEAN) $(BINS)

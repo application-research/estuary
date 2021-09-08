@@ -3522,7 +3522,6 @@ type publicNodeInfo struct {
 }
 
 func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
-
 	return c.JSON(200, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,
 	})

@@ -328,7 +328,11 @@ func main() {
 		}()
 
 		// setup metrics...
-		activeTransfers := metrics.NewCtx(metCtx, "active_transfers", "total number of active data transfers").Gauge()
+		ongoingTransfers := metrics.NewCtx(metCtx, "transfers_ongoing", "total number of ongoing data transfers").Gauge()
+		failedTransfers := metrics.NewCtx(metCtx, "transfers_failed", "total number of failed data transfers").Gauge()
+		cancelledTransfers := metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge()
+		requestedTransfers := metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge()
+		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
 
 		go func() {
 			for range time.Tick(time.Second * 10) {
@@ -338,7 +342,19 @@ func main() {
 					continue
 				}
 
-				activeTransfers.Set(float64(len(txs)))
+				allTransfers.Set(float64(len(txs)))
+
+				byState := make(map[datatransfer.Status]int)
+
+				for _, xfer := range txs {
+					byState[xfer.Status()]++
+				}
+
+				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
+				failedTransfers.Set(float64(byState[datatransfer.Failed]))
+				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
+				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
+
 			}
 		}()
 
