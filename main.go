@@ -38,7 +38,7 @@ var log = logging.Logger("estuary")
 var defaultMiners []address.Address
 
 func init() {
-	//miners from minerX spreadsheet
+	// miners from minerX spreadsheet
 	minerStrs := []string{
 		"f02620",
 		"f023971",
@@ -117,7 +117,7 @@ type Content struct {
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn"`
+	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
 	Aggregate    bool `json:"aggregate"`
 
 	Pinning bool   `json:"pinning"`
@@ -129,8 +129,8 @@ type Content struct {
 	// TODO: shift location tracking to just use the ID of the shuttle
 	// Also move towards recording content movement intentions in the database,
 	// making that process more resilient to failures
-	//LocID     uint   `json:"locID"`
-	//LocIntent uint   `json:"locIntent"`
+	// LocID     uint   `json:"locID"`
+	// LocIntent uint   `json:"locIntent"`
 
 	// If set, this content is part of a split dag.
 	// In such a case, the 'root' content should be advertised on the dht, but
@@ -151,8 +151,8 @@ type Object struct {
 
 type ObjRef struct {
 	ID        uint `gorm:"primarykey"`
-	Content   uint
-	Object    uint
+	Content   uint `gorm:"index:,option:CONCURRENTLY"`
+	Object    uint `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint
 }
 
@@ -337,7 +337,6 @@ func main() {
 						return
 					}
 				}
-
 			}()
 			return out, nil
 		}
@@ -364,7 +363,7 @@ func main() {
 		}
 
 		api, closer, err := lcli.GetGatewayAPI(cctx)
-		//api, closer, err := lcli.GetFullNodeAPI(cctx)
+		// api, closer, err := lcli.GetFullNodeAPI(cctx)
 		if err != nil {
 			return err
 		}
