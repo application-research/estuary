@@ -2314,7 +2314,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 			out = append(out, "https://"+sh.hostname+"/content/add")
 		}
 	}
-	if !s.CM.localContentAddingDisabled {
+	if s.CM.localContentAddingDisabled {
 		out = append(out, "https://api.estuary.tech/content/add")
 	}
 	return out, nil
