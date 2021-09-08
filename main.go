@@ -211,8 +211,9 @@ func main() {
 			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
 		},
 		&cli.StringFlag{
-			Name:  "https-domain",
-			Usage: "specify domain name to run ssl for",
+			Name:  "hostname",
+			Usage: "specify hostname this node will be reachable at",
+			Value: "http://localhost:3004",
 		},
 		&cli.BoolFlag{
 			Name: "fail-deals-on-transfer-failure",
@@ -231,6 +232,10 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name: "write-log-truncate",
+		},
+		&cli.IntFlag{
+			Name:  "default-replication",
+			Value: 6,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -309,6 +314,8 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		defaultReplication = cctx.Int("default-replication")
 
 		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
 			log.Infof("running key provider func")
@@ -404,7 +411,7 @@ func main() {
 
 		s.DB = db
 
-		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
+		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
 		if err != nil {
 			return err
 		}
@@ -442,7 +449,7 @@ func main() {
 			}()
 		}
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
 
 	if err := app.Run(os.Args); err != nil {

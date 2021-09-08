@@ -32,6 +32,8 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_ReqTxStatus:
 		return d.handleRpcReqTxStatus(ctx, cmd.Params.ReqTxStatus)
+	case drpc.CMD_RetrieveContent:
+		return d.handleRpcRetrieveContent(ctx, cmd.Params.RetrieveContent)
 	default:
 		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
 	}
@@ -380,4 +382,8 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 		})
 	}()
 	return nil
+}
+
+func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
+	return fmt.Errorf("not yet implemented")
 }

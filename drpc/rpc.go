@@ -32,6 +32,8 @@ type CmdParams struct {
 	AggregateContent *AggregateContent `json:",omitempty"`
 	StartTransfer    *StartTransfer    `json:",omitempty"`
 	ReqTxStatus      *ReqTxStatus      `json:",omitempty"`
+	SplitContent     *SplitContent     `json:",omitempty"`
+	RetrieveContent  *RetrieveContent  `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -81,6 +83,26 @@ const CMD_ReqTxStatus = "ReqTxStatus"
 type ReqTxStatus struct {
 	DealDBID uint
 	ChanID   datatransfer.ChannelID
+}
+
+const CMD_SplitContent = "SplitContent"
+
+type SplitContent struct {
+	Content uint
+	Size    int64
+}
+
+const CMD_RetrieveContent = "RetrieveContent"
+
+type StorageDeal struct {
+	Miner  address.Address
+	DealID int64
+}
+
+type RetrieveContent struct {
+	Content uint
+	Cid     cid.Cid
+	Deals   []StorageDeal
 }
 
 type ContentFetch struct {

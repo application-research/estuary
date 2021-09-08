@@ -48,11 +48,21 @@ func (c *EstClient) doRequest(ctx context.Context, method string, path string, b
 		return 0, err
 	}
 
-	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
-		return r.StatusCode, fmt.Errorf("received non-200 status: %s", r.Status)
-	}
-
 	defer r.Body.Close()
+
+	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
+		var out map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+			return r.StatusCode, fmt.Errorf("received non-200 status: %s (no error given)", r.Status)
+		}
+
+		errstr, ok := out["error"]
+		if !ok {
+			return r.StatusCode, fmt.Errorf("received non-200 status: %s (unrecognized error format)", r.Status)
+		}
+
+		return r.StatusCode, fmt.Errorf("received non-200 status (%d): %s", r.StatusCode, errstr)
+	}
 
 	if resp != nil {
 		return r.StatusCode, json.NewDecoder(r.Body).Decode(resp)
@@ -214,4 +224,20 @@ func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[strin
 	}
 
 	return out, nil
+}
+
+func (c *EstClient) PinStatusByCid(ctx context.Context, cids []string) (map[string]*types.IpfsPinStatus, error) {
+	var resp listPinsResp
+	_, err := c.doRequest(ctx, "GET", "/pinning/pins?cid="+strings.Join(cids, ","), nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]*types.IpfsPinStatus)
+	for _, res := range resp.Results {
+		out[res.Pin.Cid] = res
+	}
+
+	return out, nil
+
 }

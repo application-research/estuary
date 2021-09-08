@@ -88,8 +88,6 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	fmt.Println("Got asks: ", len(asks))
-
 	if len(asks) == 0 {
 		return fmt.Errorf("no retrieval asks for content")
 	}

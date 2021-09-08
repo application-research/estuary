@@ -404,6 +404,7 @@ func (d *Shuttle) RunRpcConnection() error {
 }
 
 func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
 	defer conn.Close()
 

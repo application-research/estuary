@@ -968,6 +968,14 @@ type fileWithPin struct {
 
 var bargeSyncCmd = &cli.Command{
 	Name: "sync",
+	Flags: []cli.Flag{
+		&cli.BoolFlag{
+			Name: "recover",
+		},
+		&cli.Int64Flag{
+			Name: "new-pin-limit",
+		},
+	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
 		r, err := openRepo(cctx)
@@ -1068,7 +1076,48 @@ var bargeSyncCmd = &cli.Command{
 			}
 		}
 
+		if cctx.Bool("recover") {
+			fmt.Println("recovery requested, searching for pins on estuary not tracked locally...")
+			for i, nnp := range needsNewPin {
+				fmt.Printf("                                \r")
+				fmt.Printf("[%d / %d]\r", i, len(needsNewPin))
+				// TODO: can batch this
+				st, err := c.PinStatusByCid(ctx, []string{nnp.Cid})
+				if err != nil {
+					fmt.Println("failed to get pin status: ", err)
+					continue
+				}
+
+				pin, ok := st[nnp.Cid]
+				if !ok {
+					continue
+				}
+
+				if pin.Status == "failed" {
+					// dont bother recording
+					continue
+				}
+
+				if err := r.DB.Create(&Pin{
+					File:      nnp.FileID,
+					Cid:       nnp.Cid,
+					RequestID: pin.Requestid,
+					Status:    pin.Status,
+				}).Error; err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}
+
 		fmt.Printf("need to make %d new pins\n", len(needsNewPin))
+		if lim := cctx.Int64("new-pin-limit"); lim > 0 {
+			if int64(len(needsNewPin)) > lim {
+				needsNewPin = needsNewPin[:lim]
+				fmt.Printf("only making %d for now...\n", lim)
+			}
+		}
 
 		var dplk sync.Mutex
 		var donePins int

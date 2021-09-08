@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	httpprof "net/http/pprof"
-	"path/filepath"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -44,7 +43,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/multiformats/go-multiaddr"
-	"golang.org/x/crypto/acme/autocert"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -57,7 +55,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok string, cachedir string) error {
+func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 	if lsteptok != "" {
 		ls := launcher.ConfigureOpentelemetry(
 			launcher.WithServiceName("estuary-api"),
@@ -68,11 +66,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	}
 
 	e := echo.New()
-
-	if domain != "" {
-		e.AutoTLSManager.Cache = autocert.DirCache(filepath.Join(cachedir, "certs"))
-		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(domain)
-	}
 
 	if logging {
 		e.Use(middleware.Logger())
@@ -196,6 +189,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public.GET("/stats", s.handlePublicStats)
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 	public.GET("/deals/failures", s.handleStorageFailures)
+	public.GET("/info", s.handleGetPublicNodeInfo)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -263,11 +257,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 
-	if domain != "" {
-		return e.StartAutoTLS(srv)
-	} else {
-		return e.Start(srv)
-	}
+	return e.Start(srv)
 }
 
 func serveCpuProfile(c echo.Context) error {
@@ -883,8 +873,15 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ? and user_id = ?", val, u.ID).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", val, u.ID).Error; err != nil {
 		return err
+	}
+
+	if content.UserID != u.ID {
+		return &util.HttpError{
+			Code:    403,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
 	}
 
 	var deals []contentDeal
@@ -1533,7 +1530,12 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: util.DbAddr{m}}).Error; err != nil {
+	name := c.QueryParam("name")
+
+	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
+		Address: util.DbAddr{m},
+		Name:    name,
+	}).Error; err != nil {
 		return err
 	}
 
@@ -1820,14 +1822,42 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	})
 }
 
+type minerDealsResp struct {
+	ID               uint `json:"id"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Content          uint       `json:"content"`
+	PropCid          util.DbCID `json:"propCid"`
+	Miner            string     `json:"miner"`
+	DealID           int64      `json:"dealId"`
+	Failed           bool       `json:"failed"`
+	Verified         bool       `json:"verified"`
+	FailedAt         time.Time  `json:"failedAt,omitempty"`
+	DTChan           string     `json:"dtChan"`
+	TransferStarted  time.Time  `json:"transferStarted"`
+	TransferFinished time.Time  `json:"transferFinished"`
+
+	OnChainAt  time.Time  `json:"onChainAt"`
+	SealedAt   time.Time  `json:"sealedAt"`
+	ContentCid util.DbCID `json:"contentCid"`
+}
+
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var deals []contentDeal
-	if err := s.DB.Order("created_at desc").Find(&deals, "miner = ?", maddr.String()).Error; err != nil {
+	q := s.DB.Model(contentDeal{}).Order("created_at desc").
+		Joins("left join contents on contents.id = content_deals.content").
+		Where("miner = ?", maddr.String())
+
+	if c.QueryParam("ignore-failed") != "" {
+		q = q.Where("not content_deals.failed")
+	}
+
+	var deals []minerDealsResp
+	if err := q.Select("contents.cid as content_cid, content_deals.*").Scan(&deals).Error; err != nil {
 		return err
 	}
 
@@ -2315,7 +2345,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 		}
 	}
 	if !s.CM.localContentAddingDisabled {
-		out = append(out, "https://api.estuary.tech/content/add")
+		out = append(out, s.CM.hostname+"/content/add")
 	}
 	return out, nil
 }
@@ -3144,6 +3174,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 	}
 
 	websocket.Handler(func(ws *websocket.Conn) {
+		ws.MaxPayloadBytes = 128 << 20
+
 		done := make(chan struct{})
 		defer close(done)
 		defer ws.Close()
@@ -3202,7 +3234,7 @@ type allDealsQuery struct {
 
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
-	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not failed").
+	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("miner, contents.cid as cid, deal_id").
 		Scan(&out).
@@ -3483,4 +3515,15 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]string{})
+}
+
+type publicNodeInfo struct {
+	PrimaryAddress address.Address `json:"primaryAddress"`
+}
+
+func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
+
+	return c.JSON(200, &publicNodeInfo{
+		PrimaryAddress: s.FilClient.ClientAddr,
+	})
 }

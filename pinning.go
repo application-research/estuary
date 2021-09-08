@@ -290,7 +290,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	}
 
 	if len(shuttles) == 0 {
-		log.Warn("no shuttles available for content to be delegated to")
+		log.Info("no shuttles available for content to be delegated to")
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
@@ -316,6 +316,43 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		// anyways, this could be the case where theres a small amount of
 		// downtime from rebooting or something
 		log.Warnf("preferred shuttle %q not online", ploc)
+	}
+
+	// since they are ordered by priority, just take the first
+	return shuttles[0].Handle, nil
+}
+
+func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont Content) (string, error) {
+	ctx, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
+	defer span.End()
+
+	var activeShuttles []string
+	cm.shuttlesLk.Lock()
+	for d, sh := range cm.shuttles {
+		if !sh.private {
+			activeShuttles = append(activeShuttles, d)
+		}
+	}
+	cm.shuttlesLk.Unlock()
+
+	var shuttles []Shuttle
+	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+		return "", err
+	}
+
+	if len(shuttles) == 0 {
+		if cm.localContentAddingDisabled {
+			return "", fmt.Errorf("no shuttles available and local content adding disabled")
+		}
+
+		return "local", nil
+	}
+
+	// prefer the shuttle the content is already on
+	for _, sh := range shuttles {
+		if sh.Handle == cont.Location {
+			return sh.Handle, nil
+		}
 	}
 
 	// since they are ordered by priority, just take the first
