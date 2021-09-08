@@ -2305,7 +2305,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Address:  u.Address.Addr.String(),
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
-			Replication:           6,
+			Replication:           defaultReplication,
 			Verified:              true,
 			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,

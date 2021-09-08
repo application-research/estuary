@@ -37,6 +37,8 @@ var log = logging.Logger("estuary")
 
 var defaultMiners []address.Address
 
+var defaultDatabaseValue = "sqlite=estuary.db"
+
 func init() {
 	// miners from minerX spreadsheet
 	minerStrs := []string{
@@ -177,7 +179,8 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "database",
-			Value:   "sqlite=estuary.db",
+			Usage:   "specify connection string for estuary database",
+			Value:   defaultDatabaseValue,
 			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
@@ -193,17 +196,21 @@ func main() {
 			EnvVars: []string{"ESTUARY_DATADIR"},
 		},
 		&cli.StringFlag{
-			Name:  "write-log",
-			Usage: "enable write log blockstore in specified directory",
+			Name:   "write-log",
+			Usage:  "enable write log blockstore in specified directory",
+			Hidden: true,
 		},
 		&cli.BoolFlag{
-			Name: "no-storage-cron",
+			Name:  "no-storage-cron",
+			Usage: "run estuary without processing files into deals",
 		},
 		&cli.BoolFlag{
-			Name: "logging",
+			Name:  "logging",
+			Usage: "enable api endpoint logging",
 		},
 		&cli.BoolFlag{
-			Name: "enable-auto-retrieve",
+			Name:   "enable-auto-retrieve",
+			Hidden: true,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
@@ -216,19 +223,24 @@ func main() {
 			Value: "http://localhost:3004",
 		},
 		&cli.BoolFlag{
-			Name: "fail-deals-on-transfer-failure",
+			Name:  "fail-deals-on-transfer-failure",
+			Usage: "consider deals failed when the transfer to the miner fails",
 		},
 		&cli.BoolFlag{
-			Name: "disable-deal-making",
+			Name:  "disable-deal-making",
+			Usage: "do not create any new deals (existing deals will still be processed)",
 		},
 		&cli.BoolFlag{
-			Name: "disable-content-adding",
+			Name:  "disable-content-adding",
+			Usage: "disallow new content ingestion globally",
 		},
 		&cli.BoolFlag{
-			Name: "disable-local-content-adding",
+			Name:  "disable-local-content-adding",
+			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
 		},
 		&cli.StringFlag{
-			Name: "blockstore",
+			Name:  "blockstore",
+			Usage: "specify blockstore parameters",
 		},
 		&cli.BoolFlag{
 			Name: "write-log-truncate",
@@ -458,6 +470,14 @@ func main() {
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
+
+	/* TODO: change this default
+	ddir := cctx.String("datadir")
+	if dbval == defaultDatabaseValue && ddir != "." {
+		dbval = "sqlite=" + filepath.Join(ddir, "estuary.db")
+	}
+	*/
+
 	db, err := util.SetupDatabase(dbval)
 	if err != nil {
 		return nil, err
