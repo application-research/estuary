@@ -152,6 +152,10 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, ca
 	var wg sync.WaitGroup
 	wg.Add(len(candidates))
 	for _, candidate := range candidates {
+
+		// Copy loop var for goroutine
+		candidate := candidate
+
 		go func() {
 			ask, err := bs.fc.RetrievalQuery(ctx, candidate.maddr, candidate.rootCid)
 
