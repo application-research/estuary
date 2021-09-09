@@ -1357,7 +1357,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numRetrievalFailures int64
-	if err := s.DB.Model(&retrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
+	if err := s.DB.Model(&util.RetrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
 		return err
 	}
 
@@ -1656,7 +1656,7 @@ func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
 		return err
 	}
 
-	var failures []retrievalFailureRecord
+	var failures []util.RetrievalFailureRecord
 	if err := s.DB.Find(&failures).Error; err != nil {
 		return err
 	}

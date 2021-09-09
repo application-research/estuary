@@ -493,7 +493,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&dfeRecord{})
 	db.AutoMigrate(&PieceCommRecord{})
 	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&retrievalFailureRecord{})
+	db.AutoMigrate(&util.RetrievalFailureRecord{})
 	db.AutoMigrate(&retrievalSuccessRecord{})
 
 	db.AutoMigrate(&minerStorageAsk{})

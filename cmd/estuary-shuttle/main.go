@@ -392,6 +392,9 @@ type Shuttle struct {
 	commpMemo *memo.Memoizer
 
 	authCache *lru.TwoQueueCache
+
+	retrLk               sync.Mutex
+	retrievalsInProgress map[uint]*retrievalProgress
 }
 
 type chanTrack struct {
