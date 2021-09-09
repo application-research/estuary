@@ -187,31 +187,36 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 		return 0, err
 	}
 
-	// TODO: I believe that we need to hold a lock for the entire period that
-	// we are deleting objects from the blockstore, otherwise a new file could
-	// come in that has overlapping blocks, and have its blocks deleted by this
-	// process.
 	var deleteCount int
 	var cids []cid.Cid
+	cm.inflightCidsLk.Lock()
+	defer cm.inflightCidsLk.Unlock()
 	for rows.Next() {
 		var dbc util.DbCID
 		if err := rows.Scan(&dbc); err != nil {
 			return deleteCount, err
 		}
 
-		cids = append(cids, dbc.CID)
+		if !cm.isInflight(dbc.CID) {
+			cids = append(cids, dbc.CID)
+		}
+
 		if len(cids) > 100 {
 			if err := cm.Blockstore.DeleteMany(cids); err != nil {
 				return deleteCount, err
 			}
 			deleteCount += len(cids)
 			cids = cids[:0]
+			// unlock and re-lock to unblock other things
+			cm.inflightCidsLk.Unlock()
+			cm.inflightCidsLk.Lock()
 		}
 	}
 	if len(cids) > 0 {
 		if err := cm.Blockstore.DeleteMany(cids); err != nil {
 			return deleteCount, err
 		}
+
 		deleteCount += len(cids)
 	}
 

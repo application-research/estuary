@@ -110,10 +110,21 @@ type ContentManager struct {
 	shuttles   map[string]*shuttleConnection
 
 	remoteTransferStatus *lru.ARCCache
+
+	inflightCids   map[cid.Cid]uint
+	inflightCidsLk sync.Mutex
+}
+
+func (cm *ContentManager) isInflight(c cid.Cid) bool {
+	cm.inflightCidsLk.Lock()
+	defer cm.inflightCidsLk.Unlock()
+
+	v, ok := cm.inflightCids[c]
+	return ok && v > 0
 }
 
 // 90% of the unpadded data size for a 4GB piece
-// the 10% gap is to accomodate car file packing overhead, can probably do this better
+// the 10% gap is to accommodate car file packing overhead, can probably do this better
 var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
 
 var stagingZoneSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
@@ -346,6 +357,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		shuttles:             make(map[string]*shuttleConnection),
 		contentSizeLimit:     defaultContentSizeLimit,
 		hostname:             hostname,
+		inflightCids:         make(map[cid.Cid]uint),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c

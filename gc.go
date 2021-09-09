@@ -51,6 +51,15 @@ func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
 }
 
 func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
+
+	cm.inflightCidsLk.Lock()
+	ok := cm.isInflight(c)
+	cm.inflightCidsLk.Unlock()
+
+	if ok {
+		return true, nil
+	}
+
 	var count int64
 	if err := cm.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
