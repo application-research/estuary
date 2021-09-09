@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
@@ -34,8 +35,12 @@ var migrations = []struct {
 		// Migration from cid to multihash for the objects table
 		name: "object-cid-to-hash",
 		fn: func(ctx context.Context, db *gorm.DB) error {
-			var objs []*Object
-			tx := db.Where("hash IS NULL").FindInBatches(&objs, 500, func(tx *gorm.DB, batch int) error {
+			type cidrow struct {
+				ID  uint
+				Cid util.DbCID
+			}
+
+			for {
 				// Make sure migration is interruptable
 				select {
 				case <-ctx.Done():
@@ -43,15 +48,42 @@ var migrations = []struct {
 				default:
 				}
 
-				for _, o := range objs {
-					o.Hash = util.DbHashFromDbCID(&o.Cid)
+				// Select up to 500 rows at a time.
+				rows, err := db.Raw("select id, cid from objects where hash is null limit 500").Rows()
+				if err != nil {
+					return xerrors.Errorf("select: %v", err)
+				}
+				defer rows.Close()
+
+				updated := 0
+				err = db.Transaction(func(tx *gorm.DB) error {
+					for rows.Next() {
+						var cr cidrow
+						rows.Scan(&cr.ID, &cr.Cid)
+						hash := util.DbHashFromDbCID(&cr.Cid)
+						if err := tx.Exec("update objects set hash=? where id=?", hash, cr.ID).Error; err != nil {
+							return xerrors.Errorf("update: %v", err)
+						}
+						updated++
+					}
+					if rows.Err() != nil {
+						return xerrors.Errorf("iterate: %v", err)
+					}
+					return nil
+				})
+
+				if err != nil {
+					return err
 				}
 
-				tx.Save(&objs)
-				log.Debugf("migrated %d cids to multihashes", tx.RowsAffected)
-				return nil
-			})
-			return tx.Error
+				// If no errors and no rows processed then we are done
+				if updated == 0 {
+					break
+				}
+				log.Debugf("migrated %d cids to multihashes", updated)
+
+			}
+			return nil
 		},
 	},
 }
