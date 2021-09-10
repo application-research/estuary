@@ -3587,7 +3587,5 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 		})
 	}
 
-	c.JSON(http.StatusOK, candidates)
-
-	return nil
+	return c.JSON(http.StatusOK, candidates)
 }
