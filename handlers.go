@@ -3529,9 +3529,10 @@ func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	})
 }
 
-type RetrievalCandidate struct {
-	maddr   address.Address
-	rootCid cid.Cid
+type retrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
 }
 
 func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
@@ -3544,8 +3545,9 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	}
 
 	var candidateInfos []struct {
-		miner string
-		cid   util.DbCID
+		miner  string
+		cid    util.DbCID
+		dealID uint
 	}
 	if err := s.DB.
 		Table("content_deals").
@@ -3554,21 +3556,22 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 				"object IN ?", s.DB.Table("objects").Select("id").Where("cid = ?", cid),
 			),
 		).
-		Joins("LEFT JOIN contents ON content_deals.content = content.id").
+		Joins("JOIN contents ON content_deals.content = content.id").
 		Find(&candidateInfos).Error; err != nil {
 		return err
 	}
 
-	var candidates []RetrievalCandidate
+	var candidates []retrievalCandidate
 	for _, candidateInfo := range candidateInfos {
 		maddr, err := address.NewFromString(candidateInfo.miner)
 		if err != nil {
 			return err
 		}
 
-		candidates = append(candidates, RetrievalCandidate{
-			maddr:   maddr,
-			rootCid: candidateInfo.cid.CID,
+		candidates = append(candidates, retrievalCandidate{
+			Miner:   maddr,
+			RootCid: candidateInfo.cid.CID,
+			DealID:  candidateInfo.dealID,
 		})
 	}
 
