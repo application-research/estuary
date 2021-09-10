@@ -3551,9 +3551,9 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	}
 	if err := s.DB.
 		Table("content_deals").
-		Where("content IN ? AND NOT failed",
+		Where("content IN (?) AND NOT failed",
 			s.DB.Table("obj_refs").Select("content").Where(
-				"object IN ?", s.DB.Table("objects").Select("id").Where("cid = ?", cid),
+				"object IN (?)", s.DB.Table("objects").Select("id").Where("cid = ?", cid),
 			),
 		).
 		Joins("JOIN contents ON content_deals.content = content.id").
