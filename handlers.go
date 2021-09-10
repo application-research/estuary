@@ -113,6 +113,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
+	e.GET("/retrieval-candidates", s.handleGetRetrievalCandidates)
+
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/test-error", s.handleTestError)
@@ -3525,4 +3527,53 @@ func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	return c.JSON(200, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,
 	})
+}
+
+type retrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
+}
+
+func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
+	// Read the cid from the client request
+	cid, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "invalid cid",
+		})
+	}
+
+	var candidateInfos []struct {
+		miner  string
+		cid    util.DbCID
+		dealID uint
+	}
+	if err := s.DB.
+		Table("content_deals").
+		Where("content IN (?) AND NOT failed",
+			s.DB.Table("obj_refs").Select("content").Where(
+				"object IN (?)", s.DB.Table("objects").Select("id").Where("cid = ?", cid),
+			),
+		).
+		Joins("JOIN contents ON content_deals.content = content.id").
+		Find(&candidateInfos).Error; err != nil {
+		return err
+	}
+
+	var candidates []retrievalCandidate
+	for _, candidateInfo := range candidateInfos {
+		maddr, err := address.NewFromString(candidateInfo.miner)
+		if err != nil {
+			return err
+		}
+
+		candidates = append(candidates, retrievalCandidate{
+			Miner:   maddr,
+			RootCid: candidateInfo.cid.CID,
+			DealID:  candidateInfo.dealID,
+		})
+	}
+
+	return c.JSON(http.StatusOK, candidates)
 }
