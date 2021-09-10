@@ -3529,7 +3529,7 @@ func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	})
 }
 
-type retrievalCandidate struct {
+type RetrievalCandidate struct {
 	maddr   address.Address
 	rootCid cid.Cid
 }
@@ -3559,14 +3559,14 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 		return err
 	}
 
-	var candidates []retrievalCandidate
+	var candidates []RetrievalCandidate
 	for _, candidateInfo := range candidateInfos {
 		maddr, err := address.NewFromString(candidateInfo.miner)
 		if err != nil {
 			return err
 		}
 
-		candidates = append(candidates, retrievalCandidate{
+		candidates = append(candidates, RetrievalCandidate{
 			maddr:   maddr,
 			rootCid: candidateInfo.cid.CID,
 		})
