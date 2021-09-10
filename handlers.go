@@ -113,6 +113,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
+	e.GET("/retrieval-candidates", s.handleGetRetrievalCandidates)
+
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/test-error", s.handleTestError)
@@ -3525,4 +3527,65 @@ func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	return c.JSON(200, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,
 	})
+}
+
+type retrievalCandidate struct {
+	maddr   address.Address
+	rootCid cid.Cid
+}
+
+func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
+	// Read the cid from the client request
+	cid, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return c.String(http.StatusBadRequest, "Invalid cid")
+	}
+
+	// Get the object with the requested cid
+	var object Object
+	if err := s.DB.Take(&object, "cid = ?", cid).Error; err != nil {
+		return err
+	}
+
+	// Get all the refs for that object
+	var objRefs []ObjRef
+	if err := s.DB.Find(&objRefs, "object = ?", object.ID).Error; err != nil {
+		return err
+	}
+
+	// Turn object refs' content IDs into their own list
+	var contentIDs []uint
+	for _, objRef := range objRefs {
+		contentIDs = append(contentIDs, objRef.Content)
+	}
+
+	// Get the deals for each of those object refs' contents
+	var candidateInfos []struct {
+		miner string
+		cid   util.DbCID
+	}
+	if err := s.DB.
+		Table("content_deals").
+		Where("content IN ? AND NOT failed ", contentIDs).
+		Joins("JOIN contents ON content_deals.content = content.id").
+		Find(&candidateInfos).Error; err != nil {
+		return err
+	}
+
+	var candidates []retrievalCandidate
+	for _, candidateInfo := range candidateInfos {
+		maddr, err := address.NewFromString(candidateInfo.miner)
+		if err != nil {
+			return err
+		}
+
+		candidates = append(candidates, retrievalCandidate{
+			maddr:   maddr,
+			rootCid: candidateInfo.cid.CID,
+		})
+	}
+
+	c.JSON(http.StatusOK, candidates)
+
+	return nil
 }
