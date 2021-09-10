@@ -3538,7 +3538,9 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	// Read the cid from the client request
 	cid, err := cid.Decode(c.Param("cid"))
 	if err != nil {
-		return c.String(http.StatusBadRequest, "Invalid cid")
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "invalid cid",
+		})
 	}
 
 	// Get the object with the requested cid
