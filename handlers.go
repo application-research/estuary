@@ -3543,33 +3543,18 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 		})
 	}
 
-	// Get the object with the requested cid
-	var object Object
-	if err := s.DB.Take(&object, "cid = ?", cid).Error; err != nil {
-		return err
-	}
-
-	// Get all the refs for that object
-	var objRefs []ObjRef
-	if err := s.DB.Find(&objRefs, "object = ?", object.ID).Error; err != nil {
-		return err
-	}
-
-	// Turn object refs' content IDs into their own list
-	var contentIDs []uint
-	for _, objRef := range objRefs {
-		contentIDs = append(contentIDs, objRef.Content)
-	}
-
-	// Get the deals for each of those object refs' contents
 	var candidateInfos []struct {
 		miner string
 		cid   util.DbCID
 	}
 	if err := s.DB.
 		Table("content_deals").
-		Where("content IN ? AND NOT failed ", contentIDs).
-		Joins("JOIN contents ON content_deals.content = content.id").
+		Where("content IN ? AND NOT failed",
+			s.DB.Table("obj_refs").Select("content").Where(
+				"object IN ?", s.DB.Table("objects").Select("id").Where("cid = ?", cid),
+			),
+		).
+		Joins("LEFT JOIN contents ON content_deals.content = content.id").
 		Find(&candidateInfos).Error; err != nil {
 		return err
 	}
