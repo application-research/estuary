@@ -113,7 +113,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
-	e.GET("/retrieval-candidates", s.handleGetRetrievalCandidates)
+	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
