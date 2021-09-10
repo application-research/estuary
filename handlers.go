@@ -3545,33 +3545,36 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	}
 
 	var candidateInfos []struct {
-		miner  string
-		cid    util.DbCID
-		dealID uint
+		Miner  string
+		Cid    util.DbCID
+		DealID uint
 	}
 	if err := s.DB.
 		Table("content_deals").
 		Where("content IN (?) AND NOT content_deals.failed",
-			s.DB.Table("obj_refs").Select("content").Where(
-				"object IN (?)", s.DB.Table("objects").Select("id").Where("cid = ?", util.DbCID{CID: cid}),
+			s.DB.Table("contents").Select("CASE WHEN @aggregated_in = 0 THEN id ELSE aggregated_in END").Where("id in (?)",
+				s.DB.Table("obj_refs").Select("content").Where(
+					"object IN (?)", s.DB.Table("objects").Select("id").Where("cid = ?", util.DbCID{CID: cid}),
+				),
 			),
 		).
 		Joins("JOIN contents ON content_deals.content = contents.id").
-		Find(&candidateInfos).Error; err != nil {
+		Select("miner, cid, deal_id").
+		Scan(&candidateInfos).Error; err != nil {
 		return err
 	}
 
 	var candidates []retrievalCandidate
 	for _, candidateInfo := range candidateInfos {
-		maddr, err := address.NewFromString(candidateInfo.miner)
+		maddr, err := address.NewFromString(candidateInfo.Miner)
 		if err != nil {
 			return err
 		}
 
 		candidates = append(candidates, retrievalCandidate{
 			Miner:   maddr,
-			RootCid: candidateInfo.cid.CID,
-			DealID:  candidateInfo.dealID,
+			RootCid: candidateInfo.Cid.CID,
+			DealID:  candidateInfo.DealID,
 		})
 	}
 
