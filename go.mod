@@ -64,7 +64,7 @@ require (
 	github.com/urfave/cli/v2 v2.3.0
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210713220151-be142a5ae1a8
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20210707212153-630d0432b1a7
-	github.com/whyrusleeping/memo v0.0.0-20210319212142-d69afb686d15
+	github.com/whyrusleeping/memo v0.0.0-20210910192822-d78e688468b5
 	go.opentelemetry.io/otel v0.20.0
 	go.opentelemetry.io/otel/trace v0.20.0
 	golang.org/x/net v0.0.0-20210428140749-89ef3d95e781

@@ -219,6 +219,7 @@ func main() {
 
 			return res, nil
 		})
+		commpMemo.SetConcurrencyLimit(4)
 
 		sbm, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "staging"))
 		if err != nil {
