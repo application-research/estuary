@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/filclient"
@@ -55,6 +56,8 @@ func main() {
 
 			BlockstoreWrap: func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
 				arbs = &autoRetrieveBlockstore{Blockstore: bs, endpoint: cctx.String("endpoint")}
+				var test blockstore.Blockstore = arbs
+				test.Get(cid.Undef)
 				return arbs, nil
 			},
 		}
@@ -112,7 +115,70 @@ type autoRetrieveBlockstore struct {
 	fc              *filclient.FilClient
 }
 
-func (bs autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
+var total int = 0
+var totalSecond int = 0
+var mu sync.Mutex
+var last time.Time = time.Now()
+var cidCounts map[cid.Cid]int = make(map[cid.Cid]int)
+var max int = 0
+var s int = 0
+
+var cacheLk sync.Mutex
+var cache map[cid.Cid][]retrievalCandidate = make(map[cid.Cid][]retrievalCandidate)
+
+func (bs *autoRetrieveBlockstore) GetSize(c cid.Cid) (int, error) {
+
+	// mu.Lock()
+	// defer mu.Unlock()
+
+	// now := time.Now()
+	// elapsed := now.Sub(last)
+	// if elapsed.Seconds() >= 1.0 {
+	// 	s++
+	// 	last = now
+	// 	fmt.Printf("[%vs elapsed] %v GetSize() calls this second. Of total %v cids, %v have been unique (highest duplicate count: %v)\n", s, totalSecond, total, len(cidCounts), max)
+	// 	totalSecond = 0
+	// }
+
+	// total++
+	// totalSecond++
+	// count, ok := cidCounts[c]
+	// if !ok {
+	// 	count = 0
+	// }
+	// count++
+	// if count > max {
+	// 	max = count
+	// }
+	// cidCounts[c] = count
+
+	cacheLk.Lock()
+	res, ok := cache[c]
+	cacheLk.Unlock()
+	if ok {
+		return 1000, nil
+	}
+
+	resp, err := http.Get(bs.endpoint + "/" + c.String())
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("http request failed")
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return 0, fmt.Errorf("could not unmarshal http response for %s, may have been null", c)
+	}
+
+	cacheLk.Lock()
+	cache[c] = res
+	cacheLk.Unlock()
+
+	return 1000, nil
+}
+
+func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	fmt.Println("received auto retrieve request for cid", c)
 
 	// Try to get this cid from the local blockstore
@@ -150,15 +216,9 @@ func (bs autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 }
 
 func (bs *autoRetrieveBlockstore) getRetrievalCandidates(ctx context.Context, c cid.Cid) ([]retrievalCandidate, error) {
-	res, err := http.Get(bs.endpoint)
-	if err != nil {
-		return nil, err
-	}
-
-	var candidates []retrievalCandidate
-	if err := json.NewDecoder(res.Body).Decode(&candidates); err != nil {
-		return nil, err
-	}
+	cacheLk.Lock()
+	candidates := cache[c]
+	cacheLk.Unlock()
 
 	return candidates, nil
 }
