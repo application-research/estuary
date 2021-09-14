@@ -61,7 +61,7 @@ deps: $(BUILD_DEPS)
 
 .PHONY: estuary
 estuary:
-	go build
+	go build $(GOFLAGS)
 
 .PHONY: install
 install: estuary
@@ -116,3 +116,6 @@ clean:
 dist-clean:
 	git clean -xdff
 	git submodule deinit --all -f
+
+calibnet: GOFLAGS+=-tags=calibnet
+calibnet: build

@@ -11,6 +11,7 @@ estuary-peer.key
 estuary-wallet/*
 estuary-write-log/*
 estuary.db
+estuary_calibnet.db
 
 cidlistsdir/*
 
