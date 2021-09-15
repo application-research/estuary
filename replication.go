@@ -1397,6 +1397,9 @@ const (
 )
 
 func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
+	defer cancel()
+
 	ctx, span := cm.tracer.Start(ctx, "checkDeal", trace.WithAttributes(
 		attribute.Int("deal", int(d.ID)),
 	))
