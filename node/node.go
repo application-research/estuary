@@ -406,6 +406,8 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate bool) (blocksto
 
 	ctx := metri.CtxScope(context.TODO(), "estuary.bstore")
 
+	bstore = bsm.New("estuary.blks.base", bstore)
+
 	cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
 		HasBloomFilterSize:   512 << 20,
 		HasBloomFilterHashes: 7,
