@@ -226,8 +226,6 @@ func (bs *autoRetrieveBlockstore) getRetrievalCandidates(ctx context.Context, c 
 // Select the most preferable miner to retrieve from and execute the retrieval
 func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, candidates []retrievalCandidate) error {
 
-	// This does not currently need a mutex because each goroutine gets its own
-	// dedicated index to write to, but be aware!
 	type result struct {
 		proposal *retrievalmarket.DealProposal
 		maddr    address.Address
