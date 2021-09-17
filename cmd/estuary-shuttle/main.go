@@ -133,6 +133,9 @@ func main() {
 			Name: "write-log-truncate",
 		},
 		&cli.BoolFlag{
+			Name: "no-blockstore-cache",
+		},
+		&cli.BoolFlag{
 			Name: "private",
 		},
 	}
@@ -160,6 +163,7 @@ func main() {
 			WriteLog:          wlog,
 			HardFlushWriteLog: cctx.Bool("write-log-flush"),
 			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
+			NoBlockstoreCache: cctx.Bool("no-blockstore-cache"),
 			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),
