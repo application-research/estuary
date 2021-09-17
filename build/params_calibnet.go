@@ -6,11 +6,11 @@ import (
 	"github.com/filecoin-project/go-address"
 )
 
-// TODO get miners sorted
+// Three miners with most power as of 2021-09-17
 var calibnetMinerStrs = []string{
-	"t01000",
-	"t01001",
-	"t01002",
+	"t03112",
+	"t03149",
+	"t01247",
 }
 
 var defaultCalibnetDatabaseValue = "sqlite=estuary_calibnet.db"

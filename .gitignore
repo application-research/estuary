@@ -3,6 +3,8 @@
 /barge
 /estuary-dealer
 /bsget
+/benchest
+/estuary-shuttle
 
 estuary-blocks/*
 estuary-leveldb/*

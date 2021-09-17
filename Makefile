@@ -54,18 +54,43 @@ CLEAN+=build/.update-modules
 #GOFLAGS+=-ldflags="$(ldflags)"
 
 .PHONY: build
-build: deps estuary
+build: deps estuary shuttle barge benchest bsget
 
 .PHONY: deps
 deps: $(BUILD_DEPS)
 
 .PHONY: estuary
 estuary:
-	go build $(GOFLAGS)
+	go build $(GOLAGS)
+BINS+=estuary
+
+.PHONY: shuttle
+shuttle:
+	go build $(GOFLAGS) -o estuary-shuttle ./cmd/estuary-shuttle
+BINS+=estuary-shuttle
+
+.PHONY: barge
+barge:
+	go build $(GOFLAGS) -o barge ./cmd/barge
+BINS+=barge
+
+.PHONY: benchest
+benchest:
+	go build $(GOFLAGS) -o benchest ./cmd/benchest
+BINS+=benchest
+
+.PHONY: bsget
+bsget:
+	go build $(GOFLAGS) -o bsget ./cmd/bsget
+BINS+=bsget
 
 .PHONY: install
 install: estuary
 	cp estuary /usr/local/bin/estuary
+
+.PHONY: install-shuttle
+install-shuttle: shuttle
+	cp estuary-shuttle /usr/local/bin/estuary-shuttle
 
 .PHONY: install-estuary-service
 install-estuary-service:
@@ -84,13 +109,6 @@ install-estuary-service:
 	#Run 'sudo systemctl start estuary-setup.service' to complete setup
 	#Run 'sudo systemctl enable --now estuary.service' once ready to enable and start estuary service
 
-.PHONY: shuttle
-shuttle:
-	go build ./cmd/estuary-shuttle
-
-.PHONY: install-shuttle
-install-shuttle: shuttle
-	cp estuary-shuttle /usr/local/bin/estuary-shuttle
 
 .PHONY: install-estuary-shuttle-service
 install-estuary-shuttle-service:
