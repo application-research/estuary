@@ -61,7 +61,7 @@ deps: $(BUILD_DEPS)
 
 .PHONY: estuary
 estuary:
-	go build $(GOLAGS)
+	go build $(GOFLAGS)
 BINS+=estuary
 
 .PHONY: shuttle
