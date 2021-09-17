@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	estumetrics "github.com/application-research/estuary/metrics"
 	lru "github.com/hashicorp/golang-lru"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
@@ -56,8 +58,6 @@ import (
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
 )
-
-var Tracer = otel.Tracer("shuttle")
 
 var log = logging.Logger("shuttle")
 
@@ -159,6 +159,19 @@ func main() {
 		&cli.StringSliceFlag{
 			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to on",
+		},
+		&cli.BoolFlag{
+			Name:  "jaeger-tracing",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  "jaeger-provider-url",
+			Value: "http://localhost:14268/api/traces",
+		},
+		&cli.Float64Flag{
+			Name:  "jaeger-sampler-ratio",
+			Usage: "If less than 1 probabilistic metrics will be used.",
+			Value: 1,
 		},
 	}
 
@@ -262,6 +275,15 @@ func main() {
 			return err
 		}
 
+		if cctx.Bool("jaeger-tracing") {
+			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
+				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+			if err != nil {
+				return err
+			}
+			otel.SetTracerProvider(tp)
+		}
+
 		s := &Shuttle{
 			Node:       nd,
 			Api:        api,
@@ -269,6 +291,8 @@ func main() {
 			Filc:       filc,
 			StagingMgr: sbm,
 			Private:    cctx.Bool("private"),
+
+			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
 
 			commpMemo: commpMemo,
 
@@ -477,6 +501,8 @@ type Shuttle struct {
 	PinMgr     *pinner.PinManager
 	Filc       *filclient.FilClient
 	StagingMgr *stagingbs.StagingBSMgr
+
+	Tracer trace.Tracer
 
 	tcLk             sync.Mutex
 	trackingChannels map[string]*chanTrack
@@ -1060,7 +1086,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
-	_, span := Tracer.Start(ctx, "loadCar")
+	_, span := s.Tracer.Start(ctx, "loadCar")
 	defer span.End()
 
 	return car.LoadCar(bs, r)
@@ -1194,7 +1220,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 // TODO: mostly copy paste from estuary, dedup code
 func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
-	ctx, span := Tracer.Start(ctx, "doPinning")
+	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
 	for _, pi := range op.Peers {
@@ -1239,7 +1265,7 @@ const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
 func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
-	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
+	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var dbpin Pin
@@ -1428,14 +1454,14 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
 }
 
 func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
-	_, span := Tracer.Start(ctx, "importFile")
+	_, span := s.Tracer.Start(ctx, "importFile")
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
 }
 
 func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := Tracer.Start(ctx, "blockstoreCopy")
+	ctx, span := s.Tracer.Start(ctx, "blockstoreCopy")
 	defer span.End()
 
 	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
@@ -1498,7 +1524,7 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 }
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
-	ctx, span := Tracer.Start(ctx, "unpin")
+	ctx, span := s.Tracer.Start(ctx, "unpin")
 	defer span.End()
 
 	log.Infof("unpinning %d", contid)
@@ -1569,7 +1595,7 @@ func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 }
 
 func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
-	_, span := Tracer.Start(ctx, "clearUnreferencedObjects")
+	_, span := s.Tracer.Start(ctx, "clearUnreferencedObjects")
 	defer span.End()
 
 	s.inflightCidsLk.Lock()
