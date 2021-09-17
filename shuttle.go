@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -116,7 +117,15 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
 func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message) error {
-	ctx, span := cm.tracer.Start(context.TODO(), "processShuttleMessage")
+	ctx := context.TODO()
+
+	// if the message contains a trace continue it here.
+	if msg.HasTraceCarrier() {
+		if sc := msg.TraceCarrier.AsSpanContext(); sc.IsValid() {
+			ctx = trace.ContextWithRemoteSpanContext(ctx, sc)
+		}
+	}
+	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
 	log.Infof("handling shuttle message: %s", msg.Op)

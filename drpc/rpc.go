@@ -21,8 +21,14 @@ type Hello struct {
 }
 
 type Command struct {
-	Op     string
-	Params CmdParams
+	Op           string
+	Params       CmdParams
+	TraceCarrier *TraceCarrier `json:",omitempty"`
+}
+
+// HasTraceCarrier returns true iff Command `c` contains a trace.
+func (c *Command) HasTraceCarrier() bool {
+	return !(c.TraceCarrier == nil)
 }
 
 type CmdParams struct {
@@ -112,8 +118,14 @@ type ContentFetch struct {
 }
 
 type Message struct {
-	Op     string
-	Params MsgParams
+	Op           string
+	Params       MsgParams
+	TraceCarrier *TraceCarrier `json:",omitempty"`
+}
+
+// HasTraceCarrier returns true iff Message `m` contains a trace.
+func (m *Message) HasTraceCarrier() bool {
+	return !(m.TraceCarrier == nil)
 }
 
 type MsgParams struct {

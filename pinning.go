@@ -17,6 +17,8 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"go.opentelemetry.io/otel/attribute"
+	trace "go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
@@ -232,8 +234,15 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 }
 
 func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
+		attribute.String("handle", handle),
+		attribute.String("CID", cont.Cid.CID.String()),
+	))
+	defer span.End()
+
 	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
-		Op: drpc.CMD_AddPin,
+		TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
+		Op:           drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
 				DBID:   cont.ID,

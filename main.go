@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/build"
+	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
@@ -21,7 +22,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"go.opentelemetry.io/otel"
 
-	//_ "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
@@ -32,6 +32,12 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+func init() {
+	if os.Getenv("FULLNODE_API_INFO") == "" {
+		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
+	}
+}
 
 var log = logging.Logger("estuary")
 
@@ -193,6 +199,27 @@ func main() {
 			Name:  "default-replication",
 			Value: 6,
 		},
+		&cli.BoolFlag{
+			Name:  "jaeger-tracing",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  "jaeger-provider-host",
+			Value: "localhost",
+		},
+		&cli.IntFlag{
+			Name:  "jaeger-provider-port",
+			Value: 14268,
+		},
+		&cli.StringFlag{
+			Name:  "jaeger-provider-name",
+			Value: "estuary",
+		},
+		&cli.Float64Flag{
+			Name:  "jaeger-sampler-ratio",
+			Usage: "If less than 1 probabilistic metrics will be used.",
+			Value: 1,
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -324,6 +351,15 @@ func main() {
 			return err
 		}
 		defer closer()
+
+		// setup tracing to jaeger if enabled
+		if cctx.Bool("jaeger-tracing") {
+			tp, err := metrics.NewJaegerTraceProvider(cctx)
+			if err != nil {
+				return err
+			}
+			otel.SetTracerProvider(tp)
+		}
 
 		s := &Server{
 			Node:       nd,

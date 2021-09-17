@@ -1,0 +1,46 @@
+package metrics
+
+import (
+	"fmt"
+
+	logging "github.com/ipfs/go-log/v2"
+	"github.com/urfave/cli/v2"
+	"go.opentelemetry.io/otel/exporters/trace/jaeger"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/semconv"
+)
+
+var log = logging.Logger("metrics")
+
+// NewJaegerTraceProvider returns a new and configured TracerProvider backed by Jaeger.
+// based on https://github.com/open-telemetry/opentelemetry-go/blob/v0.20.0/example/jaeger/main.go
+func NewJaegerTraceProvider(cctx *cli.Context) (*sdktrace.TracerProvider, error) {
+	serviceName := cctx.String("jaeger-provider-name")
+	sampleRatio := cctx.Float64("jaeger-sampler-ratio")
+	agentEndpoint := fmt.Sprintf("http://%s:%d/api/traces", cctx.String("jaeger-provider-host"), cctx.Int("jaeger-provider-port"))
+
+	log.Infow("creating jaeger trace provider", "name", serviceName, "ratio", sampleRatio, "endpoint", agentEndpoint)
+	var sampler sdktrace.Sampler
+	if sampleRatio < 1 && sampleRatio > 0 {
+		sampler = sdktrace.ParentBased(sdktrace.TraceIDRatioBased(sampleRatio))
+	} else if sampleRatio == 1 {
+		sampler = sdktrace.AlwaysSample()
+	} else {
+		sampler = sdktrace.NeverSample()
+	}
+
+	exp, err := jaeger.NewRawExporter(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(agentEndpoint)))
+	if err != nil {
+		return nil, err
+	}
+	tp := sdktrace.NewTracerProvider(
+		// Always be sure to batch in production.
+		sdktrace.WithBatcher(exp),
+		sdktrace.WithSampler(sampler),
+		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.ServiceNameKey.String(serviceName),
+		)),
+	)
+	return tp, nil
+}
