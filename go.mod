@@ -3,6 +3,7 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
+	contrib.go.opencensus.io/exporter/prometheus v0.3.0 // indirect
 	github.com/application-research/filclient v0.0.0-20210909172539-d59415224c08
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cheggaaa/pb/v3 v3.0.8
@@ -30,9 +31,10 @@ require (
 	github.com/ipfs/go-filestore v1.0.0
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
+	github.com/ipfs/go-ipfs-cmds v0.6.0 // indirect
+	github.com/ipfs/go-ipfs-config v0.14.0 // indirect
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
-	github.com/ipfs/go-ipfs-pinner v0.1.2 // indirect
 	github.com/ipfs/go-ipfs-provider v0.6.1
 	github.com/ipfs/go-ipld-cbor v0.0.5
 	github.com/ipfs/go-ipld-format v0.2.0
@@ -40,7 +42,9 @@ require (
 	github.com/ipfs/go-merkledag v0.3.2
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-metrics-prometheus v0.0.2
+	github.com/ipfs/go-path v0.0.9 // indirect
 	github.com/ipfs/go-unixfs v0.2.6
+	github.com/ipfs/iptb-plugins v0.2.2 // indirect
 	github.com/ipld/go-car v0.3.1
 	github.com/ipld/go-ipld-prime v0.12.0
 	github.com/jinzhu/gorm v1.9.16
@@ -55,10 +59,11 @@ require (
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/lightstep/otel-launcher-go v0.20.0
 	github.com/mitchellh/go-homedir v1.1.0
+	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/multiformats/go-multiaddr v0.3.3
 	github.com/multiformats/go-multihash v0.0.15
 	github.com/prometheus/client_golang v1.10.0
-	github.com/qri-io/wnfs-go v0.0.0-20210902030900-1b06eeb06ddb
+	github.com/qri-io/wnfs-go v0.0.0-20210921151920-e0666e215571
 	github.com/spf13/viper v1.7.1
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli/v2 v2.3.0
@@ -67,6 +72,7 @@ require (
 	github.com/whyrusleeping/memo v0.0.0-20210910192822-d78e688468b5
 	go.opentelemetry.io/otel v0.20.0
 	go.opentelemetry.io/otel/trace v0.20.0
+	go.uber.org/fx v1.13.1 // indirect
 	golang.org/x/net v0.0.0-20210428140749-89ef3d95e781
 	golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
