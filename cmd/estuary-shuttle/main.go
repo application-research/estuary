@@ -138,6 +138,10 @@ func main() {
 		&cli.BoolFlag{
 			Name: "private",
 		},
+		&cli.BoolFlag{
+			Name:  "disable-local-content-adding",
+			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -251,10 +255,11 @@ func main() {
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
 
-			hostname:      cctx.String("host"),
-			estuaryHost:   cctx.String("estuary-api"),
-			shuttleHandle: cctx.String("handle"),
-			shuttleToken:  cctx.String("auth-token"),
+			hostname:           cctx.String("host"),
+			estuaryHost:        cctx.String("estuary-api"),
+			shuttleHandle:      cctx.String("handle"),
+			shuttleToken:       cctx.String("auth-token"),
+			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
 		}
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -387,7 +392,8 @@ type Shuttle struct {
 
 	outgoing chan *drpc.Message
 
-	Private bool
+	Private            bool
+	disableLocalAdding bool
 
 	hostname      string
 	estuaryHost   string
@@ -676,7 +682,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled {
+	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,

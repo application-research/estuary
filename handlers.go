@@ -1457,7 +1457,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
 		return err
 	}
 
