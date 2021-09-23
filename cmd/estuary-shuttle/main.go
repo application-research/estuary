@@ -142,6 +142,9 @@ func main() {
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
 		},
+		&cli.BoolFlag{
+			Name: "no-reload-pin-queue",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -267,8 +270,10 @@ func main() {
 
 		go d.PinMgr.Run(100)
 
-		if err := d.refreshPinQueue(); err != nil {
-			log.Errorf("failed to refresh pin queue: %s", err)
+		if !cctx.Bool("no-reload-pin-queue") {
+			if err := d.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
 		}
 
 		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
