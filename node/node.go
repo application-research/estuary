@@ -411,9 +411,9 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate, nocache bool) 
 
 	if !nocache {
 		cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
-			HasBloomFilterSize:   512 << 20,
-			HasBloomFilterHashes: 7,
-			HasARCCacheSize:      8 << 20,
+			//HasBloomFilterSize:   512 << 20,
+			//HasBloomFilterHashes: 7,
+			HasARCCacheSize: 8 << 20,
 		})
 		if err != nil {
 			return nil, "", err
