@@ -2232,7 +2232,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30))
 	if err != nil {
 		return err
 	}
@@ -2303,11 +2303,11 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	return c.JSON(200, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *User, expiry time.Time) (*AuthToken, error) {
 	authToken := &AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 30),
+		Expiry: expiry,
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
@@ -2397,7 +2397,14 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
-	authToken, err := s.newAuthTokenForUser(u)
+	expiry := time.Now().Add(time.Hour * 24 * 30)
+	if exp := c.QueryParam("expiry"); exp != "" {
+		if exp == "false" {
+			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough
+		}
+	}
+
+	authToken, err := s.newAuthTokenForUser(u, expiry)
 	if err != nil {
 		return err
 	}
