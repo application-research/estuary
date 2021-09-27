@@ -385,5 +385,10 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 }
 
 func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
-	return fmt.Errorf("not yet implemented")
+	go func() {
+		if err := s.retrieveContent(ctx, req.Content, req.Cid, req.Deals); err != nil {
+			log.Errorf("failed to retrieve content: %s", err)
+		}
+	}()
+	return nil
 }

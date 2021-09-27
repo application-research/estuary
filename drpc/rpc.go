@@ -34,6 +34,7 @@ type CmdParams struct {
 	ReqTxStatus      *ReqTxStatus      `json:",omitempty"`
 	SplitContent     *SplitContent     `json:",omitempty"`
 	RetrieveContent  *RetrieveContent  `json:",omitempty"`
+	UnpinContent     *UnpinContent     `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -103,6 +104,12 @@ type RetrieveContent struct {
 	Content uint
 	Cid     cid.Cid
 	Deals   []StorageDeal
+}
+
+const CMD_UnpinContent = "UnpinContent"
+
+type UnpinContent struct {
+	Contents []uint
 }
 
 type ContentFetch struct {

@@ -70,8 +70,20 @@ func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals [
 	defer span.End()
 
 	var pin Pin
-	if err := s.DB.First(&pin, "content = ?", contentToFetch).Error; err != nil {
+	if err := s.DB.Find(&pin, "content = ?", contentToFetch).Error; err != nil {
 		return err
+	}
+
+	// we already have this data locally
+	if pin.ID > 0 {
+		objects, err := s.objectsForPin(ctx, pin.ID)
+		if err != nil {
+			// weird case... probably should handle better?
+			return fmt.Errorf("failed to get objects for pin: %w", err)
+		}
+
+		s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects)
+		return nil
 	}
 
 	for _, deal := range deals {
