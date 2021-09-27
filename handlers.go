@@ -681,7 +681,29 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	var objects []*Object
 	cset := cid.NewSet()
 
+	defer func() {
+		cm.inflightCidsLk.Lock()
+		_ = cset.ForEach(func(c cid.Cid) error {
+			v, ok := cm.inflightCids[c]
+			if !ok || v <= 0 {
+				log.Errorf("cid should be inflight but isn't: %s", c)
+			}
+
+			cm.inflightCids[c]--
+			if cm.inflightCids[c] == 0 {
+				delete(cm.inflightCids, c)
+			}
+			return nil
+		})
+		cm.inflightCidsLk.Unlock()
+	}()
+
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		// cset.Visit gets called first, so if we reach here we should immediately track the CID
+		cm.inflightCidsLk.Lock()
+		cm.inflightCids[c]++
+		cm.inflightCidsLk.Unlock()
+
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
@@ -707,11 +729,12 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
+
 	if err != nil {
 		return err
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
+	if err = cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
 		return err
 	}
 
