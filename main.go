@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/go-address"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -34,62 +34,6 @@ import (
 )
 
 var log = logging.Logger("estuary")
-
-var defaultMiners []address.Address
-
-var defaultDatabaseValue = "sqlite=estuary.db"
-
-func init() {
-	// miners from minerX spreadsheet
-	minerStrs := []string{
-		"f02620",
-		"f023971",
-		"f022142",
-		"f019551",
-		"f01240",
-		"f01247",
-		"f01278",
-		"f071624",
-		"f0135078",
-		"f022352",
-		"f014768",
-		"f022163",
-		"f09848",
-		"f02576",
-		"f02606",
-		"f019041",
-		"f010617",
-		"f023467",
-		"f01276",
-		"f02401",
-		"f02387",
-		"f019104",
-		"f099608",
-		"f062353",
-		"f07998",
-		"f019362",
-		"f019100",
-		"f014409",
-		"f066596",
-		"f01234",
-		"f058369",
-		"f08399",
-		"f021716",
-		"f010479",
-		"f08403",
-		"f01277",
-		"f015927",
-	}
-
-	for _, s := range minerStrs {
-		a, err := address.NewFromString(s)
-		if err != nil {
-			panic(err)
-		}
-
-		defaultMiners = append(defaultMiners, a)
-	}
-}
 
 type storageMiner struct {
 	gorm.Model
@@ -181,7 +125,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "database",
 			Usage:   "specify connection string for estuary database",
-			Value:   defaultDatabaseValue,
+			Value:   build.DefaultDatabaseValue,
 			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
@@ -513,7 +457,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
-		for _, m := range defaultMiners {
+		for _, m := range build.DefaultMiners {
 			db.Create(&storageMiner{Address: util.DbAddr{m}})
 		}
 
