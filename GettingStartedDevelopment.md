@@ -19,6 +19,15 @@ Next, set the `FULLNODE_API_INFO` environment variable to a synced lotus node. T
 $ export FULLNODE_API_INFO=wss://api.chain.love
 ```
 
+Next, create and install a self-signed certificate by following the instructions in the repository here:
+https://github.com/dakshshah96/local-cert-generator/
+
+Once you have the Root CA installed, you'll need to tell Estuary the path to the self-signed certificate, and corresponding private key like so:
+```bash
+$ export ESTUARY_DEV_TLS_CERT=/path/to/server.crt
+$ export ESTUARY_DEV_TLS_KEY=/path/to/server.key
+```
+
 Start your Estuary Node (Note: if you see error messages like `too many open files`, increase the number of open files allow `ulimit -n 10000`)
 
 ```bash
