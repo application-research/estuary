@@ -1201,8 +1201,13 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 
 	verified := true
 
-	if content.AggregatedIn > 0 {
+	if content.AggregatedIn > 0 && !content.DagSplit {
 		// This content is aggregated inside another piece of content, nothing to do here
+		return nil
+	}
+
+	if content.DagSplit && content.AggregatedIn == 0 {
+		// This is the 'root' of a split dag, we dont need to process it
 		return nil
 	}
 
@@ -2963,5 +2968,33 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 		boxCids = append(boxCids, cc)
 	}
 
-	panic("nyi")
+	for i, c := range boxCids {
+		content := &Content{
+			Cid:          util.DbCID{c},
+			Name:         fmt.Sprintf("%s-%d", cont.Name, i),
+			Active:       false,
+			Pinning:      true,
+			UserID:       cont.UserID,
+			Replication:  cont.Replication,
+			Location:     "local",
+			DagSplit:     true,
+			AggregatedIn: cont.ID,
+		}
+
+		if err := cm.DB.Create(content).Error; err != nil {
+			return xerrors.Errorf("failed to track new content in database: %w", err)
+		}
+
+		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, cm.Node.Blockstore, c, func(int64) {}); err != nil {
+			return err
+		}
+	}
+
+	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		"dag_split": true,
+	}).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -8,10 +8,9 @@ import (
 )
 
 type Pin struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"-"`
-	UpdatedAt time.Time      `json:"-"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID        uint      `gorm:"primarykey" json:"id"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 
 	Content uint `gorm:"index"`
 
@@ -30,6 +29,8 @@ type Pin struct {
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
 	Failed  bool   `json:"failed"`
+
+	DagSplit bool `json:"dagSplit"`
 }
 
 type Object struct {

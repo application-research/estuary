@@ -163,7 +163,6 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
-	//deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
@@ -237,6 +236,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
+	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -258,6 +258,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	shuttle.GET("/list", s.handleShuttleList)
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
+	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
 	if s.certFiles != nil {
 		log.Warnf("serving TLS with a self-signed certificate. do not use in production!")
@@ -1184,13 +1185,40 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 	return c.JSON(200, out)
 }
 
+func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
+	parts := strings.Split(chanid, "-")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
+	}
+
+	initiator, err := peer.IDB58Decode(parts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	responder, err := peer.IDB58Decode(parts[1])
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return &datatransfer.ChannelID{
+		Initiator: initiator,
+		Responder: responder,
+		ID:        datatransfer.TransferID(id),
+	}, nil
+}
 func (s *Server) handleTransferRestart(c echo.Context) error {
-	var chanid datatransfer.ChannelID
-	if err := c.Bind(&chanid); err != nil {
+	chanid, err := parseChanID(c.Param("chanid"))
+	if err != nil {
 		return err
 	}
 
-	err := s.FilClient.RestartTransfer(context.TODO(), &chanid)
+	err = s.FilClient.RestartTransfer(c.Request().Context(), chanid)
 	if err != nil {
 		return err
 	}
@@ -3327,10 +3355,11 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 }
 
 type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
 }
 
 type createContentResponse struct {
@@ -3352,6 +3381,11 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Replication: defaultReplication,
 		Location:    req.Location,
 	}
+	if req.DagSplitRoot != 0 {
+		content.DagSplit = true
+		content.AggregatedIn = req.DagSplitRoot
+	}
+
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
 	}
@@ -3614,4 +3648,30 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, candidates)
+}
+
+func (s *Server) handleShuttleCreateContent(c echo.Context) error {
+	return fmt.Errorf("TODO")
+}
+
+func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			auth, err := util.ExtractAuth(c)
+			if err != nil {
+				return err
+			}
+
+			var sh Shuttle
+			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
+				log.Warnw("Shuttle not authorized", "token", auth)
+				return &util.HttpError{
+					Code:    401,
+					Message: util.ERR_NOT_AUTHORIZED,
+				}
+			}
+
+			return next(c)
+		}
+	}
 }

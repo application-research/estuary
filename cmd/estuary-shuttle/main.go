@@ -737,7 +737,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
+	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection, 0)
 	if err != nil {
 		return err
 	}
@@ -792,27 +792,29 @@ func (s *Shuttle) addrsForShuttle() []string {
 }
 
 type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
 }
 
 type createContentResponse struct {
 	ID uint `json:"id"`
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
 	}
 
 	data, err := json.Marshal(createContentBody{
-		Root:        root,
-		Name:        fname,
-		Collections: cols,
-		Location:    s.shuttleHandle,
+		Root:         root,
+		Name:         fname,
+		Collections:  cols,
+		Location:     s.shuttleHandle,
+		DagSplitRoot: dagsplitroot,
 	})
 	if err != nil {
 		return 0, err
@@ -1137,7 +1139,7 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 	var pin Pin
-	if err := s.DB.First(&pin, "id = ?", contid).Error; err != nil {
+	if err := s.DB.First(&pin, "content = ?", contid).Error; err != nil {
 		return err
 	}
 
