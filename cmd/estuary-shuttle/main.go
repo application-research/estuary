@@ -45,6 +45,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
+	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
@@ -673,6 +674,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
@@ -781,6 +783,105 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
+	if u.StorageDisabled || s.disableLocalAdding {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
+
+	bsid, bs, err := s.StagingMgr.AllocNew()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		go func() {
+			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+				log.Errorf("failed to clean up staging blockstore: %s", err)
+			}
+		}()
+	}()
+
+	defer c.Request().Body.Close()
+	header, err := s.loadCar(ctx, bs, c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	if len(header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+	}
+
+	// TODO: how to specify filename?
+	fname := header.Roots[0].String()
+
+	if fnameqp := c.QueryParam("filename"); fnameqp != "" {
+		fname = fnameqp
+	}
+
+	bserv := blockservice.New(bs, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	root := header.Roots[0]
+
+	contid, err := s.createContent(ctx, u, root, fname, c.QueryParam("collection"), 0)
+	if err != nil {
+		return err
+	}
+
+	pin := &Pin{
+		Content: contid,
+		Cid:     util.DbCID{root},
+		UserID:  u.ID,
+
+		Active:  false,
+		Pinning: true,
+	}
+
+	if err := s.DB.Create(pin).Error; err != nil {
+		return err
+	}
+
+	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
+		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	}
+
+	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+	if err := s.Node.FullRT.Provide(subCtx, root, true); err != nil {
+		log.Warnf("failed to provide newly added content: %s", err)
+	}
+
+	go func() {
+		if err := s.Node.Provider.Provide(root); err != nil {
+			log.Error("providing failed: ", err)
+		}
+		log.Infow("providing complete", "cid", root)
+	}()
+
+	return c.JSON(200, &util.AddFileResponse{
+		Cid:       root.String(),
+		EstuaryId: contid,
+		Providers: s.addrsForShuttle(),
+	})
+}
+
+func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
+	_, span := Tracer.Start(ctx, "loadCar")
+	defer span.End()
+
+	return car.LoadCar(bs, r)
 }
 
 func (s *Shuttle) addrsForShuttle() []string {
