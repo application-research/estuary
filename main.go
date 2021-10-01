@@ -20,6 +20,7 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
+	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
@@ -371,7 +372,9 @@ func main() {
 
 		go pinmgr.Run(50)
 
-		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
+		rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}

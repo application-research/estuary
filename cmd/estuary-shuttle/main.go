@@ -48,6 +48,7 @@ import (
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
 )
@@ -195,7 +196,9 @@ func main() {
 			return err
 		}
 
-		filc, err := filclient.NewClient(nd.Host, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}
