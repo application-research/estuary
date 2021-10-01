@@ -35,6 +35,7 @@ type CmdParams struct {
 	SplitContent     *SplitContent     `json:",omitempty"`
 	RetrieveContent  *RetrieveContent  `json:",omitempty"`
 	UnpinContent     *UnpinContent     `json:",omitempty"`
+	RestartTransfer  *RestartTransfer  `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -110,6 +111,12 @@ const CMD_UnpinContent = "UnpinContent"
 
 type UnpinContent struct {
 	Contents []uint
+}
+
+const CMD_RestartTransfer = "RestartTransfer"
+
+type RestartTransfer struct {
+	ChanID datatransfer.ChannelID
 }
 
 type ContentFetch struct {

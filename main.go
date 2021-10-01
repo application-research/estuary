@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/build"
+	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
@@ -25,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
@@ -195,15 +197,15 @@ func main() {
 			Value: 6,
 		},
 		&cli.StringFlag{
-			Name:    "dev-tls-key",
-			Usage:   "enable https/wss in development with private key at `FILE`. " +
-			         "--dev-tls-cert also required",
+			Name: "dev-tls-key",
+			Usage: "enable https/wss in development with private key at `FILE`. " +
+				"--dev-tls-cert also required",
 			EnvVars: []string{"ESTUARY_DEV_TLS_KEY"},
 		},
 		&cli.StringFlag{
-			Name:    "dev-tls-cert",
-			Usage:   "enable https/wss in development with certificate at `FILE`. " +
-			         "--dev-tls-key also required",
+			Name: "dev-tls-cert",
+			Usage: "enable https/wss in development with certificate at `FILE`. " +
+				"--dev-tls-key also required",
 			EnvVars: []string{"ESTUARY_DEV_TLS_CERT"},
 		},
 	}
@@ -433,6 +435,14 @@ func main() {
 			}()
 		}
 
+		go func() {
+			time.Sleep(time.Second * 10)
+
+			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+				log.Errorf("failed to restart transfers: %s", err)
+			}
+		}()
+
 		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
 
@@ -584,4 +594,71 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 func jsondump(o interface{}) {
 	data, _ := json.MarshalIndent(o, "", "  ")
 	fmt.Println(string(data))
+}
+
+func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
+	var deals []contentDeal
+	if err := s.DB.Model(contentDeal{}).
+		Joins("left join contents on contents.id = content_deals.content").
+		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
+		Scan(&deals).Error; err != nil {
+		return err
+	}
+
+	for _, d := range deals {
+		chid, err := d.ChannelID()
+		if err != nil {
+			log.Errorf("failed to get channel id from deal %d: %s", d.ID, err)
+			continue
+		}
+
+		st, err := s.FilClient.TransferStatus(ctx, &chid)
+		if err != nil {
+			return err
+		}
+
+		if transferTerminated(st) {
+			log.Warnf("deal %d in database as being in progress, but data transfer is terminated: %s", d.ID, st.Status)
+			continue
+		}
+
+		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
+			log.Errorf("failed to restart transfer: %s", err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+	if loc == "local" {
+		return cm.FilClient.RestartTransfer(ctx, &chanid)
+	}
+
+	return cm.sendRestartTransferCmd(ctx, loc, chanid)
+}
+
+func transferTerminated(st *filclient.ChannelState) bool {
+	switch st.Status {
+	case datatransfer.Cancelled,
+		datatransfer.Failed,
+		datatransfer.Completed:
+
+		return true
+	default:
+		return false
+	}
+
+}
+
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_RestartTransfer,
+		Params: drpc.CmdParams{
+			RestartTransfer: &drpc.RestartTransfer{
+				ChanID: chanid,
+			},
+		},
+	})
 }

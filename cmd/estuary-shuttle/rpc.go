@@ -42,6 +42,8 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
 	case drpc.CMD_SplitContent:
 		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+	case drpc.CMD_RestartTransfer:
+		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
 		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
 	}
@@ -496,4 +498,9 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	s.sendSplitContentComplete(ctx, pin.Content)
 
 	return nil
+}
+
+func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
+	log.Infof("restarting data transfer: %s", req.ChanID)
+	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }

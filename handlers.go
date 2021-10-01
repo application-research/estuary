@@ -1213,13 +1213,41 @@ func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
 	}, nil
 }
 func (s *Server) handleTransferRestart(c echo.Context) error {
-	chanid, err := parseChanID(c.Param("chanid"))
+	ctx := c.Request().Context()
+
+	dealid, err := strconv.Atoi(c.Param("deal"))
 	if err != nil {
 		return err
 	}
 
-	err = s.FilClient.RestartTransfer(c.Request().Context(), chanid)
+	var deal contentDeal
+	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		return err
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	if deal.Failed {
+		return fmt.Errorf("cannot restart transfer, deal failed")
+	}
+
+	if deal.DealID > 0 {
+		return fmt.Errorf("cannot restart transfer, already finished")
+	}
+
+	if deal.DTChan == "" {
+		return fmt.Errorf("cannot restart transfer, no channel id")
+	}
+
+	chanid, err := deal.ChannelID()
 	if err != nil {
+		return err
+	}
+
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid); err != nil {
 		return err
 	}
 
@@ -3272,6 +3300,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 				}
 			}
 		}()
+
+		go s.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
 
 		for {
 			var msg drpc.Message
