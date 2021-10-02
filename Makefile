@@ -86,11 +86,11 @@ BINS+=bsget
 
 .PHONY: install
 install: estuary
-	cp estuary /usr/local/bin/estuary
+	@install -C estuary /usr/local/bin/estuary
 
 .PHONY: install-shuttle
 install-shuttle: shuttle
-	cp estuary-shuttle /usr/local/bin/estuary-shuttle
+	@install -C estuary-shuttle /usr/local/bin/estuary-shuttle
 
 .PHONY: install-estuary-service
 install-estuary-service:
