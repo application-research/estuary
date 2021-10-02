@@ -615,16 +615,6 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		st, err := s.FilClient.TransferStatus(ctx, &chid)
-		if err != nil {
-			return err
-		}
-
-		if transferTerminated(st) {
-			log.Warnf("deal %d in database as being in progress, but data transfer is terminated: %s", d.ID, st.Status)
-			continue
-		}
-
 		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
@@ -636,23 +626,19 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 
 func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
 	if loc == "local" {
+		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
+		if err != nil {
+			return err
+		}
+
+		if util.TransferTerminated(st) {
+			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
+		}
+
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
 
 	return cm.sendRestartTransferCmd(ctx, loc, chanid)
-}
-
-func transferTerminated(st *filclient.ChannelState) bool {
-	switch st.Status {
-	case datatransfer.Cancelled,
-		datatransfer.Failed,
-		datatransfer.Completed:
-
-		return true
-	default:
-		return false
-	}
-
 }
 
 func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {

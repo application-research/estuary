@@ -502,5 +502,14 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
 	log.Infof("restarting data transfer: %s", req.ChanID)
+	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
+	if err != nil {
+		return err
+	}
+
+	if util.TransferTerminated(st) {
+		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
+	}
+
 	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }
