@@ -31,6 +31,7 @@ import (
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
+	"github.com/cenkalti/backoff/v4"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -387,6 +388,14 @@ func main() {
 	}
 }
 
+var backoffTimer = backoff.ExponentialBackOff{
+	InitialInterval: time.Millisecond * 50,
+	Multiplier:      1.5,
+	MaxInterval:     time.Second,
+	Stop:            backoff.Stop,
+	Clock:           backoff.SystemClock,
+}
+
 type Shuttle struct {
 	Node       *node.Node
 	Api        api.Gateway
@@ -428,13 +437,14 @@ func (d *Shuttle) RunRpcConnection() error {
 		conn, err := d.dialConn()
 		if err != nil {
 			log.Errorf("failed to dial estuary rpc endpoint: %s", err)
-			time.Sleep(time.Second * 10)
+			time.Sleep(backoffTimer.NextBackOff())
 			continue
 		}
 
 		if err := d.runRpc(conn); err != nil {
 			log.Errorf("rpc routine exited with an error: %s", err)
-			time.Sleep(time.Second * 10)
+			backoffTimer.Reset()
+			time.Sleep(backoffTimer.NextBackOff())
 			continue
 		}
 

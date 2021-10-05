@@ -5,6 +5,7 @@ go 1.16
 require (
 	github.com/application-research/filclient v0.0.0-20210909172539-d59415224c08
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
+	github.com/cenkalti/backoff/v4 v4.0.2
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/filecoin-project/go-address v0.0.5
@@ -33,7 +34,6 @@ require (
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.0.1
-	github.com/ipfs/go-ipfs-pinner v0.1.2
 	github.com/ipfs/go-ipfs-provider v0.6.1
 	github.com/ipfs/go-ipld-cbor v0.0.5
 	github.com/ipfs/go-ipld-format v0.2.0
