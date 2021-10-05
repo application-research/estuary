@@ -1486,6 +1486,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
+	if provds.State == storagemarket.StorageDealError {
+		log.Errorf("deal state from miner is error: %s", provds.Message)
+	}
+
 	content, err := cm.getContent(d.Content)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
@@ -1512,7 +1516,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 						if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
 							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
-							return DEAL_CHECK_UNKNOWN, fmt.Errorf("deal checking issue")
+							return DEAL_CHECK_UNKNOWN, nil
 						}
 
 						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
@@ -1584,13 +1588,24 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 	// miner still has time...
 
-	if d.DTChan == "" && content.Location != "local" {
-		log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
-		if time.Since(d.CreatedAt) > time.Hour {
-			return DEAL_CHECK_UNKNOWN, nil
-		}
+	if d.DTChan == "" {
+		if content.Location != "local" {
+			log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
+			if time.Since(d.CreatedAt) > time.Hour {
+				return DEAL_CHECK_UNKNOWN, nil
+			}
 
-		return DEAL_CHECK_PROGRESS, nil
+			return DEAL_CHECK_PROGRESS, nil
+		} else {
+			// Weird case where we somehow dont have the data transfer started for this deal
+			log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
+			if err := cm.StartDataTransfer(ctx, d); err != nil {
+				log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
+				// If this fails out, just fail the deal and start from
+				// scratch. This is already a weird state.
+				return DEAL_CHECK_UNKNOWN, nil
+			}
+		}
 	}
 
 	status, err := cm.GetTransferStatus(ctx, d, content)
@@ -1649,9 +1664,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
 				"transfer_finished": time.Now(),
 			}).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
-			}
-			if err := cm.DB.Save(d).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
@@ -1762,9 +1774,9 @@ func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *content
 		}
 
 		if chanst != nil {
-			d.DTChan = chanst.ChannelID.String()
-
-			if err := cm.DB.Save(&d).Error; err != nil {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				"dt_chan": chanst.ChannelID.String(),
+			}).Error; err != nil {
 				return nil, err
 			}
 		}
@@ -2212,6 +2224,8 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 		}
 		return nil
 	}
+
+	cd.DTChan = chanid.String()
 
 	if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 		"dt_chan":           chanid.String(),

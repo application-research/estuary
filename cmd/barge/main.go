@@ -191,6 +191,7 @@ var plumbCmd = &cli.Command{
 	Usage:  "low level plumbing commands",
 	Subcommands: []*cli.Command{
 		plumbPutFileCmd,
+		plumbPutCarCmd,
 		plumbSplitAddFileCmd,
 	},
 }
@@ -243,6 +244,42 @@ var plumbPutFileCmd = &cli.Command{
 		}
 
 		resp, err := c.AddFile(f, fname)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(resp.Cid)
+		return nil
+	},
+}
+
+var plumbPutCarCmd = &cli.Command{
+	Name: "put-car",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "name",
+			Usage: "specify alternate name for file to be added with",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		if !cctx.Args().Present() {
+			return fmt.Errorf("must specify car file to upload")
+		}
+
+		c, err := loadClient(cctx)
+		if err != nil {
+			return err
+		}
+
+		c.DoProgress = true
+
+		f := cctx.Args().First()
+		fname := filepath.Base(f)
+		if oname := cctx.String("name"); oname != "" {
+			fname = oname
+		}
+
+		resp, err := c.AddCar(f, fname)
 		if err != nil {
 			return err
 		}

@@ -2035,7 +2035,7 @@ func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true")
+	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"))
 	if err != nil {
 		return err
 	}
@@ -2053,7 +2053,7 @@ func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 		return err
 	}
 
-	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, !body.Execute)
+	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, "", !body.Execute)
 	if err != nil {
 		return err
 	}
