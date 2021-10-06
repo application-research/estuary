@@ -1530,7 +1530,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		if err != nil {
 			log.Infof("failed to find message on chain: %s", *provds.PublishCid)
 			if provds.Proposal.StartEpoch < head.Height() {
-				// deal expired, miner didnt start it in time
+				// deal expired, miner didn`t start it in time
 				cm.recordDealFailure(&DealFailureError{
 					Miner:   maddr,
 					Phase:   "check-status",
