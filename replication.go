@@ -1322,7 +1322,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		}
 	}
 	if retErr != nil {
-		return retErr
+		return fmt.Errorf("deal check errored: %w", retErr)
 	}
 
 	goodDeals := numSealed + numPublished + numProgress
@@ -1431,7 +1431,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	if d.DealID != 0 {
 		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
 		if err != nil {
-			return DEAL_CHECK_UNKNOWN, err
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain deal: %w", err)
 		}
 		if !ok {
 			return DEAL_CHECK_UNKNOWN, nil
@@ -1497,7 +1497,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	head, err := cm.Api.ChainHead(ctx)
 	if err != nil {
-		return DEAL_CHECK_UNKNOWN, err
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
 	}
 
 	if provds.DealID != 0 {
