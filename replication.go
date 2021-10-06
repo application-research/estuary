@@ -1500,62 +1500,50 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
+	if provds.DealID != 0 {
+		deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
+		}
+
+		pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
+		}
+
+		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
+			log.Errorf("proposal in deal ID miner sent back did not match our expectations")
+			return DEAL_CHECK_UNKNOWN, nil
+		}
+
+		log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, provds.DealID)
+		if err := cm.updateDealID(d, int64(provds.DealID)); err != nil {
+			return DEAL_CHECK_UNKNOWN, err
+		}
+
+		return DEAL_CHECK_DEALID_ON_CHAIN, nil
+	}
+
 	if provds.PublishCid != nil {
 		log.Infow("checking publish CID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
-			if xerrors.Is(err, ErrNotOnChainYet) {
-				// if they sent us a dealID, lets check it and verify
-				if provds.DealID != 0 {
-					deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
-					if err == nil {
-						pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
-						if err != nil {
-							return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
-						}
-
-						if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
-							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
-							return DEAL_CHECK_UNKNOWN, nil
-						}
-
-						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
-						d.DealID = int64(provds.DealID)
-						d.OnChainAt = time.Now()
-						if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-							"deal_id":     d.DealID,
-							"on_chain_at": d.OnChainAt,
-						}).Error; err != nil {
-							return DEAL_CHECK_UNKNOWN, err
-						}
-
-						return DEAL_CHECK_DEALID_ON_CHAIN, nil
-					}
-				}
-
-				log.Infof("publish message not landed on chain yet: %s", *provds.PublishCid)
-				if provds.Proposal.StartEpoch < head.Height() {
-					// deal expired, miner didnt start it in time
-					cm.recordDealFailure(&DealFailureError{
-						Miner:   maddr,
-						Phase:   "check-status",
-						Message: "deal did not make it on chain in time (but has publish deal cid set)",
-						Content: d.Content,
-					})
-					return DEAL_CHECK_UNKNOWN, nil
-				}
-				return DEAL_CHECK_PROGRESS, nil
+			log.Infof("failed to find message on chain: %s", *provds.PublishCid)
+			if provds.Proposal.StartEpoch < head.Height() {
+				// deal expired, miner didn`t start it in time
+				cm.recordDealFailure(&DealFailureError{
+					Miner:   maddr,
+					Phase:   "check-status",
+					Message: "deal did not make it on chain in time (but has publish deal cid set)",
+					Content: d.Content,
+				})
+				return DEAL_CHECK_UNKNOWN, nil
 			}
-			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to check deal id: %w", err)
+			return DEAL_CHECK_PROGRESS, nil
 		}
 
 		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
-		d.DealID = int64(id)
-		d.OnChainAt = time.Now()
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-			"deal_id":     d.DealID,
-			"on_chain_at": d.OnChainAt,
-		}).Error; err != nil {
+		if err := cm.updateDealID(d, int64(id)); err != nil {
 			return DEAL_CHECK_UNKNOWN, err
 		}
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
@@ -1689,6 +1677,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	return DEAL_CHECK_PROGRESS, nil
+}
+
+func (cm *ContentManager) updateDealID(d *contentDeal, id int64) error {
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+		"deal_id":     id,
+		"on_chain_at": time.Now(),
+	}).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (bool, error) {
@@ -2947,6 +2945,17 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 		Op: drpc.CMD_TakeContent,
 		Params: drpc.CmdParams{
 			TakeContent: tc,
+		},
+	})
+}
+
+func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_UnpinContent,
+		Params: drpc.CmdParams{
+			UnpinContent: &drpc.UnpinContent{
+				Contents: conts,
+			},
 		},
 	})
 }

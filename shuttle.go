@@ -336,7 +336,3 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 
 	return nil
 }
-
-func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
-	return fmt.Errorf("TODO")
-}
