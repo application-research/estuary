@@ -696,8 +696,25 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
 	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
+	admin.POST("/loglevel", s.handleLogLevel)
 
 	return e.Start(listen)
+}
+
+type logLevelBody struct {
+	System string `json:"system"`
+	Level  string `json:"level"`
+}
+
+func (s *Shuttle) handleLogLevel(c echo.Context) error {
+	var body logLevelBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	logging.SetLogLevel(body.System, body.Level)
+
+	return c.JSON(200, map[string]interface{}{})
 }
 
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
