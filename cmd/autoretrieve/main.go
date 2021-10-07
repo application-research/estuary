@@ -245,11 +245,13 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, ca
 			ask, err := bs.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 
 			if err != nil {
-				fmt.Printf("retrieval query for miner %s failed: %v\n", candidate.Miner, err)
+				//fmt.Printf("retrieval query for miner %s failed: %v\n", candidate.Miner, err)
+				return
 			} else {
 				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, candidate.RootCid, nil)
 				if err != nil {
-					fmt.Printf("failed to create retrieval proposal for ask: %v\n", err)
+					//fmt.Printf("failed to create retrieval proposal for ask: %v\n", err)
+					return
 				}
 				resultsLk.Lock()
 				results = append(results, result{
@@ -278,7 +280,7 @@ func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, ca
 	for _, res := range results {
 		_, err := bs.fc.RetrieveContent(ctx, res.maddr, res.proposal)
 		if err != nil {
-			fmt.Printf("retrieval failed: %v", err)
+			//fmt.Printf("retrieval failed: %v", err)
 			continue
 		}
 
