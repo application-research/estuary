@@ -163,6 +163,7 @@ func (bs *autoRetrieveBlockstore) GetSize(c cid.Cid) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("http request failed")
 	}
@@ -179,8 +180,6 @@ func (bs *autoRetrieveBlockstore) GetSize(c cid.Cid) (int, error) {
 }
 
 func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
-	fmt.Println("received auto retrieve request for cid", c)
-
 	// Try to get this cid from the local blockstore
 	block, bsErr := bs.Blockstore.Get(c)
 
