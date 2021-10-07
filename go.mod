@@ -30,7 +30,7 @@ require (
 	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
 	github.com/ipfs/go-filestore v1.0.0
-	github.com/ipfs/go-graphsync v0.10.1 // indirect
+	github.com/ipfs/go-graphsync v0.10.2 // indirect
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
