@@ -37,6 +37,7 @@ import (
 	cbor "github.com/ipfs/go-ipld-cbor"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-metrics-interface"
 	"github.com/ipfs/go-unixfs"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -457,12 +458,22 @@ type queueManager struct {
 
 	nextEvent time.Time
 	evtTimer  *time.Timer
+
+	qsizeMetr metrics.Gauge
+	qnextMetr metrics.Gauge
 }
 
 func newQueueManager(cb func(c uint)) *queueManager {
+	metCtx := metrics.CtxScope(context.Background(), "content-manager")
+	qsizeMetr := metrics.NewCtx(metCtx, "queue_size", "number of items in the replicator queue").Gauge()
+	qnextMetr := metrics.NewCtx(metCtx, "queue_next", "next event time for queue").Gauge()
+
 	qm := &queueManager{
 		queue: new(entryQueue),
 		cb:    cb,
+
+		qsizeMetr: qsizeMetr,
+		qnextMetr: qnextMetr,
 	}
 
 	heap.Init(qm.queue)
@@ -480,8 +491,12 @@ func (qm *queueManager) add(content uint, wait time.Duration) {
 		checkTime: at,
 	})
 
+	qm.qsizeMetr.Add(1)
+
 	if qm.nextEvent.IsZero() || at.Before(qm.nextEvent) {
 		qm.nextEvent = at
+		qm.qnextMetr.Set(float64(at.Unix()))
+
 		if qm.evtTimer != nil {
 			qm.evtTimer.Reset(wait)
 		} else {
@@ -499,9 +514,12 @@ func (qm *queueManager) processQueue() {
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
 		if time.Now().After(qe.checkTime) {
+			qm.qsizeMetr.Add(-1)
 			go qm.cb(qe.content)
 		} else {
 			heap.Push(qm.queue, qe)
+			qm.nextEvent = qe.checkTime
+			qm.qnextMetr.Set(float64(qe.checkTime.Unix()))
 			qm.evtTimer.Reset(qe.checkTime.Sub(time.Now()))
 			return
 		}
@@ -698,9 +716,17 @@ func (cm *ContentManager) queueAllContent() error {
 
 	log.Infof("queueing all content for checking: %d", len(allcontent))
 
+	go func() {
+		for _, c := range allcontent {
+			log.Infof("queueing content: %d", c.ID)
+			cm.ToCheck <- c.ID
+		}
+	}()
+	/* TODO: this should be more correct, just testing the above out though to ensure the things from here are first in queue
 	for _, c := range allcontent {
 		cm.queueMgr.add(c.ID, 0)
 	}
+	*/
 
 	return nil
 }
