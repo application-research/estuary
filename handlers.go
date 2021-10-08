@@ -1191,12 +1191,12 @@ func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
 		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
 	}
 
-	initiator, err := peer.IDB58Decode(parts[0])
+	initiator, err := peer.Decode(parts[0])
 	if err != nil {
 		return nil, err
 	}
 
-	responder, err := peer.IDB58Decode(parts[1])
+	responder, err := peer.Decode(parts[1])
 	if err != nil {
 		return nil, err
 	}
