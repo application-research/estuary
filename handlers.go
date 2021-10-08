@@ -43,6 +43,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/multiformats/go-multiaddr"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -102,6 +103,12 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
+
+	phandle := promhttp.Handler()
+	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
+		phandle.ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
 
 	e.Use(middleware.CORS())
 

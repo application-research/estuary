@@ -348,7 +348,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Node:                 nd,
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
-		ToCheck:              make(chan uint, 10),
+		ToCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
 		buckets:              zones,
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
@@ -698,11 +698,9 @@ func (cm *ContentManager) queueAllContent() error {
 
 	log.Infof("queueing all content for checking: %d", len(allcontent))
 
-	go func() {
-		for _, c := range allcontent {
-			cm.ToCheck <- c.ID
-		}
-	}()
+	for _, c := range allcontent {
+		cm.queueMgr.add(c.ID, 0)
+	}
 
 	return nil
 }
