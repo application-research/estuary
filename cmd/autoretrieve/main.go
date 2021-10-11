@@ -198,7 +198,7 @@ func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 			}
 
 			if err := bs.retrieveFromBestCandidate(context.Background(), candidates); err != nil {
-				fmt.Printf("x")
+				fmt.Printf("Retrieval failed for %s\n", c)
 				return nil, err
 			}
 
@@ -207,7 +207,7 @@ func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 
 			<-blockCh
 
-			fmt.Printf("\n%s\n", c)
+			fmt.Printf("Retrieval succeeded for %s\n", c)
 
 			return block, nil
 		}
