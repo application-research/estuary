@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -18,11 +20,13 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-state-types/big"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/xerrors"
 )
 
 func main() {
@@ -188,12 +192,12 @@ func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 		// ...maybe it wasn't present
 		if errors.Is(bsErr, blockstore.ErrNotFound) {
 			// In which case, we hit the api endpoint and ask which miners have this information
-			candidates, err := bs.getRetrievalCandidates(context.Background(), c)
+			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", c)
 			if err != nil {
 				return nil, err
 			}
 
-			if err := bs.retrieveFromCandidates(context.Background(), candidates); err != nil {
+			if err := bs.retrieveFromBestCandidate(context.Background(), candidates); err != nil {
 				fmt.Printf("x")
 				return nil, err
 			}
@@ -213,79 +217,129 @@ func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	return block, nil
 }
 
-func (bs *autoRetrieveBlockstore) getRetrievalCandidates(ctx context.Context, c cid.Cid) ([]retrievalCandidate, error) {
-	cacheLk.Lock()
-	candidates := cache[c]
-	cacheLk.Unlock()
+func GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, error) {
 
-	return candidates, nil
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil {
+		return nil, xerrors.Errorf("endpoint %s is not a valid url", endpoint)
+	}
+	endpointURL.Path = path.Join(endpointURL.Path, c.String())
+
+	resp, err := http.Get(endpointURL.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http request to endpoint %s got status %v", endpointURL, resp.StatusCode)
+	}
+
+	var res []RetrievalCandidate
+
+	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, xerrors.Errorf("could not unmarshal http response for cid %s", c)
+	}
+
+	return res, nil
+}
+
+type RetrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
 }
 
 // Select the most preferable miner to retrieve from and execute the retrieval
-func (bs *autoRetrieveBlockstore) retrieveFromCandidates(ctx context.Context, candidates []retrievalCandidate) error {
-
-	type result struct {
-		proposal *retrievalmarket.DealProposal
-		maddr    address.Address
+func (bs *autoRetrieveBlockstore) retrieveFromBestCandidate(ctx context.Context, candidates []RetrievalCandidate) error {
+	type CandidateQuery struct {
+		Candidate RetrievalCandidate
+		Response  *retrievalmarket.QueryResponse
 	}
+	checked := 0
+	var queries []CandidateQuery
+	var queriesLk sync.Mutex
 
-	var resultsLk sync.Mutex
-	var results []result
-
-	// Run retrieval queries for each miner candidate in parallel, and collect
-	// them into results
 	var wg sync.WaitGroup
 	wg.Add(len(candidates))
+
 	for _, candidate := range candidates {
 
-		// Copy loop var for goroutine
+		// Copy into loop, cursed go
 		candidate := candidate
 
 		go func() {
-			ask, err := bs.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
+			defer wg.Done()
 
+			query, err := bs.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				//fmt.Printf("retrieval query for miner %s failed: %v\n", candidate.Miner, err)
+				fmt.Printf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
 				return
-			} else {
-				proposal, err := retrievehelper.RetrievalProposalForAsk(ask, candidate.RootCid, nil)
-				if err != nil {
-					//fmt.Printf("failed to create retrieval proposal for ask: %v\n", err)
-					return
-				}
-				resultsLk.Lock()
-				results = append(results, result{
-					proposal,
-					candidate.Miner,
-				})
-				resultsLk.Unlock()
 			}
 
-			wg.Done()
+			queriesLk.Lock()
+			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
+			checked++
+			fmt.Printf("%v/%v\r", checked, len(candidates))
+			queriesLk.Unlock()
 		}()
 	}
+
 	wg.Wait()
 
-	// If none of the retrieval queries succeeded, we can exit early
-	if len(results) == 0 {
-		return fmt.Errorf("all retrieval queries failed")
+	if len(queries) == 0 {
+		return xerrors.Errorf("retrieval failed: queries failed for all miners")
 	}
 
-	// Sort the results from lowest to highest proposal price
-	// TODO: lots more we do here to rank results!
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].proposal.PricePerByte.LessThan(results[j].proposal.PricePerByte)
+	sort.Slice(queries, func(i, j int) bool {
+		a := queries[i].Response
+		b := queries[i].Response
+
+		// Always prefer unsealed to sealed, no matter what
+		if a.UnsealPrice.IsZero() && !b.UnsealPrice.IsZero() {
+			return true
+		}
+
+		// Select lower price, or continue if equal
+		aTotalPrice := totalCost(a)
+		bTotalPrice := totalCost(b)
+		if !aTotalPrice.Equals(bTotalPrice) {
+			return aTotalPrice.LessThan(bTotalPrice)
+		}
+
+		// Select smaller size, or continue if equal
+		if a.Size != b.Size {
+			return a.Size < b.Size
+		}
+
+		return false
 	})
 
-	for _, res := range results {
-		_, err := bs.fc.RetrieveContent(ctx, res.maddr, res.proposal)
+	// Now attempt retrievals in serial from first to last, until one works.
+	// stats will get set if a retrieval succeeds - if no retrievals work, it
+	// will still be nil after the loop finishes
+	var stats *filclient.RetrievalStats
+	for _, query := range queries {
+		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
 		if err != nil {
-			//fmt.Printf("retrieval failed: %v", err)
 			continue
 		}
 
-		return nil
+		stats, err = bs.fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
+		if err != nil {
+			fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
+			continue
+		}
+
+		break
 	}
 
-	return fmt.Errorf("could not retrieve content from any of the candidate miners")
+	if stats == nil {
+		return xerrors.New("retrieval failed: all miners failed to respond")
+	}
+
+	return nil
+}
+
+func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
+	return big.Add(big.Mul(qres.MinPricePerByte, big.NewIntUnsigned(qres.Size)), qres.UnsealPrice)
 }
