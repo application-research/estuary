@@ -137,6 +137,7 @@ type MsgParams struct {
 	TransferStatus  *TransferStatus  `json:",omitempty"`
 	TransferStarted *TransferStarted `json:",omitempty"`
 	ShuttleUpdate   *ShuttleUpdate   `json:",omitempty"`
+	GarbageCheck    *GarbageCheck    `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -194,4 +195,10 @@ type ShuttleUpdate struct {
 	BlockstoreFree uint64
 	NumPins        int64
 	PinQueueSize   int
+}
+
+const OP_GarbageCheck = "GarbageCheck"
+
+type GarbageCheck struct {
+	Contents []uint
 }

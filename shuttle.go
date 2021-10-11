@@ -178,6 +178,16 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling shuttle update message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_GarbageCheck:
+		param := msg.Params.GarbageCheck
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcGarbageCheck(ctx, handle, param); err != nil {
+			log.Errorf("handling garbage check message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
 	}
@@ -335,4 +345,24 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 	d.pinQueueLength = int64(param.PinQueueSize)
 
 	return nil
+}
+
+func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle string, param *drpc.GarbageCheck) error {
+	var tounpin []uint
+	for _, c := range param.Contents {
+		var cont Content
+		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+			if xerrors.Is(err, gorm.ErrRecordNotFound) {
+				tounpin = append(tounpin, c)
+			} else {
+				return err
+			}
+		}
+
+		if cont.Location != handle || cont.Offloaded {
+			tounpin = append(tounpin, c)
+		}
+	}
+
+	return cm.sendUnpinCmd(ctx, handle, tounpin)
 }

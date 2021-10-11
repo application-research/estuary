@@ -1484,7 +1484,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	// case where deal isnt yet on chain...
 
 	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
-	subctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
 	if err != nil {
