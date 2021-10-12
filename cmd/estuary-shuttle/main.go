@@ -354,8 +354,12 @@ func main() {
 		cancelledTransfers := metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge()
 		requestedTransfers := metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge()
 		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
+		dataReceived := metrics.NewCtx(metCtx, "transfer_received_per_second", "total bytes sent per second").Gauge()
+		dataSent := metrics.NewCtx(metCtx, "transfer_sent_per_second", "total bytes received per second").Gauge()
 
 		go func() {
+			lastSent := uint64(0)
+			lastReceived := uint64(0)
 			for range time.Tick(time.Second * 10) {
 				txs, err := d.Filc.TransfersInProgress(context.TODO())
 				if err != nil {
@@ -366,16 +370,23 @@ func main() {
 				allTransfers.Set(float64(len(txs)))
 
 				byState := make(map[datatransfer.Status]int)
+				sent := uint64(0)
+				received := uint64(0)
 
 				for _, xfer := range txs {
 					byState[xfer.Status()]++
+					sent += xfer.Sent()
+					received += xfer.Received()
 				}
 
 				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
 				failedTransfers.Set(float64(byState[datatransfer.Failed]))
 				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
 				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
-
+				dataReceived.Set(float64(received-lastReceived) / 10)
+				dataSent.Set(float64(sent-lastSent) / 10)
+				lastReceived = received
+				lastSent = sent
 			}
 		}()
 
