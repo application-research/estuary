@@ -243,13 +243,13 @@ func main() {
 			return err
 		}
 
-		// TODO: Paramify this?
+		// TODO: Paramify this? also make a proper constructor for the shuttle
 		cache, err := lru.New2Q(1000)
 		if err != nil {
 			return err
 		}
 
-		d := &Shuttle{
+		s := &Shuttle{
 			Node:       nd,
 			Api:        api,
 			DB:         db,
@@ -270,23 +270,23 @@ func main() {
 			shuttleToken:       cctx.String("auth-token"),
 			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
 		}
-		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate, &pinner.PinManagerOpts{
+		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 		})
 
-		go d.PinMgr.Run(100)
+		go s.PinMgr.Run(100)
 
 		if !cctx.Bool("no-reload-pin-queue") {
-			if err := d.refreshPinQueue(); err != nil {
+			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
 		}
 
-		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
+		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
 			chid := st.ChannelID().String()
-			d.tcLk.Lock()
-			defer d.tcLk.Unlock()
-			trk, ok := d.trackingChannels[chid]
+			s.tcLk.Lock()
+			defer s.tcLk.Unlock()
+			trk, ok := s.trackingChannels[chid]
 			if !ok {
 				return
 			}
@@ -296,7 +296,7 @@ func main() {
 				trk.last = cst
 
 				log.Infof("event(%d) message: %s", event.Code, event.Message)
-				go d.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
 					State:    cst,
@@ -312,18 +312,18 @@ func main() {
 		}()
 
 		go func() {
-			if err := d.RunRpcConnection(); err != nil {
+			if err := s.RunRpcConnection(); err != nil {
 				log.Errorf("failed to run rpc connection: %s", err)
 			}
 		}()
 
 		go func() {
-			upd, err := d.getUpdatePacket()
+			upd, err := s.getUpdatePacket()
 			if err != nil {
 				log.Errorf("failed to get update packet: %s", err)
 			}
 
-			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+			if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 				Op: drpc.OP_ShuttleUpdate,
 				Params: drpc.MsgParams{
 					ShuttleUpdate: upd,
@@ -332,12 +332,12 @@ func main() {
 				log.Errorf("failed to send shuttle update: %s", err)
 			}
 			for range time.Tick(time.Minute) {
-				upd, err := d.getUpdatePacket()
+				upd, err := s.getUpdatePacket()
 				if err != nil {
 					log.Errorf("failed to get update packet: %s", err)
 				}
 
-				if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+				if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 					Op: drpc.OP_ShuttleUpdate,
 					Params: drpc.MsgParams{
 						ShuttleUpdate: upd,
@@ -361,7 +361,7 @@ func main() {
 			lastSent := uint64(0)
 			lastReceived := uint64(0)
 			for range time.Tick(time.Second * 10) {
-				txs, err := d.Filc.TransfersInProgress(context.TODO())
+				txs, err := s.Filc.TransfersInProgress(context.TODO())
 				if err != nil {
 					log.Errorf("failed to get transfers in progress: %s", err)
 					continue
@@ -390,7 +390,7 @@ func main() {
 			}
 		}()
 
-		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
