@@ -370,8 +370,8 @@ func main() {
 				allTransfers.Set(float64(len(txs)))
 
 				byState := make(map[datatransfer.Status]int)
-				sent := uint64(0)
-				received := uint64(0)
+				var sent uint64
+				var received uint64
 
 				for _, xfer := range txs {
 					byState[xfer.Status()]++
@@ -383,10 +383,8 @@ func main() {
 				failedTransfers.Set(float64(byState[datatransfer.Failed]))
 				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
 				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
-				dataReceived.Set(float64(received-lastReceived) / 10)
-				dataSent.Set(float64(sent-lastSent) / 10)
-				lastReceived = received
-				lastSent = sent
+				dataReceived.Set(float64(received))
+				dataSent.Set(float64(sent))
 			}
 		}()
 
