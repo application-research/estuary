@@ -2052,15 +2052,16 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 
 func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 	var body struct {
-		Execute        bool  `json:"execute"`
-		SpaceRequested int64 `json:"spaceRequested"`
+		Execute        bool   `json:"execute"`
+		SpaceRequested int64  `json:"spaceRequested"`
+		Location       string `json:"location"`
 	}
 
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, "", !body.Execute)
+	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, body.Location, !body.Execute)
 	if err != nil {
 		return err
 	}

@@ -169,6 +169,7 @@ func main() {
 		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
+				"/ip4/0.0.0.0/udp/6746/quic",
 			},
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
@@ -354,8 +355,8 @@ func main() {
 		cancelledTransfers := metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge()
 		requestedTransfers := metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge()
 		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
-		dataReceived := metrics.NewCtx(metCtx, "transfer_received_per_second", "total bytes sent per second").Gauge()
-		dataSent := metrics.NewCtx(metCtx, "transfer_sent_per_second", "total bytes received per second").Gauge()
+		dataReceived := metrics.NewCtx(metCtx, "transfer_received_bytes", "total bytes sent").Gauge()
+		dataSent := metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge()
 
 		go func() {
 			for range time.Tick(time.Second * 10) {

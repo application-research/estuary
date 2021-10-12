@@ -301,12 +301,21 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 
 func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
 	log.Infof("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
-	if param.Failed {
-		var cd contentDeal
+
+	var cd contentDeal
+	if param.DealDBID != 0 {
 		if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
 			return err
 		}
+	} else if param.State != nil {
+		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.ChannelID.String()).Error; err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("received transfer status update with no identifiers")
+	}
 
+	if param.Failed {
 		miner, err := cd.MinerAddr()
 		if err != nil {
 			return err
@@ -321,13 +330,13 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		cm.updateTransferStatus(ctx, handle, param.DealDBID, &filclient.ChannelState{
+		cm.updateTransferStatus(ctx, handle, cd.ID, &filclient.ChannelState{
 			Status:  datatransfer.Failed,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		})
 		return nil
 	}
-	cm.updateTransferStatus(ctx, handle, param.DealDBID, param.State)
+	cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	return nil
 }
 
