@@ -358,8 +358,6 @@ func main() {
 		dataSent := metrics.NewCtx(metCtx, "transfer_sent_per_second", "total bytes received per second").Gauge()
 
 		go func() {
-			lastSent := uint64(0)
-			lastReceived := uint64(0)
 			for range time.Tick(time.Second * 10) {
 				txs, err := s.Filc.TransfersInProgress(context.TODO())
 				if err != nil {
