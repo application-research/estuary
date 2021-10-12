@@ -7,7 +7,7 @@ EnvironmentFile=/etc/estuary-shuttle/log.env
 EnvironmentFile=/etc/estuary-shuttle/config.env
 ExecStart=/usr/local/bin/estuary-shuttle --database=${ESTUARY_DB_CONN} --datadir=${SHUTTLE_DATA} --apilisten=${SHUTTLE_API} --lightstep-token=${ESTUARY_LIGHTSTEP_TOKEN} --logging=false --host=${SHUTTLE_HOSTNAME} --handle=${SHUTTLE_HANDLE} --auth-token=${SHUTTLE_AUTH_TOKEN} --blockstore=${SHUTTLE_BLOCKSTORE}
 Restart=always
-RestartSecs=10
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
