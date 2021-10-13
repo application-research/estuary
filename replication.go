@@ -826,12 +826,14 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 		return n, 0
 	}
 
-	if n < 5 {
-		return 3, n - 2
+	if n < 7 {
+		return 2, n - 2
 	}
 
 	return n - (n / 2), n / 2
 }
+
+const topMinerSel = 15
 
 func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
 	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
@@ -880,8 +882,8 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, s
 		return nil, err
 	}
 
-	if len(sortedminers) > 10 {
-		sortedminers = sortedminers[:10]
+	if len(sortedminers) > topMinerSel {
+		sortedminers = sortedminers[:topMinerSel]
 	}
 
 	rand.Shuffle(len(sortedminers), func(i, j int) {
