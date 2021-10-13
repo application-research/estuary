@@ -198,22 +198,6 @@ func main() {
 			Name:  "default-replication",
 			Value: 6,
 		},
-		&cli.StringFlag{
-			Name: "dev-tls-key",
-			Usage: "enable https/wss in development with private key at `FILE`. " +
-				"--dev-tls-cert also required",
-			EnvVars: []string{"ESTUARY_DEV_TLS_KEY"},
-		},
-		&cli.StringFlag{
-			Name: "dev-tls-cert",
-			Usage: "enable https/wss in development with certificate at `FILE`. " +
-				"--dev-tls-key also required",
-			EnvVars: []string{"ESTUARY_DEV_TLS_CERT"},
-		},
-		&cli.BoolFlag{
-			Name:  "lowmem",
-			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
-		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -287,15 +271,6 @@ func main() {
 			}
 		}
 
-		hasCert := cctx.IsSet("dev-tls-cert") || cctx.IsSet("dev-tls-key")
-		if hasCert {
-			if !cctx.IsSet("dev-tls-key") {
-				return cli.Exit("missing required --dev-tls-key", 1)
-			} else if !cctx.IsSet("dev-tls-cert") {
-				return cli.Exit("missing required --dev-tls-cert", 1)
-			}
-		}
-
 		db, err := setupDatabase(cctx)
 		if err != nil {
 			return err
@@ -361,13 +336,6 @@ func main() {
 			StagingMgr: sbmgr,
 			tracer:     otel.Tracer("api"),
 			quickCache: make(map[string]endpointCache),
-		}
-
-		if hasCert {
-			s.certFiles = &TLSCertFiles{
-				cert: cctx.String("dev-tls-cert"),
-				key:  cctx.String("dev-tls-key"),
-			}
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -537,12 +505,6 @@ type Server struct {
 
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
-	certFiles  *TLSCertFiles
-}
-
-type TLSCertFiles struct {
-	key  string
-	cert string
 }
 
 type endpointCache struct {
