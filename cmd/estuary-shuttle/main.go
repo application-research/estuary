@@ -357,6 +357,19 @@ func main() {
 		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
 		dataReceived := metrics.NewCtx(metCtx, "transfer_received_bytes", "total bytes sent").Gauge()
 		dataSent := metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge()
+		receivingPeersCount := metrics.NewCtx(metCtx, "graphsync_receiving_peers", "number of peers we are receiving graphsync data from").Gauge()
+		receivingActiveCount := metrics.NewCtx(metCtx, "graphsync_receiving_active", "number of active receiving graphsync transfers").Gauge()
+		receivingCountCount := metrics.NewCtx(metCtx, "graphsync_receiving_pending", "number of pending receiving graphsync transfers").Gauge()
+		receivingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_receiving_total_allocated", "amount of block memory allocated for receiving graphsync data").Gauge()
+		receivingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_receiving_pending_allocations", "amount of block memory on hold being received pending allocation").Gauge()
+		receivingPeersPending := metrics.NewCtx(metCtx, "graphsync_receiving_peers_pending", "number of peers we can't receive more data from cause of pending allocations").Gauge()
+
+		sendingPeersCount := metrics.NewCtx(metCtx, "graphsync_sending_peers", "number of peers we are sending graphsync data to").Gauge()
+		sendingActiveCount := metrics.NewCtx(metCtx, "graphsync_sending_active", "number of active sending graphsync transfers").Gauge()
+		sendingCountCount := metrics.NewCtx(metCtx, "graphsync_sending_pending", "number of pending sending graphsync transfers").Gauge()
+		sendingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_sending_total_allocated", "amount of block memory allocated for sending graphsync data").Gauge()
+		sendingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_sending_pending_allocations", "amount of block memory on hold from sending pending allocation").Gauge()
+		sendingPeersPending := metrics.NewCtx(metCtx, "graphsync_sending_peers_pending", "number of peers we can't send more data to cause of pending allocations").Gauge()
 
 		go func() {
 			for range time.Tick(time.Second * 10) {
@@ -384,6 +397,21 @@ func main() {
 				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
 				dataReceived.Set(float64(received))
 				dataSent.Set(float64(sent))
+
+				stats := s.Filc.GraphSyncStats()
+				receivingPeersCount.Set(float64(stats.OutgoingRequests.TotalPeers))
+				receivingActiveCount.Set(float64(stats.OutgoingRequests.Active))
+				receivingCountCount.Set(float64(stats.OutgoingRequests.Pending))
+				receivingTotalMemoryAllocated.Set(float64(stats.IncomingResponses.TotalAllocatedAllPeers))
+				receivingTotalPendingAllocations.Set(float64(stats.IncomingResponses.TotalPendingAllocations))
+				receivingPeersPending.Set(float64(stats.IncomingResponses.NumPeersWithPendingAllocations))
+
+				sendingPeersCount.Set(float64(stats.IncomingRequests.TotalPeers))
+				sendingActiveCount.Set(float64(stats.IncomingRequests.Active))
+				sendingCountCount.Set(float64(stats.IncomingRequests.Pending))
+				sendingTotalMemoryAllocated.Set(float64(stats.OutgoingResponses.TotalAllocatedAllPeers))
+				sendingTotalPendingAllocations.Set(float64(stats.OutgoingResponses.TotalPendingAllocations))
+				sendingPeersPending.Set(float64(stats.OutgoingResponses.NumPeersWithPendingAllocations))
 			}
 		}()
 

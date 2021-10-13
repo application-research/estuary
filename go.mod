@@ -30,7 +30,7 @@ require (
 	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
 	github.com/ipfs/go-filestore v1.0.0
-	github.com/ipfs/go-graphsync v0.10.2 // indirect
+	github.com/ipfs/go-graphsync v0.10.3 // indirect
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1
@@ -79,3 +79,4 @@ require (
 replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
+replace github.com/application-research/filclient => ../filclient
