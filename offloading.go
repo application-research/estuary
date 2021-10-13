@@ -25,6 +25,7 @@ type collectionResult struct {
 	CandidatesConsidered int                `json:"candidatesConsidered"`
 	BlocksRemoved        int                `json:"blocksRemoved"`
 	DryRun               bool               `json:"dryRun"`
+	OffloadError         string             `json:"offloadError,omitempty"`
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, dryrun bool) (*collectionResult, error) {
@@ -36,12 +37,12 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 
 	candidates, err := cm.getRemovalCandidates(ctx, false, loc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
 
 	offs, err := cm.getLastAccesses(ctx, candidates)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get last accesses: %w", err)
 	}
 
 	// grab enough candidates to fulfil the requested space
@@ -76,6 +77,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 
 	rem, err := cm.OffloadContents(ctx, ids)
 	if err != nil {
+		result.OffloadError = err.Error()
 		log.Warnf("failed to offload contents: %s", err)
 	}
 
@@ -91,7 +93,8 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 	for _, c := range candidates {
 		la, err := cm.getLastAccessForContent(c.Content)
 		if err != nil {
-			return nil, err
+			log.Errorf("check last access for %d: %s", c.Content, err)
+			continue
 		}
 
 		offs = append(offs, offloadCandidate{
@@ -232,7 +235,7 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, lo
 
 	var conts []Content
 	if err := q.Scan(&conts).Error; err != nil {
-		return nil, err
+		return nil, fmt.Errorf("scanning removal candidates failed: %w", err)
 	}
 
 	var toOffload []removalCandidateInfo

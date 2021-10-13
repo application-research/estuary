@@ -158,8 +158,8 @@ github.com/antonmedv/expr v1.8.9/go.mod h1:5qsM3oLGDND7sDmQGDXHkYfkjYMUX14qsgqmH
 github.com/apache/arrow/go/arrow v0.0.0-20191024131854-af6fa24be0db/go.mod h1:VTxUBvSJ3s3eHAg65PNgrsn5BtqCRPdmyXh6rAfdxN0=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
-github.com/application-research/filclient v0.0.0-20211013144613-ca3fbb77827c h1:ixjA0z7JrctFVT0nysUQ+zhv/cZGlCRB7vACYdDmpwE=
-github.com/application-research/filclient v0.0.0-20211013144613-ca3fbb77827c/go.mod h1:f5rWNBnbOVF3FBuLdyDzA6KN1XiyzmRHqQLidweiN+8=
+github.com/application-research/filclient v0.0.0-20211013232856-7f5856acdece h1:fatulRu3yDIQ63tPRGlK+miMlpGCJKSd/asLM+2h2GA=
+github.com/application-research/filclient v0.0.0-20211013232856-7f5856acdece/go.mod h1:f5rWNBnbOVF3FBuLdyDzA6KN1XiyzmRHqQLidweiN+8=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=

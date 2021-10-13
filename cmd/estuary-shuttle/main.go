@@ -841,24 +841,40 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-	if err := s.Node.FullRT.Provide(subCtx, nd.Cid(), true); err != nil {
-		log.Warnf("failed to provide newly added content: %s", err)
+	if err := s.Provide(ctx, nd.Cid()); err != nil {
+		log.Warn(err)
 	}
-
-	go func() {
-		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
-			fmt.Println("providing failed: ", err)
-		}
-		fmt.Println("providing complete")
-	}()
 
 	return c.JSON(200, &util.AddFileResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+
+	if s.Node.FullRT.Ready() {
+		if err := s.Node.FullRT.Provide(subCtx, c, true); err != nil {
+			return fmt.Errorf("failed to provide newly added content: %w", err)
+		}
+	} else {
+		log.Warnf("fullrt not in ready state, falling back to standard dht provide")
+		if err := s.Node.Dht.Provide(subCtx, c, true); err != nil {
+			return fmt.Errorf("fallback provide failed: %w", err)
+		}
+	}
+
+	go func() {
+		if err := s.Node.Provider.Provide(c); err != nil {
+			log.Warnf("providing failed: ", err)
+		}
+		log.Infof("providing complete")
+	}()
+
+	return nil
 }
 
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
@@ -933,18 +949,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-	if err := s.Node.FullRT.Provide(subCtx, root, true); err != nil {
-		log.Warnf("failed to provide newly added content: %s", err)
+	if err := s.Provide(ctx, root); err != nil {
+		log.Warn(err)
 	}
-
-	go func() {
-		if err := s.Node.Provider.Provide(root); err != nil {
-			log.Error("providing failed: ", err)
-		}
-		log.Infow("providing complete", "cid", root)
-	}()
 
 	return c.JSON(200, &util.AddFileResponse{
 		Cid:       root.String(),
@@ -1060,14 +1067,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 	*/
 
-	// this provide call goes out immediately
-	if err := d.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		log.Infof("provider broadcast failed: %s", err)
-	}
-
-	// this one adds to a queue
-	if err := d.Node.Provider.Provide(op.Obj); err != nil {
-		log.Infof("providing failed: %s", err)
+	if err := d.Provide(ctx, op.Obj); err != nil {
+		log.Warn(err)
 	}
 
 	return nil

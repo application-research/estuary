@@ -18,6 +18,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
+	gsimpl "github.com/ipfs/go-graphsync/impl"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
@@ -209,6 +210,10 @@ func main() {
 				"--dev-tls-key also required",
 			EnvVars: []string{"ESTUARY_DEV_TLS_CERT"},
 		},
+		&cli.BoolFlag{
+			Name:  "lowmem",
+			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -373,6 +378,21 @@ func main() {
 		go pinmgr.Run(50)
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+		var opts []func(*filclient.Config)
+		if cctx.Bool("lowmem") {
+			opts = append(opts, func(cfg *filclient.Config) {
+				cfg.GraphsyncOpts = []gsimpl.Option{
+					gsimpl.MaxInProgressIncomingRequests(100),
+					gsimpl.MaxInProgressOutgoingRequests(100),
+					gsimpl.MaxMemoryResponder(4 << 30),
+					gsimpl.MaxMemoryPerPeerResponder(16 << 20),
+					gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
+					gsimpl.MessageSendRetries(2),
+					gsimpl.SendMessageTimeout(2 * time.Minute),
+				}
+			})
+		}
 
 		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
