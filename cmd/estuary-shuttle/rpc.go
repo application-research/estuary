@@ -229,7 +229,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 
 	for _, c := range cmd.Contents {
 		var count int64
-		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Count(&count).Error
+		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Limit(1).Count(&count).Error
 		if err != nil {
 			return err
 		}

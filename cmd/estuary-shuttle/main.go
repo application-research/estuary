@@ -359,6 +359,9 @@ func main() {
 		dataSent := metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge()
 
 		go func() {
+			var beginSent, beingRec float64
+			var firstrun bool = true
+
 			for range time.Tick(time.Second * 10) {
 				txs, err := s.Filc.TransfersInProgress(context.TODO())
 				if err != nil {
@@ -382,8 +385,14 @@ func main() {
 				failedTransfers.Set(float64(byState[datatransfer.Failed]))
 				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
 				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
-				dataReceived.Set(float64(received))
-				dataSent.Set(float64(sent))
+
+				if firstrun {
+					beginSent = float64(sent)
+					beginRec = float64(received)
+				} else {
+					dataReceived.Set(float64(received) - beginSent)
+					dataSent.Set(float64(sent) - beginRec)
+				}
 			}
 		}()
 
