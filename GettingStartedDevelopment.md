@@ -51,10 +51,10 @@ $ curl -H "Authorization: Bearer ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY" -X 
 {"handle":"SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE","token":"SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET"}
 ```
 
-Using the output from the above command, start a shuttle node
+Using the output from the above command, start a shuttle node in development mode
 
 ```bash
-$ ./estuary-shuttle --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE
+$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE
 Wallet address is:  <your_estuary-shuttle_address_printed_here>
 2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
 2021-09-16T14:47:54.416-0700    INFO    shuttle estuary-shuttle/main.go:1060    refreshing 0 pins
