@@ -402,6 +402,7 @@ func main() {
 				if firstrun {
 					beginSent = float64(sent)
 					beginRec = float64(received)
+					firstrun = false
 				} else {
 					dataReceived.Set(float64(received) - beginSent)
 					dataSent.Set(float64(sent) - beginRec)
