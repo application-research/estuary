@@ -1316,6 +1316,11 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 }
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
+	ctx, span := Tracer.Start(ctx, "unpin")
+	defer span.End()
+
+	log.Infof("unpinning %d", contid)
+
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", contid).Error; err != nil {
 		return err
@@ -1326,11 +1331,11 @@ func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := s.DB.Delete(Pin{}, pin.ID).Error; err != nil {
+	if err := s.DB.Where("pin = ?", pin.ID).Delete(ObjRef{}).Error; err != nil {
 		return err
 	}
 
-	if err := s.DB.Where("pin = ?", pin.ID).Delete(ObjRef{}).Error; err != nil {
+	if err := s.DB.Delete(Pin{}, pin.ID).Error; err != nil {
 		return err
 	}
 
@@ -1338,28 +1343,35 @@ func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 		return err
 	}
 
+	var totalDeleted int
 	for _, o := range objs {
 		// TODO: this is safe, but... slow?
-		if err := s.deleteIfNotPinned(o); err != nil {
+		del, err := s.deleteIfNotPinned(o)
+		if err != nil {
 			return err
 		}
+		if del {
+			totalDeleted++
+		}
 	}
+
+	log.Infof("unpinned %d and deleted %d out of %d blocks", contid, totalDeleted, len(objs))
 
 	return nil
 }
 
-func (s *Shuttle) deleteIfNotPinned(o *Object) error {
+func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 	s.addPinLk.Lock()
 	defer s.addPinLk.Unlock()
 
 	var c int64
 	if err := s.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
-		return err
+		return false, err
 	}
 	if c == 0 {
-		return s.Node.Blockstore.DeleteBlock(o.Cid.CID)
+		return true, s.Node.Blockstore.DeleteBlock(o.Cid.CID)
 	}
-	return nil
+	return false, nil
 }
 
 func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
