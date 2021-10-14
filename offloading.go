@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
-	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
 )
 
@@ -26,23 +25,24 @@ type collectionResult struct {
 	CandidatesConsidered int                `json:"candidatesConsidered"`
 	BlocksRemoved        int                `json:"blocksRemoved"`
 	DryRun               bool               `json:"dryRun"`
+	OffloadError         string             `json:"offloadError,omitempty"`
 }
 
-func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, dryrun bool) (*collectionResult, error) {
+func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, dryrun bool) (*collectionResult, error) {
 	ctx, span := cm.tracer.Start(ctx, "clearUnused")
 	defer span.End()
 	// first, gather candidates for removal
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx, false)
+	candidates, err := cm.getRemovalCandidates(ctx, false, loc)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
 
 	offs, err := cm.getLastAccesses(ctx, candidates)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get last accesses: %w", err)
 	}
 
 	// grab enough candidates to fulfil the requested space
@@ -77,6 +77,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, d
 
 	rem, err := cm.OffloadContents(ctx, ids)
 	if err != nil {
+		result.OffloadError = err.Error()
 		log.Warnf("failed to offload contents: %s", err)
 	}
 
@@ -92,7 +93,8 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 	for _, c := range candidates {
 		la, err := cm.getLastAccessForContent(c.Content)
 		if err != nil {
-			return nil, err
+			log.Errorf("check last access for %d: %s", c.Content, err)
+			continue
 		}
 
 		offs = append(offs, offloadCandidate{
@@ -128,12 +130,22 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	ctx, span := cm.tracer.Start(ctx, "OffloadContents")
 	defer span.End()
 
+	var local []uint
+
+	remote := make(map[string][]uint)
+
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 	for _, c := range conts {
 		var cont Content
 		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 			return 0, err
+		}
+
+		if cont.Location == "local" {
+			local = append(local, cont.ID)
+		} else {
+			remote[cont.Location] = append(remote[cont.Location], cont.ID)
 		}
 
 		if cont.AggregatedIn > 0 {
@@ -162,57 +174,44 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 				return 0, err
 			}
 
+			var children []Content
+			if err := cm.DB.Find(&children, "aggregated_in = ?", c).Error; err != nil {
+				return 0, err
+			}
+
+			for _, c := range children {
+				if cont.Location == "local" {
+					local = append(local, c.ID)
+				} else {
+					remote[cont.Location] = append(remote[cont.Location], c.ID)
+				}
+			}
 		}
 	}
 
-	/*
-		// FIXME: this query works on sqlite, but apparently not on postgres.
-		// select * from obj_refs group by object having MIN(obj_refs.offloaded) = 1 and obj_refs.content = 1;
-		q := cm.DB.Debug().Model(&ObjRef{}).
-			Select("objects.cid").
-			Joins("left join objects on obj_refs.object = objects.id").
-			Group("object").
-			Having("obj_refs.content = ? and MIN(obj_refs.offloaded) = 1", c)
-	*/
-
-	// FIXME: this query doesnt filter down to just the content we're looking at, but at least it works?
-	q := cm.DB.Debug().Model(&ObjRef{}).
-		Select("cid").
-		Joins("left join objects on obj_refs.object = objects.id").
-		Group("cid").
-		Having("MIN(obj_refs.offloaded) = 1")
-
-	rows, err := q.Rows()
-	if err != nil {
-		return 0, err
+	for loc, conts := range remote {
+		if err := cm.sendUnpinCmd(ctx, loc, conts); err != nil {
+			log.Errorf("failed to send unpin command to shuttle: %s", err)
+		}
 	}
 
-	// TODO: I believe that we need to hold a lock for the entire period that
-	// we are deleting objects from the blockstore, otherwise a new file could
-	// come in that has overlapping blocks, and have its blocks deleted by this
-	// process.
 	var deleteCount int
-	var cids []cid.Cid
-	for rows.Next() {
-		var dbc util.DbCID
-		if err := rows.Scan(&dbc); err != nil {
-			return deleteCount, err
+	for _, c := range local {
+		objs, err := cm.objectsForPin(ctx, c)
+		if err != nil {
+			return 0, err
 		}
 
-		cids = append(cids, dbc.CID)
-		if len(cids) > 100 {
-			if err := cm.Blockstore.DeleteMany(cids); err != nil {
+		for _, o := range objs {
+			del, err := cm.deleteIfNotPinned(ctx, o)
+			if err != nil {
 				return deleteCount, err
 			}
-			deleteCount += len(cids)
-			cids = cids[:0]
+
+			if del {
+				deleteCount++
+			}
 		}
-	}
-	if len(cids) > 0 {
-		if err := cm.Blockstore.DeleteMany(cids); err != nil {
-			return deleteCount, err
-		}
-		deleteCount += len(cids)
 	}
 
 	return deleteCount, nil
@@ -225,13 +224,18 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool) ([]removalCandidateInfo, error) {
+func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string) ([]removalCandidateInfo, error) {
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 
+	q := cm.DB.Model(Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
+	if loc != "" {
+		q = q.Where("location = ?", loc)
+	}
+
 	var conts []Content
-	if err := cm.DB.Find(&conts, "active and not offloaded and (aggregate or not aggregated_in > 0)").Error; err != nil {
-		return nil, err
+	if err := q.Scan(&conts).Error; err != nil {
+		return nil, fmt.Errorf("scanning removal candidates failed: %w", err)
 	}
 
 	var toOffload []removalCandidateInfo

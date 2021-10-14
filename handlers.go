@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	httpprof "net/http/pprof"
-	"path/filepath"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -23,6 +22,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
@@ -35,7 +35,7 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
@@ -44,7 +44,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/multiformats/go-multiaddr"
-	"golang.org/x/crypto/acme/autocert"
+	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -57,7 +57,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok string, cachedir string) error {
+func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 	if lsteptok != "" {
 		ls := launcher.ConfigureOpentelemetry(
 			launcher.WithServiceName("estuary-api"),
@@ -68,11 +68,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	}
 
 	e := echo.New()
-
-	if domain != "" {
-		e.AutoTLSManager.Cache = autocert.DirCache(filepath.Join(cachedir, "certs"))
-		e.AutoTLSManager.HostPolicy = autocert.HostWhitelist(domain)
-	}
 
 	if logging {
 		e.Use(middleware.Logger())
@@ -110,6 +105,12 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
 
+	phandle := promhttp.Handler()
+	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
+		phandle.ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+
 	e.Use(middleware.CORS())
 
 	e.POST("/register", s.handleRegisterUser)
@@ -119,6 +120,8 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	e.GET("/test-error", s.handleTestError)
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
+
+	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
@@ -168,7 +171,6 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
-	//deals.POST("/transfer/restart", s.handleTransferRestart)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
@@ -196,6 +198,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	public.GET("/stats", s.handlePublicStats)
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 	public.GET("/deals/failures", s.handleStorageFailures)
+	public.GET("/info", s.handleGetPublicNodeInfo)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -241,6 +244,7 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
+	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -262,9 +266,11 @@ func (s *Server) ServeAPI(srv string, logging bool, domain string, lsteptok stri
 	shuttle.GET("/list", s.handleShuttleList)
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
+	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
-	if domain != "" {
-		return e.StartAutoTLS(srv)
+	if s.certFiles != nil {
+		log.Warnf("serving TLS with a self-signed certificate. do not use in production!")
+		return e.StartTLS(srv, s.certFiles.cert, s.certFiles.key)
 	} else {
 		return e.Start(srv)
 	}
@@ -689,7 +695,29 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	var objects []*Object
 	cset := cid.NewSet()
 
+	defer func() {
+		cm.inflightCidsLk.Lock()
+		_ = cset.ForEach(func(c cid.Cid) error {
+			v, ok := cm.inflightCids[c]
+			if !ok || v <= 0 {
+				log.Errorf("cid should be inflight but isn't: %s", c)
+			}
+
+			cm.inflightCids[c]--
+			if cm.inflightCids[c] == 0 {
+				delete(cm.inflightCids, c)
+			}
+			return nil
+		})
+		cm.inflightCidsLk.Unlock()
+	}()
+
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		// cset.Visit gets called first, so if we reach here we should immediately track the CID
+		cm.inflightCidsLk.Lock()
+		cm.inflightCids[c]++
+		cm.inflightCidsLk.Unlock()
+
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
@@ -715,11 +743,12 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
+
 	if err != nil {
 		return err
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
+	if err = cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
 		return err
 	}
 
@@ -883,8 +912,15 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ? and user_id = ?", val, u.ID).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", val, u.ID).Error; err != nil {
 		return err
+	}
+
+	if content.UserID != u.ID {
+		return &util.HttpError{
+			Code:    403,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
 	}
 
 	var deals []contentDeal
@@ -1157,14 +1193,69 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 	return c.JSON(200, out)
 }
 
+func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
+	parts := strings.Split(chanid, "-")
+	if len(parts) != 3 {
+		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
+	}
+
+	initiator, err := peer.Decode(parts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	responder, err := peer.Decode(parts[1])
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return &datatransfer.ChannelID{
+		Initiator: initiator,
+		Responder: responder,
+		ID:        datatransfer.TransferID(id),
+	}, nil
+}
 func (s *Server) handleTransferRestart(c echo.Context) error {
-	var chanid datatransfer.ChannelID
-	if err := c.Bind(&chanid); err != nil {
+	ctx := c.Request().Context()
+
+	dealid, err := strconv.Atoi(c.Param("deal"))
+	if err != nil {
 		return err
 	}
 
-	err := s.FilClient.RestartTransfer(context.TODO(), &chanid)
+	var deal contentDeal
+	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		return err
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	if deal.Failed {
+		return fmt.Errorf("cannot restart transfer, deal failed")
+	}
+
+	if deal.DealID > 0 {
+		return fmt.Errorf("cannot restart transfer, already finished")
+	}
+
+	if deal.DTChan == "" {
+		return fmt.Errorf("cannot restart transfer, no channel id")
+	}
+
+	chanid, err := deal.ChannelID()
 	if err != nil {
+		return err
+	}
+
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid); err != nil {
 		return err
 	}
 
@@ -1360,7 +1451,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numRetrievalFailures int64
-	if err := s.DB.Model(&retrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
+	if err := s.DB.Model(&util.RetrievalFailureRecord{}).Count(&numRetrievalFailures).Error; err != nil {
 		return err
 	}
 
@@ -1458,7 +1549,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
 		return err
 	}
 
@@ -1533,7 +1624,12 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Clauses(&clause.OnConflict{DoNothing: true}).Create(&storageMiner{Address: util.DbAddr{m}}).Error; err != nil {
+	name := c.QueryParam("name")
+
+	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
+		Address: util.DbAddr{m},
+		Name:    name,
+	}).Error; err != nil {
 		return err
 	}
 
@@ -1654,7 +1750,7 @@ func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
 		return err
 	}
 
-	var failures []retrievalFailureRecord
+	var failures []util.RetrievalFailureRecord
 	if err := s.DB.Find(&failures).Error; err != nil {
 		return err
 	}
@@ -1820,14 +1916,42 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	})
 }
 
+type minerDealsResp struct {
+	ID               uint `json:"id"`
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+	Content          uint       `json:"content"`
+	PropCid          util.DbCID `json:"propCid"`
+	Miner            string     `json:"miner"`
+	DealID           int64      `json:"dealId"`
+	Failed           bool       `json:"failed"`
+	Verified         bool       `json:"verified"`
+	FailedAt         time.Time  `json:"failedAt,omitempty"`
+	DTChan           string     `json:"dtChan"`
+	TransferStarted  time.Time  `json:"transferStarted"`
+	TransferFinished time.Time  `json:"transferFinished"`
+
+	OnChainAt  time.Time  `json:"onChainAt"`
+	SealedAt   time.Time  `json:"sealedAt"`
+	ContentCid util.DbCID `json:"contentCid"`
+}
+
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var deals []contentDeal
-	if err := s.DB.Order("created_at desc").Find(&deals, "miner = ?", maddr.String()).Error; err != nil {
+	q := s.DB.Model(contentDeal{}).Order("created_at desc").
+		Joins("left join contents on contents.id = content_deals.content").
+		Where("miner = ?", maddr.String())
+
+	if c.QueryParam("ignore-failed") != "" {
+		q = q.Where("not content_deals.failed")
+	}
+
+	var deals []minerDealsResp
+	if err := q.Select("contents.cid as content_cid, content_deals.*").Scan(&deals).Error; err != nil {
 		return err
 	}
 
@@ -1919,7 +2043,7 @@ func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true")
+	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"))
 	if err != nil {
 		return err
 	}
@@ -1929,15 +2053,16 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 
 func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 	var body struct {
-		Execute        bool  `json:"execute"`
-		SpaceRequested int64 `json:"spaceRequested"`
+		Execute        bool   `json:"execute"`
+		SpaceRequested int64  `json:"spaceRequested"`
+		Location       string `json:"location"`
 	}
 
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, !body.Execute)
+	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, body.Location, !body.Execute)
 	if err != nil {
 		return err
 	}
@@ -2036,6 +2161,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
+	user.authToken = authToken
 	return &user, nil
 }
 
@@ -2176,7 +2302,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30))
 	if err != nil {
 		return err
 	}
@@ -2247,11 +2373,11 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	return c.JSON(200, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *User) (*AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *User, expiry time.Time) (*AuthToken, error) {
 	authToken := &AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   user.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 30),
+		Expiry: expiry,
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
@@ -2274,7 +2400,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Address:  u.Address.Addr.String(),
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
-			Replication:           6,
+			Replication:           defaultReplication,
 			Verified:              true,
 			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
@@ -2283,6 +2409,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 		},
+		AuthExpiry: u.authToken.Expiry,
 	})
 }
 
@@ -2313,7 +2440,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 		}
 	}
 	if !s.CM.localContentAddingDisabled {
-		out = append(out, "https://api.estuary.tech/content/add")
+		out = append(out, s.CM.hostname+"/content/add")
 	}
 	return out, nil
 }
@@ -2340,7 +2467,14 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 }
 
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
-	authToken, err := s.newAuthTokenForUser(u)
+	expiry := time.Now().Add(time.Hour * 24 * 30)
+	if exp := c.QueryParam("expiry"); exp != "" {
+		if exp == "false" {
+			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough
+		}
+	}
+
+	authToken, err := s.newAuthTokenForUser(u, expiry)
 	if err != nil {
 		return err
 	}
@@ -3142,6 +3276,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 	}
 
 	websocket.Handler(func(ws *websocket.Conn) {
+		ws.MaxPayloadBytes = 128 << 20
+
 		done := make(chan struct{})
 		defer close(done)
 		defer ws.Close()
@@ -3174,6 +3310,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			}
 		}()
 
+		go s.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
+
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
@@ -3200,7 +3338,7 @@ type allDealsQuery struct {
 
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
-	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not failed").
+	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("miner, contents.cid as cid, deal_id").
 		Scan(&out).
@@ -3256,10 +3394,11 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 }
 
 type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
 }
 
 type createContentResponse struct {
@@ -3281,6 +3420,11 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Replication: defaultReplication,
 		Location:    req.Location,
 	}
+	if req.DagSplitRoot != 0 {
+		content.DagSplit = true
+		content.AggregatedIn = req.DagSplitRoot
+	}
+
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
 	}
@@ -3293,6 +3437,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 type claimMinerBody struct {
 	Miner address.Address `json:"miner"`
 	Claim string          `json:"claim"`
+	Name  string          `json:"name"`
 }
 
 func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
@@ -3303,8 +3448,8 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
+	var sm []storageMiner
+	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
 		return err
 	}
 
@@ -3341,13 +3486,67 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.DB.Model(storageMiner{}).Where("id = ?", sm.ID).UpdateColumn("owner", u.ID).Error; err != nil {
-		return err
+	if len(sm) == 0 {
+		// This is a new miner, need to run some checks first
+		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
+			return c.JSON(400, map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+		}
+
+		if err := s.DB.Create(&storageMiner{
+			Address: util.DbAddr{cmb.Miner},
+			Name:    cmb.Name,
+			Owner:   u.ID,
+		}).Error; err != nil {
+			return err
+		}
+
+	} else {
+		if err := s.DB.Model(storageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
+			return err
+		}
 	}
 
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
 	})
+}
+
+func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error {
+	minfo, err := s.Api.StateMinerInfo(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	if minfo.PeerId == nil {
+		return fmt.Errorf("miner has no peer ID set")
+	}
+
+	if len(minfo.Multiaddrs) == 0 {
+		return fmt.Errorf("miner has no addresses set on chain")
+	}
+
+	pow, err := s.Api.StateMinerPower(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return fmt.Errorf("could not check miners power: %w", err)
+	}
+
+	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
+		return fmt.Errorf("miner must have at least 1TiB of power to be considered by estuary")
+	}
+
+	ask, err := s.FilClient.GetAsk(ctx, addr)
+	if err != nil {
+		return fmt.Errorf("failed to get ask from miner: %w", err)
+	}
+
+	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
+		return fmt.Errorf("miners verified deal price is not zero")
+	}
+
+	return nil
 }
 
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
@@ -3481,4 +3680,92 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]string{})
+}
+
+type publicNodeInfo struct {
+	PrimaryAddress address.Address `json:"primaryAddress"`
+}
+
+func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
+	return c.JSON(200, &publicNodeInfo{
+		PrimaryAddress: s.FilClient.ClientAddr,
+	})
+}
+
+type retrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
+}
+
+func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
+	// Read the cid from the client request
+	cid, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "invalid cid",
+		})
+	}
+
+	var candidateInfos []struct {
+		Miner  string
+		Cid    util.DbCID
+		DealID uint
+	}
+	if err := s.DB.
+		Table("content_deals").
+		Where("content IN (?) AND NOT content_deals.failed",
+			s.DB.Table("contents").Select("CASE WHEN @aggregated_in = 0 THEN id ELSE aggregated_in END").Where("id in (?)",
+				s.DB.Table("obj_refs").Select("content").Where(
+					"object IN (?)", s.DB.Table("objects").Select("id").Where("cid = ?", util.DbCID{CID: cid}),
+				),
+			),
+		).
+		Joins("JOIN contents ON content_deals.content = contents.id").
+		Select("miner, cid, deal_id").
+		Scan(&candidateInfos).Error; err != nil {
+		return err
+	}
+
+	var candidates []retrievalCandidate
+	for _, candidateInfo := range candidateInfos {
+		maddr, err := address.NewFromString(candidateInfo.Miner)
+		if err != nil {
+			return err
+		}
+
+		candidates = append(candidates, retrievalCandidate{
+			Miner:   maddr,
+			RootCid: candidateInfo.Cid.CID,
+			DealID:  candidateInfo.DealID,
+		})
+	}
+
+	return c.JSON(http.StatusOK, candidates)
+}
+
+func (s *Server) handleShuttleCreateContent(c echo.Context) error {
+	return fmt.Errorf("TODO")
+}
+
+func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			auth, err := util.ExtractAuth(c)
+			if err != nil {
+				return err
+			}
+
+			var sh Shuttle
+			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
+				log.Warnw("Shuttle not authorized", "token", auth)
+				return &util.HttpError{
+					Code:    401,
+					Message: util.ERR_NOT_AUTHORIZED,
+				}
+			}
+
+			return next(c)
+		}
+	}
 }

@@ -85,7 +85,9 @@ type ViewerResponse struct {
 	Perms    int      `json:"perms"`
 	ID       uint     `json:"id"`
 	Address  string   `json:"address,omitempty"`
-	Miners   []string `json:"miners"`
+	Miners   []string `json:"miners,omitempty"`
+
+	AuthExpiry time.Time
 
 	Settings UserSettings `json:"settings"`
 }

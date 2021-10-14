@@ -9,22 +9,26 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/build"
+	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/go-address"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
+	gsimpl "github.com/ipfs/go-graphsync/impl"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
+	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"go.opentelemetry.io/otel"
 
 	//_ "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
@@ -34,60 +38,6 @@ import (
 )
 
 var log = logging.Logger("estuary")
-
-var defaultMiners []address.Address
-
-func init() {
-	//miners from minerX spreadsheet
-	minerStrs := []string{
-		"f02620",
-		"f023971",
-		"f022142",
-		"f019551",
-		"f01240",
-		"f01247",
-		"f01278",
-		"f071624",
-		"f0135078",
-		"f022352",
-		"f014768",
-		"f022163",
-		"f09848",
-		"f02576",
-		"f02606",
-		"f019041",
-		"f010617",
-		"f023467",
-		"f01276",
-		"f02401",
-		"f02387",
-		"f019104",
-		"f099608",
-		"f062353",
-		"f07998",
-		"f019362",
-		"f019100",
-		"f014409",
-		"f066596",
-		"f01234",
-		"f058369",
-		"f08399",
-		"f021716",
-		"f010479",
-		"f08403",
-		"f01277",
-		"f015927",
-	}
-
-	for _, s := range minerStrs {
-		a, err := address.NewFromString(s)
-		if err != nil {
-			panic(err)
-		}
-
-		defaultMiners = append(defaultMiners, a)
-	}
-}
 
 type storageMiner struct {
 	gorm.Model
@@ -117,7 +67,7 @@ type Content struct {
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn"`
+	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
 	Aggregate    bool `json:"aggregate"`
 
 	Pinning bool   `json:"pinning"`
@@ -129,8 +79,8 @@ type Content struct {
 	// TODO: shift location tracking to just use the ID of the shuttle
 	// Also move towards recording content movement intentions in the database,
 	// making that process more resilient to failures
-	//LocID     uint   `json:"locID"`
-	//LocIntent uint   `json:"locIntent"`
+	// LocID     uint   `json:"locID"`
+	// LocIntent uint   `json:"locIntent"`
 
 	// If set, this content is part of a split dag.
 	// In such a case, the 'root' content should be advertised on the dht, but
@@ -151,8 +101,8 @@ type Object struct {
 
 type ObjRef struct {
 	ID        uint `gorm:"primarykey"`
-	Content   uint
-	Object    uint
+	Content   uint `gorm:"index:,option:CONCURRENTLY"`
+	Object    uint `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint
 }
 
@@ -162,6 +112,7 @@ func main() {
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
+	//logging.SetLogLevel("graphsync_allocator", "debug")
 	logging.SetLogLevel("dt-chanmon", "debug")
 	logging.SetLogLevel("markets", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
@@ -177,7 +128,8 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "database",
-			Value:   "sqlite=estuary.db",
+			Usage:   "specify connection string for estuary database",
+			Value:   build.DefaultDatabaseValue,
 			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
@@ -193,17 +145,21 @@ func main() {
 			EnvVars: []string{"ESTUARY_DATADIR"},
 		},
 		&cli.StringFlag{
-			Name:  "write-log",
-			Usage: "enable write log blockstore in specified directory",
+			Name:   "write-log",
+			Usage:  "enable write log blockstore in specified directory",
+			Hidden: true,
 		},
 		&cli.BoolFlag{
-			Name: "no-storage-cron",
+			Name:  "no-storage-cron",
+			Usage: "run estuary without processing files into deals",
 		},
 		&cli.BoolFlag{
-			Name: "logging",
+			Name:  "logging",
+			Usage: "enable api endpoint logging",
 		},
 		&cli.BoolFlag{
-			Name: "enable-auto-retrieve",
+			Name:   "enable-auto-retrieve",
+			Hidden: true,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
@@ -211,26 +167,52 @@ func main() {
 			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
 		},
 		&cli.StringFlag{
-			Name:  "https-domain",
-			Usage: "specify domain name to run ssl for",
+			Name:  "hostname",
+			Usage: "specify hostname this node will be reachable at",
+			Value: "http://localhost:3004",
 		},
 		&cli.BoolFlag{
-			Name: "fail-deals-on-transfer-failure",
+			Name:  "fail-deals-on-transfer-failure",
+			Usage: "consider deals failed when the transfer to the miner fails",
 		},
 		&cli.BoolFlag{
-			Name: "disable-deal-making",
+			Name:  "disable-deal-making",
+			Usage: "do not create any new deals (existing deals will still be processed)",
 		},
 		&cli.BoolFlag{
-			Name: "disable-content-adding",
+			Name:  "disable-content-adding",
+			Usage: "disallow new content ingestion globally",
 		},
 		&cli.BoolFlag{
-			Name: "disable-local-content-adding",
+			Name:  "disable-local-content-adding",
+			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
 		},
 		&cli.StringFlag{
-			Name: "blockstore",
+			Name:  "blockstore",
+			Usage: "specify blockstore parameters",
 		},
 		&cli.BoolFlag{
 			Name: "write-log-truncate",
+		},
+		&cli.IntFlag{
+			Name:  "default-replication",
+			Value: 6,
+		},
+		&cli.StringFlag{
+			Name: "dev-tls-key",
+			Usage: "enable https/wss in development with private key at `FILE`. " +
+				"--dev-tls-cert also required",
+			EnvVars: []string{"ESTUARY_DEV_TLS_KEY"},
+		},
+		&cli.StringFlag{
+			Name: "dev-tls-cert",
+			Usage: "enable https/wss in development with certificate at `FILE`. " +
+				"--dev-tls-key also required",
+			EnvVars: []string{"ESTUARY_DEV_TLS_CERT"},
+		},
+		&cli.BoolFlag{
+			Name:  "lowmem",
+			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -305,10 +287,21 @@ func main() {
 			}
 		}
 
+		hasCert := cctx.IsSet("dev-tls-cert") || cctx.IsSet("dev-tls-key")
+		if hasCert {
+			if !cctx.IsSet("dev-tls-key") {
+				return cli.Exit("missing required --dev-tls-key", 1)
+			} else if !cctx.IsSet("dev-tls-cert") {
+				return cli.Exit("missing required --dev-tls-cert", 1)
+			}
+		}
+
 		db, err := setupDatabase(cctx)
 		if err != nil {
 			return err
 		}
+
+		defaultReplication = cctx.Int("default-replication")
 
 		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
 			log.Infof("running key provider func")
@@ -330,7 +323,6 @@ func main() {
 						return
 					}
 				}
-
 			}()
 			return out, nil
 		}
@@ -357,7 +349,7 @@ func main() {
 		}
 
 		api, closer, err := lcli.GetGatewayAPI(cctx)
-		//api, closer, err := lcli.GetFullNodeAPI(cctx)
+		// api, closer, err := lcli.GetFullNodeAPI(cctx)
 		if err != nil {
 			return err
 		}
@@ -371,6 +363,13 @@ func main() {
 			quickCache: make(map[string]endpointCache),
 		}
 
+		if hasCert {
+			s.certFiles = &TLSCertFiles{
+				cert: cctx.String("dev-tls-cert"),
+				key:  cctx.String("dev-tls-key"),
+			}
+		}
+
 		// TODO: this is an ugly self referential hack... should fix
 		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
@@ -378,7 +377,24 @@ func main() {
 
 		go pinmgr.Run(50)
 
-		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
+		rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+		var opts []func(*filclient.Config)
+		if cctx.Bool("lowmem") {
+			opts = append(opts, func(cfg *filclient.Config) {
+				cfg.GraphsyncOpts = []gsimpl.Option{
+					gsimpl.MaxInProgressIncomingRequests(100),
+					gsimpl.MaxInProgressOutgoingRequests(100),
+					gsimpl.MaxMemoryResponder(4 << 30),
+					gsimpl.MaxMemoryPerPeerResponder(16 << 20),
+					gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
+					gsimpl.MessageSendRetries(2),
+					gsimpl.SendMessageTimeout(2 * time.Minute),
+				}
+			})
+		}
+
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}
@@ -404,7 +420,7 @@ func main() {
 
 		s.DB = db
 
-		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd)
+		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
 		if err != nil {
 			return err
 		}
@@ -442,7 +458,15 @@ func main() {
 			}()
 		}
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("https-domain"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
+		go func() {
+			time.Sleep(time.Second * 10)
+
+			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+				log.Errorf("failed to restart transfers: %s", err)
+			}
+		}()
+
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -452,6 +476,14 @@ func main() {
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
+
+	/* TODO: change this default
+	ddir := cctx.String("datadir")
+	if dbval == defaultDatabaseValue && ddir != "." {
+		dbval = "sqlite=" + filepath.Join(ddir, "estuary.db")
+	}
+	*/
+
 	db, err := util.SetupDatabase(dbval)
 	if err != nil {
 		return nil, err
@@ -467,7 +499,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&dfeRecord{})
 	db.AutoMigrate(&PieceCommRecord{})
 	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&retrievalFailureRecord{})
+	db.AutoMigrate(&util.RetrievalFailureRecord{})
 	db.AutoMigrate(&retrievalSuccessRecord{})
 
 	db.AutoMigrate(&minerStorageAsk{})
@@ -486,7 +518,7 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
-		for _, m := range defaultMiners {
+		for _, m := range build.DefaultMiners {
 			db.Create(&storageMiner{Address: util.DbAddr{m}})
 		}
 
@@ -505,6 +537,12 @@ type Server struct {
 
 	cacheLk    sync.Mutex
 	quickCache map[string]endpointCache
+	certFiles  *TLSCertFiles
+}
+
+type TLSCertFiles struct {
+	key  string
+	cert string
 }
 
 type endpointCache struct {
@@ -579,4 +617,57 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 func jsondump(o interface{}) {
 	data, _ := json.MarshalIndent(o, "", "  ")
 	fmt.Println(string(data))
+}
+
+func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
+	var deals []contentDeal
+	if err := s.DB.Model(contentDeal{}).
+		Joins("left join contents on contents.id = content_deals.content").
+		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
+		Scan(&deals).Error; err != nil {
+		return err
+	}
+
+	for _, d := range deals {
+		chid, err := d.ChannelID()
+		if err != nil {
+			log.Errorf("failed to get channel id from deal %d: %s", d.ID, err)
+			continue
+		}
+
+		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
+			log.Errorf("failed to restart transfer: %s", err)
+			continue
+		}
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+	if loc == "local" {
+		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
+		if err != nil {
+			return err
+		}
+
+		if util.TransferTerminated(st) {
+			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
+		}
+
+		return cm.FilClient.RestartTransfer(ctx, &chanid)
+	}
+
+	return cm.sendRestartTransferCmd(ctx, loc, chanid)
+}
+
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_RestartTransfer,
+		Params: drpc.CmdParams{
+			RestartTransfer: &drpc.RestartTransfer{
+				ChanID: chanid,
+			},
+		},
+	})
 }

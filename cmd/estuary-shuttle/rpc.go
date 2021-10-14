@@ -7,10 +7,14 @@ import (
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/util"
+	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	cbor "github.com/ipfs/go-ipld-cbor"
+	"github.com/ipfs/go-merkledag"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
@@ -32,6 +36,14 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_ReqTxStatus:
 		return d.handleRpcReqTxStatus(ctx, cmd.Params.ReqTxStatus)
+	case drpc.CMD_RetrieveContent:
+		return d.handleRpcRetrieveContent(ctx, cmd.Params.RetrieveContent)
+	case drpc.CMD_UnpinContent:
+		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
+	case drpc.CMD_SplitContent:
+		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+	case drpc.CMD_RestartTransfer:
+		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
 		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
 	}
@@ -90,13 +102,9 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// This implies that the pin complete message got lost, need to resend all the objects
 
 			go func() {
-				objects, err := d.objectsForPin(ctx, existing.ID)
-				if err != nil {
-					log.Errorf("failed to get objects for pin: %s", err)
-					return
+				if err := d.resendPinComplete(ctx, existing); err != nil {
+					log.Error(err)
 				}
-
-				d.sendPinCompleteMessage(ctx, contid, existing.Size, objects)
 			}()
 			return nil
 		}
@@ -132,6 +140,16 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 	}
 
 	d.PinMgr.Add(op)
+	return nil
+}
+
+func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
+	objects, err := s.objectsForPin(ctx, pin.ID)
+	if err != nil {
+		return fmt.Errorf("failed to get objects for pin: %s", err)
+	}
+
+	s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects)
 	return nil
 }
 
@@ -177,6 +195,11 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 	})
 }
 
+func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
+
+	panic("NYI")
+}
+
 func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
 	objs := make([]drpc.PinObj, 0, len(objects))
 	for _, o := range objects {
@@ -206,7 +229,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 
 	for _, c := range cmd.Contents {
 		var count int64
-		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Count(&count).Error
+		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Limit(1).Count(&count).Error
 		if err != nil {
 			return err
 		}
@@ -380,4 +403,117 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 		})
 	}()
 	return nil
+}
+
+func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
+	go func() {
+		if err := s.retrieveContent(ctx, req.Content, req.Cid, req.Deals); err != nil {
+			log.Errorf("failed to retrieve content: %s", err)
+		}
+	}()
+	return nil
+}
+
+func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinContent) error {
+	for _, c := range req.Contents {
+		if err := s.Unpin(ctx, c); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
+	var pin Pin
+	if err := s.DB.First(&pin, "content = ?", req.Content).Error; err != nil {
+		return xerrors.Errorf("no pin with content %d found for split content request: %w", err)
+	}
+
+	// Check if we've done this already...
+	if pin.Aggregate && pin.DagSplit {
+		// This is only set once we've completed the splitting, so this should be fine
+
+		// However, this might mean that the other side missed receiving some
+		// messages from us, so we need to resend everything
+		var children []Pin
+		if err := s.DB.Find(&children, "aggregated_in = ?", req.Content).Error; err != nil {
+			return err
+		}
+
+		for _, c := range children {
+			if err := s.resendPinComplete(ctx, c); err != nil {
+				return err
+			}
+		}
+
+		s.sendSplitContentComplete(ctx, pin.Content)
+	}
+
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	b := dagsplit.NewBuilder(dserv, uint64(req.Size), 0)
+	if err := b.Pack(ctx, pin.Cid.CID); err != nil {
+		return err
+	}
+
+	cst := cbor.NewCborStore(s.Node.Blockstore)
+
+	var boxCids []cid.Cid
+	for _, box := range b.Boxes() {
+		cc, err := cst.Put(ctx, box)
+		if err != nil {
+			return err
+		}
+
+		boxCids = append(boxCids, cc)
+	}
+
+	for i, c := range boxCids {
+		fname := fmt.Sprintf("split-%d", i)
+
+		panic("need to figure out how to get user auth...")
+		contid, err := s.createContent(ctx, nil, c, fname, "", pin.Content)
+		if err != nil {
+			return err
+		}
+
+		pin := &Pin{
+			Cid:          util.DbCID{c},
+			Content:      contid,
+			Active:       false,
+			Pinning:      true,
+			UserID:       pin.UserID,
+			AggregatedIn: pin.Content,
+		}
+
+		if err := s.DB.Create(pin).Error; err != nil {
+			return xerrors.Errorf("failed to track new content in database: %w", err)
+		}
+
+		if err := s.addDatabaseTrackingToContent(ctx, pin.Content, dserv, s.Node.Blockstore, c, func(int64) {}); err != nil {
+			return err
+		}
+	}
+
+	s.sendSplitContentComplete(ctx, pin.Content)
+
+	return nil
+}
+
+func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
+	log.Infof("restarting data transfer: %s", req.ChanID)
+	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
+	if err != nil {
+		return err
+	}
+
+	if util.TransferTerminated(st) {
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			Chanid: req.ChanID.String(),
+			State:  st,
+		})
+		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
+	}
+
+	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }

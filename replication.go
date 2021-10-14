@@ -16,6 +16,7 @@ import (
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/util"
+	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
@@ -33,8 +34,10 @@ import (
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	batched "github.com/ipfs/go-ipfs-provider/batched"
+	cbor "github.com/ipfs/go-ipld-cbor"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-metrics-interface"
 	"github.com/ipfs/go-unixfs"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -46,7 +49,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const defaultReplication = 6
+var defaultReplication = 6
+
+const defaultContentSizeLimit = 34_000_000_000
 
 // Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early dont run into issues
@@ -75,6 +80,8 @@ type ContentManager struct {
 
 	contentLk sync.RWMutex
 
+	contentSizeLimit int64
+
 	// Some fields for miner reputation management
 	minerLk      sync.Mutex
 	sortedMiners []address.Address
@@ -93,6 +100,8 @@ type ContentManager struct {
 	contentAddingDisabled      bool
 	localContentAddingDisabled bool
 
+	hostname string
+
 	pinJobs map[uint]*pinner.PinningOperation
 	pinLk   sync.Mutex
 
@@ -102,10 +111,21 @@ type ContentManager struct {
 	shuttles   map[string]*shuttleConnection
 
 	remoteTransferStatus *lru.ARCCache
+
+	inflightCids   map[cid.Cid]uint
+	inflightCidsLk sync.Mutex
+}
+
+func (cm *ContentManager) isInflight(c cid.Cid) bool {
+	cm.inflightCidsLk.Lock()
+	defer cm.inflightCidsLk.Unlock()
+
+	v, ok := cm.inflightCids[c]
+	return ok && v > 0
 }
 
 // 90% of the unpadded data size for a 4GB piece
-// the 10% gap is to accomodate car file packing overhead, can probably do this better
+// the 10% gap is to accommodate car file packing overhead, can probably do this better
 var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
 
 var stagingZoneSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
@@ -131,6 +151,26 @@ type contentStagingZone struct {
 	Location string `json:"location"`
 
 	lk sync.Mutex
+}
+
+func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+	cb2 := &contentStagingZone{
+		ZoneOpened:      cb.ZoneOpened,
+		EarliestContent: cb.EarliestContent,
+		CloseTime:       cb.CloseTime,
+		Contents:        make([]Content, len(cb.Contents)),
+		MinSize:         cb.MinSize,
+		MaxSize:         cb.MaxSize,
+		MaxItems:        cb.MaxItems,
+		CurSize:         cb.CurSize,
+		User:            cb.User,
+		ContID:          cb.ContID,
+		Location:        cb.Location,
+	}
+	copy(cb2.Contents, cb.Contents)
+	return cb2
 }
 
 func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
@@ -254,8 +294,7 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node) (*ContentManager, error) {
-
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, hostname string) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -310,13 +349,16 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Node:                 nd,
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
-		ToCheck:              make(chan uint, 10),
+		ToCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*retrievalProgress),
 		buckets:              zones,
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
 		pinMgr:               pinmgr,
 		remoteTransferStatus: cache,
 		shuttles:             make(map[string]*shuttleConnection),
+		contentSizeLimit:     defaultContentSizeLimit,
+		hostname:             hostname,
+		inflightCids:         make(map[cid.Cid]uint),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -416,12 +458,22 @@ type queueManager struct {
 
 	nextEvent time.Time
 	evtTimer  *time.Timer
+
+	qsizeMetr metrics.Gauge
+	qnextMetr metrics.Gauge
 }
 
 func newQueueManager(cb func(c uint)) *queueManager {
+	metCtx := metrics.CtxScope(context.Background(), "content-manager")
+	qsizeMetr := metrics.NewCtx(metCtx, "queue_size", "number of items in the replicator queue").Gauge()
+	qnextMetr := metrics.NewCtx(metCtx, "queue_next", "next event time for queue").Gauge()
+
 	qm := &queueManager{
 		queue: new(entryQueue),
 		cb:    cb,
+
+		qsizeMetr: qsizeMetr,
+		qnextMetr: qnextMetr,
 	}
 
 	heap.Init(qm.queue)
@@ -439,8 +491,12 @@ func (qm *queueManager) add(content uint, wait time.Duration) {
 		checkTime: at,
 	})
 
+	qm.qsizeMetr.Add(1)
+
 	if qm.nextEvent.IsZero() || at.Before(qm.nextEvent) {
 		qm.nextEvent = at
+		qm.qnextMetr.Set(float64(at.Unix()))
+
 		if qm.evtTimer != nil {
 			qm.evtTimer.Reset(wait)
 		} else {
@@ -458,9 +514,12 @@ func (qm *queueManager) processQueue() {
 	for qm.queue.Len() > 0 {
 		qe := qm.queue.PopEntry()
 		if time.Now().After(qe.checkTime) {
+			qm.qsizeMetr.Add(-1)
 			go qm.cb(qe.content)
 		} else {
 			heap.Push(qm.queue, qe)
+			qm.nextEvent = qe.checkTime
+			qm.qnextMetr.Set(float64(qe.checkTime.Unix()))
 			qm.evtTimer.Reset(qe.checkTime.Sub(time.Now()))
 			return
 		}
@@ -651,7 +710,7 @@ func (cm *ContentManager) startup() error {
 
 func (cm *ContentManager) queueAllContent() error {
 	var allcontent []Content
-	if err := cm.DB.Find(&allcontent, "active AND (aggregated_in > 0 == dag_split) ").Error; err != nil {
+	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
 
@@ -659,9 +718,15 @@ func (cm *ContentManager) queueAllContent() error {
 
 	go func() {
 		for _, c := range allcontent {
+			log.Infof("queueing content: %d", c.ID)
 			cm.ToCheck <- c.ID
 		}
 	}()
+	/* TODO: this should be more correct, just testing the above out though to ensure the things from here are first in queue
+	for _, c := range allcontent {
+		cm.queueMgr.add(c.ID, 0)
+	}
+	*/
 
 	return nil
 }
@@ -761,13 +826,15 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 		return n, 0
 	}
 
-	if n < 5 {
-		return 3, n - 2
+	if n < 7 {
+		return 2, n - 2
 	}
 
 	return n - (n / 2), n / 2
-
 }
+
+const topMinerSel = 15
+
 func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, size abi.PaddedPieceSize, exclude map[address.Address]bool) ([]address.Address, error) {
 	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
 		attribute.Int("count", n),
@@ -815,8 +882,8 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, s
 		return nil, err
 	}
 
-	if len(sortedminers) > 10 {
-		sortedminers = sortedminers[:10]
+	if len(sortedminers) > topMinerSel {
+		sortedminers = sortedminers[:topMinerSel]
 	}
 
 	rand.Shuffle(len(sortedminers), func(i, j int) {
@@ -887,7 +954,7 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 	netask, err := cm.FilClient.GetAsk(ctx, m)
 	if err != nil {
 		var clientErr *filclient.Error
-		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   m,
 				Phase:   "query-ask",
@@ -970,7 +1037,7 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 
 type contentDeal struct {
 	gorm.Model
-	Content          uint       `json:"content"`
+	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
 	Miner            string     `json:"miner"`
 	DealID           int64      `json:"dealId"`
@@ -1052,8 +1119,7 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 
 	var out []*contentStagingZone
 	for _, b := range blist {
-		cp := *b
-		out = append(out, &cp)
+		out = append(out, b.DeepCopy())
 	}
 
 	return out
@@ -1068,8 +1134,7 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 		var copylist []*contentStagingZone
 
 		for _, b := range blist {
-			cp := *b
-			copylist = append(copylist, &cp)
+			copylist = append(copylist, b.DeepCopy())
 		}
 
 		out[u] = copylist
@@ -1162,14 +1227,25 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 
 	verified := true
 
-	if content.AggregatedIn > 0 {
+	if content.AggregatedIn > 0 && !content.DagSplit {
 		// This content is aggregated inside another piece of content, nothing to do here
+		return nil
+	}
+
+	if content.DagSplit && content.AggregatedIn == 0 {
+		// This is the 'root' of a split dag, we dont need to process it
 		return nil
 	}
 
 	if cm.contentInStagingZone(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
 		return nil
+	}
+
+	// its too big, need to split it up into chunks
+	if content.Size > cm.contentSizeLimit {
+		return fmt.Errorf("content too big (splitting will be implemented soon)")
+		// return cm.splitContent(ctx, content, cm.contentSizeLimit)
 	}
 
 	// check if content has enough deals made for it
@@ -1272,7 +1348,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		}
 	}
 	if retErr != nil {
-		return retErr
+		return fmt.Errorf("deal check errored: %w", retErr)
 	}
 
 	goodDeals := numSealed + numPublished + numProgress
@@ -1336,6 +1412,18 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	return nil
 }
 
+func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size int64) error {
+	ctx, span := cm.tracer.Start(ctx, "splitContent")
+	defer span.End()
+
+	if cont.Location == "local" {
+		go cm.splitContentLocal(ctx, cont, size)
+		return nil
+	} else {
+		return cm.sendSplitContentCmd(ctx, cont.Location, cont.ID, size)
+	}
+}
+
 func (cm *ContentManager) getContent(id uint) (*Content, error) {
 	var content Content
 	if err := cm.DB.First(&content, "id = ?", id).Error; err != nil {
@@ -1352,6 +1440,9 @@ const (
 )
 
 func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
+	defer cancel()
+
 	ctx, span := cm.tracer.Start(ctx, "checkDeal", trace.WithAttributes(
 		attribute.Int("deal", int(d.ID)),
 	))
@@ -1366,7 +1457,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	if d.DealID != 0 {
 		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
 		if err != nil {
-			return DEAL_CHECK_UNKNOWN, err
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain deal: %w", err)
 		}
 		if !ok {
 			return DEAL_CHECK_UNKNOWN, nil
@@ -1395,7 +1486,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	// case where deal isnt yet on chain...
 
 	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
-	subctx, cancel := context.WithTimeout(ctx, time.Second*30)
+	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
 	if err != nil {
@@ -1421,6 +1512,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
+	if provds.State == storagemarket.StorageDealError {
+		log.Errorf("deal state from miner is error: %s", provds.Message)
+	}
+
 	content, err := cm.getContent(d.Content)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
@@ -1428,65 +1523,53 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	head, err := cm.Api.ChainHead(ctx)
 	if err != nil {
-		return DEAL_CHECK_UNKNOWN, err
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
+	}
+
+	if provds.DealID != 0 {
+		deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
+		}
+
+		pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
+		}
+
+		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
+			log.Errorf("proposal in deal ID miner sent back did not match our expectations")
+			return DEAL_CHECK_UNKNOWN, nil
+		}
+
+		log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, provds.DealID)
+		if err := cm.updateDealID(d, int64(provds.DealID)); err != nil {
+			return DEAL_CHECK_UNKNOWN, err
+		}
+
+		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
 	if provds.PublishCid != nil {
 		log.Infow("checking publish CID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
-			if xerrors.Is(err, ErrNotOnChainYet) {
-				// if they sent us a dealID, lets check it and verify
-				if provds.DealID != 0 {
-					deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
-					if err == nil {
-						pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
-						if err != nil {
-							return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
-						}
-
-						if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
-							log.Errorf("proposal in deal ID miner sent back did not match our expectations")
-							return DEAL_CHECK_UNKNOWN, fmt.Errorf("deal checking issue")
-						}
-
-						log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
-						d.DealID = int64(provds.DealID)
-						d.OnChainAt = time.Now()
-						if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-							"deal_id":     d.DealID,
-							"on_chain_at": d.OnChainAt,
-						}).Error; err != nil {
-							return DEAL_CHECK_UNKNOWN, err
-						}
-
-						return DEAL_CHECK_DEALID_ON_CHAIN, nil
-					}
-				}
-
-				log.Infof("publish message not landed on chain yet: %s", *provds.PublishCid)
-				if provds.Proposal.StartEpoch < head.Height() {
-					// deal expired, miner didnt start it in time
-					cm.recordDealFailure(&DealFailureError{
-						Miner:   maddr,
-						Phase:   "check-status",
-						Message: "deal did not make it on chain in time (but has publish deal cid set)",
-						Content: d.Content,
-					})
-					return DEAL_CHECK_UNKNOWN, nil
-				}
-				return DEAL_CHECK_PROGRESS, nil
+			log.Infof("failed to find message on chain: %s", *provds.PublishCid)
+			if provds.Proposal.StartEpoch < head.Height() {
+				// deal expired, miner didn`t start it in time
+				cm.recordDealFailure(&DealFailureError{
+					Miner:   maddr,
+					Phase:   "check-status",
+					Message: "deal did not make it on chain in time (but has publish deal cid set)",
+					Content: d.Content,
+				})
+				return DEAL_CHECK_UNKNOWN, nil
 			}
-			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to check deal id: %w", err)
+			return DEAL_CHECK_PROGRESS, nil
 		}
 
 		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
-		d.DealID = int64(id)
-		d.OnChainAt = time.Now()
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-			"deal_id":     d.DealID,
-			"on_chain_at": d.OnChainAt,
-		}).Error; err != nil {
+		if err := cm.updateDealID(d, int64(id)); err != nil {
 			return DEAL_CHECK_UNKNOWN, err
 		}
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
@@ -1519,13 +1602,24 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 	// miner still has time...
 
-	if d.DTChan == "" && content.Location != "local" {
-		log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
-		if time.Since(d.CreatedAt) > time.Hour {
-			return DEAL_CHECK_UNKNOWN, nil
-		}
+	if d.DTChan == "" {
+		if content.Location != "local" {
+			log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
+			if time.Since(d.CreatedAt) > time.Hour {
+				return DEAL_CHECK_UNKNOWN, nil
+			}
 
-		return DEAL_CHECK_PROGRESS, nil
+			return DEAL_CHECK_PROGRESS, nil
+		} else {
+			// Weird case where we somehow dont have the data transfer started for this deal
+			log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
+			if err := cm.StartDataTransfer(ctx, d); err != nil {
+				log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
+				// If this fails out, just fail the deal and start from
+				// scratch. This is already a weird state.
+				return DEAL_CHECK_UNKNOWN, nil
+			}
+		}
 	}
 
 	status, err := cm.GetTransferStatus(ctx, d, content)
@@ -1577,7 +1671,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	case datatransfer.Failing:
 		// I guess we just wait until its failed all the way?
 	case datatransfer.Requested:
-		//fmt.Println("transfer is requested, hasnt started yet")
+		// fmt.Println("transfer is requested, hasnt started yet")
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
@@ -1586,13 +1680,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			}).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
-			if err := cm.DB.Save(d).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
-			}
 		}
 
 		// these are all okay
-		//fmt.Println("transfer is finished-ish!", status.Status)
+		// fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
 		//fmt.Println("transfer status is ongoing!")
 		/* For now, dont call restart?
@@ -1612,6 +1703,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	return DEAL_CHECK_PROGRESS, nil
+}
+
+func (cm *ContentManager) updateDealID(d *contentDeal, id int64) error {
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+		"deal_id":     id,
+		"on_chain_at": time.Now(),
+	}).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (bool, error) {
@@ -1654,7 +1755,7 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
 	if !ok {
-		//return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
+		// return nil, fmt.Errorf("no transfer status found for deal %d (loc: %s)", d.ID, content.Location)
 		return nil, nil
 	}
 
@@ -1697,9 +1798,9 @@ func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *content
 		}
 
 		if chanst != nil {
-			d.DTChan = chanst.ChannelID.String()
-
-			if err := cm.DB.Save(&d).Error; err != nil {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				"dt_chan": chanst.ChannelID.String(),
+			}).Error; err != nil {
 				return nil, err
 			}
 		}
@@ -1835,7 +1936,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 	if content.Size < (256 << 10) {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
-
 	}
 
 	if content.Offloaded {
@@ -1859,7 +1959,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
 			var clientErr *filclient.Error
-			if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+			if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 				cm.recordDealFailure(&DealFailureError{
 					Miner:   m,
 					Phase:   "query-ask",
@@ -2026,7 +2126,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
 	if err != nil {
 		var clientErr *filclient.Error
-		if !xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError {
+		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   miner,
 				Phase:   "query-ask",
@@ -2149,6 +2249,8 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 		return nil
 	}
 
+	cd.DTChan = chanid.String()
+
 	if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 		"dt_chan":           chanid.String(),
 		"transfer_started":  time.Now(),
@@ -2166,7 +2268,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	if err != nil {
 		return err
 	}
-	//fmt.Println("proposal cid: ", nd.Cid())
+	// fmt.Println("proposal cid: ", nd.Cid())
 
 	if err := cm.DB.Create(&proposalRecord{
 		PropCid: util.DbCID{nd.Cid()},
@@ -2386,15 +2488,74 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 	ctx, span := cm.tracer.Start(ctx, "refreshContent")
 	defer span.End()
 
-	if err := cm.DB.Model(&Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
+	// TODO: this retrieval needs to mark all of its content as 'referenced'
+	// until we can update its offloading status in the database
+	var c Content
+	if err := cm.DB.First(&c, "id = ?", cont).Error; err != nil {
 		return err
 	}
 
-	if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
+	loc, err := cm.selectLocationForRetrieval(ctx, c)
+	if err != nil {
 		return err
 	}
 
-	return cm.retrieveContent(ctx, cont)
+	switch loc {
+	case "local":
+		if err := cm.retrieveContent(ctx, cont); err != nil {
+			return err
+		}
+
+		if err := cm.DB.Model(&Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
+			return err
+		}
+
+		if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
+			return err
+		}
+	default:
+		return cm.sendRetrieveContentMessage(ctx, loc, c)
+	}
+
+	return nil
+}
+
+func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont Content) error {
+	return fmt.Errorf("not retrieving content yet until implementation is finished")
+
+	var activeDeals []contentDeal
+	if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
+		return err
+	}
+
+	if len(activeDeals) == 0 {
+		return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
+	}
+
+	var deals []drpc.StorageDeal
+	for _, d := range activeDeals {
+		ma, err := d.MinerAddr()
+		if err != nil {
+			log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
+			continue
+		}
+
+		deals = append(deals, drpc.StorageDeal{
+			Miner:  ma,
+			DealID: d.DealID,
+		})
+	}
+
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_RetrieveContent,
+		Params: drpc.CmdParams{
+			RetrieveContent: &drpc.RetrieveContent{
+				Content: cont.ID,
+				Cid:     cont.Cid.CID,
+				Deals:   deals,
+			},
+		},
+	})
 }
 
 type retrievalProgress struct {
@@ -2496,7 +2657,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			span.RecordError(err)
 
 			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
-			cm.recordRetrievalFailure(&retrievalFailureRecord{
+			cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -2510,7 +2671,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
 			span.RecordError(err)
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
-			cm.recordRetrievalFailure(&retrievalFailureRecord{
+			cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
@@ -2636,7 +2797,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 }
 
 func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []Content) error {
-
 	for _, c := range toMove {
 		if err := cm.migrateContentToLocalNode(ctx, c); err != nil {
 			return err
@@ -2719,7 +2879,6 @@ func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, err
 	}
 
 	return &conn.addrInfo, nil
-
 }
 
 func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *contentDeal, datacid cid.Cid) error {
@@ -2739,7 +2898,6 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 			},
 		},
 	})
-
 }
 
 func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont Content, aggr []uint, blob []byte) error {
@@ -2764,6 +2922,18 @@ func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc 
 			ReqTxStatus: &drpc.ReqTxStatus{
 				DealDBID: dealid,
 				ChanID:   chid,
+			},
+		},
+	})
+}
+
+func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, cont uint, size int64) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_SplitContent,
+		Params: drpc.CmdParams{
+			SplitContent: &drpc.SplitContent{
+				Content: cont,
+				Size:    size,
 			},
 		},
 	})
@@ -2805,6 +2975,17 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 	})
 }
 
+func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_UnpinContent,
+		Params: drpc.CmdParams{
+			UnpinContent: &drpc.UnpinContent{
+				Contents: conts,
+			},
+		},
+	})
+}
+
 func (cm *ContentManager) dealMakingDisabled() bool {
 	cm.dealDisabledLk.Lock()
 	defer cm.dealDisabledLk.Unlock()
@@ -2815,4 +2996,54 @@ func (cm *ContentManager) setDealMakingEnabled(enable bool) {
 	cm.dealDisabledLk.Lock()
 	defer cm.dealDisabledLk.Unlock()
 	cm.isDealMakingDisabled = !enable
+}
+
+func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, size int64) error {
+	dserv := merkledag.NewDAGService(blockservice.New(cm.Node.Blockstore, nil))
+	b := dagsplit.NewBuilder(dserv, uint64(size), 0)
+	if err := b.Pack(ctx, cont.Cid.CID); err != nil {
+		return err
+	}
+
+	cst := cbor.NewCborStore(cm.Node.Blockstore)
+
+	var boxCids []cid.Cid
+	for _, box := range b.Boxes() {
+		cc, err := cst.Put(ctx, box)
+		if err != nil {
+			return err
+		}
+
+		boxCids = append(boxCids, cc)
+	}
+
+	for i, c := range boxCids {
+		content := &Content{
+			Cid:          util.DbCID{c},
+			Name:         fmt.Sprintf("%s-%d", cont.Name, i),
+			Active:       false,
+			Pinning:      true,
+			UserID:       cont.UserID,
+			Replication:  cont.Replication,
+			Location:     "local",
+			DagSplit:     true,
+			AggregatedIn: cont.ID,
+		}
+
+		if err := cm.DB.Create(content).Error; err != nil {
+			return xerrors.Errorf("failed to track new content in database: %w", err)
+		}
+
+		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, cm.Node.Blockstore, c, func(int64) {}); err != nil {
+			return err
+		}
+	}
+
+	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		"dag_split": true,
+	}).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

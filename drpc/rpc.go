@@ -32,6 +32,10 @@ type CmdParams struct {
 	AggregateContent *AggregateContent `json:",omitempty"`
 	StartTransfer    *StartTransfer    `json:",omitempty"`
 	ReqTxStatus      *ReqTxStatus      `json:",omitempty"`
+	SplitContent     *SplitContent     `json:",omitempty"`
+	RetrieveContent  *RetrieveContent  `json:",omitempty"`
+	UnpinContent     *UnpinContent     `json:",omitempty"`
+	RestartTransfer  *RestartTransfer  `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -83,6 +87,38 @@ type ReqTxStatus struct {
 	ChanID   datatransfer.ChannelID
 }
 
+const CMD_SplitContent = "SplitContent"
+
+type SplitContent struct {
+	Content uint
+	Size    int64
+}
+
+const CMD_RetrieveContent = "RetrieveContent"
+
+type StorageDeal struct {
+	Miner  address.Address
+	DealID int64
+}
+
+type RetrieveContent struct {
+	Content uint
+	Cid     cid.Cid
+	Deals   []StorageDeal
+}
+
+const CMD_UnpinContent = "UnpinContent"
+
+type UnpinContent struct {
+	Contents []uint
+}
+
+const CMD_RestartTransfer = "RestartTransfer"
+
+type RestartTransfer struct {
+	ChanID datatransfer.ChannelID
+}
+
 type ContentFetch struct {
 	ID     uint
 	Cid    cid.Cid
@@ -101,6 +137,7 @@ type MsgParams struct {
 	TransferStatus  *TransferStatus  `json:",omitempty"`
 	TransferStarted *TransferStarted `json:",omitempty"`
 	ShuttleUpdate   *ShuttleUpdate   `json:",omitempty"`
+	GarbageCheck    *GarbageCheck    `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -158,4 +195,10 @@ type ShuttleUpdate struct {
 	BlockstoreFree uint64
 	NumPins        int64
 	PinQueueSize   int
+}
+
+const OP_GarbageCheck = "GarbageCheck"
+
+type GarbageCheck struct {
+	Contents []uint
 }

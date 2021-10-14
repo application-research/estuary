@@ -118,10 +118,15 @@ func (b *Builder) getTreeSize(nd ipld.Node) (uint64, error) {
 func (b *Builder) Pack(ctx context.Context, root cid.Cid) error {
 	stack := []cid.Cid{root}
 
+	packed := cid.NewSet()
 	for len(stack) > 0 {
-
 		cur := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
+
+		if packed.Has(cur) {
+			// already packed this one in, skip it
+			continue
+		}
 
 		nd, err := b.dagService.Get(ctx, cur)
 		if err != nil {
@@ -134,12 +139,14 @@ func (b *Builder) Pack(ctx context.Context, root cid.Cid) error {
 		}
 
 		if b.fits(uint64(size)) {
+			packed.Add(cur)
 			b.packRoot(cur)
 			b.addSize(uint64(size))
 			continue
 		} else if b.fits(uint64(len(nd.RawData()))) {
 			// this tree doesnt fit in the box, so lets add the node as 'raw' and recurse
 			// TODO: check if its a good candidate for going into its own new box
+			packed.Add(cur)
 			pref := cur.Prefix()
 			pref.Codec = cid.Raw
 

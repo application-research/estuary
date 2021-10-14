@@ -1,0 +1,11 @@
+[Unit]
+Description=Setup Estuary Primary Node
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/estuary/log.env
+EnvironmentFile=/etc/estuary/config.env
+ExecStart=/usr/local/bin/estuary --database=${ESTUARY_DB_CONN} --datadir=${ESTUARY_DATA} --lightstep-token=${ESTUARY_LIGHTSTEP_TOKEN} --logging setup
+
+[Install]
+WantedBy=multi-user.target

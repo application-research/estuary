@@ -26,15 +26,15 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"github.com/ipfs/go-ipfs-provider/batched"
 	"github.com/ipfs/go-ipfs-provider/queue"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	metri "github.com/ipfs/go-metrics-interface"
 	mprome "github.com/ipfs/go-metrics-prometheus"
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/peer"
-	crypto "github.com/libp2p/go-libp2p-crypto"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
@@ -115,6 +115,7 @@ type Config struct {
 	WriteLog          string
 	HardFlushWriteLog bool
 	WriteLogTruncate  bool
+	NoBlockstoreCache bool
 
 	Libp2pKeyFile string
 
@@ -201,7 +202,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog, cfg.WriteLogTruncate)
+	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog, cfg.WriteLogTruncate, cfg.NoBlockstoreCache)
 	if err != nil {
 		return nil, err
 	}
@@ -371,7 +372,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	}
 }
 
-func loadBlockstore(bscfg string, wal string, flush, walTruncate bool) (blockstore.Blockstore, string, error) {
+func loadBlockstore(bscfg string, wal string, flush, walTruncate, nocache bool) (blockstore.Blockstore, string, error) {
 	bstore, dir, err := constructBlockstore(bscfg)
 	if err != nil {
 		return nil, "", err
@@ -406,16 +407,21 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate bool) (blocksto
 
 	ctx := metri.CtxScope(context.TODO(), "estuary.bstore")
 
-	cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
-		HasBloomFilterSize:   512 << 20,
-		HasBloomFilterHashes: 7,
-		HasARCCacheSize:      8 << 20,
-	})
-	if err != nil {
-		return nil, "", err
+	bstore = bsm.New("estuary.blks.base", bstore)
+
+	if !nocache {
+		cbstore, err := blockstore.CachedBlockstore(ctx, bstore, blockstore.CacheOpts{
+			//HasBloomFilterSize:   512 << 20,
+			//HasBloomFilterHashes: 7,
+			HasARCCacheSize: 8 << 20,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		bstore = &deleteManyWrap{cbstore}
 	}
 
-	notifbs := NewNotifBs(&deleteManyWrap{cbstore})
+	notifbs := NewNotifBs(bstore)
 	mbs := bsm.New("estuary.repo", notifbs)
 
 	var blkst blockstore.Blockstore = mbs

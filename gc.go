@@ -51,6 +51,15 @@ func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
 }
 
 func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
+
+	cm.inflightCidsLk.Lock()
+	ok := cm.isInflight(c)
+	cm.inflightCidsLk.Unlock()
+
+	if ok {
+		return true, nil
+	}
+
 	var count int64
 	if err := cm.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -162,7 +171,7 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 
 	for _, o := range objs {
 		// TODO: this is safe, but... slow?
-		if err := cm.deleteIfNotPinned(ctx, o); err != nil {
+		if _, err := cm.deleteIfNotPinned(ctx, o); err != nil {
 			return err
 		}
 	}
@@ -170,7 +179,7 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 	return nil
 }
 
-func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) error {
+func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) (bool, error) {
 	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinned")
 	defer span.End()
 
@@ -179,12 +188,12 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) erro
 
 	var objs []Object
 	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
-		return err
+		return false, err
 	}
 	if len(objs) == 0 {
-		return cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
+		return true, cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
 	}
-	return nil
+	return false, nil
 }
 
 func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {

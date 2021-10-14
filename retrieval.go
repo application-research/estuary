@@ -13,7 +13,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"gorm.io/gorm"
 )
 
 func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
@@ -42,7 +41,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			s.CM.recordRetrievalFailure(&retrievalFailureRecord{
+			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -59,16 +58,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 	return out, nil
 }
 
-type retrievalFailureRecord struct {
-	gorm.Model
-	Miner   string     `json:"miner"`
-	Phase   string     `json:"phase"`
-	Message string     `json:"message"`
-	Content uint       `json:"content"`
-	Cid     util.DbCID `json:"cid"`
-}
-
-func (cm *ContentManager) recordRetrievalFailure(rfr *retrievalFailureRecord) error {
+func (cm *ContentManager) recordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
 	return cm.DB.Create(rfr).Error
 }
 
@@ -88,8 +78,6 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	fmt.Println("Got asks: ", len(asks))
-
 	if len(asks) == 0 {
 		return fmt.Errorf("no retrieval asks for content")
 	}
@@ -97,7 +85,7 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	for m, ask := range asks {
 		if err := s.CM.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			s.CM.recordRetrievalFailure(&retrievalFailureRecord{
+			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),

@@ -14,6 +14,7 @@ import (
 
 	"github.com/application-research/estuary/types"
 	util "github.com/application-research/estuary/util"
+	"github.com/cheggaaa/pb/v3"
 	"github.com/ipfs/go-cid"
 )
 
@@ -21,6 +22,8 @@ type EstClient struct {
 	Host    string
 	Shuttle string
 	Tok     string
+
+	DoProgress bool
 }
 
 func (c *EstClient) doRequest(ctx context.Context, method string, path string, body interface{}, resp interface{}) (int, error) {
@@ -48,11 +51,21 @@ func (c *EstClient) doRequest(ctx context.Context, method string, path string, b
 		return 0, err
 	}
 
-	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
-		return r.StatusCode, fmt.Errorf("received non-200 status: %s", r.Status)
-	}
-
 	defer r.Body.Close()
+
+	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
+		var out map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
+			return r.StatusCode, fmt.Errorf("received non-200 status: %s (no error given)", r.Status)
+		}
+
+		errstr, ok := out["error"]
+		if !ok {
+			return r.StatusCode, fmt.Errorf("received non-200 status: %s (unrecognized error format)", r.Status)
+		}
+
+		return r.StatusCode, fmt.Errorf("received non-200 status (%d): %s", r.StatusCode, errstr)
+	}
 
 	if resp != nil {
 		return r.StatusCode, json.NewDecoder(r.Body).Decode(resp)
@@ -70,11 +83,68 @@ func (c *EstClient) Viewer(ctx context.Context) (*util.ViewerResponse, error) {
 	return &vresp, nil
 }
 
+func (c *EstClient) AddCar(fpath, name string) (*util.AddFileResponse, error) {
+	fi, err := os.Open(fpath)
+	if err != nil {
+		return nil, err
+	}
+
+	var rc io.ReadCloser = fi
+	if c.DoProgress {
+		finfo, err := fi.Stat()
+		if err != nil {
+			return nil, err
+		}
+
+		rc = pb.Start64(finfo.Size()).NewProxyReader(fi)
+	}
+
+	defer rc.Close()
+
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add-car", c.Shuttle), rc)
+	if err != nil {
+		return nil, err
+	}
+
+	//req.Header.Add("Content-Type", mw.FormDataContentType())
+	req.Header.Set("Authorization", "Bearer "+c.Tok)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != 200 {
+		var m map[string]interface{}
+		if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+			fmt.Println(err)
+		}
+		return nil, fmt.Errorf("got invalid status code: %d", resp.StatusCode)
+	}
+
+	var rbody util.AddFileResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
+		return nil, err
+	}
+
+	return &rbody, nil
+}
+
 func (c *EstClient) AddFile(fpath, name string) (*util.AddFileResponse, error) {
 	r, w := io.Pipe()
 	fi, err := os.Open(fpath)
 	if err != nil {
 		return nil, err
+	}
+
+	var rc io.ReadCloser = fi
+	if c.DoProgress {
+		finfo, err := fi.Stat()
+		if err != nil {
+			return nil, err
+		}
+
+		rc = pb.Start64(finfo.Size()).NewProxyReader(fi)
 	}
 
 	mw := multipart.NewWriter(w)
@@ -95,7 +165,7 @@ func (c *EstClient) AddFile(fpath, name string) (*util.AddFileResponse, error) {
 			return
 		}
 
-		_, err = io.Copy(part, fi)
+		_, err = io.Copy(part, rc)
 		if err != nil {
 			outerr = err
 			return
@@ -214,4 +284,20 @@ func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[strin
 	}
 
 	return out, nil
+}
+
+func (c *EstClient) PinStatusByCid(ctx context.Context, cids []string) (map[string]*types.IpfsPinStatus, error) {
+	var resp listPinsResp
+	_, err := c.doRequest(ctx, "GET", "/pinning/pins?cid="+strings.Join(cids, ","), nil, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]*types.IpfsPinStatus)
+	for _, res := range resp.Results {
+		out[res.Pin.Cid] = res
+	}
+
+	return out, nil
+
 }

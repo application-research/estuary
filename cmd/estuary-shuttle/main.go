@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru"
+
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
@@ -29,6 +31,7 @@ import (
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
+	"github.com/cenkalti/backoff/v4"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -39,12 +42,14 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
-	logging "github.com/ipfs/go-log"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
+	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
 )
@@ -65,6 +70,7 @@ func main() {
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
+	//logging.SetLogLevel("graphsync_allocator", "debug")
 	logging.SetLogLevel("dt-chanmon", "debug")
 	logging.SetLogLevel("markets", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
@@ -131,7 +137,17 @@ func main() {
 			Name: "write-log-truncate",
 		},
 		&cli.BoolFlag{
+			Name: "no-blockstore-cache",
+		},
+		&cli.BoolFlag{
 			Name: "private",
+		},
+		&cli.BoolFlag{
+			Name:  "disable-local-content-adding",
+			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
+		},
+		&cli.BoolFlag{
+			Name: "no-reload-pin-queue",
 		},
 	}
 
@@ -153,11 +169,13 @@ func main() {
 		cfg := &node.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
+				"/ip4/0.0.0.0/udp/6746/quic",
 			},
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
 			HardFlushWriteLog: cctx.Bool("write-log-flush"),
 			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
+			NoBlockstoreCache: cctx.Bool("no-blockstore-cache"),
 			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),
@@ -180,7 +198,9 @@ func main() {
 			return err
 		}
 
-		filc, err := filclient.NewClient(nd.Host, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
 		if err != nil {
 			return err
 		}
@@ -217,13 +237,20 @@ func main() {
 
 			return res, nil
 		})
+		commpMemo.SetConcurrencyLimit(4)
 
 		sbm, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "staging"))
 		if err != nil {
 			return err
 		}
 
-		d := &Shuttle{
+		// TODO: Paramify this? also make a proper constructor for the shuttle
+		cache, err := lru.New2Q(1000)
+		if err != nil {
+			return err
+		}
+
+		s := &Shuttle{
 			Node:       nd,
 			Api:        api,
 			DB:         db,
@@ -235,28 +262,32 @@ func main() {
 
 			trackingChannels: make(map[string]*chanTrack),
 
-			outgoing: make(chan *drpc.Message),
+			outgoing:  make(chan *drpc.Message),
+			authCache: cache,
 
-			hostname:      cctx.String("host"),
-			estuaryHost:   cctx.String("estuary-api"),
-			shuttleHandle: cctx.String("handle"),
-			shuttleToken:  cctx.String("auth-token"),
+			hostname:           cctx.String("host"),
+			estuaryHost:        cctx.String("estuary-api"),
+			shuttleHandle:      cctx.String("handle"),
+			shuttleToken:       cctx.String("auth-token"),
+			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
 		}
-		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate, &pinner.PinManagerOpts{
+		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 		})
 
-		go d.PinMgr.Run(100)
+		go s.PinMgr.Run(100)
 
-		if err := d.refreshPinQueue(); err != nil {
-			log.Errorf("failed to refresh pin queue: %s", err)
+		if !cctx.Bool("no-reload-pin-queue") {
+			if err := s.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
 		}
 
-		d.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
+		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
 			chid := st.ChannelID().String()
-			d.tcLk.Lock()
-			defer d.tcLk.Unlock()
-			trk, ok := d.trackingChannels[chid]
+			s.tcLk.Lock()
+			defer s.tcLk.Unlock()
+			trk, ok := s.trackingChannels[chid]
 			if !ok {
 				return
 			}
@@ -266,7 +297,7 @@ func main() {
 				trk.last = cst
 
 				log.Infof("event(%d) message: %s", event.Code, event.Message)
-				go d.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
 					State:    cst,
@@ -282,18 +313,18 @@ func main() {
 		}()
 
 		go func() {
-			if err := d.RunRpcConnection(); err != nil {
+			if err := s.RunRpcConnection(); err != nil {
 				log.Errorf("failed to run rpc connection: %s", err)
 			}
 		}()
 
 		go func() {
-			upd, err := d.getUpdatePacket()
+			upd, err := s.getUpdatePacket()
 			if err != nil {
 				log.Errorf("failed to get update packet: %s", err)
 			}
 
-			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+			if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 				Op: drpc.OP_ShuttleUpdate,
 				Params: drpc.MsgParams{
 					ShuttleUpdate: upd,
@@ -302,12 +333,12 @@ func main() {
 				log.Errorf("failed to send shuttle update: %s", err)
 			}
 			for range time.Tick(time.Minute) {
-				upd, err := d.getUpdatePacket()
+				upd, err := s.getUpdatePacket()
 				if err != nil {
 					log.Errorf("failed to get update packet: %s", err)
 				}
 
-				if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+				if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 					Op: drpc.OP_ShuttleUpdate,
 					Params: drpc.MsgParams{
 						ShuttleUpdate: upd,
@@ -319,27 +350,96 @@ func main() {
 		}()
 
 		// setup metrics...
-		activeTransfers := metrics.NewCtx(metCtx, "active_transfers", "total number of active data transfers").Gauge()
+		ongoingTransfers := metrics.NewCtx(metCtx, "transfers_ongoing", "total number of ongoing data transfers").Gauge()
+		failedTransfers := metrics.NewCtx(metCtx, "transfers_failed", "total number of failed data transfers").Gauge()
+		cancelledTransfers := metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge()
+		requestedTransfers := metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge()
+		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
+		dataReceived := metrics.NewCtx(metCtx, "transfer_received_bytes", "total bytes sent").Gauge()
+		dataSent := metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge()
+		receivingPeersCount := metrics.NewCtx(metCtx, "graphsync_receiving_peers", "number of peers we are receiving graphsync data from").Gauge()
+		receivingActiveCount := metrics.NewCtx(metCtx, "graphsync_receiving_active", "number of active receiving graphsync transfers").Gauge()
+		receivingCountCount := metrics.NewCtx(metCtx, "graphsync_receiving_pending", "number of pending receiving graphsync transfers").Gauge()
+		receivingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_receiving_total_allocated", "amount of block memory allocated for receiving graphsync data").Gauge()
+		receivingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_receiving_pending_allocations", "amount of block memory on hold being received pending allocation").Gauge()
+		receivingPeersPending := metrics.NewCtx(metCtx, "graphsync_receiving_peers_pending", "number of peers we can't receive more data from cause of pending allocations").Gauge()
+
+		sendingPeersCount := metrics.NewCtx(metCtx, "graphsync_sending_peers", "number of peers we are sending graphsync data to").Gauge()
+		sendingActiveCount := metrics.NewCtx(metCtx, "graphsync_sending_active", "number of active sending graphsync transfers").Gauge()
+		sendingCountCount := metrics.NewCtx(metCtx, "graphsync_sending_pending", "number of pending sending graphsync transfers").Gauge()
+		sendingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_sending_total_allocated", "amount of block memory allocated for sending graphsync data").Gauge()
+		sendingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_sending_pending_allocations", "amount of block memory on hold from sending pending allocation").Gauge()
+		sendingPeersPending := metrics.NewCtx(metCtx, "graphsync_sending_peers_pending", "number of peers we can't send more data to cause of pending allocations").Gauge()
 
 		go func() {
+			var beginSent, beginRec float64
+			var firstrun bool = true
+
 			for range time.Tick(time.Second * 10) {
-				txs, err := d.Filc.TransfersInProgress(context.TODO())
+				txs, err := s.Filc.TransfersInProgress(context.TODO())
 				if err != nil {
 					log.Errorf("failed to get transfers in progress: %s", err)
 					continue
 				}
 
-				activeTransfers.Set(float64(len(txs)))
+				allTransfers.Set(float64(len(txs)))
+
+				byState := make(map[datatransfer.Status]int)
+				var sent uint64
+				var received uint64
+
+				for _, xfer := range txs {
+					byState[xfer.Status()]++
+					sent += xfer.Sent()
+					received += xfer.Received()
+				}
+
+				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
+				failedTransfers.Set(float64(byState[datatransfer.Failed]))
+				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
+				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
+
+				if firstrun {
+					beginSent = float64(sent)
+					beginRec = float64(received)
+					firstrun = false
+				} else {
+					dataReceived.Set(float64(received) - beginSent)
+					dataSent.Set(float64(sent) - beginRec)
+				}
+
+				stats := s.Filc.GraphSyncStats()
+				receivingPeersCount.Set(float64(stats.OutgoingRequests.TotalPeers))
+				receivingActiveCount.Set(float64(stats.OutgoingRequests.Active))
+				receivingCountCount.Set(float64(stats.OutgoingRequests.Pending))
+				receivingTotalMemoryAllocated.Set(float64(stats.IncomingResponses.TotalAllocatedAllPeers))
+				receivingTotalPendingAllocations.Set(float64(stats.IncomingResponses.TotalPendingAllocations))
+				receivingPeersPending.Set(float64(stats.IncomingResponses.NumPeersWithPendingAllocations))
+
+				sendingPeersCount.Set(float64(stats.IncomingRequests.TotalPeers))
+				sendingActiveCount.Set(float64(stats.IncomingRequests.Active))
+				sendingCountCount.Set(float64(stats.IncomingRequests.Pending))
+				sendingTotalMemoryAllocated.Set(float64(stats.OutgoingResponses.TotalAllocatedAllPeers))
+				sendingTotalPendingAllocations.Set(float64(stats.OutgoingResponses.TotalPendingAllocations))
+				sendingPeersPending.Set(float64(stats.OutgoingResponses.NumPeersWithPendingAllocations))
 			}
 		}()
 
-		return d.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
+		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
 	}
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+var backoffTimer = backoff.ExponentialBackOff{
+	InitialInterval: time.Millisecond * 50,
+	Multiplier:      1.5,
+	MaxInterval:     time.Second,
+	Stop:            backoff.Stop,
+	Clock:           backoff.SystemClock,
 }
 
 type Shuttle struct {
@@ -357,7 +457,8 @@ type Shuttle struct {
 
 	outgoing chan *drpc.Message
 
-	Private bool
+	Private            bool
+	disableLocalAdding bool
 
 	hostname      string
 	estuaryHost   string
@@ -365,6 +466,11 @@ type Shuttle struct {
 	shuttleToken  string
 
 	commpMemo *memo.Memoizer
+
+	authCache *lru.TwoQueueCache
+
+	retrLk               sync.Mutex
+	retrievalsInProgress map[uint]*retrievalProgress
 }
 
 type chanTrack struct {
@@ -377,13 +483,14 @@ func (d *Shuttle) RunRpcConnection() error {
 		conn, err := d.dialConn()
 		if err != nil {
 			log.Errorf("failed to dial estuary rpc endpoint: %s", err)
-			time.Sleep(time.Second * 10)
+			time.Sleep(backoffTimer.NextBackOff())
 			continue
 		}
 
 		if err := d.runRpc(conn); err != nil {
 			log.Errorf("rpc routine exited with an error: %s", err)
-			time.Sleep(time.Second * 10)
+			backoffTimer.Reset()
+			time.Sleep(backoffTimer.NextBackOff())
 			continue
 		}
 
@@ -393,6 +500,7 @@ func (d *Shuttle) RunRpcConnection() error {
 }
 
 func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
 	defer conn.Close()
 
@@ -482,9 +590,25 @@ type User struct {
 
 	AuthToken       string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
 	StorageDisabled bool
+	AuthExpiry      time.Time
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
+
+	val, ok := d.authCache.Get(token)
+	if ok {
+		usr, ok := val.(*User)
+		if !ok {
+			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", val)
+		}
+
+		if usr.AuthExpiry.After(time.Now()) {
+			d.authCache.Remove(token)
+		} else {
+			return usr, nil
+		}
+	}
+
 	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
@@ -513,13 +637,18 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
-	return &User{
+	usr := &User{
 		ID:              out.ID,
 		Username:        out.Username,
 		Perms:           out.Perms,
 		AuthToken:       token,
+		AuthExpiry:      out.AuthExpiry,
 		StorageDisabled: out.Settings.ContentAddingDisabled,
-	}, nil
+	}
+
+	d.authCache.Add(token, usr)
+
+	return usr, nil
 }
 
 func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
@@ -599,10 +728,12 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	}
 
 	e.GET("/health", s.handleHealth)
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUser))
 	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 	//content.POST("/add-car", withUser(d.handleAddCar))
@@ -611,14 +742,31 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
 	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
+	admin.POST("/loglevel", s.handleLogLevel)
 
 	return e.Start(listen)
+}
+
+type logLevelBody struct {
+	System string `json:"system"`
+	Level  string `json:"level"`
+}
+
+func (s *Shuttle) handleLogLevel(c echo.Context) error {
+	var body logLevelBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	logging.SetLogLevel(body.System, body.Level)
+
+	return c.JSON(200, map[string]interface{}{})
 }
 
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled {
+	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -667,7 +815,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
+	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection, 0)
 	if err != nil {
 		return err
 	}
@@ -693,24 +841,130 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
-	defer cancel()
-	if err := s.Node.FullRT.Provide(subCtx, nd.Cid(), true); err != nil {
-		log.Warnf("failed to provide newly added content: %s", err)
+	if err := s.Provide(ctx, nd.Cid()); err != nil {
+		log.Warn(err)
 	}
-
-	go func() {
-		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
-			fmt.Println("providing failed: ", err)
-		}
-		fmt.Println("providing complete")
-	}()
 
 	return c.JSON(200, &util.AddFileResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	defer cancel()
+
+	if s.Node.FullRT.Ready() {
+		if err := s.Node.FullRT.Provide(subCtx, c, true); err != nil {
+			return fmt.Errorf("failed to provide newly added content: %w", err)
+		}
+	} else {
+		log.Warnf("fullrt not in ready state, falling back to standard dht provide")
+		if err := s.Node.Dht.Provide(subCtx, c, true); err != nil {
+			return fmt.Errorf("fallback provide failed: %w", err)
+		}
+	}
+
+	go func() {
+		if err := s.Node.Provider.Provide(c); err != nil {
+			log.Warnf("providing failed: ", err)
+		}
+		log.Infof("providing complete")
+	}()
+
+	return nil
+}
+
+func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
+	ctx := c.Request().Context()
+
+	if u.StorageDisabled || s.disableLocalAdding {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_ADDING_DISABLED,
+		}
+	}
+
+	bsid, bs, err := s.StagingMgr.AllocNew()
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		go func() {
+			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+				log.Errorf("failed to clean up staging blockstore: %s", err)
+			}
+		}()
+	}()
+
+	defer c.Request().Body.Close()
+	header, err := s.loadCar(ctx, bs, c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	if len(header.Roots) != 1 {
+		// if someone wants this feature, let me know
+		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+	}
+
+	// TODO: how to specify filename?
+	fname := header.Roots[0].String()
+
+	if fnameqp := c.QueryParam("filename"); fnameqp != "" {
+		fname = fnameqp
+	}
+
+	bserv := blockservice.New(bs, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	root := header.Roots[0]
+
+	contid, err := s.createContent(ctx, u, root, fname, c.QueryParam("collection"), 0)
+	if err != nil {
+		return err
+	}
+
+	pin := &Pin{
+		Content: contid,
+		Cid:     util.DbCID{root},
+		UserID:  u.ID,
+
+		Active:  false,
+		Pinning: true,
+	}
+
+	if err := s.DB.Create(pin).Error; err != nil {
+		return err
+	}
+
+	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
+		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	}
+
+	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	if err := s.Provide(ctx, root); err != nil {
+		log.Warn(err)
+	}
+
+	return c.JSON(200, &util.AddFileResponse{
+		Cid:       root.String(),
+		EstuaryId: contid,
+		Providers: s.addrsForShuttle(),
+	})
+}
+
+func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
+	_, span := Tracer.Start(ctx, "loadCar")
+	defer span.End()
+
+	return car.LoadCar(bs, r)
 }
 
 func (s *Shuttle) addrsForShuttle() []string {
@@ -722,27 +976,29 @@ func (s *Shuttle) addrsForShuttle() []string {
 }
 
 type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
 }
 
 type createContentResponse struct {
 	ID uint `json:"id"`
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
 	}
 
 	data, err := json.Marshal(createContentBody{
-		Root:        root,
-		Name:        fname,
-		Collections: cols,
-		Location:    s.shuttleHandle,
+		Root:         root,
+		Name:         fname,
+		Collections:  cols,
+		Location:     s.shuttleHandle,
+		DagSplitRoot: dagsplitroot,
 	})
 	if err != nil {
 		return 0, err
@@ -811,14 +1067,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 	*/
 
-	// this provide call goes out immediately
-	if err := d.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		log.Infof("provider broadcast failed: %s", err)
-	}
-
-	// this one adds to a queue
-	if err := d.Node.Provider.Provide(op.Obj); err != nil {
-		log.Infof("providing failed: %s", err)
+	if err := d.Provide(ctx, op.Obj); err != nil {
+		log.Warn(err)
 	}
 
 	return nil
@@ -1067,7 +1317,7 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 	var pin Pin
-	if err := s.DB.First(&pin, "id = ?", contid).Error; err != nil {
+	if err := s.DB.First(&pin, "content = ?", contid).Error; err != nil {
 		return err
 	}
 
@@ -1246,4 +1496,12 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
 
 	return c.JSON(200, map[string]string{})
+}
+
+func (s *Shuttle) handleGetViewer(c echo.Context, u *User) error {
+	return c.JSON(200, &util.ViewerResponse{
+		ID:       u.ID,
+		Username: u.Username,
+		Perms:    u.Perms,
+	})
 }
