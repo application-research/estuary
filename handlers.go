@@ -22,6 +22,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
@@ -3436,6 +3437,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 type claimMinerBody struct {
 	Miner address.Address `json:"miner"`
 	Claim string          `json:"claim"`
+	Name  string          `json:"name"`
 }
 
 func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
@@ -3446,8 +3448,8 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
+	var sm []storageMiner
+	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
 		return err
 	}
 
@@ -3484,13 +3486,67 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.DB.Model(storageMiner{}).Where("id = ?", sm.ID).UpdateColumn("owner", u.ID).Error; err != nil {
-		return err
+	if len(sm) == 0 {
+		// This is a new miner, need to run some checks first
+		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
+			return c.JSON(400, map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+		}
+
+		if err := s.DB.Create(&storageMiner{
+			Address: util.DbAddr{cmb.Miner},
+			Name:    cmb.Name,
+			Owner:   u.ID,
+		}).Error; err != nil {
+			return err
+		}
+
+	} else {
+		if err := s.DB.Model(storageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
+			return err
+		}
 	}
 
 	return c.JSON(200, map[string]interface{}{
 		"success": true,
 	})
+}
+
+func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error {
+	minfo, err := s.Api.StateMinerInfo(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return err
+	}
+
+	if minfo.PeerId == nil {
+		return fmt.Errorf("miner has no peer ID set")
+	}
+
+	if len(minfo.Multiaddrs) == 0 {
+		return fmt.Errorf("miner has no addresses set on chain")
+	}
+
+	pow, err := s.Api.StateMinerPower(ctx, addr, types.EmptyTSK)
+	if err != nil {
+		return fmt.Errorf("could not check miners power: %w", err)
+	}
+
+	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
+		return fmt.Errorf("miner must have at least 1TiB of power to be considered by estuary")
+	}
+
+	ask, err := s.FilClient.GetAsk(ctx, addr)
+	if err != nil {
+		return fmt.Errorf("failed to get ask from miner: %w", err)
+	}
+
+	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
+		return fmt.Errorf("miners verified deal price is not zero")
+	}
+
+	return nil
 }
 
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
