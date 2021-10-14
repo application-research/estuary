@@ -1370,10 +1370,19 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 	s.addPinLk.Lock()
 	defer s.addPinLk.Unlock()
 
-	if err := s.DB.Where("(?) = 0 and id in ?",
-		s.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
-		Delete(Object{}).Error; err != nil {
-		return err
+	batchSize := 100
+
+	for i := 0; i < len(ids); i += batchSize {
+		l := batchSize
+		if len(ids[i:]) < batchSize {
+			l = len(ids) - i
+		}
+
+		if err := s.DB.Where("(?) = 0 and id in ?",
+			s.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids[i:i+l]).
+			Delete(Object{}).Error; err != nil {
+			return err
+		}
 	}
 
 	return nil
