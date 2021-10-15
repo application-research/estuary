@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,14 +18,32 @@ import (
 
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/filclient"
+	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-state-types/big"
+	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/ipfs/go-bitswap"
+	bsmsg "github.com/ipfs/go-bitswap/message"
+	bsnet "github.com/ipfs/go-bitswap/network"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	flatfs "github.com/ipfs/go-ds-flatfs"
+	leveldb "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
+	metri "github.com/ipfs/go-metrics-interface"
+	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -47,53 +66,19 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 		ddir := cctx.String("datadir")
 
-		var arbs *autoRetrieveBlockstore
-		cfg := node.Config{
-			ListenAddrs: []string{
-				"/ip4/0.0.0.0/tcp/6746",
-			},
-			Blockstore:       filepath.Join(ddir, "estuary-ar-blocks"),
-			Libp2pKeyFile:    filepath.Join(ddir, "estuary-ar-peer-key"),
-			Datastore:        filepath.Join(ddir, "estuary-ar-leveldb"),
-			WalletDir:        filepath.Join(ddir, "estuary-ar-wallet"),
-			WriteLogTruncate: cctx.Bool("estuary-ar-write-log-truncate"),
-
-			BlockstoreWrap: func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-				arbs = &autoRetrieveBlockstore{Blockstore: bs, endpoint: cctx.String("endpoint")}
-				var test blockstore.Blockstore = arbs
-				test.Get(cid.Undef)
-				return arbs, nil
-			},
-		}
-
-		nd, err := node.Setup(cctx.Context, &cfg)
-		if err != nil {
-			return err
-		}
-
-		arbs.notifBlockstore = nd.NotifBlockstore
-
-		// Set the blockstore filclient instance
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
 			return err
 		}
 		defer closer()
 
-		addr, err := nd.Wallet.GetDefault()
+		nd, err := newAutoRetrieveNode(cctx.Context, ddir, api, []multiaddr.Multiaddr{multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746")})
 		if err != nil {
 			return err
 		}
 
-		fc, err := filclient.NewClient(nd.Host, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
-		if err != nil {
-			return err
-		}
-
-		arbs.fc = fc
-
-		fmt.Println("p2p address:", nd.Host.Addrs())
-		fmt.Println("p2p id:", nd.Host.ID())
+		fmt.Printf("p2p address: %v\n", nd.host.Addrs())
+		fmt.Printf("p2p id: %v\n", nd.host.ID())
 
 		<-cctx.Context.Done()
 
@@ -104,6 +89,160 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+}
+
+type autoRetrieveNode struct {
+	datastore  datastore.Batching
+	blockstore blockstore.Blockstore
+	host       host.Host
+	bitswap    exchange.Interface
+	wallet     *wallet.LocalWallet // If nil, only free retrievals will be attempted
+	fc         *filclient.FilClient
+}
+
+const datastoreSubdir = "datastore"
+const blockstoreSubdir = "blockstore"
+const walletSubdir = "wallet"
+
+func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, listenAddrs []multiaddr.Multiaddr) (autoRetrieveNode, error) {
+	var node autoRetrieveNode
+
+	// Datastore
+	{
+		datastore, err := leveldb.NewDatastore(filepath.Join(dataDir, datastoreSubdir), nil)
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		node.datastore = datastore
+	}
+
+	// Blockstore
+	{
+		parseShardFunc, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/3")
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		blockstoreDatastore, err := flatfs.CreateOrOpen(filepath.Join(dataDir, blockstoreSubdir), parseShardFunc, false)
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		node.blockstore = blockstore.NewBlockstoreNoPrefix(blockstoreDatastore)
+	}
+
+	// Host
+	{
+		var peerkey crypto.PrivKey
+		keyPath := filepath.Join(dataDir, "peerkey")
+		keyFile, err := os.ReadFile(keyPath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return autoRetrieveNode{}, err
+			}
+
+			key, _, err := crypto.GenerateEd25519Key(rand.Reader)
+			if err != nil {
+				return autoRetrieveNode{}, err
+			}
+			peerkey = key
+
+			data, err := crypto.MarshalPrivateKey(key)
+			if err != nil {
+				return autoRetrieveNode{}, err
+			}
+
+			if err := os.WriteFile(keyPath, data, 0600); err != nil {
+				return autoRetrieveNode{}, err
+			}
+		} else {
+			key, err := crypto.UnmarshalPrivateKey(keyFile)
+			if err != nil {
+				return autoRetrieveNode{}, err
+			}
+
+			peerkey = key
+		}
+
+		if peerkey == nil {
+			panic("sanity check: peer key is uninitialized")
+		}
+
+		host, err := libp2p.New(ctx, libp2p.ListenAddrs(listenAddrs...))
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		node.host = host
+	}
+
+	// Bitswap
+	{
+		fullRT, err := fullrt.NewFullRT(node.host, dht.DefaultPrefix, fullrt.DHTOption(
+			dht.Datastore(node.datastore),
+			dht.BucketSize(20),
+			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+		))
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
+
+		wiretap := &autoRetrieveWiretap{}
+		bitswapCtx := metri.CtxScope(ctx, "bitswap")
+		bitswap := bitswap.New(bitswapCtx, bsnet, node.blockstore, bitswap.EnableWireTap(wiretap))
+
+		node.bitswap = bitswap
+	}
+
+	// Wallet Address
+	{
+		keystore, err := keystore.OpenOrInitKeystore(filepath.Join(dataDir, walletSubdir))
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		wallet, err := wallet.NewWallet(keystore)
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		node.wallet = wallet
+	}
+
+	// FilClient
+	{
+		addr, err := node.wallet.GetDefault()
+		if err != nil {
+			fmt.Printf("Could not load any default wallet address, only free retrievals will be attempted (%v)\n", err)
+			addr = address.Undef
+		} else {
+			fmt.Printf("Using default wallet address %s", addr)
+		}
+
+		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, dataDir)
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		node.fc = fc
+	}
+
+	return node, nil
+}
+
+type autoRetrieveWiretap struct {
+}
+
+func (wt *autoRetrieveWiretap) MessageReceived(id peer.ID, msg bsmsg.BitSwapMessage) {
+	entries := msg.Wantlist()
+	fmt.Printf("wantlist: %v\n", len(entries))
+}
+
+func (wt *autoRetrieveWiretap) MessageSent(id peer.ID, msg bsmsg.BitSwapMessage) {
+
 }
 
 type retrievalCandidate struct {
