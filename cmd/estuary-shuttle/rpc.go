@@ -84,10 +84,8 @@ func (s *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			log.Errorf("have multiple pins for same content id: %d", contid)
 		}
 		existing := search[0]
-		span.AddEvent("previous found a pin locally", trace.WithAttributes(attribute.Int64("ID", int64(existing.ID))))
 
 		if existing.Failed {
-			span.AddEvent("detected previous pin failure, resend notification")
 			// being asked to pin a thing we have marked as failed means the
 			// primary node isnt aware that this pin failed, we need to resend
 			// that notification
@@ -108,7 +106,6 @@ func (s *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		}
 
 		if !existing.Pinning && existing.Active {
-			span.AddEvent("detected pin with lost message, resend all objects", trace.WithAttributes(attribute.Int64("ID", int64(existing.ID))))
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
 
@@ -130,7 +127,6 @@ func (s *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			}
 		}
 	} else {
-		span.AddEvent("detected no pin locally, create pin")
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
 			Content: contid,
@@ -368,7 +364,6 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 		chanid, err := s.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to start data transfer: %s", err)
-			span.AddEvent(errMsg)
 			log.Error(errMsg)
 			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 				DealDBID: cmd.DealDBID,
@@ -390,9 +385,7 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 				},
 			},
 		}); err != nil {
-			errMsg := fmt.Sprintf("failed to nofity estuary primary node about transfer start: %s", err)
-			span.AddEvent(errMsg)
-			log.Error(errMsg)
+			log.Error("failed to notify estuary primary node about transfer start: %s", err)
 		}
 	}()
 	return nil
@@ -414,9 +407,7 @@ func (s *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 			TransferStatus: st,
 		},
 	}); err != nil {
-		errMsg := fmt.Sprintf("failed to send transfer status update: %s", err)
-		span.AddEvent(errMsg)
-		log.Error(errMsg)
+		log.Error("failed to send transfer status update: %s", err)
 	}
 }
 
@@ -430,9 +421,7 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 		ctx := context.TODO()
 		st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
 		if err != nil {
-			errMsg := fmt.Sprintf("failed to get requested transfer status: %s", err)
-			span.AddEvent(errMsg)
-			log.Error(errMsg)
+			log.Error("failed to get requested transfer status: %s", err)
 			return
 		}
 
