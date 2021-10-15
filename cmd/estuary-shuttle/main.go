@@ -261,6 +261,7 @@ func main() {
 			commpMemo: commpMemo,
 
 			trackingChannels: make(map[string]*chanTrack),
+			inflightCids:     make(map[cid.Cid]uint),
 
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
@@ -471,6 +472,17 @@ type Shuttle struct {
 
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*retrievalProgress
+
+	inflightCids   map[cid.Cid]uint
+	inflightCidsLk sync.Mutex
+}
+
+func (d *Shuttle) isInflight(c cid.Cid) bool {
+	d.inflightCidsLk.Lock()
+	defer d.inflightCidsLk.Unlock()
+
+	v, ok := d.inflightCids[c]
+	return ok && v > 0
 }
 
 type chanTrack struct {
@@ -1111,7 +1123,28 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	var totalSize int64
 	cset := cid.NewSet()
 
+	defer func() {
+		d.inflightCidsLk.Lock()
+		_ = cset.ForEach(func(c cid.Cid) error {
+			v, ok := d.inflightCids[c]
+			if !ok || v <= 0 {
+				log.Errorf("cid should be inflight but isn't: %s", c)
+			}
+
+			d.inflightCids[c]--
+			if d.inflightCids[c] == 0 {
+				delete(d.inflightCids, c)
+			}
+			return nil
+		})
+		d.inflightCidsLk.Unlock()
+	}()
+
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+		d.inflightCidsLk.Lock()
+		d.inflightCids[c]++
+		d.inflightCidsLk.Unlock()
+
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
 			return nil, err
@@ -1361,9 +1394,12 @@ func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 }
 
 func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
-	s.addPinLk.Lock()
-	defer s.addPinLk.Unlock()
+	s.inflightCidsLk.Lock()
+	defer s.inflightCidsLk.Unlock()
 
+	if s.isInflight(o.Cid.CID) {
+		return false, nil
+	}
 	var c int64
 	if err := s.DB.Model(Object{}).Where("id = ? or cid = ?", o.ID, o.Cid).Count(&c).Error; err != nil {
 		return false, err
@@ -1387,12 +1423,15 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 	_, span := Tracer.Start(ctx, "clearUnreferencedObjects")
 	defer span.End()
 
+	s.inflightCidsLk.Lock()
+	defer s.inflightCidsLk.Unlock()
+
 	var ids []uint
 	for _, o := range objs {
-		ids = append(ids, o.ID)
+		if !s.isInflight(o.Cid.CID) {
+			ids = append(ids, o.ID)
+		}
 	}
-	s.addPinLk.Lock()
-	defer s.addPinLk.Unlock()
 
 	batchSize := 100
 
@@ -1402,8 +1441,8 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 			l = len(ids) - i
 		}
 
-		if err := s.DB.Where("(?) = 0 and id in ?",
-			s.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids[i:i+l]).
+		if err := s.DB.Where("id in ? and (?) = 0",
+			ids[i:i+l], s.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)")).
 			Delete(Object{}).Error; err != nil {
 			return err
 		}
