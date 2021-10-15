@@ -132,6 +132,8 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		keyPath := filepath.Join(dataDir, "peerkey")
 		keyFile, err := os.ReadFile(keyPath)
 		if err != nil {
+			fmt.Printf("Generating new peer key\n")
+
 			if !os.IsNotExist(err) {
 				return autoRetrieveNode{}, err
 			}
@@ -163,7 +165,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 			panic("sanity check: peer key is uninitialized")
 		}
 
-		host, err := libp2p.New(ctx, libp2p.ListenAddrs(listenAddrs...))
+		host, err := libp2p.New(ctx, libp2p.ListenAddrs(listenAddrs...), libp2p.Identity(peerkey))
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
