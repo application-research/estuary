@@ -154,6 +154,9 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 }
 
 func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error) {
+	_, span := Tracer.Start(ctx, "objectsForPin")
+	defer span.End()
+
 	var objects []*Object
 	if err := s.DB.Model(ObjRef{}).Where("pin = ?", pin).
 		Joins("left join objects on obj_refs.object = objects.id").

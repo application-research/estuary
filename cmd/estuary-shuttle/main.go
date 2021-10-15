@@ -1375,6 +1375,9 @@ func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 }
 
 func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
+	_, span := Tracer.Start(ctx, "clearUnreferencedObjects")
+	defer span.End()
+
 	var ids []uint
 	for _, o := range objs {
 		ids = append(ids, o.ID)

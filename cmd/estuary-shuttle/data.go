@@ -44,7 +44,7 @@ type Object struct {
 type ObjRef struct {
 	ID     uint `gorm:"primarykey"`
 	Pin    uint `gorm:"index"`
-	Object uint
+	Object uint `gorm:"index"`
 	//Offloaded bool
 }
 

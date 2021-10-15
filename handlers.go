@@ -2434,10 +2434,22 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 	// TODO: this should be a lotttttt smarter
 	s.CM.shuttlesLk.Lock()
 	defer s.CM.shuttlesLk.Unlock()
-	for _, sh := range s.CM.shuttles {
-		if sh.hostname != "" {
-			out = append(out, "https://"+sh.hostname+"/content/add")
+	for hnd, sh := range s.CM.shuttles {
+		if sh.hostname == "" {
+			continue
 		}
+
+		var shuttle Shuttle
+		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
+			log.Errorf("failed to look up shuttle by handle: %s", err)
+			continue
+		}
+
+		if !shuttle.Open {
+			continue
+		}
+
+		out = append(out, "https://"+sh.hostname+"/content/add")
 	}
 	if !s.CM.localContentAddingDisabled {
 		out = append(out, s.CM.hostname+"/content/add")
