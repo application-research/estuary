@@ -272,15 +272,19 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				resMsg.AddDontHave(entry.Cid)
 				continue
 			}
+			resMsg.AddBlock(block)
 
 			if r.simplifiedLog {
-				fmt.Printf(">")
+				fmt.Printf("[B]")
 			}
-			resMsg.AddBlock(block)
 		}
 	}
 
 	r.bsnet.SendMessage(ctx, sender, resMsg)
+
+	if r.simplifiedLog {
+		fmt.Printf(">")
+	}
 }
 
 func (r *bsnetReceiver) ReceiveError(error) {
@@ -347,33 +351,34 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	wg.Add(len(candidates))
 
 	for _, candidate := range candidates {
+		if r.simplifiedLog {
+			fmt.Printf("?")
+		} else {
+			fmt.Printf("%v/%v\n", checked, len(candidates))
+		}
 
-		// Copy into loop, cursed go
-		candidate := candidate
-
-		go func() {
+		go func(candidate RetrievalCandidate) {
 			defer wg.Done()
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				if r.simplifiedLog {
-					fmt.Printf("[qe]")
+					fmt.Printf("[?e]")
 				} else {
 					fmt.Printf("Retrieval query for miner %s failed: %v\n", candidate.Miner, err)
 				}
 				return
 			}
 
+			if r.simplifiedLog {
+				fmt.Printf("[?d]")
+			}
+
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
-			if r.simplifiedLog {
-				fmt.Printf("?")
-			} else {
-				fmt.Printf("%v/%v\n", checked, len(candidates))
-			}
 			queriesLk.Unlock()
-		}()
+		}(candidate)
 	}
 
 	wg.Wait()
@@ -416,6 +421,10 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			continue
 		}
 
+		if r.simplifiedLog {
+			fmt.Print("!")
+		}
+
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
 		const timeout time.Duration = time.Second * 5
 		var lastBytesReceived uint64 = 0
@@ -433,11 +442,15 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		})
 		if err != nil {
 			if r.simplifiedLog {
-				fmt.Print("[re]")
+				fmt.Print("[!e]")
 			} else {
 				fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
 			}
 			continue
+		}
+
+		if r.simplifiedLog {
+			fmt.Print("[!d]")
 		}
 
 		break
