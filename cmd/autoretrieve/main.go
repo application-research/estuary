@@ -216,7 +216,12 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		}
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
-		receiver := &bsnetReceiver{bsnet: bsnet, fc: node.fc, blockstore: node.blockstore}
+		receiver := &bsnetReceiver{
+			simplifiedLog: true,
+			bsnet:         bsnet,
+			fc:            node.fc,
+			blockstore:    node.blockstore,
+		}
 		bsnet.SetDelegate(receiver)
 	}
 
@@ -224,9 +229,10 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 }
 
 type bsnetReceiver struct {
-	blockstore blockstore.Blockstore
-	fc         *filclient.FilClient
-	bsnet      bsnet.BitSwapNetwork
+	simplifiedLog bool
+	blockstore    blockstore.Blockstore
+	fc            *filclient.FilClient
+	bsnet         bsnet.BitSwapNetwork
 }
 
 func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
@@ -243,13 +249,20 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			if len(candidates) > 0 {
 				err := r.retrieveFromBestCandidate(ctx, candidates)
 				if err != nil {
-					//fmt.Printf("x")
+					if r.simplifiedLog {
+						fmt.Printf("x")
+					}
+					resMsg.AddDontHave(entry.Cid)
+					continue
 				}
 
-				resMsg.AddDontHave(entry.Cid)
-			} else {
+				if r.simplifiedLog {
+					fmt.Printf(".")
+				}
+
 				resMsg.AddHave(entry.Cid)
-				//fmt.Printf(".")
+			} else {
+				resMsg.AddDontHave(entry.Cid)
 			}
 		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
 			block, err := r.blockstore.Get(entry.Cid)
@@ -258,6 +271,9 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				continue
 			}
 
+			if r.simplifiedLog {
+				fmt.Printf(">")
+			}
 			resMsg.AddBlock(block)
 		}
 	}
@@ -266,15 +282,21 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 }
 
 func (r *bsnetReceiver) ReceiveError(error) {
-	//fmt.Printf("e")
+	if r.simplifiedLog {
+		fmt.Printf("e")
+	}
 }
 
 func (r *bsnetReceiver) PeerConnected(peer.ID) {
-	//fmt.Printf("+")
+	if r.simplifiedLog {
+		fmt.Printf("+")
+	}
 }
 
 func (r *bsnetReceiver) PeerDisconnected(peer.ID) {
-	//fmt.Printf("-")
+	if r.simplifiedLog {
+		fmt.Printf("-")
+	}
 }
 
 type RetrievalCandidate struct {
@@ -332,14 +354,22 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				fmt.Printf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
+				if r.simplifiedLog {
+					fmt.Printf("[qe]")
+				} else {
+					fmt.Printf("Retrieval query for miner %s failed: %v\n", candidate.Miner, err)
+				}
 				return
 			}
 
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
-			fmt.Printf("%v/%v\r", checked, len(candidates))
+			if r.simplifiedLog {
+				fmt.Printf("?")
+			} else {
+				fmt.Printf("%v/%v\n", checked, len(candidates))
+			}
 			queriesLk.Unlock()
 		}()
 	}
@@ -400,7 +430,11 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			}
 		})
 		if err != nil {
-			fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
+			if r.simplifiedLog {
+				fmt.Print("[re]")
+			} else {
+				fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
+			}
 			continue
 		}
 
