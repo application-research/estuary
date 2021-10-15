@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/node"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
@@ -26,17 +24,14 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
-	"github.com/ipfs/go-bitswap"
 	bsmsg "github.com/ipfs/go-bitswap/message"
+	bitswap_message_pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
-	metri "github.com/ipfs/go-metrics-interface"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -54,7 +49,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "datadir",
-			Value:   ".",
+			Value:   "./estuary-ar",
 			EnvVars: []string{"ESTUARY_AR_DATADIR"},
 		},
 		&cli.StringFlag{
@@ -94,10 +89,9 @@ func main() {
 type autoRetrieveNode struct {
 	datastore  datastore.Batching
 	blockstore blockstore.Blockstore
-	host       host.Host
-	bitswap    exchange.Interface
 	wallet     *wallet.LocalWallet // If nil, only free retrievals will be attempted
 	fc         *filclient.FilClient
+	host       host.Host
 }
 
 const datastoreSubdir = "datastore"
@@ -177,26 +171,6 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		node.host = host
 	}
 
-	// Bitswap
-	{
-		fullRT, err := fullrt.NewFullRT(node.host, dht.DefaultPrefix, fullrt.DHTOption(
-			dht.Datastore(node.datastore),
-			dht.BucketSize(20),
-			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
-		))
-		if err != nil {
-			return autoRetrieveNode{}, err
-		}
-
-		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
-
-		wiretap := &autoRetrieveWiretap{}
-		bitswapCtx := metri.CtxScope(ctx, "bitswap")
-		bitswap := bitswap.New(bitswapCtx, bsnet, node.blockstore, bitswap.EnableWireTap(wiretap))
-
-		node.bitswap = bitswap
-	}
-
 	// Wallet Address
 	{
 		keystore, err := keystore.OpenOrInitKeystore(filepath.Join(dataDir, walletSubdir))
@@ -230,130 +204,83 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		node.fc = fc
 	}
 
+	// Bitswap
+	{
+		fullRT, err := fullrt.NewFullRT(node.host, dht.DefaultPrefix, fullrt.DHTOption(
+			dht.Datastore(node.datastore),
+			dht.BucketSize(20),
+			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
+		))
+		if err != nil {
+			return autoRetrieveNode{}, err
+		}
+
+		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
+		receiver := &bsnetReceiver{bsnet: bsnet, fc: node.fc, blockstore: node.blockstore}
+		bsnet.SetDelegate(receiver)
+	}
+
 	return node, nil
 }
 
-type autoRetrieveWiretap struct {
+type bsnetReceiver struct {
+	blockstore blockstore.Blockstore
+	fc         *filclient.FilClient
+	bsnet      bsnet.BitSwapNetwork
 }
 
-func (wt *autoRetrieveWiretap) MessageReceived(id peer.ID, msg bsmsg.BitSwapMessage) {
-	entries := msg.Wantlist()
-	fmt.Printf("wantlist: %v\n", len(entries))
-}
+func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
 
-func (wt *autoRetrieveWiretap) MessageSent(id peer.ID, msg bsmsg.BitSwapMessage) {
+	resMsg := bsmsg.New(false)
 
-}
-
-type retrievalCandidate struct {
-	Miner   address.Address
-	RootCid cid.Cid
-	DealID  uint
-}
-
-type autoRetrieveBlockstore struct {
-	blockstore.Blockstore
-	endpoint        string
-	notifBlockstore *node.NotifyBlockstore
-	fc              *filclient.FilClient
-}
-
-var total int = 0
-var totalSecond int = 0
-var mu sync.Mutex
-var last time.Time = time.Now()
-var cidCounts map[cid.Cid]int = make(map[cid.Cid]int)
-var max int = 0
-var s int = 0
-
-var cacheLk sync.Mutex
-var cache map[cid.Cid][]retrievalCandidate = make(map[cid.Cid][]retrievalCandidate)
-
-func (bs *autoRetrieveBlockstore) GetSize(c cid.Cid) (int, error) {
-
-	// mu.Lock()
-	// defer mu.Unlock()
-
-	// now := time.Now()
-	// elapsed := now.Sub(last)
-	// if elapsed.Seconds() >= 1.0 {
-	// 	s++
-	// 	last = now
-	// 	fmt.Printf("[%vs elapsed] %v GetSize() calls this second. Of total %v cids, %v have been unique (highest duplicate count: %v)\n", s, totalSecond, total, len(cidCounts), max)
-	// 	totalSecond = 0
-	// }
-
-	// total++
-	// totalSecond++
-	// count, ok := cidCounts[c]
-	// if !ok {
-	// 	count = 0
-	// }
-	// count++
-	// if count > max {
-	// 	max = count
-	// }
-	// cidCounts[c] = count
-
-	cacheLk.Lock()
-	res, ok := cache[c]
-	cacheLk.Unlock()
-	if ok {
-		return 1000, nil
-	}
-
-	resp, err := http.Get(bs.endpoint + "/" + c.String())
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("http request failed")
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&res); err != nil {
-		return 0, fmt.Errorf("could not unmarshal http response for %s, may have been null", c)
-	}
-
-	cacheLk.Lock()
-	cache[c] = res
-	cacheLk.Unlock()
-
-	return 1000, nil
-}
-
-func (bs *autoRetrieveBlockstore) Get(c cid.Cid) (blocks.Block, error) {
-	// Try to get this cid from the local blockstore
-	block, bsErr := bs.Blockstore.Get(c)
-
-	// If that failed...
-	if bsErr != nil {
-		// ...maybe it wasn't present
-		if errors.Is(bsErr, blockstore.ErrNotFound) {
-			// In which case, we hit the api endpoint and ask which miners have this information
-			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", c)
+	for _, entry := range incoming.Wantlist() {
+		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
 			if err != nil {
-				return nil, err
+				continue
 			}
 
-			if err := bs.retrieveFromBestCandidate(context.Background(), candidates); err != nil {
-				fmt.Printf("Retrieval failed for %s\n", c)
-				return nil, err
+			if len(candidates) > 0 {
+				err := r.retrieveFromBestCandidate(ctx, candidates)
+				if err != nil {
+					//fmt.Printf("x")
+				}
+
+				resMsg.AddDontHave(entry.Cid)
+			} else {
+				resMsg.AddHave(entry.Cid)
+				//fmt.Printf(".")
+			}
+		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+			block, err := r.blockstore.Get(entry.Cid)
+			if err != nil {
+				resMsg.AddDontHave(entry.Cid)
+				continue
 			}
 
-			// Wait for the requested cid to show up in the blockstore
-			blockCh := bs.notifBlockstore.WaitFor(c)
-
-			<-blockCh
-
-			fmt.Printf("Retrieval succeeded for %s\n", c)
-
-			return block, nil
+			resMsg.AddBlock(block)
 		}
 	}
 
-	// If there was no error getting the block locally, just return that
-	return block, nil
+	r.bsnet.SendMessage(ctx, sender, resMsg)
+}
+
+func (r *bsnetReceiver) ReceiveError(error) {
+	//fmt.Printf("e")
+}
+
+func (r *bsnetReceiver) PeerConnected(peer.ID) {
+	//fmt.Printf("+")
+}
+
+func (r *bsnetReceiver) PeerDisconnected(peer.ID) {
+	//fmt.Printf("-")
+}
+
+type RetrievalCandidate struct {
+	Miner   address.Address
+	RootCid cid.Cid
+	DealID  uint
 }
 
 func GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, error) {
@@ -382,14 +309,8 @@ func GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, e
 	return res, nil
 }
 
-type RetrievalCandidate struct {
-	Miner   address.Address
-	RootCid cid.Cid
-	DealID  uint
-}
-
 // Select the most preferable miner to retrieve from and execute the retrieval
-func (bs *autoRetrieveBlockstore) retrieveFromBestCandidate(ctx context.Context, candidates []RetrievalCandidate) error {
+func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidates []RetrievalCandidate) error {
 	type CandidateQuery struct {
 		Candidate RetrievalCandidate
 		Response  *retrievalmarket.QueryResponse
@@ -409,7 +330,7 @@ func (bs *autoRetrieveBlockstore) retrieveFromBestCandidate(ctx context.Context,
 		go func() {
 			defer wg.Done()
 
-			query, err := bs.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
+			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				fmt.Printf("Retrieval query for miner %s failed: %v", candidate.Miner, err)
 				return
@@ -467,7 +388,7 @@ func (bs *autoRetrieveBlockstore) retrieveFromBestCandidate(ctx context.Context,
 		const timeout time.Duration = time.Second * 5
 		var lastBytesReceived uint64 = 0
 		lastBytesReceivedTime := time.Now()
-		stats, err = bs.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+		stats, err = r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
 			if lastBytesReceived != bytesReceived {
 				lastBytesReceivedTime = time.Now()
 				lastBytesReceived = bytesReceived
