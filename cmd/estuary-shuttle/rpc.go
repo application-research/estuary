@@ -49,6 +49,9 @@ func (s *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 }
 
 func (s *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
+	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
+	// a noopspan context will be carried and ignored by the receiver.
+	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
 	log.Infof("sending rpc message: %s", msg.Op)
 	select {
 	case s.outgoing <- msg:
@@ -91,8 +94,7 @@ func (s *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// that notification
 
 			if err := s.sendRpcMessage(ctx, &drpc.Message{
-				TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-				Op:           "UpdatePinStatus",
+				Op: "UpdatePinStatus",
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
@@ -188,8 +190,7 @@ func (s *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 	}
 
 	return s.sendRpcMessage(ctx, &drpc.Message{
-		TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-		Op:           drpc.OP_CommPComplete,
+		Op: drpc.OP_CommPComplete,
 		Params: drpc.MsgParams{
 			CommPComplete: &drpc.CommPComplete{
 				Data:  cmd.Data,
@@ -213,8 +214,7 @@ func (s *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 	}
 
 	if err := s.sendRpcMessage(ctx, &drpc.Message{
-		TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-		Op:           drpc.OP_PinComplete,
+		Op: drpc.OP_PinComplete,
 		Params: drpc.MsgParams{
 			PinComplete: &drpc.PinComplete{
 				DBID:    cont,
@@ -376,8 +376,7 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 		s.trackTransfer(chanid, cmd.DealDBID)
 
 		if err := s.sendRpcMessage(ctx, &drpc.Message{
-			TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-			Op:           drpc.OP_TransferStarted,
+			Op: drpc.OP_TransferStarted,
 			Params: drpc.MsgParams{
 				TransferStarted: &drpc.TransferStarted{
 					DealDBID: cmd.DealDBID,
@@ -401,8 +400,7 @@ func (s *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	}
 	log.Infof("sending transfer status update: %d %s", st.DealDBID, extra)
 	if err := s.sendRpcMessage(ctx, &drpc.Message{
-		TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-		Op:           drpc.OP_TransferStatus,
+		Op: drpc.OP_TransferStatus,
 		Params: drpc.MsgParams{
 			TransferStatus: st,
 		},

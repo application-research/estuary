@@ -241,8 +241,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 	defer span.End()
 
 	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
-		TraceCarrier: drpc.NewTraceCarrier(span.SpanContext()),
-		Op:           drpc.CMD_AddPin,
+		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
 				DBID:   cont.ID,
