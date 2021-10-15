@@ -245,6 +245,7 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
 			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
 			if err != nil {
+				resMsg.AddDontHave(entry.Cid)
 				continue
 			}
 
