@@ -204,16 +204,8 @@ func main() {
 			Value: false,
 		},
 		&cli.StringFlag{
-			Name:  "jaeger-provider-host",
-			Value: "localhost",
-		},
-		&cli.IntFlag{
-			Name:  "jaeger-provider-port",
-			Value: 14268,
-		},
-		&cli.StringFlag{
-			Name:  "jaeger-provider-name",
-			Value: "estuary",
+			Name:  "jaeger-provider-url",
+			Value: "http://localhost:14268/api/traces",
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
@@ -354,7 +346,8 @@ func main() {
 
 		// setup tracing to jaeger if enabled
 		if cctx.Bool("jaeger-tracing") {
-			tp, err := metrics.NewJaegerTraceProvider(cctx)
+			tp, err := metrics.NewJaegerTraceProvider("estuary",
+				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
 			if err != nil {
 				return err
 			}
