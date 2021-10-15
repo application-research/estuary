@@ -324,7 +324,21 @@ func (bs *autoRetrieveBlockstore) retrieveFromBestCandidate(ctx context.Context,
 			continue
 		}
 
-		stats, err = bs.fc.RetrieveContent(ctx, query.Candidate.Miner, proposal)
+		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
+		const timeout time.Duration = time.Second * 5
+		var lastBytesReceived uint64 = 0
+		lastBytesReceivedTime := time.Now()
+		stats, err = bs.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+			if lastBytesReceived != bytesReceived {
+				lastBytesReceivedTime = time.Now()
+				lastBytesReceived = bytesReceived
+			}
+
+			if time.Since(lastBytesReceivedTime) > timeout {
+				retrieveCancel()
+				return
+			}
+		})
 		if err != nil {
 			fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
 			continue
