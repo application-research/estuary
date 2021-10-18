@@ -340,15 +340,15 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	var wg sync.WaitGroup
 	wg.Add(len(candidates))
 
-	for i, candidate := range candidates {
-		go func(i int, candidate RetrievalCandidate) {
+	for _, candidate := range candidates {
+		go func(candidate RetrievalCandidate) {
 			defer wg.Done()
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				logger.Errorf(
 					"Failed to query retrieval %v/%v from miner %s for %s: %v",
-					i,
+					checked+1,
 					len(candidates),
 					candidate.Miner,
 					candidate.RootCid,
@@ -359,7 +359,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 			logger.Infof(
 				"Retrieval query %v/%v succeeded from miner %s for %s",
-				i,
+				checked+1,
 				len(candidates),
 				candidate.Miner,
 				candidate.RootCid,
@@ -369,7 +369,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
 			queriesLk.Unlock()
-		}(i, candidate)
+		}(candidate)
 	}
 
 	wg.Wait()
@@ -414,7 +414,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 		logger.Infof(
 			"Attempting retrieval %v/%v from miner %s for %s",
-			i,
+			i+1,
 			len(queries),
 			query.Candidate.Miner,
 			query.Candidate.RootCid,
@@ -438,7 +438,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		if err != nil {
 			logger.Errorf(
 				"Failed to retrieve %v/%v from miner %s for %s: %v",
-				i,
+				i+1,
 				len(queries),
 				query.Candidate.Miner,
 				query.Candidate.RootCid,
@@ -449,7 +449,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 		logger.Infof(
 			"Retrieval %v/%v succeeded from miner %s for %s",
-			i,
+			i+1,
 			len(queries),
 			query.Candidate.Miner,
 			query.Candidate.RootCid,
