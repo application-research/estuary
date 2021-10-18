@@ -270,10 +270,10 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 		}
 	}
 
-	haveCount := len(resMsg.Haves())
-	blockCount := len(resMsg.Blocks())
-	dontHaveCount := len(resMsg.DontHaves())
-	fmt.Printf("Finished bitswap message to %v (%v HAVE, %v BLOCK, %v DONTHAVE)\n", sender, haveCount, blockCount, dontHaveCount)
+	// haveCount := len(resMsg.Haves())
+	// blockCount := len(resMsg.Blocks())
+	// dontHaveCount := len(resMsg.DontHaves())
+	// fmt.Printf("Finished bitswap message to %v (%v HAVE, %v BLOCK, %v DONTHAVE)\n", sender, haveCount, blockCount, dontHaveCount)
 
 	r.bsnet.SendMessage(ctx, sender, resMsg)
 }
@@ -420,7 +420,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		}
 
 		fmt.Printf(
-			"Retrieval succeeded for %s from miner %s (%v/%v)",
+			"Retrieval succeeded for %s from miner %s (%v/%v)\n",
 			query.Candidate.RootCid,
 			query.Candidate.Miner,
 			i,
