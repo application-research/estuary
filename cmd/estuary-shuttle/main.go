@@ -70,7 +70,7 @@ func main() {
 	logging.SetLogLevel("paych", "debug")
 	logging.SetLogLevel("filclient", "debug")
 	logging.SetLogLevel("dt_graphsync", "debug")
-	//logging.SetLogLevel("graphsync_allocator", "debug")
+	logging.SetLogLevel("graphsync_allocator", "info")
 	logging.SetLogLevel("dt-chanmon", "debug")
 	logging.SetLogLevel("markets", "debug")
 	logging.SetLogLevel("data_transfer_network", "debug")
@@ -144,7 +144,7 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
-			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
+			Usage: "disallow new content ingestion on this node",
 		},
 		&cli.BoolFlag{
 			Name: "no-reload-pin-queue",
@@ -1369,6 +1369,15 @@ func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 		return false, err
 	}
 	if c == 0 {
+		has, err := s.Node.Blockstore.Has(o.Cid.CID)
+		if err != nil {
+			return false, err
+		}
+		if !has {
+			log.Warnf("dont have block %s that we expected to delete", o.Cid.CID)
+			return false, nil
+		}
+
 		return true, s.Node.Blockstore.DeleteBlock(o.Cid.CID)
 	}
 	return false, nil
