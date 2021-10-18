@@ -341,9 +341,22 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				fmt.Printf("Retrieval query for miner %s failed (%v/%v): %v\n", candidate.Miner, i, len(candidates), err)
+				fmt.Printf(
+					"Retrieval query for miner %s failed (%v/%v): %v\n",
+					candidate.Miner,
+					i,
+					len(candidates),
+					err,
+				)
 				return
 			}
+
+			fmt.Printf(
+				"Retrieval query for miner %s succeeded (%v/%v)\n",
+				candidate.Miner,
+				i,
+				len(candidates),
+			)
 
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
@@ -391,6 +404,14 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		if err != nil {
 			continue
 		}
+
+		fmt.Printf(
+			"Attempting retrieval for %s from miner %s (%v/%v)\n",
+			query.Candidate.RootCide,
+			query.Candidate.Miner,
+			i,
+			len(queries)
+		)
 
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
 		const timeout time.Duration = time.Second * 5
