@@ -39,7 +39,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -57,6 +56,11 @@ func main() {
 			Value:   "./estuary-ar",
 			EnvVars: []string{"ESTUARY_AR_DATADIR"},
 		},
+		&cli.IntFlag{
+			Name:  "timeout",
+			Value: 60,
+			Usage: "Time in seconds to wait on a hanging retrieval before moving on",
+		},
 		&cli.StringFlag{
 			Name:  "endpoint",
 			Value: "https://api.estuary.tech/retrieval-candidates",
@@ -64,7 +68,7 @@ func main() {
 	}
 
 	app.Action = func(cctx *cli.Context) error {
-		ddir := cctx.String("datadir")
+		dataDir := cctx.String("datadir")
 
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
@@ -72,7 +76,10 @@ func main() {
 		}
 		defer closer()
 
-		nd, err := newAutoRetrieveNode(cctx.Context, ddir, api, []multiaddr.Multiaddr{multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746")})
+		nd, err := newAutoRetrieveNode(cctx.Context, Config{
+			retrievalTimeout: time.Second * time.Duration(cctx.Int("timeout")),
+			dataDir:          dataDir,
+		}, api)
 		if err != nil {
 			return err
 		}
@@ -91,6 +98,11 @@ func main() {
 	}
 }
 
+type Config struct {
+	retrievalTimeout time.Duration
+	dataDir          string
+}
+
 type autoRetrieveNode struct {
 	datastore  datastore.Batching
 	blockstore blockstore.Blockstore
@@ -103,12 +115,12 @@ const datastoreSubdir = "datastore"
 const blockstoreSubdir = "blockstore"
 const walletSubdir = "wallet"
 
-func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, listenAddrs []multiaddr.Multiaddr) (autoRetrieveNode, error) {
+func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (autoRetrieveNode, error) {
 	var node autoRetrieveNode
 
 	// Datastore
 	{
-		datastore, err := leveldb.NewDatastore(filepath.Join(dataDir, datastoreSubdir), nil)
+		datastore, err := leveldb.NewDatastore(filepath.Join(config.dataDir, datastoreSubdir), nil)
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -123,7 +135,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 			return autoRetrieveNode{}, err
 		}
 
-		blockstoreDatastore, err := flatfs.CreateOrOpen(filepath.Join(dataDir, blockstoreSubdir), parseShardFunc, false)
+		blockstoreDatastore, err := flatfs.CreateOrOpen(filepath.Join(config.dataDir, blockstoreSubdir), parseShardFunc, false)
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -134,7 +146,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 	// Host
 	{
 		var peerkey crypto.PrivKey
-		keyPath := filepath.Join(dataDir, "peerkey")
+		keyPath := filepath.Join(config.dataDir, "peerkey")
 		keyFile, err := os.ReadFile(keyPath)
 		if err != nil {
 			logger.Infof("Generating new peer key...")
@@ -170,7 +182,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 			panic("sanity check: peer key is uninitialized")
 		}
 
-		host, err := libp2p.New(ctx, libp2p.ListenAddrs(listenAddrs...), libp2p.Identity(peerkey))
+		host, err := libp2p.New(ctx, libp2p.ListenAddrs(config.listenAddrs...), libp2p.Identity(peerkey))
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -180,7 +192,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 
 	// Wallet Address
 	{
-		keystore, err := keystore.OpenOrInitKeystore(filepath.Join(dataDir, walletSubdir))
+		keystore, err := keystore.OpenOrInitKeystore(filepath.Join(config.dataDir, walletSubdir))
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -203,7 +215,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 			logger.Infof("Using default wallet address %s", addr)
 		}
 
-		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, dataDir)
+		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, config.dataDir)
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -238,6 +250,7 @@ type bsnetReceiver struct {
 	blockstore blockstore.Blockstore
 	fc         *filclient.FilClient
 	bsnet      bsnet.BitSwapNetwork
+	config     Config
 }
 
 func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
@@ -421,7 +434,6 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		)
 
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
-		const timeout time.Duration = time.Second * 5
 		var lastBytesReceived uint64 = 0
 		lastBytesReceivedTime := time.Now()
 		stats, err = r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
@@ -430,7 +442,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 				lastBytesReceived = bytesReceived
 			}
 
-			if time.Since(lastBytesReceivedTime) > timeout {
+			if time.Since(lastBytesReceivedTime) > r.config.retrievalTimeout {
 				retrieveCancel()
 				return
 			}
