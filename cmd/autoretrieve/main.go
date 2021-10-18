@@ -262,32 +262,40 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 	for _, entry := range incoming.Wantlist() {
 
-		candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+		block, err := r.blockstore.Get(entry.Cid)
 		if err != nil {
-			resMsg.AddDontHave(entry.Cid)
-			continue
+			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+			if err != nil {
+				resMsg.AddDontHave(entry.Cid)
+				continue
+			}
+
+			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+				resMsg.AddHave(entry.Cid)
+			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+				if err != nil {
+					if len(candidates) > 0 {
+						if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+							logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
+							resMsg.AddDontHave(entry.Cid)
+							continue
+						}
+
+						logger.Infof("Successfully retrieved %v", entry.Cid)
+
+						resMsg.AddHave(entry.Cid)
+					} else {
+						resMsg.AddDontHave(entry.Cid)
+					}
+					continue
+				}
+				resMsg.AddBlock(block)
+			}
 		}
 
 		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
 			resMsg.AddHave(entry.Cid)
 		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-			block, err := r.blockstore.Get(entry.Cid)
-			if err != nil {
-				if len(candidates) > 0 {
-					if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-						logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
-						resMsg.AddDontHave(entry.Cid)
-						continue
-					}
-
-					logger.Infof("Successfully retrieved %v", entry.Cid)
-
-					resMsg.AddHave(entry.Cid)
-				} else {
-					resMsg.AddDontHave(entry.Cid)
-				}
-				continue
-			}
 			resMsg.AddBlock(block)
 		}
 	}
