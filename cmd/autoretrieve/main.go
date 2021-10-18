@@ -342,8 +342,9 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				fmt.Printf(
-					"Retrieval query for miner %s failed (%v/%v): %v\n",
+					"Retrieval query for %s from miner %s failed (%v/%v): %v\n",
 					candidate.Miner,
+					candidate.RootCid,
 					i,
 					len(candidates),
 					err,
@@ -352,8 +353,9 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			}
 
 			fmt.Printf(
-				"Retrieval query for miner %s succeeded (%v/%v)\n",
+				"Retrieval query for %s from miner %s succeeded (%v/%v)\n",
 				candidate.Miner,
+				candidate.RootCid,
 				i,
 				len(candidates),
 			)
