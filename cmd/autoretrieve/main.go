@@ -342,22 +342,22 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				fmt.Printf(
-					"Retrieval query for %s from miner %s failed (%v/%v): %v\n",
-					candidate.Miner,
-					candidate.RootCid,
+					"Failed to query retrieval %v/%v from miner %s for %s: %v\n",
 					i,
 					len(candidates),
+					candidate.Miner,
+					candidate.RootCid,
 					err,
 				)
 				return
 			}
 
 			fmt.Printf(
-				"Retrieval query for %s from miner %s succeeded (%v/%v)\n",
-				candidate.Miner,
-				candidate.RootCid,
+				"Retrieval query %v/%v succeeded from miner %s for %s\n",
 				i,
 				len(candidates),
+				candidate.Miner,
+				candidate.RootCid,
 			)
 
 			queriesLk.Lock()
@@ -408,11 +408,11 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		}
 
 		fmt.Printf(
-			"Attempting retrieval for %s from miner %s (%v/%v)\n",
-			query.Candidate.RootCid,
-			query.Candidate.Miner,
+			"Attempting retrieval %v/%v from miner %s for %s\n",
 			i,
 			len(queries),
+			query.Candidate.Miner,
+			query.Candidate.RootCid,
 		)
 
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
@@ -432,22 +432,22 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		})
 		if err != nil {
 			fmt.Printf(
-				"Failed to retrieve %s from miner %s (%v/%v): %v\n",
-				query.Candidate.RootCid,
-				query.Candidate.Miner,
+				"Failed to retrieve %v/%v from miner %s for %s: %v\n",
 				i,
 				len(queries),
+				query.Candidate.Miner,
+				query.Candidate.RootCid,
 				err,
 			)
 			continue
 		}
 
 		fmt.Printf(
-			"Retrieval succeeded for %s from miner %s (%v/%v)\n",
-			query.Candidate.RootCid,
-			query.Candidate.Miner,
+			"Retrieval %v/%v succeeded from miner %s for %s\n",
 			i,
 			len(queries),
+			query.Candidate.Miner,
+			query.Candidate.RootCid,
 		)
 
 		break
