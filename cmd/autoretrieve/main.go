@@ -279,15 +279,15 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 }
 
 func (r *bsnetReceiver) ReceiveError(err error) {
-	fmt.Printf("Bitswap receive error: %v\n", err)
+	//fmt.Printf("Bitswap receive error: %v\n", err)
 }
 
 func (r *bsnetReceiver) PeerConnected(id peer.ID) {
-	fmt.Printf("Connected to peer %v\n", id)
+	//fmt.Printf("Connected to peer %v\n", id)
 }
 
 func (r *bsnetReceiver) PeerDisconnected(id peer.ID) {
-	fmt.Printf("Disconnected from peer %v\n", id)
+	//fmt.Printf("Disconnected from peer %v\n", id)
 }
 
 type RetrievalCandidate struct {
@@ -407,10 +407,10 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 		fmt.Printf(
 			"Attempting retrieval for %s from miner %s (%v/%v)\n",
-			query.Candidate.RootCide,
+			query.Candidate.RootCid,
 			query.Candidate.Miner,
 			i,
-			len(queries)
+			len(queries),
 		)
 
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
