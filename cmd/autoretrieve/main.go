@@ -262,8 +262,10 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 	for _, entry := range incoming.Wantlist() {
 
+		// First, check if we can just get the cid from the blockstore
 		block, err := r.blockstore.Get(entry.Cid)
 		if err != nil {
+			// If that failed, then look up retrieval candidates
 			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
 			if err != nil {
 				resMsg.AddDontHave(entry.Cid)
@@ -271,24 +273,28 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			}
 
 			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
-				resMsg.AddHave(entry.Cid)
-			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-				if err != nil {
-					if len(candidates) > 0 {
-						if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-							logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
-							resMsg.AddDontHave(entry.Cid)
-							continue
-						}
-
-						logger.Infof("Successfully retrieved %v", entry.Cid)
-
-						resMsg.AddHave(entry.Cid)
-					} else {
-						resMsg.AddDontHave(entry.Cid)
-					}
+				if len(candidates) == 0 {
+					resMsg.AddDontHave(entry.Cid)
 					continue
 				}
+
+				resMsg.AddHave(entry.Cid)
+			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+				if len(candidates) == 0 {
+					resMsg.AddDontHave(entry.Cid)
+					continue
+				}
+
+				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+					logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
+					resMsg.AddDontHave(entry.Cid)
+					continue
+				}
+
+				logger.Infof("Successfully retrieved %v", entry.Cid)
+
+				resMsg.AddHave(entry.Cid)
+
 				block, err := r.blockstore.Get(entry.Cid)
 				if err != nil {
 					resMsg.AddDontHave(entry.Cid)
@@ -296,12 +302,13 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 					resMsg.AddBlock(block)
 				}
 			}
-		} else {
-			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
-				resMsg.AddHave(entry.Cid)
-			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-				resMsg.AddBlock(block)
-			}
+			continue
+		}
+
+		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+			resMsg.AddHave(entry.Cid)
+		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+			resMsg.AddBlock(block)
 		}
 	}
 
