@@ -32,6 +32,7 @@ import (
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -42,6 +43,8 @@ import (
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
+
+var logger = logging.Logger("estuary-ar")
 
 func main() {
 	app := cli.NewApp()
@@ -72,8 +75,8 @@ func main() {
 			return err
 		}
 
-		fmt.Printf("P2P Address: %v\n", nd.host.Addrs())
-		fmt.Printf("P2P ID: %v\n", nd.host.ID())
+		logger.Infof("P2P Address: %v", nd.host.Addrs())
+		logger.Infof("P2P ID: %v", nd.host.ID())
 
 		<-cctx.Context.Done()
 
@@ -132,7 +135,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		keyPath := filepath.Join(dataDir, "peerkey")
 		keyFile, err := os.ReadFile(keyPath)
 		if err != nil {
-			fmt.Printf("Generating new peer key...\n")
+			logger.Infof("Generating new peer key...")
 
 			if !os.IsNotExist(err) {
 				return autoRetrieveNode{}, err
@@ -192,10 +195,10 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 	{
 		addr, err := node.wallet.GetDefault()
 		if err != nil {
-			fmt.Printf("Could not load any default wallet address, only free retrievals will be attempted (%v)\n", err)
+			logger.Warnf("Could not load any default wallet address, only free retrievals will be attempted (%v)", err)
 			addr = address.Undef
 		} else {
-			fmt.Printf("Using default wallet address %s\n", addr)
+			logger.Infof("Using default wallet address %s", addr)
 		}
 
 		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, dataDir)
@@ -249,12 +252,12 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 			if len(candidates) > 0 {
 				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-					fmt.Printf("%v\n", err)
+					logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
 					resMsg.AddDontHave(entry.Cid)
 					continue
 				}
 
-				fmt.Printf("Successfully retrieved %v\n", entry.Cid)
+				logger.Infof("Successfully retrieved %v", entry.Cid)
 
 				resMsg.AddHave(entry.Cid)
 			} else {
@@ -341,8 +344,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				fmt.Printf(
-					"Failed to query retrieval %v/%v from miner %s for %s: %v\n",
+				logger.Errorf(
+					"Failed to query retrieval %v/%v from miner %s for %s: %v",
 					i,
 					len(candidates),
 					candidate.Miner,
@@ -352,8 +355,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 				return
 			}
 
-			fmt.Printf(
-				"Retrieval query %v/%v succeeded from miner %s for %s\n",
+			logger.Infof(
+				"Retrieval query %v/%v succeeded from miner %s for %s",
 				i,
 				len(candidates),
 				candidate.Miner,
@@ -407,8 +410,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			continue
 		}
 
-		fmt.Printf(
-			"Attempting retrieval %v/%v from miner %s for %s\n",
+		logger.Infof(
+			"Attempting retrieval %v/%v from miner %s for %s",
 			i,
 			len(queries),
 			query.Candidate.Miner,
@@ -431,8 +434,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			}
 		})
 		if err != nil {
-			fmt.Printf(
-				"Failed to retrieve %v/%v from miner %s for %s: %v\n",
+			logger.Errorf(
+				"Failed to retrieve %v/%v from miner %s for %s: %v",
 				i,
 				len(queries),
 				query.Candidate.Miner,
@@ -442,8 +445,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			continue
 		}
 
-		fmt.Printf(
-			"Retrieval %v/%v succeeded from miner %s for %s\n",
+		logger.Infof(
+			"Retrieval %v/%v succeeded from miner %s for %s",
 			i,
 			len(queries),
 			query.Candidate.Miner,
@@ -454,7 +457,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	}
 
 	if stats == nil {
-		return xerrors.New("retrieval failed: all miners failed to respond")
+		return xerrors.New("all retrievals failed")
 	}
 
 	return nil
