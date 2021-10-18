@@ -283,11 +283,11 @@ func (r *bsnetReceiver) ReceiveError(err error) {
 }
 
 func (r *bsnetReceiver) PeerConnected(id peer.ID) {
-	fmt.Printf("%v connected\n", id)
+	fmt.Printf("Connected to peer %v\n", id)
 }
 
 func (r *bsnetReceiver) PeerDisconnected(id peer.ID) {
-	fmt.Printf("%v disconnected\n", id)
+	fmt.Printf("Disconnected from peer %v\n", id)
 }
 
 type RetrievalCandidate struct {
