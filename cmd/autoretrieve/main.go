@@ -39,6 +39,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 )
@@ -79,6 +80,7 @@ func main() {
 		nd, err := newAutoRetrieveNode(cctx.Context, Config{
 			retrievalTimeout: time.Second * time.Duration(cctx.Int("timeout")),
 			dataDir:          dataDir,
+			listenAddrs:      []multiaddr.Multiaddr{multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746")},
 		}, api)
 		if err != nil {
 			return err
@@ -101,6 +103,7 @@ func main() {
 type Config struct {
 	retrievalTimeout time.Duration
 	dataDir          string
+	listenAddrs      []multiaddr.Multiaddr
 }
 
 type autoRetrieveNode struct {
@@ -258,30 +261,31 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 	resMsg := bsmsg.New(false)
 
 	for _, entry := range incoming.Wantlist() {
+
+		candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+		if err != nil {
+			resMsg.AddDontHave(entry.Cid)
+			continue
+		}
+
 		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
-			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
-			if err != nil {
-				resMsg.AddDontHave(entry.Cid)
-				continue
-			}
-
-			if len(candidates) > 0 {
-				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-					logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
-					resMsg.AddDontHave(entry.Cid)
-					continue
-				}
-
-				logger.Infof("Successfully retrieved %v", entry.Cid)
-
-				resMsg.AddHave(entry.Cid)
-			} else {
-				resMsg.AddDontHave(entry.Cid)
-			}
+			resMsg.AddHave(entry.Cid)
 		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
 			block, err := r.blockstore.Get(entry.Cid)
 			if err != nil {
-				resMsg.AddDontHave(entry.Cid)
+				if len(candidates) > 0 {
+					if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+						logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
+						resMsg.AddDontHave(entry.Cid)
+						continue
+					}
+
+					logger.Infof("Successfully retrieved %v", entry.Cid)
+
+					resMsg.AddHave(entry.Cid)
+				} else {
+					resMsg.AddDontHave(entry.Cid)
+				}
 				continue
 			}
 			resMsg.AddBlock(block)
