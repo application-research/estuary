@@ -291,12 +291,12 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				}
 				resMsg.AddBlock(block)
 			}
-		}
-
-		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
-			resMsg.AddHave(entry.Cid)
-		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-			resMsg.AddBlock(block)
+		} else {
+			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+				resMsg.AddHave(entry.Cid)
+			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+				resMsg.AddBlock(block)
+			}
 		}
 	}
 
