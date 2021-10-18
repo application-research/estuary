@@ -5,6 +5,7 @@
 /bsget
 /benchest
 /estuary-shuttle
+/estuary-ar
 
 estuary-blocks/*
 estuary-leveldb/*

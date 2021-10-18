@@ -72,8 +72,8 @@ func main() {
 			return err
 		}
 
-		fmt.Printf("p2p address: %v\n", nd.host.Addrs())
-		fmt.Printf("p2p id: %v\n", nd.host.ID())
+		fmt.Printf("P2P Address: %v\n", nd.host.Addrs())
+		fmt.Printf("P2P ID: %v\n", nd.host.ID())
 
 		<-cctx.Context.Done()
 
@@ -132,7 +132,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 		keyPath := filepath.Join(dataDir, "peerkey")
 		keyFile, err := os.ReadFile(keyPath)
 		if err != nil {
-			fmt.Printf("Generating new peer key\n")
+			fmt.Printf("Generating new peer key...\n")
 
 			if !os.IsNotExist(err) {
 				return autoRetrieveNode{}, err
@@ -195,7 +195,7 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 			fmt.Printf("Could not load any default wallet address, only free retrievals will be attempted (%v)\n", err)
 			addr = address.Undef
 		} else {
-			fmt.Printf("Using default wallet address %s", addr)
+			fmt.Printf("Using default wallet address %s\n", addr)
 		}
 
 		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, dataDir)
@@ -219,10 +219,9 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
 		receiver := &bsnetReceiver{
-			simplifiedLog: true,
-			bsnet:         bsnet,
-			fc:            node.fc,
-			blockstore:    node.blockstore,
+			bsnet:      bsnet,
+			fc:         node.fc,
+			blockstore: node.blockstore,
 		}
 		bsnet.SetDelegate(receiver)
 	}
@@ -231,10 +230,9 @@ func newAutoRetrieveNode(ctx context.Context, dataDir string, api api.Gateway, l
 }
 
 type bsnetReceiver struct {
-	simplifiedLog bool
-	blockstore    blockstore.Blockstore
-	fc            *filclient.FilClient
-	bsnet         bsnet.BitSwapNetwork
+	blockstore blockstore.Blockstore
+	fc         *filclient.FilClient
+	bsnet      bsnet.BitSwapNetwork
 }
 
 func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
@@ -250,18 +248,13 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			}
 
 			if len(candidates) > 0 {
-				err := r.retrieveFromBestCandidate(ctx, candidates)
-				if err != nil {
-					if r.simplifiedLog {
-						fmt.Printf("x")
-					}
+				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+					fmt.Printf("%v\n", err)
 					resMsg.AddDontHave(entry.Cid)
 					continue
 				}
 
-				if r.simplifiedLog {
-					fmt.Printf(".")
-				}
+				fmt.Printf("Successfully retrieved %v\n", entry.Cid)
 
 				resMsg.AddHave(entry.Cid)
 			} else {
@@ -274,36 +267,27 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				continue
 			}
 			resMsg.AddBlock(block)
-
-			if r.simplifiedLog {
-				fmt.Printf("[B]")
-			}
 		}
 	}
 
+	haveCount := len(resMsg.Haves())
+	blockCount := len(resMsg.Blocks())
+	dontHaveCount := len(resMsg.DontHaves())
+	fmt.Printf("Finished bitswap message to %v (%v HAVE, %v BLOCK, %v DONTHAVE)\n", sender, haveCount, blockCount, dontHaveCount)
+
 	r.bsnet.SendMessage(ctx, sender, resMsg)
-
-	if r.simplifiedLog {
-		fmt.Printf(">")
-	}
 }
 
-func (r *bsnetReceiver) ReceiveError(error) {
-	if r.simplifiedLog {
-		fmt.Printf("e")
-	}
+func (r *bsnetReceiver) ReceiveError(err error) {
+	fmt.Printf("Bitswap receive error: %v\n", err)
 }
 
-func (r *bsnetReceiver) PeerConnected(peer.ID) {
-	if r.simplifiedLog {
-		fmt.Printf("+")
-	}
+func (r *bsnetReceiver) PeerConnected(id peer.ID) {
+	fmt.Printf("%v connected\n", id)
 }
 
-func (r *bsnetReceiver) PeerDisconnected(peer.ID) {
-	if r.simplifiedLog {
-		fmt.Printf("-")
-	}
+func (r *bsnetReceiver) PeerDisconnected(id peer.ID) {
+	fmt.Printf("%v disconnected\n", id)
 }
 
 type RetrievalCandidate struct {
@@ -351,35 +335,21 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	var wg sync.WaitGroup
 	wg.Add(len(candidates))
 
-	for _, candidate := range candidates {
-		if r.simplifiedLog {
-			fmt.Printf("?")
-		} else {
-			fmt.Printf("%v/%v\n", checked, len(candidates))
-		}
-
-		go func(candidate RetrievalCandidate) {
+	for i, candidate := range candidates {
+		go func(i int, candidate RetrievalCandidate) {
 			defer wg.Done()
 
 			query, err := r.fc.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				if r.simplifiedLog {
-					fmt.Printf("[?e]")
-				} else {
-					fmt.Printf("Retrieval query for miner %s failed: %v\n", candidate.Miner, err)
-				}
+				fmt.Printf("Retrieval query for miner %s failed (%v/%v): %v\n", candidate.Miner, i, len(candidates), err)
 				return
-			}
-
-			if r.simplifiedLog {
-				fmt.Printf("[?d]")
 			}
 
 			queriesLk.Lock()
 			queries = append(queries, CandidateQuery{Candidate: candidate, Response: query})
 			checked++
 			queriesLk.Unlock()
-		}(candidate)
+		}(i, candidate)
 	}
 
 	wg.Wait()
@@ -416,14 +386,10 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	// stats will get set if a retrieval succeeds - if no retrievals work, it
 	// will still be nil after the loop finishes
 	var stats *filclient.RetrievalStats
-	for _, query := range queries {
+	for i, query := range queries {
 		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
 		if err != nil {
 			continue
-		}
-
-		if r.simplifiedLog {
-			fmt.Print("!")
 		}
 
 		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
@@ -442,17 +408,24 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			}
 		})
 		if err != nil {
-			if r.simplifiedLog {
-				fmt.Print("[!e]")
-			} else {
-				fmt.Printf("Failed to retrieve content with candidate miner %s: %v\n", query.Candidate.Miner, err)
-			}
+			fmt.Printf(
+				"Failed to retrieve %s from miner %s (%v/%v): %v\n",
+				query.Candidate.RootCid,
+				query.Candidate.Miner,
+				i,
+				len(queries),
+				err,
+			)
 			continue
 		}
 
-		if r.simplifiedLog {
-			fmt.Print("[!d]")
-		}
+		fmt.Printf(
+			"Retrieval succeeded for %s from miner %s (%v/%v)",
+			query.Candidate.RootCid,
+			query.Candidate.Miner,
+			i,
+			len(queries),
+		)
 
 		break
 	}
