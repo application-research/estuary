@@ -47,6 +47,8 @@ import (
 var logger = logging.Logger("estuary-ar")
 
 func main() {
+	logging.SetLogLevel("estuary-ar", "DEBUG")
+
 	app := cli.NewApp()
 
 	app.Flags = []cli.Flag{
