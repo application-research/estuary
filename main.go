@@ -37,6 +37,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+func init() {
+	if os.Getenv("FULLNODE_API_INFO") == "" {
+		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
+	}
+}
+
 var log = logging.Logger("estuary")
 
 type storageMiner struct {
