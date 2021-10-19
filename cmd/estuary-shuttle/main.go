@@ -10,6 +10,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -307,6 +308,11 @@ func main() {
 
 		go func() {
 			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
+			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
+				if err := writeAllGoroutineStacks(w); err != nil {
+					log.Error(err)
+				}
+			})
 			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
 				log.Errorf("failed to start http server for pprof endpoints: %s", err)
 			}
@@ -1537,4 +1543,22 @@ func (s *Shuttle) handleGetViewer(c echo.Context, u *User) error {
 		Username: u.Username,
 		Perms:    u.Perms,
 	})
+}
+
+func writeAllGoroutineStacks(w io.Writer) error {
+	buf := make([]byte, 64<<20)
+	for i := 0; ; i++ {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		if len(buf) >= 1<<30 {
+			// Filled 1 GB - stop there.
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	_, err := w.Write(buf)
+	return err
 }
