@@ -158,7 +158,7 @@ func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error
 	defer span.End()
 
 	var objects []*Object
-	if err := s.DB.Model(ObjRef{}).Where("pin = ?", pin).
+	if err := s.DB.Debug().Model(ObjRef{}).Where("pin = ?", pin).
 		Joins("left join objects on obj_refs.object = objects.id").
 		Select("objects.*").
 		Scan(&objects).Error; err != nil {
