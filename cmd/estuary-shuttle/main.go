@@ -150,6 +150,10 @@ func main() {
 		&cli.BoolFlag{
 			Name: "no-reload-pin-queue",
 		},
+		&cli.BoolFlag{
+			Name: "dev",
+			Usage: "use http:// and ws:// when connecting to estuary in a development environment",
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -271,6 +275,7 @@ func main() {
 			shuttleHandle:      cctx.String("handle"),
 			shuttleToken:       cctx.String("auth-token"),
 			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
+			dev:                cctx.Bool("dev"),
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -465,6 +470,7 @@ type Shuttle struct {
 
 	Private            bool
 	disableLocalAdding bool
+	dev                bool
 
 	hostname      string
 	estuaryHost   string
@@ -574,7 +580,12 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 }
 
 func (d *Shuttle) dialConn() (*websocket.Conn, error) {
-	cfg, err := websocket.NewConfig("wss://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
+	scheme := "wss"
+	if d.dev {
+		scheme = "ws"
+	}
+		
+	cfg, err := websocket.NewConfig(scheme+"://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
 	}
@@ -615,7 +626,12 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
+	scheme := "https"
+	if d.dev {
+		scheme = "http"
+	}
+
+	req, err := http.NewRequest("GET", scheme+"://"+d.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1010,7 +1026,12 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 		return 0, err
 	}
 
-	req, err := http.NewRequest("POST", "https://"+s.estuaryHost+"/content/create", bytes.NewReader(data))
+	scheme := "https"
+	if s.dev {
+		scheme = "http"
+	}
+
+	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/content/create", bytes.NewReader(data))
 	if err != nil {
 		return 0, err
 	}

@@ -268,12 +268,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
-	if s.certFiles != nil {
-		log.Warnf("serving TLS with a self-signed certificate. do not use in production!")
-		return e.StartTLS(srv, s.certFiles.cert, s.certFiles.key)
-	} else {
-		return e.Start(srv)
-	}
+	return e.Start(srv)
 }
 
 func serveCpuProfile(c echo.Context) error {

@@ -19,15 +19,6 @@ Next, set the `FULLNODE_API_INFO` environment variable to a synced lotus node. T
 $ export FULLNODE_API_INFO=wss://api.chain.love
 ```
 
-Next, create and install a self-signed certificate by following the instructions in the repository here:
-https://github.com/dakshshah96/local-cert-generator/
-
-Once you have the Root CA installed, you'll need to tell Estuary the path to the self-signed certificate, and corresponding private key like so:
-```bash
-$ export ESTUARY_DEV_TLS_CERT=/path/to/server.crt
-$ export ESTUARY_DEV_TLS_KEY=/path/to/server.key
-```
-
 Start your Estuary Node (Note: if you see error messages like `too many open files`, increase the number of open files allow `ulimit -n 10000`)
 
 ```bash
@@ -60,10 +51,10 @@ $ curl -H "Authorization: Bearer ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY" -X 
 {"handle":"SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE","token":"SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET"}
 ```
 
-Using the output from the above command, start a shuttle node
+Using the output from the above command, start a shuttle node in development mode
 
 ```bash
-$ ./estuary-shuttle --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE
+$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE
 Wallet address is:  <your_estuary-shuttle_address_printed_here>
 2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
 2021-09-16T14:47:54.416-0700    INFO    shuttle estuary-shuttle/main.go:1060    refreshing 0 pins
