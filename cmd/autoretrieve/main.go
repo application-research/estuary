@@ -27,6 +27,7 @@ import (
 	bsmsg "github.com/ipfs/go-bitswap/message"
 	bitswap_message_pb "github.com/ipfs/go-bitswap/message/pb"
 	bsnet "github.com/ipfs/go-bitswap/network"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	flatfs "github.com/ipfs/go-ds-flatfs"
@@ -239,9 +240,15 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
 		receiver := &bsnetReceiver{
-			bsnet:      bsnet,
-			fc:         node.fc,
-			blockstore: node.blockstore,
+			bsnet: bsnet,
+			fc:    node.fc,
+			blockstore: senderBlockstore{
+				Blockstore: node.blockstore,
+				bsnet:      bsnet,
+				waitLists:  make(map[cid.Cid][]waitListEntry),
+			},
+			config:               config,
+			retrievalsInProgress: make(map[cid.Cid]bool),
 		}
 		bsnet.SetDelegate(receiver)
 	}
@@ -249,11 +256,57 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 	return node, nil
 }
 
+type senderBlockstore struct {
+	blockstore.Blockstore
+	bsnet       bsnet.BitSwapNetwork
+	waitListsLk sync.Mutex
+	waitLists   map[cid.Cid][]waitListEntry
+}
+
+func (sbs *senderBlockstore) Put(block blocks.Block) error {
+	sbs.waitListsLk.Lock()
+	waitList := sbs.waitLists[block.Cid()]
+	delete(sbs.waitLists, block.Cid())
+	sbs.waitListsLk.Unlock()
+
+	for _, entry := range waitList {
+		msg := bsmsg.New(false)
+		msg.AddBlock(block)
+		sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg)
+	}
+
+	return sbs.Blockstore.Put(block)
+}
+
+func (sbs *senderBlockstore) PutMany(blocks []blocks.Block) error {
+	// TODO: batch SendMessage as well
+	for _, block := range blocks {
+		sbs.waitListsLk.Lock()
+		waitList := sbs.waitLists[block.Cid()]
+		delete(sbs.waitLists, block.Cid())
+		sbs.waitListsLk.Unlock()
+
+		for _, entry := range waitList {
+			msg := bsmsg.New(false)
+			msg.AddBlock(block)
+			sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg)
+		}
+	}
+
+	return sbs.Blockstore.PutMany(blocks)
+}
+
+type waitListEntry struct {
+	peerID peer.ID
+}
+
 type bsnetReceiver struct {
-	blockstore blockstore.Blockstore
-	fc         *filclient.FilClient
-	bsnet      bsnet.BitSwapNetwork
-	config     Config
+	blockstore             senderBlockstore
+	fc                     *filclient.FilClient
+	bsnet                  bsnet.BitSwapNetwork
+	config                 Config
+	retrievalsInProgressLk sync.Mutex
+	retrievalsInProgress   map[cid.Cid]bool
 }
 
 func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
@@ -262,37 +315,60 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 	for _, entry := range incoming.Wantlist() {
 
-		// First, check if we can just get the cid from the blockstore
+		// Check if the block is in the blockstore
 		block, err := r.blockstore.Get(entry.Cid)
 		if err != nil {
-			// If that failed, then look up retrieval candidates
+			// If it wasn't, then check for retrieval candidates
 			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+
+			// If error, then don't have
 			if err != nil {
 				resMsg.AddDontHave(entry.Cid)
 				continue
 			}
 
+			// If none found, then don't have
 			if len(candidates) == 0 {
 				resMsg.AddDontHave(entry.Cid)
 				continue
 			}
 
+			// Otherwise, at least one was successfully found, so check if WANT_HAVE or WANT_BLOCK
 			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+				// If just WANT_HAVE, send HAVE, but don't do the actual retrieval yet
 				resMsg.AddHave(entry.Cid)
 			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-					logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
-					resMsg.AddDontHave(entry.Cid)
-					continue
+				// If WANT_BLOCK, then first add peer to block wait list...
+				r.blockstore.waitListsLk.Lock()
+				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+					peerID: sender,
+				})
+				r.blockstore.waitListsLk.Unlock()
+
+				// ...and then check if there's already a retrieval running that contains this CID in its tree
+				retrievalInProgress := false
+				for _, candidate := range candidates {
+					r.retrievalsInProgressLk.Lock()
+					if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
+						retrievalInProgress = true
+					}
+					r.retrievalsInProgressLk.Unlock()
+
+					// Check if we can break after we unlock
+					if retrievalInProgress {
+						break
+					}
 				}
 
-				logger.Infof("Successfully retrieved %v", entry.Cid)
+				// If we didn't find any retrieval in progress already...
+				if !retrievalInProgress {
 
-				block, err := r.blockstore.Get(entry.Cid)
-				if err != nil {
-					resMsg.AddDontHave(entry.Cid)
-				} else {
-					resMsg.AddBlock(block)
+					// ...start it on this goroutine
+					if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+						logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
+					} else {
+						logger.Infof("Successfully retrieved %v", entry.Cid)
+					}
 				}
 			}
 			continue
@@ -357,12 +433,13 @@ func GetRetrievalCandidates(endpoint string, c cid.Cid) ([]RetrievalCandidate, e
 	return res, nil
 }
 
+type CandidateQuery struct {
+	Candidate RetrievalCandidate
+	Response  *retrievalmarket.QueryResponse
+}
+
 // Select the most preferable miner to retrieve from and execute the retrieval
 func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidates []RetrievalCandidate) error {
-	type CandidateQuery struct {
-		Candidate RetrievalCandidate
-		Response  *retrievalmarket.QueryResponse
-	}
 	checked := 0
 	var queries []CandidateQuery
 	var queriesLk sync.Mutex
@@ -437,10 +514,6 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	// will still be nil after the loop finishes
 	var stats *filclient.RetrievalStats
 	for i, query := range queries {
-		proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
-		if err != nil {
-			continue
-		}
 
 		logger.Infof(
 			"Attempting retrieval %v/%v from miner %s for %s",
@@ -450,20 +523,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 			query.Candidate.RootCid,
 		)
 
-		retrieveCtx, retrieveCancel := context.WithCancel(ctx)
-		var lastBytesReceived uint64 = 0
-		lastBytesReceivedTime := time.Now()
-		stats, err = r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
-			if lastBytesReceived != bytesReceived {
-				lastBytesReceivedTime = time.Now()
-				lastBytesReceived = bytesReceived
-			}
-
-			if time.Since(lastBytesReceivedTime) > r.config.retrievalTimeout {
-				retrieveCancel()
-				return
-			}
-		})
+		var err error
+		stats, err = r.retrieve(ctx, query)
 		if err != nil {
 			logger.Errorf(
 				"Failed to retrieve %v/%v from miner %s for %s: %v",
@@ -492,6 +553,48 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	}
 
 	return nil
+}
+
+func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*filclient.RetrievalStats, error) {
+	r.retrievalsInProgressLk.Lock()
+
+	// If we identify a retrieval already running for this a potential root
+	// CID at this point, fail out immediately, this retrieval will be
+	// pointless
+	if _, ok := r.retrievalsInProgress[query.Candidate.RootCid]; ok {
+		return nil, fmt.Errorf("retrieval for root cid %s already in progress", query.Candidate.RootCid)
+	}
+
+	// Mark the root CID's retrieval as in progress
+	r.retrievalsInProgress[query.Candidate.RootCid] = true
+
+	r.retrievalsInProgressLk.Unlock()
+
+	defer func() {
+		r.retrievalsInProgressLk.Lock()
+		delete(r.retrievalsInProgress, query.Candidate.RootCid)
+		r.retrievalsInProgressLk.Unlock()
+	}()
+
+	proposal, err := retrievehelper.RetrievalProposalForAsk(query.Response, query.Candidate.RootCid, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	retrieveCtx, retrieveCancel := context.WithCancel(ctx)
+	var lastBytesReceived uint64 = 0
+	lastBytesReceivedTime := time.Now()
+	return r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+		if lastBytesReceived != bytesReceived {
+			lastBytesReceivedTime = time.Now()
+			lastBytesReceived = bytesReceived
+		}
+
+		if time.Since(lastBytesReceivedTime) > r.config.retrievalTimeout {
+			retrieveCancel()
+			return
+		}
+	})
 }
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
