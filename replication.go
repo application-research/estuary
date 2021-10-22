@@ -464,7 +464,7 @@ type queueManager struct {
 }
 
 func newQueueManager(cb func(c uint)) *queueManager {
-	metCtx := metrics.CtxScope(context.Background(), "content-manager")
+	metCtx := metrics.CtxScope(context.Background(), "content_manager")
 	qsizeMetr := metrics.NewCtx(metCtx, "queue_size", "number of items in the replicator queue").Gauge()
 	qnextMetr := metrics.NewCtx(metCtx, "queue_next", "next event time for queue").Gauge()
 
