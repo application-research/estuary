@@ -110,7 +110,7 @@ type Config struct {
 
 type autoRetrieveNode struct {
 	datastore  datastore.Batching
-	blockstore blockstore.Blockstore
+	blockstore senderBlockstore
 	wallet     *wallet.LocalWallet // If nil, only free retrievals will be attempted
 	fc         *filclient.FilClient
 	host       host.Host
@@ -145,7 +145,11 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			return autoRetrieveNode{}, err
 		}
 
-		node.blockstore = blockstore.NewBlockstoreNoPrefix(blockstoreDatastore)
+		node.blockstore = senderBlockstore{
+			Blockstore: blockstore.NewBlockstoreNoPrefix(blockstoreDatastore),
+			bsnet:      nil,
+			waitLists:  make(map[cid.Cid][]waitListEntry),
+		}
 	}
 
 	// Host
@@ -241,17 +245,15 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
 		receiver := &bsnetReceiver{
-			bsnet: bsnet,
-			fc:    node.fc,
-			blockstore: senderBlockstore{
-				Blockstore: node.blockstore,
-				bsnet:      bsnet,
-				waitLists:  make(map[cid.Cid][]waitListEntry),
-			},
+			bsnet:                bsnet,
+			fc:                   node.fc,
+			blockstore:           node.blockstore,
 			config:               config,
 			retrievalsInProgress: make(map[cid.Cid]bool),
 		}
 		bsnet.SetDelegate(receiver)
+
+		node.blockstore.bsnet = bsnet
 	}
 
 	return node, nil
