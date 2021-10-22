@@ -245,6 +245,8 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 		}
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
+		node.blockstore.bsnet = bsnet
+
 		receiver := &bsnetReceiver{
 			bsnet:                bsnet,
 			fc:                   node.fc,
@@ -253,8 +255,6 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			retrievalsInProgress: make(map[cid.Cid]bool),
 		}
 		bsnet.SetDelegate(receiver)
-
-		node.blockstore.bsnet = bsnet
 	}
 
 	return node, nil
