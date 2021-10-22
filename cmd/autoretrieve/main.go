@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -526,6 +527,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		var err error
 		stats, err = r.retrieve(ctx, query)
 		if err != nil {
+
 			logger.Errorf(
 				"Failed to retrieve %v/%v from miner %s for %s: %v",
 				i+1,
@@ -534,6 +536,11 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 				query.Candidate.RootCid,
 				err,
 			)
+
+			if errors.Is(err, ErrRetrievalAlreadyRunning) {
+				return err
+			}
+
 			continue
 		}
 
@@ -555,6 +562,8 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	return nil
 }
 
+var ErrRetrievalAlreadyRunning = xerrors.New("retrieval already running")
+
 func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*filclient.RetrievalStats, error) {
 	r.retrievalsInProgressLk.Lock()
 
@@ -562,7 +571,8 @@ func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*fi
 	// CID at this point, fail out immediately, this retrieval will be
 	// pointless
 	if _, ok := r.retrievalsInProgress[query.Candidate.RootCid]; ok {
-		return nil, fmt.Errorf("retrieval for root cid %s already in progress", query.Candidate.RootCid)
+		r.retrievalsInProgressLk.Unlock()
+		return nil, fmt.Errorf("%w: root cid %s", ErrRetrievalAlreadyRunning, query.Candidate.RootCid)
 	}
 
 	// Mark the root CID's retrieval as in progress
