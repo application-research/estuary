@@ -146,9 +146,10 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 		}
 
 		node.blockstore = senderBlockstore{
-			Blockstore: blockstore.NewBlockstoreNoPrefix(blockstoreDatastore),
-			bsnet:      nil,
-			waitLists:  make(map[cid.Cid][]waitListEntry),
+			Blockstore:  blockstore.NewBlockstoreNoPrefix(blockstoreDatastore),
+			bsnet:       nil,
+			waitListsLk: new(sync.Mutex),
+			waitLists:   make(map[cid.Cid][]waitListEntry),
 		}
 	}
 
@@ -262,11 +263,11 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 type senderBlockstore struct {
 	blockstore.Blockstore
 	bsnet       bsnet.BitSwapNetwork
-	waitListsLk sync.Mutex
+	waitListsLk *sync.Mutex
 	waitLists   map[cid.Cid][]waitListEntry
 }
 
-func (sbs *senderBlockstore) Put(block blocks.Block) error {
+func (sbs senderBlockstore) Put(block blocks.Block) error {
 	sbs.waitListsLk.Lock()
 	waitList := sbs.waitLists[block.Cid()]
 	delete(sbs.waitLists, block.Cid())
@@ -281,7 +282,7 @@ func (sbs *senderBlockstore) Put(block blocks.Block) error {
 	return sbs.Blockstore.Put(block)
 }
 
-func (sbs *senderBlockstore) PutMany(blocks []blocks.Block) error {
+func (sbs senderBlockstore) PutMany(blocks []blocks.Block) error {
 	// TODO: batch SendMessage as well
 	for _, block := range blocks {
 		sbs.waitListsLk.Lock()
