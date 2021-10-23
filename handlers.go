@@ -245,6 +245,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
 	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
 	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
+	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -3804,4 +3805,36 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func (s *Server) handleShuttleRepinAll(c echo.Context) error {
+	handle := c.Param("shuttle")
+
+	rows, err := s.DB.Model(Content{}).Where("location = ? and not offloaded", handle).Rows()
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		rows.Err()
+		var cont Content
+		if err := rows.Scan(&cont); err != nil {
+			return err
+		}
+
+		if err := s.CM.sendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
+			Op: drpc.CMD_AddPin,
+			Params: drpc.CmdParams{
+				AddPin: &drpc.AddPin{
+					DBID:   cont.ID,
+					UserId: cont.UserID,
+					Cid:    cont.Cid.CID,
+				},
+			},
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
