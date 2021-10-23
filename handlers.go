@@ -3817,9 +3817,8 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 
 	defer rows.Close()
 	for rows.Next() {
-		rows.Err()
 		var cont Content
-		if err := rows.Scan(&cont); err != nil {
+		if err := s.DB.ScanRows(rows, &cont); err != nil {
 			return err
 		}
 
