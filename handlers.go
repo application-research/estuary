@@ -3225,7 +3225,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 	shuttle := &Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
-		Open:   true,
+		Open:   false,
 	}
 	if err := s.DB.Create(shuttle).Error; err != nil {
 		return err
@@ -3401,11 +3401,10 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 }
 
 type createContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
-	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
-	DagSplitRoot uint     `json:"dagSplitRoot"`
+	Root        cid.Cid  `json:"root"`
+	Name        string   `json:"name"`
+	Collections []string `json:"collections"`
+	Location    string   `json:"location"`
 }
 
 type createContentResponse struct {
@@ -3426,10 +3425,6 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		UserID:      u.ID,
 		Replication: defaultReplication,
 		Location:    req.Location,
-	}
-	if req.DagSplitRoot != 0 {
-		content.DagSplit = true
-		content.AggregatedIn = req.DagSplitRoot
 	}
 
 	if err := s.DB.Create(content).Error; err != nil {
@@ -3751,8 +3746,42 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, candidates)
 }
 
+type shuttleCreateContentBody struct {
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
+	User         uint     `json:"user"`
+}
+
 func (s *Server) handleShuttleCreateContent(c echo.Context) error {
-	return fmt.Errorf("TODO")
+	var req shuttleCreateContentBody
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	content := &Content{
+		Cid:         util.DbCID{req.Root},
+		Name:        req.Name,
+		Active:      false,
+		Pinning:     false,
+		UserID:      req.User,
+		Replication: defaultReplication,
+		Location:    req.Location,
+	}
+	if req.DagSplitRoot != 0 {
+		content.DagSplit = true
+		content.AggregatedIn = req.DagSplitRoot
+	}
+
+	if err := s.DB.Create(content).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, createContentResponse{
+		ID: content.ID,
+	})
 }
 
 func (s *Server) withShuttleAuth() echo.MiddlewareFunc {

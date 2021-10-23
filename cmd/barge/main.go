@@ -63,6 +63,7 @@ func main() {
 		bargeStatusCmd,
 		bargeSyncCmd,
 		bargeCheckCmd,
+		bargeShareCmd,
 	}
 	app.Before = func(cctx *cli.Context) error {
 		if err := loadConfig(); err != nil {
@@ -1335,6 +1336,29 @@ var bargeCheckCmd = &cli.Command{
 			fmt.Println(lres.Status.String())
 			fmt.Println(lres.ErrorMsg)
 		}
+
+		return nil
+	},
+}
+
+var bargeShareCmd = &cli.Command{
+	Name: "share",
+	Action: func(cctx *cli.Context) error {
+		r, err := openRepo(cctx)
+		if err != nil {
+			return err
+		}
+
+		h, _, err := setupBitswap(cctx.Context, r.Filestore)
+		if err != nil {
+			return err
+		}
+
+		for _, a := range h.Addrs() {
+			fmt.Printf("%s/p2p/%s\n", a, h.ID())
+		}
+
+		select {}
 
 		return nil
 	},

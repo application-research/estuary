@@ -3,7 +3,7 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20211014172911-25aace6d12d5
+	github.com/application-research/filclient v0.0.0-20211023024345-a4df90eb380d
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/cheggaaa/pb/v3 v3.0.8
@@ -29,6 +29,7 @@ require (
 	github.com/ipfs/go-datastore v0.4.6
 	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
+	github.com/ipfs/go-fetcher v1.5.1-0.20211021174458-204874a0030c // indirect
 	github.com/ipfs/go-filestore v1.0.0
 	github.com/ipfs/go-graphsync v0.10.4
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45

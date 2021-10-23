@@ -158,10 +158,10 @@ github.com/antonmedv/expr v1.8.9/go.mod h1:5qsM3oLGDND7sDmQGDXHkYfkjYMUX14qsgqmH
 github.com/apache/arrow/go/arrow v0.0.0-20191024131854-af6fa24be0db/go.mod h1:VTxUBvSJ3s3eHAg65PNgrsn5BtqCRPdmyXh6rAfdxN0=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
-github.com/application-research/filclient v0.0.0-20211013232856-7f5856acdece h1:fatulRu3yDIQ63tPRGlK+miMlpGCJKSd/asLM+2h2GA=
-github.com/application-research/filclient v0.0.0-20211013232856-7f5856acdece/go.mod h1:f5rWNBnbOVF3FBuLdyDzA6KN1XiyzmRHqQLidweiN+8=
 github.com/application-research/filclient v0.0.0-20211014172911-25aace6d12d5 h1:81UIneh0kVDXHpiefgkHg+86Hzje+DVOV7NwpQDMIeg=
 github.com/application-research/filclient v0.0.0-20211014172911-25aace6d12d5/go.mod h1:h1MpFDogHvCXHoTX/u6l8DTMKTuy+tA1XXg2ooDFVAQ=
+github.com/application-research/filclient v0.0.0-20211023024345-a4df90eb380d h1:CNjxVAZQaTQ7H2mbHZBKvxlGEop3UAEUYpsCNpIQ3Ms=
+github.com/application-research/filclient v0.0.0-20211023024345-a4df90eb380d/go.mod h1:h1MpFDogHvCXHoTX/u6l8DTMKTuy+tA1XXg2ooDFVAQ=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
@@ -430,8 +430,6 @@ github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03 h1:2pMX
 github.com/filecoin-project/go-crypto v0.0.0-20191218222705-effae4ea9f03/go.mod h1:+viYnvGtUTgJRdy6oaeF4MTFKAfatX071MPDPBL11EQ=
 github.com/filecoin-project/go-data-transfer v1.0.1/go.mod h1:UxvfUAY9v3ub0a21BSK9u3pB2aq30Y0KMsG+w9/ysyo=
 github.com/filecoin-project/go-data-transfer v1.11.1/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
-github.com/filecoin-project/go-data-transfer v1.11.2 h1:nE1CK4lfsuXnsqfj1nCslRSjZlDhE8kaSsfc8IhQrXs=
-github.com/filecoin-project/go-data-transfer v1.11.2/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
 github.com/filecoin-project/go-data-transfer v1.11.3 h1:e1gcocGINJ47UP68GShJDeNC2hAQlCTy+SnPVhGvD1M=
 github.com/filecoin-project/go-data-transfer v1.11.3/go.mod h1:2MitLI0ebCkLlPKM7NRggP/t9d+gCcREUKkCKqWRCwU=
 github.com/filecoin-project/go-ds-versioning v0.1.0 h1:y/X6UksYTsK8TLCI7rttCKEvl8btmWxyFMEeeWGUxIQ=
@@ -984,8 +982,9 @@ github.com/ipfs/go-ds-leveldb v0.4.2/go.mod h1:jpbku/YqBSsBc1qgME8BkWS4AxzF2cEu1
 github.com/ipfs/go-ds-measure v0.1.0 h1:vE4TyY4aeLeVgnnPBC5QzKIjKrqzha0NCujTfgvVbVQ=
 github.com/ipfs/go-ds-measure v0.1.0/go.mod h1:1nDiFrhLlwArTME1Ees2XaBOl49OoCgd2A3f8EchMSY=
 github.com/ipfs/go-ds-pebble v0.0.2-0.20200921225637-ce220f8ac459/go.mod h1:oh4liWHulKcDKVhCska5NLelE3MatWl+1FwSz3tY91g=
-github.com/ipfs/go-fetcher v1.5.0 h1:oreKTKBzja3S09rSmoZlA3KGVlRiUbJ1pQjtB4K6y3w=
 github.com/ipfs/go-fetcher v1.5.0/go.mod h1:5pDZ0393oRF/fHiLmtFZtpMNBQfHOYNPtryWedVuSWE=
+github.com/ipfs/go-fetcher v1.5.1-0.20211021174458-204874a0030c h1:uf8WqLpa80vKF1TE20B+jx5+/H/oEAFimHoJ+BEiBlQ=
+github.com/ipfs/go-fetcher v1.5.1-0.20211021174458-204874a0030c/go.mod h1:0oI3XpT7zj3Fx+hooYt0qVwP+EsO7wJU2/0azDN0TYE=
 github.com/ipfs/go-filestore v1.0.0 h1:QR7ekKH+q2AGiWDc7W2Q0qHuYSRZGUJqUn0GsegEPb0=
 github.com/ipfs/go-filestore v1.0.0/go.mod h1:/XOCuNtIe2f1YPbiXdYvD0BKLA0JR1MgPiFOdcuu9SM=
 github.com/ipfs/go-fs-lock v0.0.6 h1:sn3TWwNVQqSeNjlWy6zQ1uUGAZrV3hPOyEA6y1/N2a0=
@@ -995,8 +994,6 @@ github.com/ipfs/go-graphsync v0.4.2/go.mod h1:/VmbZTUdUMTbNkgzAiCEucIIAU3BkLE2cZ
 github.com/ipfs/go-graphsync v0.4.3/go.mod h1:mPOwDYv128gf8gxPFgXnz4fNrSYPsWyqisJ7ych+XDY=
 github.com/ipfs/go-graphsync v0.10.0/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
 github.com/ipfs/go-graphsync v0.10.1/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
-github.com/ipfs/go-graphsync v0.10.3 h1:vBjuUqiFM466oKmz6t5pATr3UsYTSTndlqLOjx7nT9s=
-github.com/ipfs/go-graphsync v0.10.3/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
 github.com/ipfs/go-graphsync v0.10.4 h1:1WZhyOPxgxLvHTIC2GoLltaBrjZ+JuXC2oKAEiX8f3Y=
 github.com/ipfs/go-graphsync v0.10.4/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
 github.com/ipfs/go-hamt-ipld v0.1.1/go.mod h1:1EZCr2v0jlCnhpa+aZ0JZYp8Tt2w16+JJOAVz17YcDk=

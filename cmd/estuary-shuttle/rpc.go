@@ -200,7 +200,6 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 }
 
 func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
-
 	panic("NYI")
 }
 

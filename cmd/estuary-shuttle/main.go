@@ -151,8 +151,12 @@ func main() {
 			Name: "no-reload-pin-queue",
 		},
 		&cli.BoolFlag{
-			Name: "dev",
+			Name:  "dev",
 			Usage: "use http:// and ws:// when connecting to estuary in a development environment",
+		},
+		&cli.StringSliceFlag{
+			Name:  "announce-addr",
+			Usage: "specify multiaddrs that this node can be connected to on",
 		},
 	}
 
@@ -184,6 +188,7 @@ func main() {
 			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),
+			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
 		}
 
 		nd, err := node.Setup(context.TODO(), cfg)
@@ -584,7 +589,7 @@ func (d *Shuttle) dialConn() (*websocket.Conn, error) {
 	if d.dev {
 		scheme = "ws"
 	}
-		
+
 	cfg, err := websocket.NewConfig(scheme+"://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
