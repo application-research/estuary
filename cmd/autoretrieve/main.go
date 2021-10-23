@@ -522,13 +522,16 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	var stats *filclient.RetrievalStats
 	for i, query := range queries {
 
+		r.retrievalsInProgressLk.Lock()
 		logger.Infof(
-			"Attempting retrieval %v/%v from miner %s for %s",
+			"Attempting retrieval %v/%v from miner %s for %s (%v retrievals in progress)",
 			i+1,
 			len(queries),
 			query.Candidate.Miner,
 			query.Candidate.RootCid,
+			len(r.retrievalsInProgress),
 		)
+		r.retrievalsInProgressLk.Unlock()
 
 		var err error
 		stats, err = r.retrieve(ctx, query)
