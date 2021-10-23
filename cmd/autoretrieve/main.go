@@ -114,6 +114,7 @@ type autoRetrieveNode struct {
 	wallet     *wallet.LocalWallet // If nil, only free retrievals will be attempted
 	fc         *filclient.FilClient
 	host       host.Host
+	bsnet      bsnet.BitSwapNetwork
 }
 
 const datastoreSubdir = "datastore"
@@ -245,7 +246,6 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 		}
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
-		node.blockstore.bsnet = bsnet
 
 		receiver := &bsnetReceiver{
 			bsnet:                bsnet,
@@ -255,6 +255,9 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			retrievalsInProgress: make(map[cid.Cid]bool),
 		}
 		bsnet.SetDelegate(receiver)
+
+		node.bsnet = bsnet
+		node.blockstore.bsnet = node.bsnet
 	}
 
 	return node, nil
