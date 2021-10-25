@@ -1523,7 +1523,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
 			Code:    401,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -1570,7 +1570,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
 			Code:    401,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -1603,7 +1603,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
 			Code:    401,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
