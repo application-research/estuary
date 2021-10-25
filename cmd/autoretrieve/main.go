@@ -539,12 +539,11 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		if err != nil {
 
 			logger.Errorf(
-				"Failed to retrieve %v/%v from miner %s for %s after %s: %v",
+				"Failed to retrieve %v/%v from miner %s for %s: %v",
 				i+1,
 				len(queries),
 				query.Candidate.Miner,
 				query.Candidate.RootCid,
-				stats.Duration,
 				err,
 			)
 
