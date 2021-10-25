@@ -6,6 +6,9 @@
 
 Requirements:
 - go (1.15 or higher)
+- [jq](https://stedolan.github.io/jq/)
+- [hwloc](https://www.open-mpi.org/projects/hwloc/)
+- opencl
 
 1. Run `make clean all` inside the estuary directory
 
