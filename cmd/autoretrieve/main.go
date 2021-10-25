@@ -110,7 +110,7 @@ type Config struct {
 
 type autoRetrieveNode struct {
 	datastore  datastore.Batching
-	blockstore senderBlockstore
+	blockstore *senderBlockstore
 	wallet     *wallet.LocalWallet // If nil, only free retrievals will be attempted
 	fc         *filclient.FilClient
 	host       host.Host
@@ -146,7 +146,7 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			return autoRetrieveNode{}, err
 		}
 
-		node.blockstore = senderBlockstore{
+		node.blockstore = &senderBlockstore{
 			Blockstore: blockstore.NewBlockstoreNoPrefix(blockstoreDatastore),
 			bsnet:      nil,
 			waitLists:  make(map[cid.Cid][]waitListEntry),
@@ -225,7 +225,7 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			logger.Infof("Using default wallet address %s", addr)
 		}
 
-		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, &node.blockstore, node.datastore, config.dataDir)
+		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, config.dataDir)
 		if err != nil {
 			return autoRetrieveNode{}, err
 		}
@@ -309,7 +309,7 @@ type waitListEntry struct {
 }
 
 type bsnetReceiver struct {
-	blockstore             senderBlockstore
+	blockstore             *senderBlockstore
 	fc                     *filclient.FilClient
 	bsnet                  bsnet.BitSwapNetwork
 	config                 Config
