@@ -1044,7 +1044,7 @@ type contentDeal struct {
 	Failed           bool       `json:"failed"`
 	Verified         bool       `json:"verified"`
 	FailedAt         time.Time  `json:"failedAt,omitempty"`
-	DTChan           string     `json:"dtChan"`
+	DTChan           string     `json:"dtChan" gorm:"index"`
 	TransferStarted  time.Time  `json:"transferStarted"`
 	TransferFinished time.Time  `json:"transferFinished"`
 

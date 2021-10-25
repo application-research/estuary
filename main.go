@@ -204,6 +204,10 @@ func main() {
 			Name:  "default-replication",
 			Value: 6,
 		},
+		&cli.BoolFlag{
+			Name:  "lowmem",
+			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
