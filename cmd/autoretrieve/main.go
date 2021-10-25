@@ -555,7 +555,7 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		}
 
 		logger.Infof(
-			"Retrieval %v/%v succeeded from miner %s for %s",
+			"=== RETRIEVAL SUCCEEDED === Retrieval %v/%v succeeded from miner %s for %s",
 			i+1,
 			len(queries),
 			query.Candidate.Miner,
