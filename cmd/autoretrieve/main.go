@@ -19,10 +19,12 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	bsmsg "github.com/ipfs/go-bitswap/message"
@@ -555,12 +557,19 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 		}
 
 		logger.Infof(
-			"=== RETRIEVAL SUCCEEDED === Retrieval %v/%v succeeded from miner %s for %s after %s",
+			"Retrieval %v/%v succeeded from miner %s for %s\n\t"+
+				"Duration: %s\n\t"+
+				"Size: %s\n\t"+
+				"Average Speed: %s/s\n\t"+
+				"Total Payment: %s",
 			i+1,
 			len(queries),
 			query.Candidate.Miner,
 			query.Candidate.RootCid,
 			stats.Duration,
+			humanize.IBytes(stats.Size),
+			humanize.IBytes(stats.AverageSpeed),
+			types.FIL(stats.TotalPayment),
 		)
 
 		break
