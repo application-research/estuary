@@ -8,6 +8,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
+	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.1-0.20201006184820-924ee87a1349 // indirect
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
