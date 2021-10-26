@@ -26,7 +26,7 @@ import (
 	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
