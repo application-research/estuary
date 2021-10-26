@@ -27,7 +27,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/actors/builtin/market"
+	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	lru "github.com/hashicorp/golang-lru"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
