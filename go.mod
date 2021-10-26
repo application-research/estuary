@@ -21,7 +21,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/influxdata/influxdb-client-go/v2 v2.5.1
-	github.com/ipfs/go-bitswap v0.4.1-0.20211021191237-10d1b2c5613b
+	github.com/ipfs/go-bitswap v0.4.1-0.20211026164300-d5e4d971015b
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-blockservice v0.1.7
 	github.com/ipfs/go-cid v0.1.0

@@ -922,6 +922,10 @@ github.com/ipfs/go-bitswap v0.3.4/go.mod h1:4T7fvNv/LmOys+21tnLzGKncMeeXUYUd1nUi
 github.com/ipfs/go-bitswap v0.4.0/go.mod h1:J2sAsp9UKxLgHDektSy3y3Q9OfQjM9sjhKBR1dlwrMg=
 github.com/ipfs/go-bitswap v0.4.1-0.20211021191237-10d1b2c5613b h1:1AmVljU0EkmNpaRbBAI0dPef1+lgVNbibkBAzoaGqbA=
 github.com/ipfs/go-bitswap v0.4.1-0.20211021191237-10d1b2c5613b/go.mod h1:LFP7vwGmZf6TNHKZh1qGUnoFn9W3GXAZlyqo7gblPMY=
+github.com/ipfs/go-bitswap v0.4.1-0.20211026164159-f9ea98fc77e8 h1:5z92cXosxcAHk0lTk/YGIJSCwSOGq01Z7S33LLnqKrQ=
+github.com/ipfs/go-bitswap v0.4.1-0.20211026164159-f9ea98fc77e8/go.mod h1:5xnfranfhNXy4R44/8ngZzUx4GTJCIiZee+L1v4iV7Q=
+github.com/ipfs/go-bitswap v0.4.1-0.20211026164300-d5e4d971015b h1:FtqFdPKUTSvbeKJFq6cO4jpAZ8OZyOo46/gd/+DUJdw=
+github.com/ipfs/go-bitswap v0.4.1-0.20211026164300-d5e4d971015b/go.mod h1:5xnfranfhNXy4R44/8ngZzUx4GTJCIiZee+L1v4iV7Q=
 github.com/ipfs/go-block-format v0.0.1/go.mod h1:DK/YYcsSUIVAFNwo/KZCdIIbpN0ROH/baNLgayt4pFc=
 github.com/ipfs/go-block-format v0.0.2/go.mod h1:AWR46JfpcObNfg3ok2JHDUfdiHRgWhJgCQF+KIgOPJY=
 github.com/ipfs/go-block-format v0.0.3 h1:r8t66QstRp/pd/or4dpnbVfXT5Gt7lOqRvC+/dDTpMc=
@@ -1101,6 +1105,8 @@ github.com/ipfs/go-peertaskqueue v0.2.0/go.mod h1:5/eNrBEbtSKWCG+kQK8K8fGNixoYUn
 github.com/ipfs/go-peertaskqueue v0.4.0/go.mod h1:KL9F49hXJMoXCad8e5anivjN+kWdr+CyGcyh4K6doLc=
 github.com/ipfs/go-peertaskqueue v0.6.0 h1:BT1/PuNViVomiz1PnnP5+WmKsTNHrxIDvkZrkj4JhOg=
 github.com/ipfs/go-peertaskqueue v0.6.0/go.mod h1:M/akTIE/z1jGNXMU7kFB4TeSEFvj68ow0Rrb04donIU=
+github.com/ipfs/go-peertaskqueue v0.6.1-0.20211026010431-edc6160e8fee h1:BJHBNxx2iUfrD/WKrVFXZqV5XMiseBb8sn0ICgKULaM=
+github.com/ipfs/go-peertaskqueue v0.6.1-0.20211026010431-edc6160e8fee/go.mod h1:M/akTIE/z1jGNXMU7kFB4TeSEFvj68ow0Rrb04donIU=
 github.com/ipfs/go-todocounter v0.0.1/go.mod h1:l5aErvQc8qKE2r7NDMjmq5UNAvuZy0rC8BHOplkWvZ4=
 github.com/ipfs/go-unixfs v0.2.2-0.20190827150610-868af2e9e5cb/go.mod h1:IwAAgul1UQIcNZzKPYZWOCijryFBeCV79cNubPzol+k=
 github.com/ipfs/go-unixfs v0.2.4/go.mod h1:SUdisfUjNoSDzzhGVxvCL9QO/nKdwXdr+gbMUdqcbYw=
