@@ -621,6 +621,7 @@ func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*fi
 		}
 
 		if time.Since(lastBytesReceivedTime) > r.config.retrievalTimeout {
+			logger.Errorf("Retrieval timed out after not receiving data for %s", r.config.retrievalTimeout)
 			retrieveCancel()
 			return
 		}
