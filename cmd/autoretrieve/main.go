@@ -334,12 +334,26 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			// If error, then don't have
 			if err != nil {
 				resMsg.AddDontHave(entry.Cid)
+
+				r.blockstore.waitListsLk.Lock()
+				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+					peerID: sender,
+				})
+				r.blockstore.waitListsLk.Unlock()
+
 				continue
 			}
 
 			// If none found, then don't have
 			if len(candidates) == 0 {
 				resMsg.AddDontHave(entry.Cid)
+
+				r.blockstore.waitListsLk.Lock()
+				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+					peerID: sender,
+				})
+				r.blockstore.waitListsLk.Unlock()
+
 				continue
 			}
 
@@ -587,9 +601,8 @@ var ErrRetrievalAlreadyRunning = xerrors.New("retrieval already running")
 func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*filclient.RetrievalStats, error) {
 	r.retrievalsInProgressLk.Lock()
 
-	// If we identify a retrieval already running for this a potential root
-	// CID at this point, fail out immediately, this retrieval will be
-	// pointless
+	// If we identify a retrieval already running for a potential root CID at
+	// this point, fail out immediately, this retrieval will be pointless
 	if _, ok := r.retrievalsInProgress[query.Candidate.RootCid]; ok {
 		r.retrievalsInProgressLk.Unlock()
 		return nil, fmt.Errorf("%w: root cid %s", ErrRetrievalAlreadyRunning, query.Candidate.RootCid)
