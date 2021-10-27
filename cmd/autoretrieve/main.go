@@ -282,7 +282,9 @@ func (sbs *senderBlockstore) Put(block blocks.Block) error {
 	for _, entry := range waitList {
 		msg := bsmsg.New(false)
 		msg.AddBlock(block)
-		sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg)
+		if err := sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg); err != nil {
+			logger.Errorf("Put send error: %v", err)
+		}
 	}
 
 	return sbs.Blockstore.Put(block)
@@ -299,7 +301,9 @@ func (sbs *senderBlockstore) PutMany(blocks []blocks.Block) error {
 		for _, entry := range waitList {
 			msg := bsmsg.New(false)
 			msg.AddBlock(block)
-			sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg)
+			if err := sbs.bsnet.SendMessage(context.Background(), entry.peerID, msg); err != nil {
+				logger.Errorf("PutMany send error: %v", err)
+			}
 		}
 	}
 
