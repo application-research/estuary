@@ -46,6 +46,7 @@ type shuttleConnection struct {
 
 	private bool
 
+	spaceLow       bool
 	blockstoreSize uint64
 	blockstoreFree uint64
 	pinCount       int64
@@ -348,6 +349,7 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
 	}
 
+	d.spaceLow = (param.BlockstoreFree < (param.BlockstoreSize / 10))
 	d.blockstoreFree = param.BlockstoreFree
 	d.blockstoreSize = param.BlockstoreSize
 	d.pinCount = param.NumPins

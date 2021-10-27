@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -275,10 +276,12 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		return "", err
 	}
 
+	lowSpace := make(map[string]bool)
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
 	for d, sh := range cm.shuttles {
 		if !sh.private {
+			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
 		}
 	}
@@ -288,6 +291,18 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
+
+	// prefer shuttles that are not low on blockstore space
+	sort.SliceStable(shuttles, func(i, j int) bool {
+		lsI := lowSpace[shuttles[i].Handle]
+		lsJ := lowSpace[shuttles[j].Handle]
+
+		if lsI == lsJ {
+			return false
+		}
+
+		return lsJ
+	})
 
 	if len(shuttles) == 0 {
 		//log.Info("no shuttles available for content to be delegated to")

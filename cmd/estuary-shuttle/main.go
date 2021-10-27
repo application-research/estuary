@@ -335,11 +335,17 @@ func main() {
 			}
 		}()
 
+		blockstoreSize := metrics.NewCtx(metCtx, "blockstore_size", "total size of blockstore filesystem directory").Gauge()
+		blockstoreFree := metrics.NewCtx(metCtx, "blockstore_free", "free space in blockstore filesystem directory").Gauge()
+
 		go func() {
 			upd, err := s.getUpdatePacket()
 			if err != nil {
 				log.Errorf("failed to get update packet: %s", err)
 			}
+
+			blockstoreSize.Set(float64(upd.BlockstoreSize))
+			blockstoreFree.Set(float64(upd.BlockstoreFree))
 
 			if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 				Op: drpc.OP_ShuttleUpdate,
@@ -354,6 +360,9 @@ func main() {
 				if err != nil {
 					log.Errorf("failed to get update packet: %s", err)
 				}
+
+				blockstoreSize.Set(float64(upd.BlockstoreSize))
+				blockstoreFree.Set(float64(upd.BlockstoreFree))
 
 				if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 					Op: drpc.OP_ShuttleUpdate,
