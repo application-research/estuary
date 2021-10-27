@@ -323,7 +323,6 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 	resMsg := bsmsg.New(false)
 
-wantlistLoop:
 	for _, entry := range incoming.Wantlist() {
 
 		// Check if the block is in the blockstore
@@ -346,13 +345,15 @@ wantlistLoop:
 		if err != nil || len(candidates) == 0 {
 			resMsg.AddDontHave(entry.Cid)
 
-			r.blockstore.waitListsLk.Lock()
-			r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
-				peerID: sender,
-			})
-			r.blockstore.waitListsLk.Unlock()
+			if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
+				r.blockstore.waitListsLk.Lock()
+				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+					peerID: sender,
+				})
+				r.blockstore.waitListsLk.Unlock()
+			}
 
-			continue wantlistLoop
+			continue
 		}
 
 		// Otherwise, at least one was successfully found, so check if WANT_HAVE or WANT_BLOCK
@@ -370,7 +371,6 @@ wantlistLoop:
 			// ...and then check if there's already a retrieval running that contains this CID in its tree
 			retrievalInProgress := false
 
-		candidatesLoop:
 			for _, candidate := range candidates {
 				r.retrievalsInProgressLk.Lock()
 				if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
@@ -380,7 +380,7 @@ wantlistLoop:
 
 				// Check if we can break after we unlock
 				if retrievalInProgress {
-					break candidatesLoop
+					break
 				}
 			}
 
