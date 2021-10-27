@@ -325,9 +325,9 @@ type bsnetReceiver struct {
 
 func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, incoming bsmsg.BitSwapMessage) {
 
-	resMsg := bsmsg.New(false)
-
 	for _, entry := range incoming.Wantlist() {
+
+		resMsg := bsmsg.New(false)
 
 		// Check if the block is in the blockstore
 		block, err := r.blockstore.Get(entry.Cid)
@@ -339,6 +339,10 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				resMsg.AddHave(entry.Cid)
 			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
 				resMsg.AddBlock(block)
+			}
+
+			if err := r.bsnet.SendMessage(ctx, sender, resMsg); err != nil {
+				logger.Errorf("Could not send bitswap message: %v", err)
 			}
 
 			continue
@@ -357,6 +361,10 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 					peerID: sender,
 				})
 				r.blockstore.waitListsLk.Unlock()
+			}
+
+			if err := r.bsnet.SendMessage(ctx, sender, resMsg); err != nil {
+				logger.Errorf("Could not send bitswap message: %v", err)
 			}
 
 			continue
@@ -401,16 +409,16 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 				}
 			}
 		}
+
+		if err := r.bsnet.SendMessage(ctx, sender, resMsg); err != nil {
+			logger.Errorf("Could not send bitswap message: %v", err)
+		}
 	}
 
 	// haveCount := len(resMsg.Haves())
 	// blockCount := len(resMsg.Blocks())
 	// dontHaveCount := len(resMsg.DontHaves())
 	// fmt.Printf("Finished bitswap message to %v (%v HAVE, %v BLOCK, %v DONTHAVE)\n", sender, haveCount, blockCount, dontHaveCount)
-
-	if err := r.bsnet.SendMessage(ctx, sender, resMsg); err != nil {
-		logger.Errorf("Could not send bitswap message: %v", err)
-	}
 }
 
 func (r *bsnetReceiver) ReceiveError(err error) {
