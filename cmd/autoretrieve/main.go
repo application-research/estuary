@@ -402,7 +402,9 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 	// dontHaveCount := len(resMsg.DontHaves())
 	// fmt.Printf("Finished bitswap message to %v (%v HAVE, %v BLOCK, %v DONTHAVE)\n", sender, haveCount, blockCount, dontHaveCount)
 
-	r.bsnet.SendMessage(ctx, sender, resMsg)
+	if err := r.bsnet.SendMessage(ctx, sender, resMsg); err != nil {
+		logger.Errorf("Could not send bitswap message: %v", err)
+	}
 }
 
 func (r *bsnetReceiver) ReceiveError(err error) {
