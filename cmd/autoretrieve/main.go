@@ -323,85 +323,77 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 	resMsg := bsmsg.New(false)
 
+wantlistLoop:
 	for _, entry := range incoming.Wantlist() {
 
 		// Check if the block is in the blockstore
 		block, err := r.blockstore.Get(entry.Cid)
-		if err != nil {
-			// If it wasn't, then check for retrieval candidates
-			candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
 
-			// If error, then don't have
-			if err != nil {
-				resMsg.AddDontHave(entry.Cid)
-
-				r.blockstore.waitListsLk.Lock()
-				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
-					peerID: sender,
-				})
-				r.blockstore.waitListsLk.Unlock()
-
-				continue
-			}
-
-			// If none found, then don't have
-			if len(candidates) == 0 {
-				resMsg.AddDontHave(entry.Cid)
-
-				r.blockstore.waitListsLk.Lock()
-				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
-					peerID: sender,
-				})
-				r.blockstore.waitListsLk.Unlock()
-
-				continue
-			}
-
-			// Otherwise, at least one was successfully found, so check if WANT_HAVE or WANT_BLOCK
+		// In the case we successfully retrieved a block from the blockstore (NO
+		// error), just respond with that
+		if err == nil {
 			if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
-				// If just WANT_HAVE, send HAVE, but don't do the actual retrieval yet
 				resMsg.AddHave(entry.Cid)
 			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-				// If WANT_BLOCK, then first add peer to block wait list...
-				r.blockstore.waitListsLk.Lock()
-				r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
-					peerID: sender,
-				})
-				r.blockstore.waitListsLk.Unlock()
-
-				// ...and then check if there's already a retrieval running that contains this CID in its tree
-				retrievalInProgress := false
-				for _, candidate := range candidates {
-					r.retrievalsInProgressLk.Lock()
-					if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
-						retrievalInProgress = true
-					}
-					r.retrievalsInProgressLk.Unlock()
-
-					// Check if we can break after we unlock
-					if retrievalInProgress {
-						break
-					}
-				}
-
-				// If we didn't find any retrieval in progress already...
-				if !retrievalInProgress {
-
-					// ...start it on this goroutine
-					if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
-						logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
-					} else {
-						logger.Infof("Successfully retrieved %v", entry.Cid)
-					}
-				}
+				resMsg.AddBlock(block)
 			}
-			continue
 		}
 
+		// If it no block found, then check for retrieval candidates
+		candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+
+		// If error, or none found, then don't have
+		if err != nil || len(candidates) == 0 {
+			resMsg.AddDontHave(entry.Cid)
+
+			r.blockstore.waitListsLk.Lock()
+			r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+				peerID: sender,
+			})
+			r.blockstore.waitListsLk.Unlock()
+
+			continue wantlistLoop
+		}
+
+		// Otherwise, at least one was successfully found, so check if WANT_HAVE or WANT_BLOCK
 		if entry.WantType == bitswap_message_pb.Message_Wantlist_Have {
+			// If just WANT_HAVE, send HAVE, but don't do the actual retrieval yet
 			resMsg.AddHave(entry.Cid)
 		} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
-			resMsg.AddBlock(block)
+			// If WANT_BLOCK, then first add peer to block wait list...
+			r.blockstore.waitListsLk.Lock()
+			r.blockstore.waitLists[entry.Cid] = append(r.blockstore.waitLists[entry.Cid], waitListEntry{
+				peerID: sender,
+			})
+			r.blockstore.waitListsLk.Unlock()
+
+			// ...and then check if there's already a retrieval running that contains this CID in its tree
+			retrievalInProgress := false
+
+		candidatesLoop:
+			for _, candidate := range candidates {
+				r.retrievalsInProgressLk.Lock()
+				if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
+					retrievalInProgress = true
+				}
+				r.retrievalsInProgressLk.Unlock()
+
+				// Check if we can break after we unlock
+				if retrievalInProgress {
+					break candidatesLoop
+				}
+			}
+
+			// If we didn't find any retrieval in progress already...
+			if !retrievalInProgress {
+
+				// ...start it on this goroutine
+				if err := r.retrieveFromBestCandidate(ctx, candidates); err != nil {
+					logger.Errorf("Could not retrieve %s: %v", entry.Cid, err)
+				} else {
+					logger.Infof("Successfully retrieved %v", entry.Cid)
+				}
+			}
 		}
 	}
 
