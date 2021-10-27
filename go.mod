@@ -12,7 +12,7 @@ require (
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.1-0.20201006184820-924ee87a1349 // indirect
 	github.com/filecoin-project/go-bs-lmdb v1.0.5
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-data-transfer v1.11.4
+	github.com/filecoin-project/go-data-transfer v1.11.5
 	github.com/filecoin-project/go-fil-markets v1.13.3
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210915140513-d354ccf10379
