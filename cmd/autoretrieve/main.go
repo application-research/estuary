@@ -336,6 +336,8 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			} else if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
 				resMsg.AddBlock(block)
 			}
+
+			continue
 		}
 
 		// If it no block found, then check for retrieval candidates
