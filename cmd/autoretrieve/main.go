@@ -123,14 +123,14 @@ const datastoreSubdir = "datastore"
 const blockstoreSubdir = "blockstore"
 const walletSubdir = "wallet"
 
-func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (autoRetrieveNode, error) {
+func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (*autoRetrieveNode, error) {
 	var node autoRetrieveNode
 
 	// Datastore
 	{
 		datastore, err := leveldb.NewDatastore(filepath.Join(config.dataDir, datastoreSubdir), nil)
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		node.datastore = datastore
@@ -140,12 +140,12 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 	{
 		parseShardFunc, err := flatfs.ParseShardFunc("/repo/flatfs/shard/v1/next-to-last/3")
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		blockstoreDatastore, err := flatfs.CreateOrOpen(filepath.Join(config.dataDir, blockstoreSubdir), parseShardFunc, false)
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		node.blockstore = &senderBlockstore{
@@ -164,27 +164,27 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			logger.Infof("Generating new peer key...")
 
 			if !os.IsNotExist(err) {
-				return autoRetrieveNode{}, err
+				return nil, err
 			}
 
 			key, _, err := crypto.GenerateEd25519Key(rand.Reader)
 			if err != nil {
-				return autoRetrieveNode{}, err
+				return nil, err
 			}
 			peerkey = key
 
 			data, err := crypto.MarshalPrivateKey(key)
 			if err != nil {
-				return autoRetrieveNode{}, err
+				return nil, err
 			}
 
 			if err := os.WriteFile(keyPath, data, 0600); err != nil {
-				return autoRetrieveNode{}, err
+				return nil, err
 			}
 		} else {
 			key, err := crypto.UnmarshalPrivateKey(keyFile)
 			if err != nil {
-				return autoRetrieveNode{}, err
+				return nil, err
 			}
 
 			peerkey = key
@@ -196,7 +196,7 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 
 		host, err := libp2p.New(ctx, libp2p.ListenAddrs(config.listenAddrs...), libp2p.Identity(peerkey))
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		node.host = host
@@ -206,12 +206,12 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 	{
 		keystore, err := keystore.OpenOrInitKeystore(filepath.Join(config.dataDir, walletSubdir))
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		wallet, err := wallet.NewWallet(keystore)
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		node.wallet = wallet
@@ -229,7 +229,7 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 
 		fc, err := filclient.NewClient(node.host, api, node.wallet, addr, node.blockstore, node.datastore, config.dataDir)
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		node.fc = fc
@@ -243,7 +243,7 @@ func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (a
 			dht.BootstrapPeers(dht.GetDefaultBootstrapPeerAddrInfos()...),
 		))
 		if err != nil {
-			return autoRetrieveNode{}, err
+			return nil, err
 		}
 
 		bsnet := bsnet.NewFromIpfsHost(node.host, fullRT)
