@@ -146,6 +146,10 @@ const minerBlacklistFilename = "blacklist.txt"
 func readMinerBlacklist(dataDir string) ([]address.Address, error) {
 	bytes, err := os.ReadFile(filepath.Join(dataDir, minerBlacklistFilename))
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 
