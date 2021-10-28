@@ -233,7 +233,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, size, err := filclient.GeneratePieceCommitment(ctx, c, nd.Blockstore)
+			commpcid, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}

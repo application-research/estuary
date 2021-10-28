@@ -2393,7 +2393,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	log.Infow("computing piece commitment", "data", cont.Cid.CID)
-	return filclient.GeneratePieceCommitment(ctx, data, bs)
+	return filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
 }
 
 func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
