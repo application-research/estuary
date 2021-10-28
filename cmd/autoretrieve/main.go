@@ -353,6 +353,11 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 
 		// If error, or none found, then don't have
 		if err != nil || len(candidates) == 0 {
+
+			if err != nil {
+				logger.Errorf("Failed to get retrieval candidates: %v", err)
+			}
+
 			resMsg.AddDontHave(entry.Cid)
 
 			if entry.WantType == bitswap_message_pb.Message_Wantlist_Block {
