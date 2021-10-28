@@ -26,9 +26,10 @@ type User struct {
 
 type AuthToken struct {
 	gorm.Model
-	Token  string `gorm:"unique"`
-	User   uint
-	Expiry time.Time
+	Token      string `gorm:"unique"`
+	User       uint
+	UploadOnly bool
+	Expiry     time.Time
 }
 
 type InviteCode struct {

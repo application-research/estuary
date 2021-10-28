@@ -36,8 +36,9 @@ func (he HttpError) Error() string {
 }
 
 const (
-	PermLevelUser  = 2
-	PermLevelAdmin = 10
+	PermLevelUpload = 1
+	PermLevelUser   = 2
+	PermLevelAdmin  = 10
 )
 
 func ExtractAuth(c echo.Context) (string, error) {

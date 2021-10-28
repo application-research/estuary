@@ -779,7 +779,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
 	content := e.Group("/content")
-	content.Use(s.AuthRequired(util.PermLevelUser))
+	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
