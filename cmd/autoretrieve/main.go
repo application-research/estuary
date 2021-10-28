@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -72,6 +73,28 @@ func main() {
 		},
 	}
 
+	app.Commands = []*cli.Command{
+		{
+			Name: "test-blacklist",
+			Action: func(cctx *cli.Context) error {
+				fmt.Printf("Testing blacklist...")
+
+				minerBlacklist, err := readMinerBlacklist(cctx.String("datadir"))
+				if err != nil {
+					return err
+				}
+
+				fmt.Printf("The following miners were found in the blacklist:\n")
+
+				for _, miner := range minerBlacklist {
+					fmt.Printf("%s\n", miner)
+				}
+
+				return nil
+			},
+		},
+	}
+
 	app.Action = func(cctx *cli.Context) error {
 		dataDir := cctx.String("datadir")
 
@@ -104,10 +127,43 @@ func main() {
 	}
 }
 
+const datastoreSubdir = "datastore"
+const blockstoreSubdir = "blockstore"
+const walletSubdir = "wallet"
+const minerBlacklistFilename = "blacklist.txt"
+
+func readMinerBlacklist(dataDir string) ([]address.Address, error) {
+	bytes, err := os.ReadFile(filepath.Join(dataDir, minerBlacklistFilename))
+	if err != nil {
+		return nil, err
+	}
+
+	strs := strings.Split(string(bytes), "\n")
+
+	var miners []address.Address
+	for lineNum, str := range strs {
+		str = strings.TrimSpace(str)
+
+		if str == "" {
+			continue
+		}
+
+		miner, err := address.NewFromString(str)
+		if err != nil {
+			return nil, fmt.Errorf("could not parse miner at line %v: %v", lineNum, err)
+		}
+
+		miners = append(miners, miner)
+	}
+
+	return miners, nil
+}
+
 type Config struct {
 	retrievalTimeout time.Duration
 	dataDir          string
 	listenAddrs      []multiaddr.Multiaddr
+	minerBlacklist   []address.Address
 }
 
 type autoRetrieveNode struct {
@@ -119,12 +175,8 @@ type autoRetrieveNode struct {
 	bsnet      bsnet.BitSwapNetwork
 }
 
-const datastoreSubdir = "datastore"
-const blockstoreSubdir = "blockstore"
-const walletSubdir = "wallet"
-
 func newAutoRetrieveNode(ctx context.Context, config Config, api api.Gateway) (*autoRetrieveNode, error) {
-	var node autoRetrieveNode
+	node := &autoRetrieveNode{}
 
 	// Datastore
 	{
