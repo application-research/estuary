@@ -77,7 +77,7 @@ func main() {
 		{
 			Name: "test-blacklist",
 			Action: func(cctx *cli.Context) error {
-				fmt.Printf("Testing blacklist...")
+				fmt.Printf("Testing blacklist...\n")
 
 				minerBlacklist, err := readMinerBlacklist(cctx.String("datadir"))
 				if err != nil {
@@ -98,6 +98,16 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 		dataDir := cctx.String("datadir")
 
+		minerBlacklistArr, err := readMinerBlacklist(dataDir)
+		if err != nil {
+			return err
+		}
+
+		minerBlacklist := make(map[address.Address]bool)
+		for _, miner := range minerBlacklistArr {
+			minerBlacklist[miner] = true
+		}
+
 		api, closer, err := lcli.GetGatewayAPI(cctx)
 		if err != nil {
 			return err
@@ -108,6 +118,7 @@ func main() {
 			retrievalTimeout: time.Second * time.Duration(cctx.Int("timeout")),
 			dataDir:          dataDir,
 			listenAddrs:      []multiaddr.Multiaddr{multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746")},
+			minerBlacklist:   minerBlacklist,
 		}, api)
 		if err != nil {
 			return err
@@ -163,7 +174,7 @@ type Config struct {
 	retrievalTimeout time.Duration
 	dataDir          string
 	listenAddrs      []multiaddr.Multiaddr
-	minerBlacklist   []address.Address
+	minerBlacklist   map[address.Address]bool
 }
 
 type autoRetrieveNode struct {
@@ -443,6 +454,10 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			retrievalInProgress := false
 
 			for _, candidate := range candidates {
+				if r.config.minerBlacklist[candidate.Miner] {
+					logger.Warnf("Skipping blacklisted miner %s for %s", candidate.Miner, candidate.RootCid)
+				}
+
 				r.retrievalsInProgressLk.Lock()
 				if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
 					retrievalInProgress = true
