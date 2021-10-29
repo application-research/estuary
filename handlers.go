@@ -119,7 +119,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/test-error", s.handleTestError)
 
-	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 
@@ -141,11 +141,13 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	userMiner.PUT("/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
 	userMiner.PUT("/set-info/:miner", withUser(s.handleMinersSetInfo))
 
-	content := e.Group("/content")
-	content.Use(s.AuthRequired(util.PermLevelUser))
-	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	content.POST("/add-car", withUser(s.handleAddCar))
+	contmeta := e.Group("/content")
+	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
+	uploads.POST("/add", withUser(s.handleAdd))
+	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	uploads.POST("/add-car", withUser(s.handleAddCar))
+
+	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
@@ -2174,6 +2176,15 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				return err
 			}
 
+			if u.authToken.UploadOnly && level >= util.PermLevelUser {
+				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
+
+				return &util.HttpError{
+					Code:    401,
+					Message: util.ERR_NOT_AUTHORIZED,
+				}
+			}
+
 			if u.Perm >= level {
 				c.Set("user", u)
 				return next(c)
@@ -2298,7 +2309,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30))
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil)
 	if err != nil {
 		return err
 	}
@@ -2369,11 +2380,28 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	return c.JSON(200, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *User, expiry time.Time) (*AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []string) (*AuthToken, error) {
+	if len(perms) > 1 {
+		return nil, fmt.Errorf("invalid perms")
+	}
+
+	var uploadOnly bool
+	if len(perms) == 1 {
+		switch perms[0] {
+		case "all":
+			uploadOnly = false
+		case "upload":
+			uploadOnly = true
+		default:
+			return nil, fmt.Errorf("invalid perm: %q", perms[0])
+		}
+	}
+
 	authToken := &AuthToken{
-		Token:  "EST" + uuid.New().String() + "ARY",
-		User:   user.ID,
-		Expiry: expiry,
+		Token:      "EST" + uuid.New().String() + "ARY",
+		User:       user.ID,
+		Expiry:     expiry,
+		UploadOnly: uploadOnly,
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
@@ -2479,10 +2507,21 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
 			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough
+		} else {
+			dur, err := time.ParseDuration(exp)
+			if err != nil {
+				return err
+			}
+			expiry = time.Now().Add(dur)
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(u, expiry)
+	var perms []string
+	if p := c.QueryParam("perms"); p != "" {
+		perms = strings.Split(p, ",")
+	}
+
+	authToken, err := s.newAuthTokenForUser(u, expiry, perms)
 	if err != nil {
 		return err
 	}
