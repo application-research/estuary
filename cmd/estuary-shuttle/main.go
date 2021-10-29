@@ -791,6 +791,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
 	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
 	admin.POST("/loglevel", s.handleLogLevel)
+	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
 
 	return e.Start(listen)
 }
@@ -1635,4 +1636,22 @@ func writeAllGoroutineStacks(w io.Writer) error {
 	}
 	_, err := w.Write(buf)
 	return err
+}
+
+func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
+	ctx := e.Request().Context()
+	transfers := s.Filc.TransfersInProgress(ctx)
+	log.Infof("restarting %d transfers", len(transfers))
+
+
+	var restarted int
+	for id, st := transfers {
+		if !util.TransferTerminated(st) {
+			if err := s.Filc.RestartTransfer(ctx, id); err != nil {
+				log.Warnf("failed to restart transfer: %s", err)
+			}
+			restarted++
+		}
+	}
+	log.Infof("restarted %d transfers", restarted)
 }
