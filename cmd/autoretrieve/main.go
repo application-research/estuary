@@ -738,24 +738,12 @@ func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*fi
 		logger.Errorf("Retrieval timed out after not receiving data for %s", r.config.retrievalTimeout)
 		retrieveCancel()
 	})
-	stats, err := r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
+	return r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
 		if lastBytesReceived != bytesReceived {
 			lastBytesReceivedTimer.Reset(r.config.retrievalTimeout)
 			lastBytesReceived = bytesReceived
 		}
 	})
-
-	// If we finished the retrieval without timing out...
-	if lastBytesReceivedTimer.Stop() {
-		// ...cancel the context here
-		retrieveCancel()
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return stats, nil
 }
 
 func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
