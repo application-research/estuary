@@ -119,7 +119,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	e.GET("/test-error", s.handleTestError)
 
-	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
+	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 
