@@ -1640,18 +1640,22 @@ func writeAllGoroutineStacks(w io.Writer) error {
 
 func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 	ctx := e.Request().Context()
-	transfers := s.Filc.TransfersInProgress(ctx)
+	transfers, err := s.Filc.TransfersInProgress(ctx)
+	if err != nil {
+		return err
+	}
 	log.Infof("restarting %d transfers", len(transfers))
 
-
 	var restarted int
-	for id, st := transfers {
-		if !util.TransferTerminated(st) {
-			if err := s.Filc.RestartTransfer(ctx, id); err != nil {
+	for id, st := range transfers {
+		if !util.TransferTerminated(filclient.ChannelStateConv(st)) {
+			idcp := id
+			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)
 			}
 			restarted++
 		}
 	}
 	log.Infof("restarted %d transfers", restarted)
+	return nil
 }
