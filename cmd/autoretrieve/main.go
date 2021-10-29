@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"sort"
@@ -96,6 +97,7 @@ func main() {
 	}
 
 	app.Action = func(cctx *cli.Context) error {
+
 		dataDir := cctx.String("datadir")
 
 		minerBlacklistArr, err := readMinerBlacklist(dataDir)
@@ -132,7 +134,20 @@ func main() {
 		return nil
 	}
 
-	err := app.Run(os.Args)
+	// Clean exit on first interrupt, hard stop on second
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		ch := make(chan os.Signal, 1)
+		signal.Notify(ch, os.Interrupt)
+
+		<-ch
+
+		signal.Ignore()
+		fmt.Printf("Interrupt detected, gracefully exiting... (interrupt again to force termination)\n")
+		cancel()
+	}()
+
+	err := app.RunContext(ctx, os.Args)
 	if err != nil {
 		log.Fatalln(err)
 	}
