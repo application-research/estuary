@@ -47,7 +47,6 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/urfave/cli/v2"
-	"go.uber.org/atomic"
 	"golang.org/x/xerrors"
 )
 
@@ -735,23 +734,31 @@ func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*fi
 
 	retrieveCtx, retrieveCancel := context.WithCancel(ctx)
 	var lastBytesReceived uint64 = 0
-	done := atomic.NewBool(false)
+	var doneLk sync.Mutex
+	done := false
 	lastBytesReceivedTimer := time.AfterFunc(r.config.retrievalTimeout, func() {
-		done.Store(true)
+		doneLk.Lock()
+		done = true
+		doneLk.Unlock()
+
 		retrieveCancel()
 		logger.Errorf("Retrieval timed out after not receiving data for %s", r.config.retrievalTimeout)
 	})
 	stats, err := r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
-		if !done.Load() {
+		doneLk.Lock()
+		if !done {
 			if lastBytesReceived != bytesReceived {
 				lastBytesReceivedTimer.Reset(r.config.retrievalTimeout)
 				lastBytesReceived = bytesReceived
 			}
 		}
+		doneLk.Unlock()
 	})
 
 	lastBytesReceivedTimer.Stop()
-	done.Store(true)
+	doneLk.Lock()
+	done = true
+	doneLk.Unlock()
 
 	if err != nil {
 		return nil, err
