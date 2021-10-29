@@ -475,6 +475,7 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			for _, candidate := range candidates {
 				if r.config.minerBlacklist[candidate.Miner] {
 					logger.Warnf("Skipping blacklisted miner %s for %s", candidate.Miner, candidate.RootCid)
+					continue
 				}
 
 				r.retrievalsInProgressLk.Lock()
