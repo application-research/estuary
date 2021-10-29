@@ -431,7 +431,16 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 		}
 
 		// If it no block found, then check for retrieval candidates
-		candidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+		unfilteredCandidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+
+		var candidates []RetrievalCandidate
+		for _, candidate := range unfilteredCandidates {
+			if r.config.minerBlacklist[candidate.Miner] {
+				continue
+			}
+
+			candidates = append(candidates, candidate)
+		}
 
 		// If error, or none found, then don't have
 		if err != nil || len(candidates) == 0 {
@@ -473,11 +482,6 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 			retrievalInProgress := false
 
 			for _, candidate := range candidates {
-				if r.config.minerBlacklist[candidate.Miner] {
-					logger.Warnf("Skipping blacklisted miner %s for %s", candidate.Miner, candidate.RootCid)
-					continue
-				}
-
 				r.retrievalsInProgressLk.Lock()
 				if _, ok := r.retrievalsInProgress[candidate.RootCid]; ok {
 					retrievalInProgress = true
@@ -638,6 +642,10 @@ func (r *bsnetReceiver) retrieveFromBestCandidate(ctx context.Context, candidate
 	// will still be nil after the loop finishes
 	var stats *filclient.RetrievalStats
 	for i, query := range queries {
+		if r.config.minerBlacklist[query.Candidate.Miner] {
+			logger.Warnf("Skipping blacklisted miner %s for %s", query.Candidate.Miner, query.Candidate.RootCid)
+			continue
+		}
 
 		r.retrievalsInProgressLk.Lock()
 		logger.Infof(
