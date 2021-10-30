@@ -524,6 +524,7 @@ func (qm *queueManager) processQueue() {
 			return
 		}
 	}
+	qm.nextEvent = time.Time{}
 }
 
 func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
