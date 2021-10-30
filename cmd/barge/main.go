@@ -28,9 +28,11 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	cbor "github.com/ipfs/go-ipld-cbor"
+	format "github.com/ipfs/go-ipld-format"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	metri "github.com/ipfs/go-metrics-interface"
+	"github.com/ipfs/go-unixfs"
 	"github.com/ipfs/go-unixfs/importer/balanced"
 	ihelper "github.com/ipfs/go-unixfs/importer/helpers"
 	"github.com/libp2p/go-libp2p"
@@ -194,6 +196,7 @@ var plumbCmd = &cli.Command{
 		plumbPutFileCmd,
 		plumbPutCarCmd,
 		plumbSplitAddFileCmd,
+		plumbPutDirCmd,
 	},
 }
 
@@ -252,6 +255,136 @@ var plumbPutFileCmd = &cli.Command{
 		fmt.Println(resp.Cid)
 		return nil
 	},
+}
+
+var plumbPutDirCmd = &cli.Command{
+	Name: "put-dir",
+	Action: func(cctx *cli.Context) error {
+		ctx := cctx.Context
+		client, err := loadClient(cctx)
+		if err != nil {
+			return err
+		}
+
+		ds := dsync.MutexWrap(datastore.NewMapDatastore())
+		fsm := filestore.NewFileManager(ds, "/")
+
+		bs := blockstore.NewBlockstore(ds)
+
+		fsm.AllowFiles = true
+		fstore := filestore.NewFilestore(bs, fsm)
+
+		fname := cctx.Args().First()
+
+		dnd, err := addDirectory(ctx, fstore, fname)
+		if err != nil {
+			return err
+		}
+
+		fmt.Println("imported directory: ", dnd.Cid())
+
+		return doAddPin(ctx, fstore, client, dnd.Cid(), fname)
+	},
+}
+
+func addDirectory(ctx context.Context, fstore *filestore.Filestore, dir string) (*merkledag.ProtoNode, error) {
+	dirents, err := ioutil.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+
+	progCb := func(int64) {}
+
+	dirnode := unixfs.EmptyDirNode()
+	for _, d := range dirents {
+		name := filepath.Join(dir, d.Name())
+		if d.IsDir() {
+			dirn, err := addDirectory(ctx, fstore, name)
+			if err != nil {
+				return nil, err
+			}
+			if err := dirnode.AddNodeLink(d.Name(), dirn); err != nil {
+				return nil, err
+			}
+		} else {
+			fcid, size, err := filestoreAdd(fstore, name, progCb)
+			if err != nil {
+				return nil, err
+			}
+
+			if err := dirnode.AddRawLink(d.Name(), &format.Link{
+				Size: size,
+				Cid:  fcid,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return dirnode, nil
+}
+
+func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClient, root cid.Cid, fname string) error {
+	h, bswap, err := setupBitswap(ctx, bstore)
+	if err != nil {
+		return err
+	}
+
+	_ = bswap
+
+	var addrs []string
+	for _, a := range h.Addrs() {
+		addrs = append(addrs, fmt.Sprintf("%s/p2p/%s", a, h.ID()))
+	}
+	fmt.Println("addresses: ", addrs)
+
+	basename := filepath.Base(fname)
+
+	st, err := client.PinAdd(ctx, root, basename, addrs, nil)
+	if err != nil {
+		return xerrors.Errorf("failed to pin %s to estuary: %w", root, err)
+	}
+
+	if err := connectToDelegates(ctx, h, st.Delegates); err != nil {
+		fmt.Println("failed to connect to pin delegates: ", err)
+	}
+
+	pins := []string{st.Requestid}
+	for range time.Tick(time.Second * 2) {
+		var pinning, queued, pinned, failed int
+		for _, p := range pins {
+			status, err := client.PinStatus(ctx, p)
+			if err != nil {
+				fmt.Println("error getting pin status: ", err)
+				continue
+			}
+
+			switch status.Status {
+			case "pinned":
+				pinned++
+			case "failed":
+				failed++
+			case "pinning":
+				pinning++
+			case "queued":
+				queued++
+			}
+
+			if err := connectToDelegates(ctx, h, status.Delegates); err != nil {
+				fmt.Println("failed to connect to pin delegates: ", err)
+			}
+		}
+
+		fmt.Printf("pinned: %d, pinning: %d, queued: %d, failed: %d (num conns: %d)\n", pinned, pinning, queued, failed, len(h.Network().Conns()))
+		if failed+pinned >= len(pins) {
+			break
+		}
+	}
+
+	fmt.Println("finished pinning: ", root)
+
+	return nil
+
 }
 
 var plumbPutCarCmd = &cli.Command{
@@ -456,7 +589,7 @@ var plumbSplitAddFileCmd = &cli.Command{
 		fname := cctx.Args().First()
 
 		progcb := func(int64) {}
-		fcid, err := filestoreAdd(fstore, fname, progcb)
+		fcid, _, err := filestoreAdd(fstore, fname, progcb)
 		if err != nil {
 			return err
 		}
@@ -573,20 +706,25 @@ var plumbSplitAddFileCmd = &cli.Command{
 	},
 }
 
-func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64)) (cid.Cid, error) {
+func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64)) (cid.Cid, uint64, error) {
 	ff, err := newFF(fpath, progcb)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, 0, err
 	}
 	defer ff.Close()
 
 	dserv := merkledag.NewDAGService(blockservice.New(fstore, nil))
 	nd, err := importFile(dserv, ff)
 	if err != nil {
-		return cid.Undef, err
+		return cid.Undef, 0, err
 	}
 
-	return nd.Cid(), nil
+	size, err := nd.Size()
+	if err != nil {
+		return cid.Undef, 0, err
+	}
+
+	return nd.Cid(), size, nil
 }
 
 func connectToDelegates(ctx context.Context, h host.Host, delegates []string) error {
@@ -822,7 +960,7 @@ var bargeAddCmd = &cli.Command{
 			go func() {
 				defer wg.Done()
 				for aj := range toadd {
-					fcid, err := filestoreAdd(r.Filestore, aj.Path, progcb)
+					fcid, _, err := filestoreAdd(r.Filestore, aj.Path, progcb)
 					if err != nil {
 						fmt.Println(err)
 						return

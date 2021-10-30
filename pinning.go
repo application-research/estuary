@@ -276,6 +276,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		return "", err
 	}
 
+	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
@@ -283,6 +284,8 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		if !sh.private {
 			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
+		} else {
+			allShuttlesLowSpace = false
 		}
 	}
 	cm.shuttlesLk.Unlock()
@@ -321,9 +324,11 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	}
 
 	if ploc != "" {
-		for _, sh := range shuttles {
-			if sh.Handle == ploc {
-				return ploc, nil
+		if allShuttlesLowSpace || !lowSpace[ploc] {
+			for _, sh := range shuttles {
+				if sh.Handle == ploc {
+					return ploc, nil
+				}
 			}
 		}
 
