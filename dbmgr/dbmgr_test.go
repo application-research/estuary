@@ -8,6 +8,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func (q *UsersQuery) sqliteExists() (bool, error) {
+	count, err := q.Count()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func initDB() (*DBMgr, func()) {
 	mgr, err := NewDBMgr("sqlite=test.db")
 	if err != nil {
@@ -35,7 +43,7 @@ func TestUsersQuery(t *testing.T) {
 	a.NoError(db.Users().Create(userIn))
 
 	// Checking existence
-	userExists, err := db.Users().WithUsername("test_user").Exists()
+	userExists, err := db.Users().WithUsername("test_user").sqliteExists()
 	if err != nil {
 		t.Fatal(err)
 	}
