@@ -99,6 +99,7 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 
 		dataDir := cctx.String("datadir")
+		endpoint := cctx.String("endpoint")
 
 		minerBlacklistArr, err := readMinerBlacklist(dataDir)
 		if err != nil {
@@ -121,6 +122,7 @@ func main() {
 			dataDir:          dataDir,
 			listenAddrs:      []multiaddr.Multiaddr{multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746")},
 			minerBlacklist:   minerBlacklist,
+			endpoint:         endpoint,
 		}, api)
 		if err != nil {
 			return err
@@ -194,6 +196,7 @@ type Config struct {
 	dataDir          string
 	listenAddrs      []multiaddr.Multiaddr
 	minerBlacklist   map[address.Address]bool
+	endpoint         string
 }
 
 type autoRetrieveNode struct {
@@ -431,7 +434,7 @@ func (r *bsnetReceiver) ReceiveMessage(ctx context.Context, sender peer.ID, inco
 		}
 
 		// If it no block found, then check for retrieval candidates
-		unfilteredCandidates, err := GetRetrievalCandidates("https://api.estuary.tech/retrieval-candidates", entry.Cid)
+		unfilteredCandidates, err := GetRetrievalCandidates(r.config.endpoint, entry.Cid)
 
 		var candidates []RetrievalCandidate
 		for _, candidate := range unfilteredCandidates {
