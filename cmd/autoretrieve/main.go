@@ -76,7 +76,7 @@ func main() {
 
 	app.Commands = []*cli.Command{
 		{
-			Name: "test-blacklist",
+			Name: "check-blacklist",
 			Action: func(cctx *cli.Context) error {
 				fmt.Printf("Testing blacklist...\n")
 
