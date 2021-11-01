@@ -742,12 +742,15 @@ func (r *bsnetReceiver) retrieve(ctx context.Context, query CandidateQuery) (*fi
 		doneLk.Unlock()
 
 		retrieveCancel()
-		logger.Errorf("Retrieval timed out after not receiving data for %s (%v downloaded)", r.config.retrievalTimeout, lastBytesReceived)
+		logger.Errorf("Retrieval timed out after not receiving data for %s (stopped at %s)", r.config.retrievalTimeout, humanize.IBytes(lastBytesReceived))
 	})
 	stats, err := r.fc.RetrieveContentWithProgressCallback(retrieveCtx, query.Candidate.Miner, proposal, func(bytesReceived uint64) {
 		doneLk.Lock()
 		if !done {
 			if lastBytesReceived != bytesReceived {
+				if !lastBytesReceivedTimer.Stop() {
+					<-lastBytesReceivedTimer.C
+				}
 				lastBytesReceivedTimer.Reset(r.config.retrievalTimeout)
 				lastBytesReceived = bytesReceived
 			}
