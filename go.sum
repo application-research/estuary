@@ -160,6 +160,8 @@ github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/application-research/filclient v0.0.0-20211026193124-3e84f0d965be h1:xKaWClFPa5Kq+Dyi5YYdX/Clrya3KZnnbViPDg+SrpA=
 github.com/application-research/filclient v0.0.0-20211026193124-3e84f0d965be/go.mod h1:RHFc5q2MIOp4cGiW6B9m7QbF6bsRO8GO1Q37ZzA9gxQ=
+github.com/application-research/filclient v0.0.0-20211102170451-78c59d4d7b3e h1:t3wiNQkZIOlym68uY1ILnh8PUzjb/NlZDwJcJkDzQVA=
+github.com/application-research/filclient v0.0.0-20211102170451-78c59d4d7b3e/go.mod h1:LqVrzTY9SUcGBsPM3OHTgmf5Ii8q0aotqTBgzVhRW0w=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026 h1:H1gpdWekoToFi1z8z29AicuQv56y1WrBr5Sjye8AApo=
 github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026/go.mod h1:iCe0TIuEQT+loBoOWS9aVTkll3+ljO0pmnEJ117tasM=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
@@ -1003,6 +1005,8 @@ github.com/ipfs/go-graphsync v0.10.0/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvw
 github.com/ipfs/go-graphsync v0.10.1/go.mod h1:cKIshzTaa5rCZjryH5xmSKZVGX9uk1wvwGvz2WEha5Y=
 github.com/ipfs/go-graphsync v0.10.4 h1:1WZhyOPxgxLvHTIC2GoLltaBrjZ+JuXC2oKAEiX8f3Y=
 github.com/ipfs/go-graphsync v0.10.4/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
+github.com/ipfs/go-graphsync v0.10.5 h1:27mdiYF/C7/p7Kt4iAgBB9Kqq3njWCunzgdlftNzW6E=
+github.com/ipfs/go-graphsync v0.10.5/go.mod h1:oei4tnWAKnZ6LPnapZGPYVVbyiKV1UP3f8BeLU7Z4JQ=
 github.com/ipfs/go-hamt-ipld v0.1.1/go.mod h1:1EZCr2v0jlCnhpa+aZ0JZYp8Tt2w16+JJOAVz17YcDk=
 github.com/ipfs/go-ipfs-blockstore v0.0.1/go.mod h1:d3WClOmRQKFnJ0Jz/jj/zmksX0ma1gROTlovZKBmN08=
 github.com/ipfs/go-ipfs-blockstore v0.1.0/go.mod h1:5aD0AvHPi7mZc6Ci1WCAhiBQu2IsfTduLl+422H6Rqw=
