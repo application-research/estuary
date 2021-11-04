@@ -14,7 +14,9 @@ import (
 	"sync"
 	"time"
 
+	estumetrics "github.com/application-research/estuary/metrics"
 	lru "github.com/hashicorp/golang-lru"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/urfave/cli/v2"
@@ -50,8 +52,6 @@ import (
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
 )
-
-var Tracer = otel.Tracer("shuttle")
 
 var log = logging.Logger("shuttle")
 
@@ -134,6 +134,19 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name: "private",
+		},
+		&cli.BoolFlag{
+			Name:  "jaeger-tracing",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  "jaeger-provider-url",
+			Value: "http://localhost:14268/api/traces",
+		},
+		&cli.Float64Flag{
+			Name:  "jaeger-sampler-ratio",
+			Usage: "If less than 1 probabilistic metrics will be used.",
+			Value: 1,
 		},
 	}
 
@@ -232,6 +245,15 @@ func main() {
 			return err
 		}
 
+		if cctx.Bool("jaeger-tracing") {
+			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
+				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+			if err != nil {
+				return err
+			}
+			otel.SetTracerProvider(tp)
+		}
+
 		d := &Shuttle{
 			Node:       nd,
 			Api:        api,
@@ -239,6 +261,8 @@ func main() {
 			Filc:       filc,
 			StagingMgr: sbm,
 			Private:    cctx.Bool("private"),
+
+			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
 
 			commpMemo: commpMemo,
 
@@ -252,6 +276,7 @@ func main() {
 			shuttleHandle: cctx.String("handle"),
 			shuttleToken:  cctx.String("auth-token"),
 		}
+
 		d.PinMgr = pinner.NewPinManager(d.doPinning, d.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 		})
@@ -376,6 +401,8 @@ type Shuttle struct {
 	Filc       *filclient.FilClient
 	StagingMgr *stagingbs.StagingBSMgr
 
+	Tracer trace.Tracer
+
 	tcLk             sync.Mutex
 	trackingChannels map[string]*chanTrack
 
@@ -403,16 +430,16 @@ type chanTrack struct {
 	last *filclient.ChannelState
 }
 
-func (d *Shuttle) RunRpcConnection() error {
+func (s *Shuttle) RunRpcConnection() error {
 	for {
-		conn, err := d.dialConn()
+		conn, err := s.dialConn()
 		if err != nil {
 			log.Errorf("failed to dial estuary rpc endpoint: %s", err)
 			time.Sleep(time.Second * 10)
 			continue
 		}
 
-		if err := d.runRpc(conn); err != nil {
+		if err := s.runRpc(conn); err != nil {
 			log.Errorf("rpc routine exited with an error: %s", err)
 			time.Sleep(time.Second * 10)
 			continue
@@ -423,7 +450,7 @@ func (d *Shuttle) RunRpcConnection() error {
 	}
 }
 
-func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+func (s *Shuttle) runRpc(conn *websocket.Conn) error {
 	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
 	defer conn.Close()
@@ -431,7 +458,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 	readDone := make(chan struct{})
 
 	// Send hello message
-	hello, err := d.getHelloMessage()
+	hello, err := s.getHelloMessage()
 	if err != nil {
 		return err
 	}
@@ -451,7 +478,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 			}
 
 			go func(cmd *drpc.Command) {
-				if err := d.handleRpcCmd(cmd); err != nil {
+				if err := s.handleRpcCmd(cmd); err != nil {
 					log.Errorf("failed to handle rpc command: %s", err)
 				}
 			}(&cmd)
@@ -462,7 +489,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 		select {
 		case <-readDone:
 			return fmt.Errorf("read routine exited, assuming socket is closed")
-		case msg := <-d.outgoing:
+		case msg := <-s.outgoing:
 			conn.SetWriteDeadline(time.Now().Add(time.Second * 30))
 			if err := websocket.JSON.Send(conn, msg); err != nil {
 				log.Errorf("failed to send message: %s", err)
@@ -472,32 +499,32 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 	}
 }
 
-func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
-	addr, err := d.Node.Wallet.GetDefault()
+func (s *Shuttle) getHelloMessage() (*drpc.Hello, error) {
+	addr, err := s.Node.Wallet.GetDefault()
 	if err != nil {
 		return nil, err
 	}
 
-	log.Infow("sending hello", "hostname", d.hostname, "address", addr, "pid", d.Node.Host.ID())
+	log.Infow("sending hello", "hostname", s.hostname, "address", addr, "pid", s.Node.Host.ID())
 	return &drpc.Hello{
-		Host:    d.hostname,
-		PeerID:  d.Node.Host.ID().Pretty(),
+		Host:    s.hostname,
+		PeerID:  s.Node.Host.ID().Pretty(),
 		Address: addr,
-		Private: d.Private,
+		Private: s.Private,
 		AddrInfo: peer.AddrInfo{
-			ID:    d.Node.Host.ID(),
-			Addrs: d.Node.Host.Addrs(),
+			ID:    s.Node.Host.ID(),
+			Addrs: s.Node.Host.Addrs(),
 		},
 	}, nil
 }
 
-func (d *Shuttle) dialConn() (*websocket.Conn, error) {
-	cfg, err := websocket.NewConfig("wss://"+d.estuaryHost+"/shuttle/conn", "http://localhost")
+func (s *Shuttle) dialConn() (*websocket.Conn, error) {
+	cfg, err := websocket.NewConfig("wss://"+s.estuaryHost+"/shuttle/conn", "http://localhost")
 	if err != nil {
 		return nil, err
 	}
 
-	cfg.Header.Set("Authorization", "Bearer "+d.shuttleToken)
+	cfg.Header.Set("Authorization", "Bearer "+s.shuttleToken)
 
 	conn, err := websocket.DialConfig(cfg)
 	if err != nil {
@@ -517,9 +544,9 @@ type User struct {
 	AuthExpiry      time.Time
 }
 
-func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
+func (s *Shuttle) checkTokenAuth(token string) (*User, error) {
 
-	val, ok := d.authCache.Get(token)
+	val, ok := s.authCache.Get(token)
 	if ok {
 		usr, ok := val.(*User)
 		if !ok {
@@ -527,13 +554,13 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		}
 
 		if usr.AuthExpiry.After(time.Now()) {
-			d.authCache.Remove(token)
+			s.authCache.Remove(token)
 		} else {
 			return usr, nil
 		}
 	}
 
-	req, err := http.NewRequest("GET", "https://"+d.estuaryHost+"/viewer", nil)
+	req, err := http.NewRequest("GET", "https://"+s.estuaryHost+"/viewer", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -570,12 +597,12 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		StorageDisabled: out.Settings.ContentAddingDisabled,
 	}
 
-	d.authCache.Add(token, usr)
+	s.authCache.Add(token, usr)
 
 	return usr, nil
 }
 
-func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
+func (s *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			auth, err := util.ExtractAuth(c)
@@ -583,7 +610,7 @@ func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 				return err
 			}
 
-			u, err := d.checkTokenAuth(auth)
+			u, err := s.checkTokenAuth(auth)
 			if err != nil {
 				return err
 			}
@@ -830,21 +857,21 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
-	ctx, span := Tracer.Start(ctx, "doPinning")
+func (s *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
+	ctx, span := s.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
 	for _, pi := range op.Peers {
-		if err := d.Node.Host.Connect(ctx, pi); err != nil {
+		if err := s.Node.Host.Connect(ctx, pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
 	}
 
-	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := merkledag.NewSession(ctx, dserv)
 
-	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
+	if err := s.addDatabaseTrackingToContent(ctx, op.ContId, dsess, s.Node.Blockstore, op.Obj, cb); err != nil {
 		// pinning failed, we wont try again. mark pin as dead
 		/* maybe its fine if we retry later?
 		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
@@ -866,12 +893,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	*/
 
 	// this provide call goes out immediately
-	if err := d.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
+	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
 		log.Infof("provider broadcast failed: %s", err)
 	}
 
 	// this one adds to a queue
-	if err := d.Node.Provider.Provide(op.Obj); err != nil {
+	if err := s.Node.Provider.Provide(op.Obj); err != nil {
 		log.Infof("providing failed: %s", err)
 	}
 
@@ -881,12 +908,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
-	ctx, span := Tracer.Start(ctx, "computeObjRefsUpdate")
+func (s *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
+	ctx, span := s.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var dbpin Pin
-	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
+	if err := s.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
 		return err
 	}
 
@@ -952,11 +979,11 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		attribute.Int("numObjects", len(objects)),
 	)
 
-	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
+	if err := s.DB.CreateInBatches(objects, 300).Error; err != nil {
 		return xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
-	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
+	if err := s.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"size":    totalSize,
 		"pinning": false,
@@ -970,19 +997,19 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		refs[i].Object = objects[i].ID
 	}
 
-	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
+	if err := s.DB.CreateInBatches(refs, 500).Error; err != nil {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 
-	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
 
 	return nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
+func (s *Shuttle) onPinStatusUpdate(cont uint, status string) {
 	log.Infof("updating pin status: %d %s", cont, status)
 	if status == "failed" {
-		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
+		if err := s.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
 			"failed":  true,
@@ -992,7 +1019,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 	}
 
 	go func() {
-		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+		if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 			Op: "UpdatePinStatus",
 			Params: drpc.MsgParams{
 				UpdatePinStatus: &drpc.UpdatePinStatus{
@@ -1050,14 +1077,14 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
 }
 
 func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
-	_, span := Tracer.Start(ctx, "importFile")
+	_, span := s.Tracer.Start(ctx, "importFile")
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
 }
 
 func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := Tracer.Start(ctx, "blockstoreCopy")
+	ctx, span := s.Tracer.Start(ctx, "blockstoreCopy")
 	defer span.End()
 
 	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
