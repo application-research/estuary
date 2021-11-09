@@ -10,16 +10,19 @@ import (
 	"path"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	gsimpl "github.com/ipfs/go-graphsync/impl"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/host"
 	"golang.org/x/xerrors"
@@ -78,6 +81,7 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 		logger.Infof("Using default wallet address %s", walletAddr)
 	}
 
+	const maxTraversalLinks = 32 * (1 << 20)
 	filClient, err := filclient.NewClientWithConfig(&filclient.Config{
 		DataDir:    config.DataDir,
 		Api:        api,
@@ -86,6 +90,29 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 		Blockstore: blockManager,
 		Datastore:  datastore,
 		Host:       host,
+		GraphsyncOpts: []gsimpl.Option{
+			gsimpl.MaxInProgressIncomingRequests(200),
+			gsimpl.MaxInProgressOutgoingRequests(200),
+			gsimpl.MaxMemoryResponder(8 << 30),
+			gsimpl.MaxMemoryPerPeerResponder(32 << 20),
+			gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
+			gsimpl.MessageSendRetries(2),
+			gsimpl.SendMessageTimeout(2 * time.Minute),
+			gsimpl.MaxLinksPerIncomingRequests(maxTraversalLinks),
+			gsimpl.MaxLinksPerOutgoingRequests(maxTraversalLinks),
+		},
+		ChannelMonitorConfig: channelmonitor.Config{
+
+			AcceptTimeout:          time.Hour * 24,
+			RestartDebounce:        time.Second * 10,
+			RestartBackoff:         time.Second * 20,
+			MaxConsecutiveRestarts: 15,
+			//RestartAckTimeout:      time.Second * 30,
+			CompleteTimeout: time.Minute * 40,
+
+			// Called when a restart completes successfully
+			//OnRestartComplete func(id datatransfer.ChannelID)
+		},
 	})
 	if err != nil {
 		return nil, err
