@@ -241,28 +241,36 @@ func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []re
 
 			query, err := retriever.filClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
+				queriesLk.Lock()
+
+				checked++
 				logger.Errorf(
 					"Failed to query retrieval %v/%v from miner %s for %s: %v",
-					checked+1,
+					checked,
 					len(candidates),
 					candidate.Miner,
 					candidate.RootCid,
 					err,
 				)
+
+				queriesLk.Unlock()
+
 				return
 			}
 
+			queriesLk.Lock()
+
+			queries = append(queries, candidateQuery{candidate: candidate, response: query})
+			checked++
+
 			logger.Infof(
 				"Retrieval query %v/%v succeeded from miner %s for %s",
-				checked+1,
+				checked,
 				len(candidates),
 				candidate.Miner,
 				candidate.RootCid,
 			)
 
-			queriesLk.Lock()
-			queries = append(queries, candidateQuery{candidate: candidate, response: query})
-			checked++
 			queriesLk.Unlock()
 		}(candidate)
 	}

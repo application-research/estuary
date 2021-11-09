@@ -122,7 +122,7 @@ entryLoop:
 }
 
 func (provider *Provider) ReceiveError(err error) {
-	logger.Errorf("Error receiving bitswap message: %w", err)
+	logger.Errorf("Error receiving bitswap message: %v", err)
 }
 
 func (provider *Provider) PeerConnected(peer peer.ID) {
