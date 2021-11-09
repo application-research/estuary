@@ -169,11 +169,11 @@ func initHost(ctx context.Context, dataDir string, listenAddrs ...multiaddr.Mult
 	keyPath := filepath.Join(dataDir, "peerkey")
 	keyFile, err := os.ReadFile(keyPath)
 	if err != nil {
-		logger.Infof("Generating new peer key...")
-
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
+
+		logger.Infof("Generating new peer key...")
 
 		key, _, err := crypto.GenerateEd25519Key(rand.Reader)
 		if err != nil {

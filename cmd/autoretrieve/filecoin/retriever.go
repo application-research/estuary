@@ -85,6 +85,7 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 		Addr:       walletAddr,
 		Blockstore: blockManager,
 		Datastore:  datastore,
+		Host:       host,
 	})
 	if err != nil {
 		return nil, err
