@@ -57,6 +57,8 @@ func (mgr *Manager) GetAwait(cid cid.Cid, waitChan chan<- Block) error {
 		mgr.waitListLk.Lock()
 		mgr.waitList[cid] = append(mgr.waitList[cid], waitChan)
 		mgr.waitListLk.Unlock()
+
+		return nil
 	}
 
 	// Otherwise, we can immediately populate the channel
