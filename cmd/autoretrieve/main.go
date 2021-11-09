@@ -97,7 +97,7 @@ func run(cctx *cli.Context) error {
 	}
 
 	// Initialize P2P host
-	host, err := initHost(cctx.Context, dataDir)
+	host, err := initHost(cctx.Context, dataDir, multiaddr.StringCast("/ip4/0.0.0.0/tcp/6746"))
 	if err != nil {
 		return err
 	}
