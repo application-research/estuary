@@ -9,16 +9,21 @@ import (
 	"net/url"
 	"path"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
+	"github.com/application-research/filclient/retrievehelper"
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
@@ -38,9 +43,10 @@ var (
 )
 
 type RetrieverConfig struct {
-	DataDir        string
-	Endpoint       string
-	MinerBlacklist map[address.Address]bool
+	DataDir          string
+	Endpoint         string
+	MinerBlacklist   map[address.Address]bool
+	RetrievalTimeout time.Duration
 }
 
 type Retriever struct {
@@ -160,13 +166,118 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candidates []retrievalCandidate) {
 	queries := retriever.queryCandidates(ctx, candidates)
 
-	for _, query := range queries {
-		if err := retriever.registerRunningRetrieval(query.candidate.RootCid); err != nil {
-			logger.Errorf("")
+	sort.Slice(queries, func(i, j int) bool {
+		a := queries[i].response
+		b := queries[i].response
+
+		// Always prefer unsealed to sealed, no matter what
+		if a.UnsealPrice.IsZero() && !b.UnsealPrice.IsZero() {
+			return true
 		}
 
-		retriever.unregisterRunningRetrieval(query.candidate.RootCid)
+		// Select lower price, or continue if equal
+		aTotalCost := totalCost(a)
+		bTotalCost := totalCost(b)
+		if !aTotalCost.Equals(bTotalCost) {
+			return aTotalCost.LessThan(bTotalCost)
+		}
+
+		// Select smaller size, or continue if equal
+		if a.Size != b.Size {
+			return a.Size < b.Size
+		}
+
+		return false
+	})
+
+	for i, query := range queries {
+		stats, err := retriever.retrieve(ctx, query)
+		if err != nil {
+
+			logger.Errorf(
+				"Failed to retrieve %v/%v from miner %s for %s: %v",
+				i+1,
+				len(queries),
+				query.candidate.Miner,
+				query.candidate.RootCid,
+				err,
+			)
+
+			if errors.Is(err, ErrRetrievalAlreadyRunning) {
+				logger.Warnf("Tried to start a second retrieval for the same CID %s", query.candidate.RootCid)
+				return
+			}
+
+			continue
+		}
+
+		logger.Infof(
+			"Retrieval %v/%v succeeded from miner %s for %s\n\t"+
+				"Duration: %s\n\t"+
+				"Size: %s\n\t"+
+				"Average Speed: %s/s\n\t"+
+				"Total Payment: %s",
+			i+1,
+			len(queries),
+			query.candidate.Miner,
+			query.candidate.RootCid,
+			stats.Duration,
+			humanize.IBytes(stats.Size),
+			humanize.IBytes(stats.AverageSpeed),
+			types.FIL(stats.TotalPayment),
+		)
+
+		break
 	}
+}
+
+func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
+	if err := retriever.registerRunningRetrieval(query.candidate.RootCid); err != nil {
+		logger.Errorf("Could not register retrieval: %v", err)
+	}
+	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid)
+
+	proposal, err := retrievehelper.RetrievalProposalForAsk(query.response, query.candidate.RootCid, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not create retrieval proposal: %w", err)
+	}
+
+	retrieveCtx, retrieveCancel := context.WithCancel(ctx)
+	var lastBytesReceived uint64 = 0
+	var doneLk sync.Mutex
+	done := false
+	lastBytesReceivedTimer := time.AfterFunc(retriever.config.RetrievalTimeout, func() {
+		doneLk.Lock()
+		done = true
+		doneLk.Unlock()
+
+		retrieveCancel()
+		logger.Errorf("Retrieval timed out after not receiving data for %s (stopped at %s)", retriever.config.RetrievalTimeout, humanize.IBytes(lastBytesReceived))
+	})
+	stats, err := retriever.filClient.RetrieveContentWithProgressCallback(retrieveCtx, query.candidate.Miner, proposal, func(bytesReceived uint64) {
+		doneLk.Lock()
+		if !done {
+			if lastBytesReceived != bytesReceived {
+				if !lastBytesReceivedTimer.Stop() {
+					<-lastBytesReceivedTimer.C
+				}
+				lastBytesReceivedTimer.Reset(retriever.config.RetrievalTimeout)
+				lastBytesReceived = bytesReceived
+			}
+		}
+		doneLk.Unlock()
+	})
+
+	lastBytesReceivedTimer.Stop()
+	doneLk.Lock()
+	done = true
+	doneLk.Unlock()
+
+	if err != nil {
+		return nil, err
+	}
+
+	return stats, nil
 }
 
 // Will register a retrieval as running, or ErrRetrievalAlreadyRunning if the
@@ -228,24 +339,22 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 }
 
 func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []retrievalCandidate) []candidateQuery {
-	checked := 0
 	var queries []candidateQuery
 	var queriesLk sync.Mutex
 
 	var wg sync.WaitGroup
 	wg.Add(len(candidates))
 
-	for _, candidate := range candidates {
-		go func(candidate retrievalCandidate) {
+	for i, candidate := range candidates {
+		go func(i int, candidate retrievalCandidate) {
 			defer wg.Done()
 
 			query, err := retriever.filClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
 				queriesLk.Lock()
-				checked++
 				logger.Errorf(
 					"Failed to query retrieval %v/%v from miner %s for %s: %v",
-					checked,
+					i,
 					len(candidates),
 					candidate.Miner,
 					candidate.RootCid,
@@ -258,21 +367,24 @@ func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []re
 			queriesLk.Lock()
 
 			queries = append(queries, candidateQuery{candidate: candidate, response: query})
-			checked++
 
 			logger.Infof(
 				"Retrieval query %v/%v succeeded from miner %s for %s",
-				checked,
+				i,
 				len(candidates),
 				candidate.Miner,
 				candidate.RootCid,
 			)
 
 			queriesLk.Unlock()
-		}(candidate)
+		}(i, candidate)
 	}
 
 	wg.Wait()
 
 	return queries
+}
+
+func totalCost(qres *retrievalmarket.QueryResponse) big.Int {
+	return big.Add(big.Mul(qres.MinPricePerByte, big.NewIntUnsigned(qres.Size)), qres.UnsealPrice)
 }

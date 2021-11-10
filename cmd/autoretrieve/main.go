@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/bitswap"
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
@@ -41,10 +42,10 @@ func main() {
 			Value:   "./estuary-ar",
 			EnvVars: []string{"ESTUARY_AR_DATADIR"},
 		},
-		&cli.IntFlag{
+		&cli.DurationFlag{
 			Name:  "timeout",
-			Value: 60,
-			Usage: "Time in seconds to wait on a hanging retrieval before moving on",
+			Value: 60 * time.Second,
+			Usage: "Time to wait on a hanging retrieval before moving on, using a Go ParseDuration(...) string, e.g. 60s, 2m",
 		},
 		&cli.StringFlag{
 			Name:  "endpoint",
@@ -89,6 +90,7 @@ func contextWithInterruptCancel() context.Context {
 func run(cctx *cli.Context) error {
 	dataDir := cctx.String("datadir")
 	endpoint := cctx.String("endpoint")
+	timeout := cctx.Duration("timeout")
 
 	// Load miner blacklist
 	minerBlacklist, err := readMinerBlacklist(dataDir)
@@ -125,9 +127,10 @@ func run(cctx *cli.Context) error {
 
 	// Initialize Filecoin retriever
 	retriever, err := filecoin.NewRetriever(filecoin.RetrieverConfig{
-		DataDir:        dataDir,
-		Endpoint:       endpoint,
-		MinerBlacklist: minerBlacklist,
+		DataDir:          dataDir,
+		Endpoint:         endpoint,
+		MinerBlacklist:   minerBlacklist,
+		RetrievalTimeout: timeout,
 	}, host, api, datastore, blockManager)
 	if err != nil {
 		return err
