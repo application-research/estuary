@@ -77,7 +77,7 @@ func contextWithInterruptCancel() context.Context {
 
 		<-ch
 
-		signal.Ignore()
+		signal.Ignore(os.Interrupt)
 		fmt.Printf("Interrupt detected, gracefully exiting... (interrupt again to force termination)\n")
 		cancel()
 	}()
@@ -232,7 +232,8 @@ func readMinerBlacklist(dataDir string) (map[address.Address]bool, error) {
 
 		miner, err := address.NewFromString(str)
 		if err != nil {
-			return nil, fmt.Errorf("could not parse miner at line %v: %v", lineNum, err)
+			logger.Warnf("Skipping unparseable entry \"%v\" at line %v: %v", str, lineNum, err)
+			continue
 		}
 
 		blacklistArr = append(blacklistArr, miner)
