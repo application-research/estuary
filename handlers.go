@@ -146,6 +146,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	uploads.POST("/add-car", withUser(s.handleAddCar))
+	uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -159,7 +160,6 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
-	content.POST("/create", withUser(s.handleCreateContent))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
@@ -187,6 +187,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
 
 	pinning := e.Group("/pinning")
+	pinning.Use(openApiMiddleware)
 	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
 	pinning.POST("/pins", withUser(s.handleAddPin))
@@ -3875,4 +3876,44 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 		}
 	}
 	return nil
+}
+
+func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		err := next(c)
+		if err == nil {
+			return nil
+		}
+
+		log.Errorf("handler error: %s", err)
+		var herr *util.HttpError
+		if xerrors.As(err, &herr) {
+			errmap := map[string]string{
+				"reason": herr.Message,
+			}
+			if herr.Details != "" {
+				errmap["details"] = herr.Details
+			}
+			res := map[string]interface{}{
+				"error": errmap,
+			}
+			return c.JSON(herr.Code, res)
+		}
+
+		var echoErr *echo.HTTPError
+		if xerrors.As(err, &echoErr) {
+			return c.JSON(echoErr.Code, map[string]interface{}{
+				"error": map[string]interface{}{
+					"reason": echoErr.Message,
+				},
+			})
+		}
+
+		// TODO: returning all errors out to the user smells potentially bad
+		return c.JSON(500, map[string]interface{}{
+			"error": map[string]string{
+				"reason": err.Error(),
+			},
+		})
+	}
 }

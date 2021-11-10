@@ -792,6 +792,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/resend/pincomplete/:content", s.handleResendPinComplete)
 	admin.POST("/loglevel", s.handleLogLevel)
 	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
+	admin.GET("/transfers/list", s.handleListAllTransfers)
 
 	return e.Start(listen)
 }
@@ -1658,4 +1659,13 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 	}
 	log.Infof("restarted %d transfers", restarted)
 	return nil
+}
+
+func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
+	transfers, err := s.Filc.TransfersInProgress(c.Request().Context())
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, transfers)
 }
