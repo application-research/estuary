@@ -488,6 +488,40 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	// TODO: how to specify filename?
 	filename := header.Roots[0].String()
+	if qpname := c.QueryParam("name"); qpname != "" {
+		filename = qpname
+	}
+
+	var commpcid cid.Cid
+	var commpSize uint64
+	if cpc := c.QueryParam("commp"); cpc != "" {
+		if u.Perm < util.PermLevelAdmin {
+			return fmt.Errorf("must be an admin to specify commp for car file upload")
+		}
+
+		sizestr := c.QueryParam("size")
+		if sizestr == "" {
+			return fmt.Errorf("must also specify 'size' when setting commP for car files")
+		}
+
+		ss, err := strconv.ParseUint(sizestr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse size: %w", err)
+		}
+
+		commpSize = ss
+
+		cc, err := cid.Decode(cpc)
+		if err != nil {
+			return err
+		}
+
+		if cc.Prefix().Codec != cid.FilCommitmentUnsealed {
+			return fmt.Errorf("can only specify an unsealed commitment as a commP")
+		}
+
+		commpcid = cc
+	}
 
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
@@ -499,6 +533,18 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	if commpcid.Defined() {
+		opcr := PieceCommRecord{
+			Data:  util.DbCID{header.Roots[0]},
+			Piece: util.DbCID{commpcid},
+			Size:  abi.UnpaddedPieceSize(commpSize),
+		}
+
+		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
+			return fmt.Errorf("failed to insert piece commitment record: %w", err)
+		}
 	}
 
 	go func() {
