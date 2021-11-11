@@ -19,7 +19,6 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/go-data-transfer/channelmonitor"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
@@ -27,7 +26,6 @@ import (
 	"github.com/filecoin-project/lotus/chain/wallet"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
-	gsimpl "github.com/ipfs/go-graphsync/impl"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/host"
 	"golang.org/x/xerrors"
@@ -87,39 +85,7 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 		logger.Infof("Using default wallet address %s", walletAddr)
 	}
 
-	const maxTraversalLinks = 32 * (1 << 20)
-	filClient, err := filclient.NewClientWithConfig(&filclient.Config{
-		DataDir:    config.DataDir,
-		Api:        api,
-		Wallet:     wallet,
-		Addr:       walletAddr,
-		Blockstore: blockManager,
-		Datastore:  datastore,
-		Host:       host,
-		GraphsyncOpts: []gsimpl.Option{
-			gsimpl.MaxInProgressIncomingRequests(200),
-			gsimpl.MaxInProgressOutgoingRequests(200),
-			gsimpl.MaxMemoryResponder(8 << 30),
-			gsimpl.MaxMemoryPerPeerResponder(32 << 20),
-			gsimpl.MaxInProgressIncomingRequestsPerPeer(20),
-			gsimpl.MessageSendRetries(2),
-			gsimpl.SendMessageTimeout(2 * time.Minute),
-			gsimpl.MaxLinksPerIncomingRequests(maxTraversalLinks),
-			gsimpl.MaxLinksPerOutgoingRequests(maxTraversalLinks),
-		},
-		ChannelMonitorConfig: channelmonitor.Config{
-
-			AcceptTimeout:          time.Hour * 24,
-			RestartDebounce:        time.Second * 10,
-			RestartBackoff:         time.Second * 20,
-			MaxConsecutiveRestarts: 15,
-			//RestartAckTimeout:      time.Second * 30,
-			CompleteTimeout: time.Minute * 40,
-
-			// Called when a restart completes successfully
-			//OnRestartComplete func(id datatransfer.ChannelID)
-		},
-	})
+	filClient, err := filclient.NewClient(host, api, wallet, walletAddr, blockManager, datastore, config.DataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +129,7 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 }
 
 // Takes an unsorted list of candidates, orders them, and attempts retrievals in serial until one succeeds.
-func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candidates []retrievalCandidate) {
+func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candidates []retrievalCandidate) error {
 	queries := retriever.queryCandidates(ctx, candidates)
 
 	sort.Slice(queries, func(i, j int) bool {
@@ -190,10 +156,16 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 		return false
 	})
 
+	// stats will be nil after the loop if none of the retrievals successfully
+	// complete
+	var stats *filclient.RetrievalStats
 	for i, query := range queries {
-		stats, err := retriever.retrieve(ctx, query)
-		if err != nil {
+		if retriever.isRetrievalRunning(query.candidate.RootCid) {
+			break
+		}
 
+		stats_, err := retriever.retrieve(ctx, query)
+		if err != nil {
 			logger.Errorf(
 				"Failed to retrieve %v/%v from miner %s for %s: %v",
 				i+1,
@@ -205,18 +177,20 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 
 			if errors.Is(err, ErrRetrievalAlreadyRunning) {
 				logger.Warnf("Tried to start a second retrieval for the same CID %s", query.candidate.RootCid)
-				return
+				return err
 			}
 
 			continue
 		}
 
+		stats = stats_
+
 		logger.Infof(
-			"Retrieval %v/%v succeeded from miner %s for %s\n\t"+
-				"Duration: %s\n\t"+
-				"Size: %s\n\t"+
-				"Average Speed: %s/s\n\t"+
-				"Total Payment: %s",
+			"Retrieval %v/%v succeeded from miner %s for %s\n"+
+				"\tDuration: %s\n"+
+				"\tSize: %s\n"+
+				"\tAverage Speed: %s/s\n"+
+				"\tTotal Payment: %s",
 			i+1,
 			len(queries),
 			query.candidate.Miner,
@@ -229,11 +203,17 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 
 		break
 	}
+
+	if stats == nil {
+		return fmt.Errorf("all retrievals failed")
+	}
+
+	return nil
 }
 
 func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
 	if err := retriever.registerRunningRetrieval(query.candidate.RootCid); err != nil {
-		logger.Errorf("Could not register retrieval: %v", err)
+		return nil, fmt.Errorf("could not register retrieval from miner %s for %s: %v", query.candidate.RootCid, query.candidate.Miner, err)
 	}
 	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid)
 
@@ -280,14 +260,21 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	return stats, nil
 }
 
+func (retriever *Retriever) isRetrievalRunning(cid cid.Cid) bool {
+	retriever.runningRetrievalsLk.Lock()
+	defer retriever.runningRetrievalsLk.Unlock()
+
+	return retriever.runningRetrievals[cid]
+}
+
 // Will register a retrieval as running, or ErrRetrievalAlreadyRunning if the
 // CID is already registered.
 func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid) error {
 	retriever.runningRetrievalsLk.Lock()
 	defer retriever.runningRetrievalsLk.Unlock()
 
-	if _, ok := retriever.runningRetrievals[cid]; ok {
-		return fmt.Errorf("could not register running retrieval: %w", ErrRetrievalAlreadyRunning)
+	if running := retriever.runningRetrievals[cid]; running {
+		return ErrRetrievalAlreadyRunning
 	}
 	retriever.runningRetrievals[cid] = true
 
@@ -297,8 +284,9 @@ func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid) error {
 // Unregisters a running retrieval. No-op if no retrieval is running.
 func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid) {
 	retriever.runningRetrievalsLk.Lock()
+	defer retriever.runningRetrievalsLk.Unlock()
+
 	delete(retriever.runningRetrievals, cid)
-	retriever.runningRetrievalsLk.Unlock()
 }
 
 // Returns a list of miners known to have the requested block, with blacklisted

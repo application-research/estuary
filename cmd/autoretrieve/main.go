@@ -31,8 +31,7 @@ const minerBlacklistFilename = "blacklist.txt"
 const datastoreSubdir = "datastore"
 
 func main() {
-	logger := log.Logger("estuary-ar")
-	log.SetLogLevel("estuary-ar", "DEBUG")
+	log.SetLogLevel("autoretrieve", "DEBUG")
 
 	app := cli.NewApp()
 
