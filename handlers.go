@@ -20,6 +20,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -516,8 +517,9 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			return err
 		}
 
-		if cc.Prefix().Codec != cid.FilCommitmentUnsealed {
-			return fmt.Errorf("can only specify an unsealed commitment as a commP")
+		_, err = commcid.CIDToPieceCommitmentV1(cc)
+		if err != nil {
+			return err
 		}
 
 		commpcid = cc
