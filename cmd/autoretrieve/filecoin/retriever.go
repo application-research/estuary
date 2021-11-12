@@ -230,6 +230,8 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 		return nil, fmt.Errorf("could not create retrieval proposal: %w", err)
 	}
 
+	startTime := time.Now()
+
 	retrieveCtx, retrieveCancel := context.WithCancel(ctx)
 	var lastBytesReceived uint64 = 0
 	var doneLk sync.Mutex
@@ -240,7 +242,7 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 		doneLk.Unlock()
 
 		retrieveCancel()
-		logger.Errorf("Retrieval timed out after not receiving data for %s (stopped at %s)", retriever.config.RetrievalTimeout, humanize.IBytes(lastBytesReceived))
+		logger.Errorf("Retrieval timed out after not receiving data for %s (started %s ago, stopped at %s)", retriever.config.RetrievalTimeout, time.Since(startTime), humanize.IBytes(lastBytesReceived))
 	})
 	stats, err := retriever.filClient.RetrieveContentWithProgressCallback(retrieveCtx, query.candidate.Miner, proposal, func(bytesReceived uint64) {
 		doneLk.Lock()
