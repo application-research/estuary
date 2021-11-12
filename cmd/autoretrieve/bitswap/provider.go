@@ -162,9 +162,12 @@ func (provider *Provider) PeerConnected(peer peer.ID) {
 func (provider *Provider) PeerDisconnected(peer peer.ID) {
 	// On disconnect, destroy the peer's queue
 	provider.blockQueuesLk.Lock()
-	blockQueue := provider.blockQueues[peer]
-	close(blockQueue.wantBlockChan)
-	close(blockQueue.wantHaveChan)
+
+	// TODO: need to clean up waiting blocks in block manager
+	// blockQueue := provider.blockQueues[peer]
+	// close(blockQueue.wantBlockChan)
+	// close(blockQueue.wantHaveChan)
+
 	delete(provider.blockQueues, peer)
 	provider.blockQueuesLk.Unlock()
 }
