@@ -164,12 +164,17 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 			break
 		}
 
+		retriever.runningRetrievalsLk.Lock()
+		runningRetrievalCount := len(retriever.runningRetrievals)
+		retriever.runningRetrievalsLk.Unlock()
+
 		logger.Infof(
-			"Attempting retrieval %v/%v from miner %s for %s",
+			"Attempting retrieval %v/%v from miner %s for %s (%v in progress)",
 			i+1,
 			len(queries),
 			query.candidate.Miner,
 			query.candidate.RootCid,
+			runningRetrievalCount+1,
 		)
 
 		stats_, err := retriever.retrieve(ctx, query)
