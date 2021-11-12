@@ -164,6 +164,14 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 			break
 		}
 
+		logger.Infof(
+			"Attempting retrieval %v/%v from miner %s for %s",
+			i+1,
+			len(queries),
+			query.candidate.Miner,
+			query.candidate.RootCid,
+		)
+
 		stats_, err := retriever.retrieve(ctx, query)
 		if err != nil {
 			logger.Errorf(
@@ -186,7 +194,7 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 		stats = stats_
 
 		logger.Infof(
-			"Retrieval %v/%v succeeded from miner %s for %s\n"+
+			"Successfully retrieved candidate %v/%v from miner %s for %s\n"+
 				"\tDuration: %s\n"+
 				"\tSize: %s\n"+
 				"\tAverage Speed: %s/s\n"+
@@ -339,16 +347,16 @@ func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []re
 
 			query, err := retriever.filClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
 			if err != nil {
-				queriesLk.Lock()
-				logger.Errorf(
-					"Failed to query retrieval %v/%v from miner %s for %s: %v",
-					i,
-					len(candidates),
-					candidate.Miner,
-					candidate.RootCid,
-					err,
-				)
-				queriesLk.Unlock()
+				// queriesLk.Lock()
+				// logger.Errorf(
+				// 	"Failed to query retrieval %v/%v from miner %s for %s: %v",
+				// 	i,
+				// 	len(candidates),
+				// 	candidate.Miner,
+				// 	candidate.RootCid,
+				// 	err,
+				// )
+				// queriesLk.Unlock()
 				return
 			}
 
@@ -356,13 +364,13 @@ func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []re
 
 			queries = append(queries, candidateQuery{candidate: candidate, response: query})
 
-			logger.Infof(
-				"Retrieval query %v/%v succeeded from miner %s for %s",
-				i,
-				len(candidates),
-				candidate.Miner,
-				candidate.RootCid,
-			)
+			// logger.Infof(
+			// 	"Retrieval query %v/%v succeeded from miner %s for %s",
+			// 	i,
+			// 	len(candidates),
+			// 	candidate.Miner,
+			// 	candidate.RootCid,
+			// )
 
 			queriesLk.Unlock()
 		}(i, candidate)
