@@ -451,6 +451,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		}
 
 		s.sendSplitContentComplete(ctx, pin.Content)
+		return nil
 	}
 
 	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
@@ -474,8 +475,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	for i, c := range boxCids {
 		fname := fmt.Sprintf("split-%d", i)
 
-		panic("need to figure out how to get user auth...")
-		contid, err := s.createContent(ctx, nil, c, fname, "", pin.Content)
+		contid, err := s.shuttleCreateContent(ctx, pin.UserID, c, fname, "", pin.Content)
 		if err != nil {
 			return err
 		}
@@ -496,6 +496,13 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		if err := s.addDatabaseTrackingToContent(ctx, pin.Content, dserv, s.Node.Blockstore, c, func(int64) {}); err != nil {
 			return err
 		}
+	}
+
+	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+		"dag_split": true,
+		"aggregate": true,
+	}).Error; err != nil {
+		return err
 	}
 
 	s.sendSplitContentComplete(ctx, pin.Content)

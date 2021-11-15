@@ -489,7 +489,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	// TODO: how to specify filename?
 	filename := header.Roots[0].String()
-	if qpname := c.QueryParam("name"); qpname != "" {
+	if qpname := c.QueryParam("filename"); qpname != "" {
 		filename = qpname
 	}
 
@@ -3849,6 +3849,8 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
+
+	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
 
 	content := &Content{
 		Cid:         util.DbCID{req.Root},

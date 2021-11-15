@@ -34,6 +34,8 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/cenkalti/backoff/v4"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	commcid "github.com/filecoin-project/go-fil-commcid"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
@@ -865,7 +867,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection, 0)
+	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
 	if err != nil {
 		return err
 	}
@@ -963,9 +965,40 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	// TODO: how to specify filename?
 	fname := header.Roots[0].String()
+	if qpname := c.QueryParam("filename"); qpname != "" {
+		fname = qpname
+	}
 
-	if fnameqp := c.QueryParam("filename"); fnameqp != "" {
-		fname = fnameqp
+	var commpcid cid.Cid
+	var commpSize uint64
+	if cpc := c.QueryParam("commp"); cpc != "" {
+		if u.Perms < util.PermLevelAdmin {
+			return fmt.Errorf("must be an admin to specify commp for car file upload")
+		}
+
+		sizestr := c.QueryParam("size")
+		if sizestr == "" {
+			return fmt.Errorf("must also specify 'size' when setting commP for car files")
+		}
+
+		ss, err := strconv.ParseUint(sizestr, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse size: %w", err)
+		}
+
+		commpSize = ss
+
+		cc, err := cid.Decode(cpc)
+		if err != nil {
+			return err
+		}
+
+		_, err = commcid.CIDToPieceCommitmentV1(cc)
+		if err != nil {
+			return err
+		}
+
+		commpcid = cc
 	}
 
 	bserv := blockservice.New(bs, nil)
@@ -973,7 +1006,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, fname, c.QueryParam("collection"), 0)
+	contid, err := s.createContent(ctx, u, root, fname, c.QueryParam("collection"))
 	if err != nil {
 		return err
 	}
@@ -1003,6 +1036,22 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		log.Warn(err)
 	}
 
+	if commpcid.Defined() {
+		if err := s.sendRpcMessage(ctx, &drpc.Message{
+			Op: drpc.OP_CommPComplete,
+			Params: drpc.MsgParams{
+				CommPComplete: &drpc.CommPComplete{
+					Data:  root,
+					CommP: commpcid,
+					Size:  abi.UnpaddedPieceSize(commpSize),
+				},
+			},
+		}); err != nil {
+			log.Errorf("failed to send commP setting to controller node: %w", err)
+		}
+
+	}
+
 	return c.JSON(200, &util.AddFileResponse{
 		Cid:       root.String(),
 		EstuaryId: contid,
@@ -1026,29 +1075,27 @@ func (s *Shuttle) addrsForShuttle() []string {
 }
 
 type createContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
-	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
-	DagSplitRoot uint     `json:"dagSplitRoot"`
+	Root        cid.Cid  `json:"root"`
+	Name        string   `json:"name"`
+	Collections []string `json:"collections"`
+	Location    string   `json:"location"`
 }
 
 type createContentResponse struct {
 	ID uint `json:"id"`
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
 	}
 
 	data, err := json.Marshal(createContentBody{
-		Root:         root,
-		Name:         fname,
-		Collections:  cols,
-		Location:     s.shuttleHandle,
-		DagSplitRoot: dagsplitroot,
+		Root:        root,
+		Name:        fname,
+		Collections: cols,
+		Location:    s.shuttleHandle,
 	})
 	if err != nil {
 		return 0, err
@@ -1065,6 +1112,65 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	}
 
 	req.Header.Set("Authorization", "Bearer "+u.AuthToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+
+	defer resp.Body.Close()
+
+	var rbody createContentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
+		return 0, err
+	}
+
+	if rbody.ID == 0 {
+		return 0, fmt.Errorf("create content request failed, got back content ID zero")
+	}
+
+	return rbody.ID, nil
+}
+
+type shuttleCreateContentBody struct {
+	Root         cid.Cid  `json:"root"`
+	Name         string   `json:"name"`
+	Collections  []string `json:"collections"`
+	Location     string   `json:"location"`
+	DagSplitRoot uint     `json:"dagSplitRoot"`
+	User         uint     `json:"user"`
+}
+
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
+	var cols []string
+	if collection != "" {
+		cols = []string{collection}
+	}
+
+	data, err := json.Marshal(&shuttleCreateContentBody{
+		Root:         root,
+		Name:         fname,
+		Collections:  cols,
+		Location:     s.shuttleHandle,
+		DagSplitRoot: dagsplitroot,
+		User:         uid,
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	scheme := "https"
+	if s.dev {
+		scheme = "http"
+	}
+
+	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/shuttle/content/create", bytes.NewReader(data))
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+s.shuttleToken)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)

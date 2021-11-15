@@ -138,6 +138,7 @@ type MsgParams struct {
 	TransferStarted *TransferStarted `json:",omitempty"`
 	ShuttleUpdate   *ShuttleUpdate   `json:",omitempty"`
 	GarbageCheck    *GarbageCheck    `json:",omitempty"`
+	SplitComplete   *SplitComplete   `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -201,4 +202,10 @@ const OP_GarbageCheck = "GarbageCheck"
 
 type GarbageCheck struct {
 	Contents []uint
+}
+
+const OP_SplitComplete = "SplitComplete"
+
+type SplitComplete struct {
+	ID uint
 }

@@ -1247,6 +1247,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	if content.Size > cm.contentSizeLimit {
 		return fmt.Errorf("content too big (splitting will be implemented soon)")
 		// return cm.splitContent(ctx, content, cm.contentSizeLimit)
+		// done(time.Minute * 10)
 	}
 
 	// check if content has enough deals made for it
@@ -1417,8 +1418,14 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size i
 	ctx, span := cm.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
+	log.Infof("splitting content %d (size: %d)", cont.ID, size)
+
 	if cont.Location == "local" {
-		go cm.splitContentLocal(ctx, cont, size)
+		go func() {
+			if err := cm.splitContentLocal(ctx, cont, size); err != nil {
+				log.Errorw("failed to split local content", "cont", cont.ID, "size", size, "err", err)
+			}
+		}()
 		return nil
 	} else {
 		return cm.sendSplitContentCmd(ctx, cont.Location, cont.ID, size)
