@@ -28,7 +28,6 @@ import (
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/host"
-	"golang.org/x/xerrors"
 )
 
 var logger = log.Logger("autoretrieve")
@@ -36,8 +35,18 @@ var logger = log.Logger("autoretrieve")
 const walletSubdir = "wallet"
 
 var (
-	ErrNoCandidates            = errors.New("no candidates")
-	ErrRetrievalAlreadyRunning = errors.New("retrieval already running")
+	ErrInitKeystoreFailed          = errors.New("init keystore failed")
+	ErrInitWalletFailed            = errors.New("init wallet failed")
+	ErrInitFilClientFailed         = errors.New("init FilClient failed")
+	ErrNoCandidates                = errors.New("no candidates")
+	ErrRetrievalAlreadyRunning     = errors.New("retrieval already running")
+	ErrInvalidEndpointURL          = errors.New("invalid endpoint URL")
+	ErrEndpointRequestFailed       = errors.New("endpoint request failed")
+	ErrEndpointBodyInvalid         = errors.New("endpoint body invalid")
+	ErrProposalCreationFailed      = errors.New("proposal creation failed")
+	ErrRetrievalRegistrationFailed = errors.New("retrieval registration failed")
+	ErrRetrievalFailed             = errors.New("retrieval failed")
+	ErrAllRetrievalsFailed         = errors.New("all retrievals failed")
 )
 
 type RetrieverConfig struct {
@@ -65,16 +74,17 @@ type candidateQuery struct {
 	response  *retrievalmarket.QueryResponse
 }
 
+// Possible errors: ErrInitKeystoreFailed, ErrInitWalletFailed, ErrInitFilClientFailed
 func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datastore datastore.Batching, blockManager *blocks.Manager) (*Retriever, error) {
 
 	keystore, err := keystore.OpenOrInitKeystore(filepath.Join(config.DataDir, walletSubdir))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInitKeystoreFailed, err)
 	}
 
 	wallet, err := wallet.NewWallet(keystore)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInitWalletFailed, err)
 	}
 
 	walletAddr, err := wallet.GetDefault()
@@ -87,7 +97,7 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 
 	filClient, err := filclient.NewClient(host, api, wallet, walletAddr, blockManager, datastore, config.DataDir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrInitFilClientFailed, err)
 	}
 
 	retriever := &Retriever{
@@ -106,6 +116,9 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 //
 // Retriever itself does not provide any mechanism for determining when a block
 // becomes available - that is up to the caller.
+//
+// Possible errors: ErrInvalidEndpointURL, ErrEndpointRequestFailed,
+// ErrEndpointBodyInvalid, ErrNoCandidates
 func (retriever *Retriever) Request(cid cid.Cid) error {
 
 	// TODO: before looking up candidates from the endpoint, we could cache
@@ -117,10 +130,6 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 		return fmt.Errorf("could not get retrieval candidates for %s: %w", cid, err)
 	}
 
-	if len(candidates) == 0 {
-		return fmt.Errorf("no retrieval candidates were found for %s", cid)
-	}
-
 	// If we got to this point, one or more candidates have been found and we
 	// are good to go ahead with the retrieval
 	go retriever.retrieveFromBestCandidate(context.Background(), candidates)
@@ -128,7 +137,10 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 	return nil
 }
 
-// Takes an unsorted list of candidates, orders them, and attempts retrievals in serial until one succeeds.
+// Takes an unsorted list of candidates, orders them, and attempts retrievals in
+// serial until one succeeds.
+//
+// Possible errors: ErrAllRetrievalsFailed
 func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candidates []retrievalCandidate) error {
 	queries := retriever.queryCandidates(ctx, candidates)
 
@@ -218,21 +230,23 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 	}
 
 	if stats == nil {
-		return fmt.Errorf("all retrievals failed")
+		return ErrAllRetrievalsFailed
 	}
 
 	return nil
 }
 
+// Possible errors: ErrRetrievalRegistrationFailed, ErrProposalCreationFailed,
+// ErrRetrievalFailed
 func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
 	if err := retriever.registerRunningRetrieval(query.candidate.RootCid); err != nil {
-		return nil, fmt.Errorf("could not register retrieval from miner %s for %s: %v", query.candidate.RootCid, query.candidate.Miner, err)
+		return nil, fmt.Errorf("%w: %v", ErrRetrievalRegistrationFailed, err)
 	}
 	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid)
 
 	proposal, err := retrievehelper.RetrievalProposalForAsk(query.response, query.candidate.RootCid, nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not create retrieval proposal: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrProposalCreationFailed, err)
 	}
 
 	startTime := time.Now()
@@ -269,7 +283,7 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	doneLk.Unlock()
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrRetrievalFailed, err)
 	}
 
 	return stats, nil
@@ -284,6 +298,8 @@ func (retriever *Retriever) isRetrievalRunning(cid cid.Cid) bool {
 
 // Will register a retrieval as running, or ErrRetrievalAlreadyRunning if the
 // CID is already registered.
+//
+// Possible errors: ErrRetrievalAlreadyRunning
 func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid) error {
 	retriever.runningRetrievalsLk.Lock()
 	defer retriever.runningRetrievalsLk.Unlock()
@@ -306,28 +322,31 @@ func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid) {
 
 // Returns a list of miners known to have the requested block, with blacklisted
 // miners filtered out.
+//
+// Possible errors - ErrInvalidEndpointURL, ErrEndpointRequestFailed, ErrEndpointBodyInvalid,
+// ErrNoCandidates
 func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate, error) {
 	// Create URL with CID
 	endpointURL, err := url.Parse(retriever.config.Endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("endpoint %s is not a valid url", retriever.config.Endpoint)
+		return nil, fmt.Errorf("%w: '%s'", ErrInvalidEndpointURL, retriever.config.Endpoint)
 	}
 	endpointURL.Path = path.Join(endpointURL.Path, cid.String())
 
 	// Request candidates from endpoint
 	resp, err := http.Get(endpointURL.String())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrEndpointRequestFailed, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("http request to endpoint %s got status %v", endpointURL, resp.StatusCode)
+		return nil, fmt.Errorf("%w: %s sent status %v", ErrEndpointRequestFailed, endpointURL, resp.StatusCode)
 	}
 
 	// Read candidate list from response body
 	var unfiltered []retrievalCandidate
 	if err := json.NewDecoder(resp.Body).Decode(&unfiltered); err != nil {
-		return nil, xerrors.Errorf("could not unmarshal http response for cid %s", cid)
+		return nil, ErrEndpointBodyInvalid
 	}
 
 	// Remove blacklisted miners
@@ -336,6 +355,10 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 		if !retriever.config.MinerBlacklist[candidate.Miner] {
 			res = append(res, candidate)
 		}
+	}
+
+	if len(res) == 0 {
+		return nil, ErrNoCandidates
 	}
 
 	return res, nil
