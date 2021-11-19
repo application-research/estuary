@@ -200,7 +200,16 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 }
 
 func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
-	panic("NYI")
+	if err := s.sendRpcMessage(ctx, &drpc.Message{
+		Op: drpc.OP_SplitComplete,
+		Params: drpc.MsgParams{
+			SplitComplete: &drpc.SplitComplete{
+				ID: cont,
+			},
+		},
+	}); err != nil {
+		log.Errorf("failed to send split content complete message: %s", err)
+	}
 }
 
 func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {

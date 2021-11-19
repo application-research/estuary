@@ -2090,7 +2090,7 @@ func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"))
+	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
 		return err
 	}
@@ -2103,13 +2103,14 @@ func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 		Execute        bool   `json:"execute"`
 		SpaceRequested int64  `json:"spaceRequested"`
 		Location       string `json:"location"`
+		Users          []uint `json:"users"`
 	}
 
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, body.Location, !body.Execute)
+	res, err := s.CM.ClearUnused(c.Request().Context(), body.SpaceRequested, body.Location, body.Users, !body.Execute)
 	if err != nil {
 		return err
 	}
@@ -2756,6 +2757,10 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 		Group("user_id").Scan(&resp).Error; err != nil {
 		return err
 	}
+
+	sort.Slice(resp, func(i, j int) bool {
+		return resp[i].Id < resp[j].Id
+	})
 
 	return c.JSON(200, resp)
 }

@@ -189,6 +189,16 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling garbage check message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_SplitComplete:
+		param := msg.Params.SplitComplete
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcSplitComplete(ctx, handle, param); err != nil {
+			log.Errorf("handling split complete message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
 	}
@@ -376,4 +386,24 @@ func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle stri
 	}
 
 	return cm.sendUnpinCmd(ctx, handle, tounpin)
+}
+
+func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle string, param *drpc.SplitComplete) error {
+	if param.ID == 0 {
+		return fmt.Errorf("split complete send with ID = 0")
+	}
+
+	// TODO: do some sanity checks that the sub pieces were all made successfully...
+
+	if err := cm.DB.Model(Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
+		"dag_split": true,
+	}).Error; err != nil {
+		return fmt.Errorf("failed to update content for split complete: %w", err)
+	}
+
+	if err := cm.DB.Delete(&ObjRef{}, "content = ?", param.ID).Error; err != nil {
+		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
+	}
+
+	return nil
 }

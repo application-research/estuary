@@ -28,14 +28,14 @@ type collectionResult struct {
 	OffloadError         string             `json:"offloadError,omitempty"`
 }
 
-func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, dryrun bool) (*collectionResult, error) {
+func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error) {
 	ctx, span := cm.tracer.Start(ctx, "clearUnused")
 	defer span.End()
 	// first, gather candidates for removal
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx, false, loc)
+	candidates, err := cm.getRemovalCandidates(ctx, false, loc, users)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
@@ -224,13 +224,17 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string) ([]removalCandidateInfo, error) {
+func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 
 	q := cm.DB.Model(Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
 	if loc != "" {
 		q = q.Where("location = ?", loc)
+	}
+
+	if len(users) > 0 {
+		q = q.Where("user_id in ?", users)
 	}
 
 	var conts []Content
