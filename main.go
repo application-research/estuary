@@ -11,6 +11,7 @@ import (
 
 	"github.com/application-research/estuary/build"
 	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
@@ -24,7 +25,6 @@ import (
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"go.opentelemetry.io/otel"
 
-	//_ "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
@@ -208,6 +208,19 @@ func main() {
 			Name:  "lowmem",
 			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
 		},
+		&cli.BoolFlag{
+			Name:  "jaeger-tracing",
+			Value: false,
+		},
+		&cli.StringFlag{
+			Name:  "jaeger-provider-url",
+			Value: "http://localhost:14268/api/traces",
+		},
+		&cli.Float64Flag{
+			Name:  "jaeger-sampler-ratio",
+			Usage: "If less than 1 probabilistic metrics will be used.",
+			Value: 1,
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -339,6 +352,16 @@ func main() {
 			return err
 		}
 		defer closer()
+
+		// setup tracing to jaeger if enabled
+		if cctx.Bool("jaeger-tracing") {
+			tp, err := metrics.NewJaegerTraceProvider("estuary",
+				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+			if err != nil {
+				return err
+			}
+			otel.SetTracerProvider(tp)
+		}
 
 		s := &Server{
 			Node:       nd,

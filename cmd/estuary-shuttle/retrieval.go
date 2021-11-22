@@ -25,7 +25,7 @@ type retrievalProgress struct {
 }
 
 func (s *Shuttle) retrieveContent(ctx context.Context, contentToFetch uint, root cid.Cid, deals []drpc.StorageDeal) error {
-	ctx, span := Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
+	ctx, span := s.Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contentToFetch)),
 	))
 	defer span.End()
@@ -66,7 +66,7 @@ func (s *Shuttle) retrieveContent(ctx context.Context, contentToFetch uint, root
 }
 
 func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals []drpc.StorageDeal, root cid.Cid, sel ipld.Node) error {
-	ctx, span := Tracer.Start(ctx, "runRetrieval")
+	ctx, span := s.Tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
 	var pin Pin

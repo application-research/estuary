@@ -68,6 +68,8 @@ require (
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20210916193332-eb273f9dbd52
 	github.com/whyrusleeping/memo v0.0.0-20210914173559-2bd9268e6264
 	go.opentelemetry.io/otel v0.20.0
+	go.opentelemetry.io/otel/exporters/trace/jaeger v0.20.0
+	go.opentelemetry.io/otel/sdk v0.20.0
 	go.opentelemetry.io/otel/trace v0.20.0
 	golang.org/x/net v0.0.0-20211007125505-59d4e928ea9d
 	golang.org/x/sys v0.0.0-20211007075335-d3039528d8ac

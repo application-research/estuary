@@ -15,12 +15,21 @@ import (
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipfs/go-merkledag"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
 func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	ctx := context.TODO()
+
+	// If the command contains a trace continue it here.
+	if cmd.HasTraceCarrier() {
+		if sc := cmd.TraceCarrier.AsSpanContext(); sc.IsValid() {
+			ctx = trace.ContextWithRemoteSpanContext(ctx, sc)
+		}
+	}
 
 	log.Infof("handling rpc command: %s", cmd.Op)
 	switch cmd.Op {
@@ -50,6 +59,9 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 }
 
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
+	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
+	// a noopspan context will be carried and ignored by the receiver.
+	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
 	log.Infof("sending rpc message: %s", msg.Op)
 	select {
 	case d.outgoing <- msg:
@@ -66,6 +78,14 @@ func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 }
 
 func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, skipLimiter bool) error {
+	ctx, span := d.Tracer.Start(ctx, "addPin", trace.WithAttributes(
+		attribute.Int64("contID", int64(contid)),
+		attribute.Int64("userID", int64(user)),
+		attribute.String("data", data.String()),
+		attribute.Bool("skipLimiter", skipLimiter),
+	))
+	defer span.End()
+
 	var search []Pin
 	if err := d.DB.Find(&search, "content = ?", contid).Error; err != nil {
 		return err
@@ -154,7 +174,7 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 }
 
 func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error) {
-	_, span := Tracer.Start(ctx, "objectsForPin")
+	_, span := s.Tracer.Start(ctx, "objectsForPin")
 	defer span.End()
 
 	var objects []*Object
@@ -174,7 +194,9 @@ type commpResult struct {
 }
 
 func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCommP) error {
-	ctx, span := Tracer.Start(ctx, "handleComputeCommP")
+	ctx, span := d.Tracer.Start(ctx, "handleComputeCommP", trace.WithAttributes(
+		attribute.String("data", cmd.Data.String()),
+	))
 	defer span.End()
 
 	res, err := d.commpMemo.Do(ctx, cmd.Data.String())
@@ -213,6 +235,9 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
 }
 
 func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
+	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
+	defer span.End()
+
 	objs := make([]drpc.PinObj, 0, len(objects))
 	for _, o := range objects {
 		objs = append(objs, drpc.PinObj{
@@ -236,6 +261,9 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 }
 
 func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
+	ctx, span := d.Tracer.Start(ctx, "handleTakeContent")
+	defer span.End()
+
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 
@@ -261,6 +289,13 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 }
 
 func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+	ctx, span := d.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
+		attribute.Int64("dbID", int64(cmd.DBID)),
+		attribute.Int64("userId", int64(cmd.UserID)),
+		attribute.String("root", cmd.Root.String()),
+	))
+	defer span.End()
+
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 
@@ -349,14 +384,24 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint) {
 }
 
 func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
+	ctx, span := d.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
+		attribute.Int64("contentID", int64(cmd.ContentID)),
+		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
+		attribute.String("miner", cmd.Miner.String()),
+		attribute.String("dataCID", cmd.DataCid.String()),
+		attribute.String("propCID", cmd.PropCid.String()),
+	))
+	defer span.End()
+
 	go func() {
 		chanid, err := d.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
 		if err != nil {
-			log.Errorf("failed to start requested data transfer: %s", err)
+			errMsg := fmt.Sprintf("failed to start data transfer: %s", err)
+			log.Error(errMsg)
 			d.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 				DealDBID: cmd.DealDBID,
 				Failed:   true,
-				Message:  fmt.Sprintf("failed to start data transfer: %s", err),
+				Message:  errMsg,
 			})
 			return
 		}
@@ -372,13 +417,16 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 				},
 			},
 		}); err != nil {
-			log.Errorf("failed to nofity estuary primary node about transfer start: %s", err)
+			log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
 		}
 	}()
 	return nil
 }
 
 func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
+	ctx, span := d.Tracer.Start(ctx, "sendTransferStatusUpdate")
+	defer span.End()
+
 	var extra string
 	if st.State != nil {
 		extra = fmt.Sprintf("%d %s", st.State.Status, st.State.Message)
@@ -395,6 +443,11 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 }
 
 func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatus) error {
+	ctx, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
+		attribute.Int64("dealDbID", int64(req.DealDBID)),
+	))
+	defer span.End()
+
 	go func() {
 		ctx := context.TODO()
 		st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
