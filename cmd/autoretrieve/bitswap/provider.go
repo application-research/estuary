@@ -135,15 +135,15 @@ entryLoop:
 				provider.taskQueue.PushTasks(sender, peertask.Task{
 					Topic:    topicSendHave,
 					Priority: 0,
-					Work:     len(block.RawData()),
-					Data:     block,
+					Work:     block.Cid().ByteLen(),
+					Data:     block.Cid(),
 				})
 			case wantTypeBlock:
 				provider.taskQueue.PushTasks(sender, peertask.Task{
 					Topic:    topicSendBlock,
 					Priority: 0,
-					Work:     block.Cid().ByteLen(),
-					Data:     block.Cid(),
+					Work:     len(block.RawData()),
+					Data:     block,
 				})
 			}
 		default:
@@ -168,8 +168,8 @@ entryLoop:
 					provider.taskQueue.PushTasks(sender, peertask.Task{
 						Topic:    topicSendHave,
 						Priority: 0,
-						Work:     len(block.RawData()),
-						Data:     block,
+						Work:     block.Cid().ByteLen(),
+						Data:     block.Cid(),
 					})
 				}
 			case wantTypeBlock:
@@ -177,8 +177,8 @@ entryLoop:
 					provider.taskQueue.PushTasks(sender, peertask.Task{
 						Topic:    topicSendBlock,
 						Priority: 0,
-						Work:     block.Cid().ByteLen(),
-						Data:     block.Cid(),
+						Work:     len(block.RawData()),
+						Data:     block,
 					})
 				}
 			}
