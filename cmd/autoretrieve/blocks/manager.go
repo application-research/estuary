@@ -23,7 +23,7 @@ type ManagerConfig struct {
 // events.
 type Manager struct {
 	blockstore.Blockstore
-	waitList   map[cid.Cid][]chan<- Block
+	waitList   map[cid.Cid][]func(Block)
 	waitListLk sync.Mutex
 }
 
@@ -40,11 +40,11 @@ func NewManager(config ManagerConfig) (*Manager, error) {
 
 	return &Manager{
 		Blockstore: blockstore.NewBlockstoreNoPrefix(blockstoreDatastore),
-		waitList:   make(map[cid.Cid][]chan<- Block),
+		waitList:   make(map[cid.Cid][]func(Block)),
 	}, nil
 }
 
-func (mgr *Manager) GetAwait(cid cid.Cid, waitChan chan<- Block) error {
+func (mgr *Manager) GetAwait(cid cid.Cid, callback func(Block)) error {
 	block, err := mgr.Get(cid)
 
 	// If we couldn't get the block, we add it to the waitlist - the block will
@@ -55,14 +55,14 @@ func (mgr *Manager) GetAwait(cid cid.Cid, waitChan chan<- Block) error {
 		}
 
 		mgr.waitListLk.Lock()
-		mgr.waitList[cid] = append(mgr.waitList[cid], waitChan)
+		mgr.waitList[cid] = append(mgr.waitList[cid], callback)
 		mgr.waitListLk.Unlock()
 
 		return nil
 	}
 
 	// Otherwise, we can immediately populate the channel
-	waitChan <- block
+	callback(block)
 
 	return nil
 }
@@ -101,8 +101,8 @@ func (mgr *Manager) notifyWaitChans(block Block) {
 		// ch is full - is this possible?
 
 		delete(mgr.waitList, cid)
-		for _, ch := range blockChans {
-			ch <- block
+		for _, callback := range blockChans {
+			callback(block)
 		}
 
 		mgr.waitListLk.Lock()

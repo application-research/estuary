@@ -2,15 +2,17 @@ package bitswap
 
 import (
 	"context"
-	"sync"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/estuary/cmd/autoretrieve/filecoin"
 	"github.com/ipfs/go-bitswap/message"
 	bitswap_message_pb "github.com/ipfs/go-bitswap/message/pb"
 	"github.com/ipfs/go-bitswap/network"
+	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-log/v2"
+	"github.com/ipfs/go-peertaskqueue"
+	"github.com/ipfs/go-peertaskqueue/peertask"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -24,22 +26,26 @@ const (
 	wantTypeBlock = bitswap_message_pb.Message_Wantlist_Block
 )
 
+type taskQueueTopic uint
+
+const (
+	topicSendBlock taskQueueTopic = iota
+	topicSendHave
+	topicSendDontHave
+)
+
+const targetMessageSize = 16384
+
 type ProviderConfig struct {
 	DataDir string
 }
 
 type Provider struct {
-	config        ProviderConfig
-	network       network.BitSwapNetwork
-	blockManager  *blocks.Manager
-	retriever     *filecoin.Retriever
-	blockQueues   map[peer.ID]BlockQueue
-	blockQueuesLk sync.Mutex
-}
-
-type BlockQueue struct {
-	wantHaveChan  chan blocks.Block
-	wantBlockChan chan blocks.Block
+	config       ProviderConfig
+	network      network.BitSwapNetwork
+	blockManager *blocks.Manager
+	retriever    *filecoin.Retriever
+	taskQueue    *peertaskqueue.PeerTaskQueue
 }
 
 func NewProvider(
@@ -64,12 +70,41 @@ func NewProvider(
 		network:      network.NewFromIpfsHost(host, fullRT),
 		blockManager: blockManager,
 		retriever:    retriever,
-		blockQueues:  make(map[peer.ID]BlockQueue),
+		taskQueue:    peertaskqueue.New(),
 	}
 
 	provider.network.SetDelegate(provider)
 
 	return provider, nil
+}
+
+func (provider *Provider) startSend() {
+	go func() {
+		for {
+			peer, tasks, _ := provider.taskQueue.PopTasks(targetMessageSize)
+
+			if len(tasks) == 0 {
+				break
+			}
+
+			msg := message.New(false)
+
+			for _, task := range tasks {
+				switch task.Topic {
+				case topicSendBlock:
+					msg.AddBlock(task.Data.(blocks.Block))
+				case topicSendHave:
+					msg.AddHave(task.Data.(cid.Cid))
+				case topicSendDontHave:
+					msg.AddDontHave(task.Data.(cid.Cid))
+				}
+			}
+
+			if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
+				logger.Errorf("Could not send bitswap message to %s: %v", peer, err)
+			}
+		}
+	}()
 }
 
 // Upon receiving a message, provider will iterate over the requested CIDs. For
@@ -95,116 +130,106 @@ entryLoop:
 		switch {
 		case err == nil:
 			// If we did have the block locally, just respond with that
-			provider.respondPositive(sender, entry, block)
+			switch entry.WantType {
+			case wantTypeHave:
+				provider.taskQueue.PushTasks(sender, peertask.Task{
+					Topic:    topicSendHave,
+					Priority: 0,
+					Work:     len(block.RawData()),
+					Data:     block,
+				})
+			case wantTypeBlock:
+				provider.taskQueue.PushTasks(sender, peertask.Task{
+					Topic:    topicSendBlock,
+					Priority: 0,
+					Work:     block.Cid().ByteLen(),
+					Data:     block.Cid(),
+				})
+			}
 		default:
 			// Otherwise, we will need to ask for it...
 			if err := provider.retriever.Request(entry.Cid); err != nil {
 				// If request failed, it means there's no way we'll be able to
 				// get that block at the moment, so respond with DONT_HAVE
-				provider.respondNegative(sender, entry)
+				provider.taskQueue.PushTasks(sender, peertask.Task{
+					Topic:    topicSendDontHave,
+					Priority: 0,
+					Work:     block.Cid().ByteLen(),
+					Data:     block.Cid(),
+				})
 				continue entryLoop
 			}
 
-			var queue chan blocks.Block
-
-			provider.blockQueuesLk.Lock()
+			// Queue the block to be sent once we get it
+			var callback func(blocks.Block)
 			switch entry.WantType {
 			case wantTypeHave:
-				queue = provider.blockQueues[sender].wantHaveChan
+				callback = func(block blocks.Block) {
+					provider.taskQueue.PushTasks(sender, peertask.Task{
+						Topic:    topicSendHave,
+						Priority: 0,
+						Work:     len(block.RawData()),
+						Data:     block,
+					})
+				}
 			case wantTypeBlock:
-				queue = provider.blockQueues[sender].wantBlockChan
+				callback = func(block blocks.Block) {
+					provider.taskQueue.PushTasks(sender, peertask.Task{
+						Topic:    topicSendBlock,
+						Priority: 0,
+						Work:     block.Cid().ByteLen(),
+						Data:     block.Cid(),
+					})
+				}
 			}
-			provider.blockQueuesLk.Unlock()
-
-			provider.blockManager.GetAwait(entry.Cid, queue)
+			provider.blockManager.GetAwait(entry.Cid, callback)
 		}
 	}
+
+	provider.startSend()
 }
 
 func (provider *Provider) ReceiveError(err error) {
 	logger.Errorf("Error receiving bitswap message: %v", err)
 }
 
-func (provider *Provider) PeerConnected(peer peer.ID) {
-	blockQueue := BlockQueue{
-		wantHaveChan:  make(chan blocks.Block, 10),
-		wantBlockChan: make(chan blocks.Block, 10),
-	}
+func (provider *Provider) PeerConnected(peer peer.ID) {}
 
-	// When a peer connects, create a queue for it
-	provider.blockQueuesLk.Lock()
-	provider.blockQueues[peer] = blockQueue
-	provider.blockQueuesLk.Unlock()
-
-	// And start a send routine each for the WANT_BLOCKs and WANT_HAVEs
-
-	go func() {
-		for block := range blockQueue.wantBlockChan {
-			msg := message.New(false)
-			msg.AddBlock(block)
-			if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
-				logger.Errorf("Could not send block %s to %s: %v", block.Cid(), peer, err)
-			}
-		}
-	}()
-
-	go func() {
-		for block := range blockQueue.wantHaveChan {
-			msg := message.New(false)
-			msg.AddHave(block.Cid())
-			if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
-				logger.Errorf("Could not send HAVE %s to %s: %v", block.Cid(), peer, err)
-			}
-		}
-	}()
-}
-
-func (provider *Provider) PeerDisconnected(peer peer.ID) {
-	// On disconnect, destroy the peer's queue
-	provider.blockQueuesLk.Lock()
-
-	// TODO: need to clean up waiting blocks in block manager
-	// blockQueue := provider.blockQueues[peer]
-	// close(blockQueue.wantBlockChan)
-	// close(blockQueue.wantHaveChan)
-
-	delete(provider.blockQueues, peer)
-	provider.blockQueuesLk.Unlock()
-}
+func (provider *Provider) PeerDisconnected(peer peer.ID) {}
 
 // Sends either a HAVE or a block to a peer, depending on whether the peer
 // requested a WANT_HAVE or WANT_BLOCK.
-func (provider *Provider) respondPositive(peer peer.ID, entry message.Entry, block blocks.Block) {
-	msg := message.New(false)
+// func (provider *Provider) respondPositive(peer peer.ID, entry message.Entry, block blocks.Block) {
+// 	msg := message.New(false)
 
-	switch entry.WantType {
-	case wantTypeHave:
-		// If WANT_HAVE, say we have the block
-		msg.AddHave(entry.Cid)
-	case wantTypeBlock:
-		// If WANT_BLOCK, make sure block is not nil, and add the block to the
-		// response
-		if block == nil {
-			logger.Errorf("Cannot respond to WANT_BLOCK from %s with nil block", peer)
-			return
-		}
-		msg.AddBlock(block)
-	default:
-		logger.Errorf("Cannot respond to %s with unknown want type %v", peer, entry.WantType)
-		return
-	}
+// 	switch entry.WantType {
+// 	case wantTypeHave:
+// 		// If WANT_HAVE, say we have the block
+// 		msg.AddHave(entry.Cid)
+// 	case wantTypeBlock:
+// 		// If WANT_BLOCK, make sure block is not nil, and add the block to the
+// 		// response
+// 		if block == nil {
+// 			logger.Errorf("Cannot respond to WANT_BLOCK from %s with nil block", peer)
+// 			return
+// 		}
+// 		msg.AddBlock(block)
+// 	default:
+// 		logger.Errorf("Cannot respond to %s with unknown want type %v", peer, entry.WantType)
+// 		return
+// 	}
 
-	if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
-		logger.Errorf("Failed to respond to %s: %v", peer, err)
-	}
-}
+// 	if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
+// 		logger.Errorf("Failed to respond to %s: %v", peer, err)
+// 	}
+// }
 
-func (provider *Provider) respondNegative(peer peer.ID, entry message.Entry) {
-	msg := message.New(false)
+// func (provider *Provider) respondNegative(peer peer.ID, entry message.Entry) {
+// 	msg := message.New(false)
 
-	msg.AddDontHave(entry.Cid)
+// 	msg.AddDontHave(entry.Cid)
 
-	if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
-		logger.Errorf("Failed to respond to %s: %v", peer, err)
-	}
-}
+// 	if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
+// 		logger.Errorf("Failed to respond to %s: %v", peer, err)
+// 	}
+// }
