@@ -154,8 +154,8 @@ entryLoop:
 				provider.taskQueue.PushTasks(sender, peertask.Task{
 					Topic:    topicSendDontHave,
 					Priority: 0,
-					Work:     block.Cid().ByteLen(),
-					Data:     block.Cid(),
+					Work:     entry.Cid.ByteLen(),
+					Data:     entry.Cid,
 				})
 				continue entryLoop
 			}
