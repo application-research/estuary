@@ -10,7 +10,9 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-ipld-prime"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -116,6 +118,12 @@ func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals [
 				Cid:     util.DbCID{root},
 			})
 			continue
+		}
+
+		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+		if err := s.addDatabaseTrackingToContent(ctx, contentToFetch, dserv, s.Node.Blockstore, root, func(int64) {}); err != nil {
+			log.Errorw("failed adding content to database after successful retrieval", "cont", contentToFetch, "err", err.Error())
+			return err
 		}
 
 		// success

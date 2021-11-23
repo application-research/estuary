@@ -996,7 +996,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	var commpcid cid.Cid
-	var commpSize uint64
+	var commpSize abi.UnpaddedPieceSize
 	if cpc := c.QueryParam("commp"); cpc != "" {
 		if u.Perms < util.PermLevelAdmin {
 			return fmt.Errorf("must be an admin to specify commp for car file upload")
@@ -1012,7 +1012,10 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 			return fmt.Errorf("failed to parse size: %w", err)
 		}
 
-		commpSize = ss
+		commpSize = abi.UnpaddedPieceSize(ss)
+		if err := commpSize.Validate(); err != nil {
+			return fmt.Errorf("given commP size was invalid: %w", err)
+		}
 
 		cc, err := cid.Decode(cpc)
 		if err != nil {
@@ -1069,7 +1072,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 				CommPComplete: &drpc.CommPComplete{
 					Data:  root,
 					CommP: commpcid,
-					Size:  abi.UnpaddedPieceSize(commpSize),
+					Size:  commpSize,
 				},
 			},
 		}); err != nil {

@@ -1381,7 +1381,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 					log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
 				}
 
-				done(time.Second * 10)
+				done(time.Second * 30)
 			}()
 
 			return nil
@@ -2507,6 +2507,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 	if err != nil {
 		return err
 	}
+	log.Infof("refreshing content %d onto shuttle %s", cont, loc)
 
 	switch loc {
 	case "local":
@@ -2537,6 +2538,7 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 	}
 
 	if len(activeDeals) == 0 {
+		log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
 		return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
 	}
 

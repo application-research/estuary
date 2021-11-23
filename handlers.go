@@ -494,7 +494,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	var commpcid cid.Cid
-	var commpSize uint64
+	var commpSize abi.UnpaddedPieceSize
 	if cpc := c.QueryParam("commp"); cpc != "" {
 		if u.Perm < util.PermLevelAdmin {
 			return fmt.Errorf("must be an admin to specify commp for car file upload")
@@ -510,7 +510,10 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			return fmt.Errorf("failed to parse size: %w", err)
 		}
 
-		commpSize = ss
+		commpSize = abi.UnpaddedPieceSize(ss)
+		if err := commpSize.Validate(); err != nil {
+			return fmt.Errorf("given commP size was invalid: %w", err)
+		}
 
 		cc, err := cid.Decode(cpc)
 		if err != nil {
@@ -541,7 +544,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		opcr := PieceCommRecord{
 			Data:  util.DbCID{header.Roots[0]},
 			Piece: util.DbCID{commpcid},
-			Size:  abi.UnpaddedPieceSize(commpSize),
+			Size:  commpSize,
 		}
 
 		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
@@ -568,7 +571,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}()
 	return c.JSON(200, map[string]interface{}{"content": cont})
 
-	return nil
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
