@@ -2297,6 +2297,8 @@ github.com/whyrusleeping/memo v0.0.0-20210914173559-2bd9268e6264 h1:HJIgpPfnwynQ
 github.com/whyrusleeping/memo v0.0.0-20210914173559-2bd9268e6264/go.mod h1:xgUNxvGGAouwP4wwwLwlzWuKMSUElf89vICsRhit+TE=
 github.com/whyrusleeping/memo v0.0.0-20211124194344-5b7498a60d42 h1:XG/gswRyKaxIMPjE+kC+PLd22IpFkMkt0IC/n5dZMyw=
 github.com/whyrusleeping/memo v0.0.0-20211124194344-5b7498a60d42/go.mod h1:29v/6EszVL7QQS2P/cvE0jnVrr+bt7mVV7dEPoXAoi4=
+github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3 h1:JmdWIJTdt8rCbjetRawHBFZmwLY6jfu8VmrHgqO64cw=
+github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3/go.mod h1:29v/6EszVL7QQS2P/cvE0jnVrr+bt7mVV7dEPoXAoi4=
 github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7 h1:E9S12nwJwEOXe2d6gT6qxdvqMnNq+VnSsKPgm2ZZNds=
 github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7/go.mod h1:X2c0RVCI1eSUFI8eLcY3c0423ykwiUdxLJtkDvruhjI=
 github.com/whyrusleeping/pubsub v0.0.0-20190708150250-92bcb0691325 h1:++Zf4xQ7YrkE81gNHIjVqx5JZsn0nbMeHOkY1ILAIME=
