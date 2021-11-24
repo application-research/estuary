@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/application-research/estuary/build"
@@ -23,6 +22,7 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
+	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/otel/trace"
@@ -368,7 +368,7 @@ func main() {
 			Api:        api,
 			StagingMgr: sbmgr,
 			tracer:     otel.Tracer("api"),
-			quickCache: make(map[string]endpointCache),
+			cacher:     memo.NewCacher(),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -541,38 +541,7 @@ type Server struct {
 	CM         *ContentManager
 	StagingMgr *stagingbs.StagingBSMgr
 
-	cacheLk    sync.Mutex
-	quickCache map[string]endpointCache
-}
-
-type endpointCache struct {
-	lastComputed time.Time
-	val          interface{}
-}
-
-func (s *Server) checkCache(endpoint string, ttl time.Duration) (interface{}, bool) {
-	s.cacheLk.Lock()
-	defer s.cacheLk.Unlock()
-
-	ec, ok := s.quickCache[endpoint]
-	if !ok {
-		return nil, false
-	}
-
-	if time.Since(ec.lastComputed) < ttl {
-		return ec.val, true
-	}
-
-	return ec.val, false
-}
-
-func (s *Server) setCache(endpoint string, val interface{}) {
-	s.cacheLk.Lock()
-	defer s.cacheLk.Unlock()
-	s.quickCache[endpoint] = endpointCache{
-		lastComputed: time.Now(),
-		val:          val,
-	}
+	cacher *memo.Cacher
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {

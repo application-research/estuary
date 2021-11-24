@@ -2802,28 +2802,15 @@ type publicStatsResponse struct {
 }
 
 func (s *Server) handlePublicStats(c echo.Context) error {
-	val, ok := s.checkCache("public/stats", time.Minute*2)
-	if ok {
-		return c.JSON(200, val)
-	}
+	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
+		return s.computePublicStats()
+	})
 
-	if val != nil {
-		// TODO: memoize this
-		go func() {
-			_, err := s.computePublicStats()
-			if err != nil {
-				log.Errorf("failed to compute public stats: %s", err)
-			}
-		}()
-		return c.JSON(200, val)
-	}
-
-	stats, err := s.computePublicStats()
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(200, stats)
+	return c.JSON(200, val)
 }
 
 func (s *Server) computePublicStats() (*publicStatsResponse, error) {
@@ -2840,7 +2827,6 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	s.setCache("public/stats", stats)
 	return &stats, nil
 }
 
@@ -2899,12 +2885,23 @@ type metricsDealJoin struct {
 }
 
 func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
+	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
+		return s.computeDealMetrics()
+	})
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, val)
+}
+
+func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
 	var deals []*metricsDealJoin
 	if err := s.DB.Model(contentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("content_deals.failed as failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
 		Scan(&deals).Error; err != nil {
-		return err
+		return nil, err
 	}
 
 	coll := make(map[time.Time]*dealMetricsInfo)
@@ -2998,7 +2995,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 		return out[i].Time.Before(out[j].Time)
 	})
 
-	return c.JSON(200, out)
+	return out, nil
 }
 
 type dealQuery struct {
