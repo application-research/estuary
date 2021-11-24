@@ -1360,7 +1360,7 @@ var bargeSyncCmd = &cli.Command{
 
 				resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, map[string]interface{}{
 					"collection":     collection,
-					"collectionPath": f.Path,
+					"collectionPath": "/" + f.Path,
 				})
 				if err != nil {
 					errs[ix] = err

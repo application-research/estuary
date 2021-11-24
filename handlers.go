@@ -660,6 +660,16 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		col = &srchCol
 	}
 
+	var colpath *string
+	if cp := c.FormValue("collectionPath"); cp != "" {
+		sp, err := sanitizePath(cp)
+		if err != nil {
+			return err
+		}
+
+		colpath = &sp
+	}
+
 	bsid, bs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -682,6 +692,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
+			Path:       colpath,
 		}).Error; err != nil {
 			log.Errorf("failed to add content to requested collection: %s", err)
 		}
@@ -4064,7 +4075,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			continue
 		}
 
-		parts := filepath.SplitList(relp)
+		parts := strings.Split(relp, "/")
 		if !dirs[parts[0]] {
 			dirs[parts[0]] = true
 			out = append(out, collectionListResponse{
@@ -4110,6 +4121,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
 		return err
 	}
+
 	if content.UserID != u.ID {
 		return &util.HttpError{
 			Code:    401,
