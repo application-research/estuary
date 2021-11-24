@@ -261,7 +261,14 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 		doneLk.Unlock()
 
 		retrieveCancel()
-		logger.Errorf("Retrieval timed out after not receiving data for %s (started %s ago, stopped at %s)", retriever.config.RetrievalTimeout, time.Since(startTime), humanize.IBytes(lastBytesReceived))
+		logger.Errorf(
+			"Retrieval timed out from miner %s for %s after not receiving data for %s (started %s ago, stopped at %s)",
+			query.candidate.Miner,
+			query.candidate.RootCid,
+			retriever.config.RetrievalTimeout,
+			time.Since(startTime),
+			humanize.IBytes(lastBytesReceived),
+		)
 	})
 	stats, err := retriever.filClient.RetrieveContentWithProgressCallback(retrieveCtx, query.candidate.Miner, proposal, func(bytesReceived uint64) {
 		doneLk.Lock()
