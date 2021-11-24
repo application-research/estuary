@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -249,10 +250,14 @@ type collectionListResponse struct {
 
 func (c *EstClient) CollectionsListDir(ctx context.Context, col, path string) ([]collectionListResponse, error) {
 	var out []collectionListResponse
-	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?col=%s&path=%s", col, url.PathEscape(path)), nil, &out)
+	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?col=%s&dir=%s", col, url.PathEscape(path)), nil, &out)
 	if err != nil {
 		return nil, err
 	}
+
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].Name < out[j].Name
+	})
 
 	return out, nil
 }
