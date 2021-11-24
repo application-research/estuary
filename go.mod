@@ -44,7 +44,7 @@ require (
 	github.com/ipfs/go-merkledag v0.4.1
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-metrics-prometheus v0.0.2
-	github.com/ipfs/go-peertaskqueue v0.7.0 // indirect
+	github.com/ipfs/go-peertaskqueue v0.6.0 // indirect
 	github.com/ipfs/go-unixfs v0.2.6
 	github.com/ipld/go-car v0.3.2-0.20211001225732-32d0d9933823
 	github.com/ipld/go-ipld-prime v0.12.3
