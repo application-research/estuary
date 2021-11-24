@@ -445,6 +445,7 @@ var collectionsCmd = &cli.Command{
 	Name: "collections",
 	Subcommands: []*cli.Command{
 		collectionsCreateCmd,
+		collectionsLsDirCmd,
 	},
 	Action: listCollections,
 }
@@ -474,6 +475,39 @@ var collectionsCreateCmd = &cli.Command{
 		fmt.Println("new collection created")
 		fmt.Println(col.Name)
 		fmt.Println(col.UUID)
+
+		return nil
+	},
+}
+
+var collectionsLsDirCmd = &cli.Command{
+	Name:  "ls",
+	Flags: []cli.Flag{},
+	Action: func(cctx *cli.Context) error {
+		c, err := loadClient(cctx)
+		if err != nil {
+			return err
+		}
+
+		if cctx.Args().Len() < 2 {
+			return fmt.Errorf("must specify collection ID and path to list")
+		}
+
+		col := cctx.Args().Get(0)
+		path := cctx.Args().Get(1)
+
+		ents, err := c.CollectionsListDir(cctx.Context, col, path)
+		if err != nil {
+			return err
+		}
+
+		for _, e := range ents {
+			if e.Dir {
+				fmt.Println(e.Name + "/")
+			} else {
+				fmt.Println(e.Name)
+			}
+		}
 
 		return nil
 	},
@@ -1164,6 +1198,11 @@ var bargeSyncCmd = &cli.Command{
 			return err
 		}
 
+		collection := r.Cfg.GetString("collection.uuid")
+		if collection == "" {
+			return fmt.Errorf("barge repo does not have a collection set")
+		}
+
 		/*
 			var files []File
 			if err := r.DB.Find(&files).Error; err != nil {
@@ -1319,7 +1358,10 @@ var bargeSyncCmd = &cli.Command{
 					<-sema
 				}()
 
-				resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, nil)
+				resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, map[string]interface{}{
+					"collection":     collection,
+					"collectionPath": f.Path,
+				})
 				if err != nil {
 					errs[ix] = err
 					return

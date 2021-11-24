@@ -512,6 +512,11 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 
 	db.AutoMigrate(&Shuttle{})
 
+	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
+	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
+		return nil, fmt.Errorf("failed to create collection paths index: %w", err)
+	}
+
 	var count int64
 	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
 		return nil, err

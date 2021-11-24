@@ -160,7 +160,7 @@ func (cm *ContentManager) refreshPinQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*Collection, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -196,6 +196,16 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	}
 	if err := cm.DB.Create(&cont).Error; err != nil {
 		return nil, err
+	}
+
+	if len(cols) > 0 {
+		for _, c := range cols {
+			c.Content = cont.ID
+		}
+
+		if err := cm.DB.Create(cols).Error; err != nil {
+			return nil, err
+		}
 	}
 
 	if loc == "local" {
@@ -626,14 +636,28 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var cols []*Collection
+	var cols []*CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
 		var srchCol Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
 			return err
 		}
 
-		cols = []*Collection{&srchCol}
+		var colpath *string
+		colp, ok := pin.Meta["collectionPath"].(string)
+		if ok {
+			p, err := sanitizePath(colp)
+			if err != nil {
+				return err
+			}
+
+			colpath = &p
+		}
+
+		cols = []*CollectionRef{&CollectionRef{
+			Collection: srchCol.ID,
+			Path:       colpath,
+		}}
 	}
 
 	var addrInfos []peer.AddrInfo

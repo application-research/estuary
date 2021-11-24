@@ -18,4 +18,5 @@ type CollectionRef struct {
 	CreatedAt  time.Time
 	Collection uint `gorm:"index:,option:CONCURRENTLY"`
 	Content    uint `gorm:"index:,option:CONCURRENTLY"`
+	Path       *string
 }

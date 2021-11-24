@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	httpprof "net/http/pprof"
+	"path/filepath"
 	"runtime/pprof"
 	"sort"
 	"strconv"
@@ -186,6 +187,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
+	colfs := cols.Group("/fs")
+	colfs.GET("/list", withUser(s.handleColfsListDir))
+	colfs.POST("/add", withUser(s.handleColfsAdd))
 
 	pinning := e.Group("/pinning")
 	pinning.Use(openApiMiddleware)
@@ -392,10 +396,11 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 }
 
 type addFromIpfsParams struct {
-	Root       string   `json:"root"`
-	Name       string   `json:"name"`
-	Collection string   `json:"collection"`
-	Peers      []string `json:"peers"`
+	Root           string   `json:"root"`
+	Name           string   `json:"name"`
+	Collection     string   `json:"collection"`
+	CollectionPath *string  `json:"collectionPath"`
+	Peers          []string `json:"peers"`
 }
 
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
@@ -413,14 +418,26 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
-	var cols []*Collection
+	var cols []*CollectionRef
 	if params.Collection != "" {
 		var srchCol Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
 			return err
 		}
 
-		cols = []*Collection{&srchCol}
+		var colp *string
+		if params.CollectionPath != nil {
+			p, err := sanitizePath(*params.CollectionPath)
+			if err != nil {
+				return err
+			}
+			colp = &p
+		}
+
+		cols = []*CollectionRef{&CollectionRef{
+			Collection: srchCol.ID,
+			Path:       colp,
+		}}
 	}
 
 	var addrInfos []peer.AddrInfo
@@ -3973,4 +3990,146 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			},
 		})
 	}
+}
+
+type collectionListQueryRes struct {
+	ContID uint
+	Size   int64
+	Path   *string
+}
+
+type collectionListResponse struct {
+	Name   string `json:"name"`
+	Dir    bool   `json:"dir"`
+	Size   int64  `json:"size"`
+	ContID uint   `json:"contId"`
+}
+
+func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
+	colid := c.QueryParam("col")
+	dir := c.QueryParam("dir")
+
+	var col Collection
+	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+		return err
+	}
+
+	if col.UserID != u.ID {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+		}
+	}
+
+	if dir == "" {
+		dir = "/"
+	}
+
+	dir = filepath.Clean(dir)
+
+	// TODO: optimize this a good deal
+	var refs []collectionListQueryRes
+	if err := s.DB.Model(CollectionRef{}).
+		Joins("left join contents on contents.id = collection_refs.content").
+		Where("collection = ?", col.ID).Select("contents.id as cont_id, path, size").Scan(&refs).Error; err != nil {
+		return err
+	}
+
+	dirs := make(map[string]bool)
+	var out []collectionListResponse
+	for _, r := range refs {
+		if r.Path == nil {
+			continue
+		}
+
+		path := *r.Path
+
+		relp, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
+		// if the relative path requires pathing up, its definitely not in this dir
+		if strings.HasPrefix(relp, "..") {
+			continue
+		}
+
+		if !strings.Contains(relp, "/") {
+			out = append(out, collectionListResponse{
+				Name:   filepath.Base(relp),
+				Dir:    false,
+				Size:   r.Size,
+				ContID: r.ContID,
+			})
+			continue
+		}
+
+		parts := filepath.SplitList(relp)
+		if !dirs[parts[0]] {
+			dirs[parts[0]] = true
+			out = append(out, collectionListResponse{
+				Name: parts[0],
+				Dir:  true,
+			})
+			continue
+		}
+	}
+
+	return c.JSON(200, out)
+}
+
+func sanitizePath(p string) (string, error) {
+	if p[0] != '/' {
+		return "", fmt.Errorf("all paths must be absolute")
+	}
+
+	// TODO: prevent use of special weird characters
+
+	return filepath.Clean(p), nil
+}
+
+func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
+	colid := c.QueryParam("col")
+	contid := c.QueryParam("content")
+	npath := c.QueryParam("path")
+
+	var col Collection
+	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+		return err
+	}
+
+	if col.UserID != u.ID {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified collection",
+		}
+	}
+
+	var content Content
+	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
+		return err
+	}
+	if content.UserID != u.ID {
+		return &util.HttpError{
+			Code:    401,
+			Message: util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
+		}
+	}
+
+	p, err := sanitizePath(npath)
+	if err != nil {
+		return err
+	}
+
+	if err := s.DB.Create(&CollectionRef{
+		Collection: col.ID,
+		Content:    content.ID,
+		Path:       &p,
+	}).Error; err != nil {
+		log.Errorf("failed to add content to requested collection: %s", err)
+	}
+
+	return c.JSON(200, map[string]string{})
 }

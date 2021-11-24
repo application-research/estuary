@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -237,6 +238,23 @@ func (c *EstClient) CollectionsCreate(ctx context.Context, name, desc string) (*
 	}
 
 	return &out, nil
+}
+
+type collectionListResponse struct {
+	Name   string `json:"name"`
+	Dir    bool   `json:"dir"`
+	Size   int64  `json:"size"`
+	ContID uint   `json:"contId"`
+}
+
+func (c *EstClient) CollectionsListDir(ctx context.Context, col, path string) ([]collectionListResponse, error) {
+	var out []collectionListResponse
+	_, err := c.doRequest(ctx, "POST", fmt.Sprintf("/collections/fs/list?col=%s&path=%s", col, url.PathEscape(path)), nil, &out)
+	if err != nil {
+		return nil, err
+	}
+
+	return out, nil
 }
 
 func (c *EstClient) PinAdd(ctx context.Context, root cid.Cid, name string, origins []string, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
