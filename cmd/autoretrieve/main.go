@@ -14,6 +14,7 @@ import (
 	"github.com/application-research/estuary/cmd/autoretrieve/bitswap"
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/estuary/cmd/autoretrieve/filecoin"
+	"github.com/application-research/estuary/cmd/autoretrieve/metrics"
 	"github.com/filecoin-project/go-address"
 	lcli "github.com/filecoin-project/lotus/cli"
 	leveldb "github.com/ipfs/go-ds-leveldb"
@@ -91,6 +92,8 @@ func run(cctx *cli.Context) error {
 	endpoint := cctx.String("endpoint")
 	timeout := cctx.Duration("timeout")
 
+	metrics := metrics.NewBasic(logger)
+
 	// Load miner blacklist
 	minerBlacklist, err := readMinerBlacklist(dataDir)
 	if err != nil {
@@ -130,6 +133,7 @@ func run(cctx *cli.Context) error {
 		Endpoint:         endpoint,
 		MinerBlacklist:   minerBlacklist,
 		RetrievalTimeout: timeout,
+		Metrics:          metrics,
 	}, host, api, datastore, blockManager)
 	if err != nil {
 		return err

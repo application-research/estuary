@@ -28,16 +28,19 @@ type CandidateInfo struct {
 	Miner address.Address
 }
 
-type QueryResult struct {
-	Duration time.Duration
+type GetCandidatesResult struct {
+	Err   error
+	Count uint
+}
 
+type QueryResult struct {
 	// Fill out whole struct even with non-nil error
 	Err error
 }
 
 type RetrievalResult struct {
 	Duration      time.Duration
-	BytesReceived uint
+	BytesReceived uint64
 	TotalPayment  types.FIL
 
 	// Fill out whole struct even with non-nil error
@@ -53,13 +56,11 @@ type RequestResult struct {
 }
 
 type Metrics interface {
+	// Called whenever the wallet is set
 	RecordWallet(WalletInfo)
 
-	// Called once, at the beginning of a request
-	RecordRequest(RequestInfo)
-
 	// Called once, after getting candidates
-	RecordGetCandidatesResult(count uint)
+	RecordGetCandidatesResult(RequestInfo, GetCandidatesResult)
 
 	// Called before each query
 	RecordQuery(CandidateInfo)
@@ -72,7 +73,4 @@ type Metrics interface {
 
 	// Called after each retrieval attempt
 	RecordRetrievalResult(CandidateInfo, RetrievalResult)
-
-	// Called once, at the end of a request
-	RecordRequestResult(RequestInfo, RequestResult)
 }

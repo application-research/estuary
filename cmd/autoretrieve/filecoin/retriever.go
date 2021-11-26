@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
+	"github.com/application-research/estuary/cmd/autoretrieve/metrics"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
@@ -54,6 +55,7 @@ type RetrieverConfig struct {
 	Endpoint         string
 	MinerBlacklist   map[address.Address]bool
 	RetrievalTimeout time.Duration
+	Metrics          metrics.Metrics
 }
 
 type Retriever struct {
@@ -74,8 +76,15 @@ type candidateQuery struct {
 	response  *retrievalmarket.QueryResponse
 }
 
-// Possible errors: ErrInitKeystoreFailed, ErrInitWalletFailed, ErrInitFilClientFailed
-func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datastore datastore.Batching, blockManager *blocks.Manager) (*Retriever, error) {
+// Possible errors: ErrInitKeystoreFailed, ErrInitWalletFailed,
+// ErrInitFilClientFailed
+func NewRetriever(
+	config RetrieverConfig,
+	host host.Host,
+	api api.Gateway,
+	datastore datastore.Batching,
+	blockManager *blocks.Manager,
+) (*Retriever, error) {
 
 	keystore, err := keystore.OpenOrInitKeystore(filepath.Join(config.DataDir, walletSubdir))
 	if err != nil {
@@ -89,11 +98,12 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 
 	walletAddr, err := wallet.GetDefault()
 	if err != nil {
-		logger.Warnf("Could not load any default wallet address, only free retrievals will be attempted (%v)", err)
 		walletAddr = address.Undef
-	} else {
-		logger.Infof("Using default wallet address %s", walletAddr)
 	}
+	config.Metrics.RecordWallet(metrics.WalletInfo{
+		Err:  err,
+		Addr: walletAddr,
+	})
 
 	filClient, err := filclient.NewClient(host, api, wallet, walletAddr, blockManager, datastore, config.DataDir)
 	if err != nil {
@@ -121,18 +131,26 @@ func NewRetriever(config RetrieverConfig, host host.Host, api api.Gateway, datas
 // ErrEndpointBodyInvalid, ErrNoCandidates
 func (retriever *Retriever) Request(cid cid.Cid) error {
 
+	requestInfo := metrics.RequestInfo{
+		RequestCid: cid,
+	}
+
 	// TODO: before looking up candidates from the endpoint, we could cache
 	// candidates and use that cached info. We only really have to look up an
 	// up-to-date candidate list from the endpoint if we need to begin a new
 	// retrieval.
 	candidates, err := retriever.lookupCandidates(cid)
 	if err != nil {
+		retriever.config.Metrics.RecordGetCandidatesResult(requestInfo, metrics.GetCandidatesResult{
+			Err: err,
+		})
+
 		return fmt.Errorf("could not get retrieval candidates for %s: %w", cid, err)
 	}
 
 	// If we got to this point, one or more candidates have been found and we
 	// are good to go ahead with the retrieval
-	go retriever.retrieveFromBestCandidate(context.Background(), candidates)
+	go retriever.retrieveFromBestCandidate(context.Background(), cid, candidates)
 
 	return nil
 }
@@ -141,8 +159,8 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 // serial until one succeeds.
 //
 // Possible errors: ErrAllRetrievalsFailed
-func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candidates []retrievalCandidate) error {
-	queries := retriever.queryCandidates(ctx, candidates)
+func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid cid.Cid, candidates []retrievalCandidate) error {
+	queries := retriever.queryCandidates(ctx, cid, candidates)
 
 	sort.Slice(queries, func(i, j int) bool {
 		a := queries[i].response
@@ -171,60 +189,30 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, candi
 	// stats will be nil after the loop if none of the retrievals successfully
 	// complete
 	var stats *filclient.RetrievalStats
-	for i, query := range queries {
+	for _, query := range queries {
+		candidateInfo := metrics.CandidateInfo{
+			RequestInfo: metrics.RequestInfo{RequestCid: cid},
+			RootCid:     query.candidate.RootCid,
+			Miner:       query.candidate.Miner,
+		}
+
 		if retriever.isRetrievalRunning(query.candidate.RootCid) {
 			break
 		}
 
-		retriever.runningRetrievalsLk.Lock()
-		runningRetrievalCount := len(retriever.runningRetrievals)
-		retriever.runningRetrievalsLk.Unlock()
-
-		logger.Infof(
-			"Attempting retrieval %v/%v from miner %s for %s (%v in progress)",
-			i+1,
-			len(queries),
-			query.candidate.Miner,
-			query.candidate.RootCid,
-			runningRetrievalCount+1,
-		)
-
+		retriever.config.Metrics.RecordRetrieval(candidateInfo)
 		stats_, err := retriever.retrieve(ctx, query)
+		retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
+			Duration:      stats_.Duration,
+			BytesReceived: stats_.Size,
+			TotalPayment:  types.FIL(stats_.TotalPayment),
+			Err:           err,
+		})
 		if err != nil {
-			logger.Errorf(
-				"Failed to retrieve %v/%v from miner %s for %s: %v",
-				i+1,
-				len(queries),
-				query.candidate.Miner,
-				query.candidate.RootCid,
-				err,
-			)
-
-			if errors.Is(err, ErrRetrievalAlreadyRunning) {
-				logger.Warnf("Tried to start a second retrieval for the same CID %s", query.candidate.RootCid)
-				return err
-			}
-
 			continue
 		}
 
 		stats = stats_
-
-		logger.Infof(
-			"Successfully retrieved candidate %v/%v from miner %s for %s\n"+
-				"\tDuration: %s\n"+
-				"\tSize: %s\n"+
-				"\tAverage Speed: %s/s\n"+
-				"\tTotal Payment: %s",
-			i+1,
-			len(queries),
-			query.candidate.Miner,
-			query.candidate.RootCid,
-			stats.Duration,
-			humanize.IBytes(stats.Size),
-			humanize.IBytes(stats.AverageSpeed),
-			types.FIL(stats.TotalPayment),
-		)
 
 		break
 	}
@@ -255,20 +243,14 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	var lastBytesReceived uint64 = 0
 	var doneLk sync.Mutex
 	done := false
+	timedOut := false
 	lastBytesReceivedTimer := time.AfterFunc(retriever.config.RetrievalTimeout, func() {
 		doneLk.Lock()
 		done = true
 		doneLk.Unlock()
 
 		retrieveCancel()
-		logger.Errorf(
-			"Retrieval timed out from miner %s for %s after not receiving data for %s (started %s ago, stopped at %s)",
-			query.candidate.Miner,
-			query.candidate.RootCid,
-			retriever.config.RetrievalTimeout,
-			time.Since(startTime),
-			humanize.IBytes(lastBytesReceived),
-		)
+		timedOut = true
 	})
 	stats, err := retriever.filClient.RetrieveContentWithProgressCallback(retrieveCtx, query.candidate.Miner, proposal, func(bytesReceived uint64) {
 		doneLk.Lock()
@@ -283,6 +265,14 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 		}
 		doneLk.Unlock()
 	})
+	if timedOut {
+		err = fmt.Errorf(
+			"timed out after not receiving data for %s (started %s ago, stopped at %s)",
+			retriever.config.RetrievalTimeout,
+			time.Since(startTime),
+			humanize.IBytes(lastBytesReceived),
+		)
+	}
 
 	lastBytesReceivedTimer.Stop()
 	doneLk.Lock()
@@ -371,7 +361,7 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 	return res, nil
 }
 
-func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []retrievalCandidate) []candidateQuery {
+func (retriever *Retriever) queryCandidates(ctx context.Context, cid cid.Cid, candidates []retrievalCandidate) []candidateQuery {
 	var queries []candidateQuery
 	var queriesLk sync.Mutex
 
@@ -382,33 +372,23 @@ func (retriever *Retriever) queryCandidates(ctx context.Context, candidates []re
 		go func(i int, candidate retrievalCandidate) {
 			defer wg.Done()
 
+			candidateInfo := metrics.CandidateInfo{
+				RequestInfo: metrics.RequestInfo{RequestCid: cid},
+				RootCid:     candidate.RootCid,
+				Miner:       candidate.Miner,
+			}
+
+			retriever.config.Metrics.RecordQuery(candidateInfo)
 			query, err := retriever.filClient.RetrievalQuery(ctx, candidate.Miner, candidate.RootCid)
+			retriever.config.Metrics.RecordQueryResult(candidateInfo, metrics.QueryResult{
+				Err: err,
+			})
 			if err != nil {
-				// queriesLk.Lock()
-				// logger.Errorf(
-				// 	"Failed to query retrieval %v/%v from miner %s for %s: %v",
-				// 	i,
-				// 	len(candidates),
-				// 	candidate.Miner,
-				// 	candidate.RootCid,
-				// 	err,
-				// )
-				// queriesLk.Unlock()
 				return
 			}
 
 			queriesLk.Lock()
-
 			queries = append(queries, candidateQuery{candidate: candidate, response: query})
-
-			// logger.Infof(
-			// 	"Retrieval query %v/%v succeeded from miner %s for %s",
-			// 	i,
-			// 	len(candidates),
-			// 	candidate.Miner,
-			// 	candidate.RootCid,
-			// )
-
 			queriesLk.Unlock()
 		}(i, candidate)
 	}
