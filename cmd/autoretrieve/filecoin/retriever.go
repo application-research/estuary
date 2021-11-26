@@ -27,11 +27,8 @@ import (
 	"github.com/filecoin-project/lotus/chain/wallet"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/host"
 )
-
-var logger = log.Logger("autoretrieve")
 
 const walletSubdir = "wallet"
 
@@ -140,11 +137,10 @@ func (retriever *Retriever) Request(cid cid.Cid) error {
 	// up-to-date candidate list from the endpoint if we need to begin a new
 	// retrieval.
 	candidates, err := retriever.lookupCandidates(cid)
+	retriever.config.Metrics.RecordGetCandidatesResult(requestInfo, metrics.GetCandidatesResult{
+		Err: err,
+	})
 	if err != nil {
-		retriever.config.Metrics.RecordGetCandidatesResult(requestInfo, metrics.GetCandidatesResult{
-			Err: err,
-		})
-
 		return fmt.Errorf("could not get retrieval candidates for %s: %w", cid, err)
 	}
 
@@ -202,12 +198,23 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 
 		retriever.config.Metrics.RecordRetrieval(candidateInfo)
 		stats_, err := retriever.retrieve(ctx, query)
-		retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
-			Duration:      stats_.Duration,
-			BytesReceived: stats_.Size,
-			TotalPayment:  types.FIL(stats_.TotalPayment),
-			Err:           err,
-		})
+		if err != nil {
+			// TODO: this should not have to be separate
+			retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
+				Duration:      0,
+				BytesReceived: 0,
+				TotalPayment:  types.FIL(big.Zero()),
+				Err:           err,
+			})
+		} else {
+			retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
+				Duration:      stats_.Duration,
+				BytesReceived: stats_.Size,
+				TotalPayment:  types.FIL(stats_.TotalPayment),
+				Err:           err,
+			})
+
+		}
 		if err != nil {
 			continue
 		}
@@ -352,10 +359,6 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 		if !retriever.config.MinerBlacklist[candidate.Miner] {
 			res = append(res, candidate)
 		}
-	}
-
-	if len(res) == 0 {
-		return nil, ErrNoCandidates
 	}
 
 	return res, nil

@@ -29,8 +29,6 @@ func (metrics *Basic) RecordWallet(info WalletInfo) {
 func (metrics *Basic) RecordGetCandidatesResult(info RequestInfo, result GetCandidatesResult) {
 	if result.Err != nil {
 		metrics.logger.Errorf("Could not get candidates: %v", result.Err)
-	} else {
-		metrics.logger.Infof("Got %v candidates for %s", result.Count, info.RequestCid)
 	}
 }
 
