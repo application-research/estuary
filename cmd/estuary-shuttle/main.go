@@ -173,6 +173,10 @@ func main() {
 			Usage: "If less than 1 probabilistic metrics will be used.",
 			Value: 1,
 		},
+		&cli.BoolFlag{
+			Name:  "libp2p-websockets",
+			Value: false,
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -190,11 +194,17 @@ func main() {
 			wlog = filepath.Join(ddir, wlog)
 		}
 
+		listens := []string{
+			"/ip4/0.0.0.0/tcp/6745",
+			"/ip4/0.0.0.0/udp/6746/quic",
+		}
+
+		if cctx.Bool("libp2p-websockets") {
+			listens = append(listens, "/ip4/0.0.0.0/tcp/6747/ws")
+		}
+
 		cfg := &node.Config{
-			ListenAddrs: []string{
-				"/ip4/0.0.0.0/tcp/6745",
-				"/ip4/0.0.0.0/udp/6746/quic",
-			},
+			ListenAddrs:       listens,
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
 			HardFlushWriteLog: cctx.Bool("write-log-flush"),
@@ -775,33 +785,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 
 	e.Use(middleware.CORS())
 
-	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
-		log.Errorf("handler error: %s", err)
-		var herr *util.HttpError
-		if xerrors.As(err, &herr) {
-			res := map[string]string{
-				"error": herr.Message,
-			}
-			if herr.Details != "" {
-				res["details"] = herr.Details
-			}
-			ctx.JSON(herr.Code, res)
-			return
-		}
-
-		var echoErr *echo.HTTPError
-		if xerrors.As(err, &echoErr) {
-			ctx.JSON(echoErr.Code, map[string]interface{}{
-				"error": echoErr.Message,
-			})
-			return
-		}
-
-		// TODO: returning all errors out to the user smells potentially bad
-		_ = ctx.JSON(500, map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/health", s.handleHealth)
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
@@ -812,7 +796,6 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
-	//content.POST("/add-car", withUser(d.handleAddCar))
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))

@@ -5,7 +5,12 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"golang.org/x/xerrors"
+
+	logging "github.com/ipfs/go-log/v2"
 )
+
+var log = logging.Logger("util")
 
 const (
 	ERR_INVALID_TOKEN           = "ERR_INVALID_TOKEN"
@@ -98,4 +103,32 @@ type AddFileResponse struct {
 	Cid       string   `json:"cid"`
 	EstuaryId uint     `json:"estuaryId"`
 	Providers []string `json:"providers"`
+}
+
+func ErrorHandler(err error, ctx echo.Context) {
+	log.Errorf("handler error: %s", err)
+	var herr *HttpError
+	if xerrors.As(err, &herr) {
+		res := map[string]string{
+			"error": herr.Message,
+		}
+		if herr.Details != "" {
+			res["details"] = herr.Details
+		}
+		ctx.JSON(herr.Code, res)
+		return
+	}
+
+	var echoErr *echo.HTTPError
+	if xerrors.As(err, &echoErr) {
+		ctx.JSON(echoErr.Code, map[string]interface{}{
+			"error": echoErr.Message,
+		})
+		return
+	}
+
+	// TODO: returning all errors out to the user smells potentially bad
+	_ = ctx.JSON(500, map[string]interface{}{
+		"error": err.Error(),
+	})
 }
