@@ -182,7 +182,9 @@ entryLoop:
 					})
 				}
 			}
-			provider.blockManager.GetAwait(entry.Cid, callback)
+			if err := provider.blockManager.GetAwait(entry.Cid, callback); err != nil {
+				logger.Errorf("Error waiting for block: %v", err)
+			}
 		}
 	}
 
