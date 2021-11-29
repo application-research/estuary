@@ -84,6 +84,7 @@ func NewProvider(
 
 func (provider *Provider) startSend() {
 	provider.sendWorkerCountLk.Lock()
+	// TODO: use a constant or config val
 	if provider.sendWorkerCount < 1 {
 		provider.sendWorkerCount++
 		go func() {
