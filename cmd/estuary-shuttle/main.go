@@ -237,7 +237,7 @@ func main() {
 
 		metCtx := metrics.CtxScope(context.Background(), "shuttle")
 		activeCommp := metrics.NewCtx(metCtx, "active_commp", "number of active piece commitment calculations ongoing").Gauge()
-		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string) (interface{}, error) {
+		commpMemo := memo.NewMemoizer(func(ctx context.Context, k string, v interface{}) (interface{}, error) {
 			activeCommp.Inc()
 			defer activeCommp.Dec()
 
