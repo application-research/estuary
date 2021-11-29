@@ -173,6 +173,10 @@ func main() {
 			Usage: "If less than 1 probabilistic metrics will be used.",
 			Value: 1,
 		},
+		&cli.BoolFlag{
+			Name:  "libp2p-websockets",
+			Value: false,
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -190,11 +194,17 @@ func main() {
 			wlog = filepath.Join(ddir, wlog)
 		}
 
+		listens := []string{
+			"/ip4/0.0.0.0/tcp/6745",
+			"/ip4/0.0.0.0/udp/6746/quic",
+		}
+
+		if cctx.Bool("libp2p-websockets") {
+			listens = append(listens, "/ip4/0.0.0.0/tcp/6747/ws")
+		}
+
 		cfg := &node.Config{
-			ListenAddrs: []string{
-				"/ip4/0.0.0.0/tcp/6745",
-				"/ip4/0.0.0.0/udp/6746/quic",
-			},
+			ListenAddrs:       listens,
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
 			HardFlushWriteLog: cctx.Bool("write-log-flush"),
