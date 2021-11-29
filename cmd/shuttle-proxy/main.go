@@ -131,7 +131,10 @@ func (p *Proxy) handleContentAdd(c echo.Context) error {
 
 	c.Response().WriteHeader(resp.StatusCode)
 
-	io.Copy(c.Response().Writer, resp.Body)
+	_, err = io.Copy(c.Response().Writer, resp.Body)
+	if err != nil {
+		log.Errorf("proxying content-add body errored: %s", err)
+	}
 
 	return nil
 }
@@ -171,7 +174,10 @@ func (p *Proxy) handleAddCar(c echo.Context) error {
 
 	c.Response().WriteHeader(resp.StatusCode)
 
-	io.Copy(c.Response().Writer, resp.Body)
+	_, err = io.Copy(c.Response().Writer, resp.Body)
+	if err != nil {
+		log.Errorf("proxying content-add-car body errored: %s", err)
+	}
 
 	return nil
 }
