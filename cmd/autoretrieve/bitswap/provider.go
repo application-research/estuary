@@ -2,6 +2,7 @@ package bitswap
 
 import (
 	"context"
+	"sync"
 
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/estuary/cmd/autoretrieve/filecoin"
@@ -41,11 +42,13 @@ type ProviderConfig struct {
 }
 
 type Provider struct {
-	config       ProviderConfig
-	network      network.BitSwapNetwork
-	blockManager *blocks.Manager
-	retriever    *filecoin.Retriever
-	taskQueue    *peertaskqueue.PeerTaskQueue
+	config            ProviderConfig
+	network           network.BitSwapNetwork
+	blockManager      *blocks.Manager
+	retriever         *filecoin.Retriever
+	taskQueue         *peertaskqueue.PeerTaskQueue
+	sendWorkerCount   uint
+	sendWorkerCountLk sync.Mutex
 }
 
 func NewProvider(
@@ -66,11 +69,12 @@ func NewProvider(
 	}
 
 	provider := &Provider{
-		config:       config,
-		network:      network.NewFromIpfsHost(host, fullRT),
-		blockManager: blockManager,
-		retriever:    retriever,
-		taskQueue:    peertaskqueue.New(),
+		config:          config,
+		network:         network.NewFromIpfsHost(host, fullRT),
+		blockManager:    blockManager,
+		retriever:       retriever,
+		taskQueue:       peertaskqueue.New(),
+		sendWorkerCount: 0,
 	}
 
 	provider.network.SetDelegate(provider)
@@ -79,32 +83,37 @@ func NewProvider(
 }
 
 func (provider *Provider) startSend() {
-	go func() {
-		for {
-			peer, tasks, _ := provider.taskQueue.PopTasks(targetMessageSize)
+	provider.sendWorkerCountLk.Lock()
+	if provider.sendWorkerCount < 1 {
+		provider.sendWorkerCount++
+		go func() {
+			for {
+				peer, tasks, _ := provider.taskQueue.PopTasks(targetMessageSize)
 
-			if len(tasks) == 0 {
-				break
-			}
+				if len(tasks) == 0 {
+					break
+				}
 
-			msg := message.New(false)
+				msg := message.New(false)
 
-			for _, task := range tasks {
-				switch task.Topic {
-				case topicSendBlock:
-					msg.AddBlock(task.Data.(blocks.Block))
-				case topicSendHave:
-					msg.AddHave(task.Data.(cid.Cid))
-				case topicSendDontHave:
-					msg.AddDontHave(task.Data.(cid.Cid))
+				for _, task := range tasks {
+					switch task.Topic {
+					case topicSendBlock:
+						msg.AddBlock(task.Data.(blocks.Block))
+					case topicSendHave:
+						msg.AddHave(task.Data.(cid.Cid))
+					case topicSendDontHave:
+						msg.AddDontHave(task.Data.(cid.Cid))
+					}
+				}
+
+				if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
+					logger.Errorf("Could not send bitswap message to %s: %v", peer, err)
 				}
 			}
-
-			if err := provider.network.SendMessage(context.Background(), peer, msg); err != nil {
-				logger.Errorf("Could not send bitswap message to %s: %v", peer, err)
-			}
-		}
-	}()
+		}()
+	}
+	provider.sendWorkerCountLk.Unlock()
 }
 
 // Upon receiving a message, provider will iterate over the requested CIDs. For
