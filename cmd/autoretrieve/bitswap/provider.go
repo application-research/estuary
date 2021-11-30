@@ -38,7 +38,8 @@ const (
 const targetMessageSize = 16384
 
 type ProviderConfig struct {
-	DataDir string
+	DataDir        string
+	MaxSendWorkers uint
 }
 
 type Provider struct {
@@ -84,8 +85,9 @@ func NewProvider(
 
 func (provider *Provider) startSend() {
 	provider.sendWorkerCountLk.Lock()
-	// TODO: use a constant or config val
-	if provider.sendWorkerCount < 1 {
+	defer provider.sendWorkerCountLk.Unlock()
+
+	if provider.sendWorkerCount < provider.config.MaxSendWorkers {
 		provider.sendWorkerCount++
 		go func() {
 			for {
@@ -114,7 +116,6 @@ func (provider *Provider) startSend() {
 			}
 		}()
 	}
-	provider.sendWorkerCountLk.Unlock()
 }
 
 // Upon receiving a message, provider will iterate over the requested CIDs. For

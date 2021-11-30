@@ -51,6 +51,11 @@ func main() {
 			Name:  "endpoint",
 			Value: "https://api.estuary.tech/retrieval-candidates",
 		},
+		&cli.IntFlag{
+			Name:  "max-send-workers",
+			Value: 4,
+			Usage: "Max bitswap message sender worker thread count",
+		},
 	}
 
 	app.Action = run
@@ -91,6 +96,7 @@ func run(cctx *cli.Context) error {
 	dataDir := cctx.String("datadir")
 	endpoint := cctx.String("endpoint")
 	timeout := cctx.Duration("timeout")
+	maxSendWorkers := cctx.Int("max-send-workers")
 
 	metrics := metrics.NewBasic(logger)
 
@@ -141,7 +147,8 @@ func run(cctx *cli.Context) error {
 
 	// Initialize Bitswap provider
 	_, err = bitswap.NewProvider(bitswap.ProviderConfig{
-		DataDir: dataDir,
+		DataDir:        dataDir,
+		MaxSendWorkers: uint(maxSendWorkers),
 	}, host, datastore, blockManager, retriever)
 	if err != nil {
 		return err
