@@ -482,7 +482,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
+	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
@@ -583,9 +583,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	go func() {
 		if err := s.Node.Provider.Provide(header.Roots[0]); err != nil {
-			fmt.Println("providing failed: ", err)
+			log.Warnf("failed to announce providers: %s", err)
 		}
-		fmt.Println("providing complete")
 	}()
 	return c.JSON(200, map[string]interface{}{"content": cont})
 
@@ -724,9 +723,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	go func() {
 		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
-			fmt.Println("providing failed: ", err)
+			log.Warnf("failed to announce providers: %s", err)
 		}
-		fmt.Println("providing complete")
 	}()
 
 	return c.JSON(200, &util.AddFileResponse{
