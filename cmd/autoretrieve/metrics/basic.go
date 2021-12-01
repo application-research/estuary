@@ -9,12 +9,15 @@ import (
 )
 
 type Basic struct {
+	Metrics
+
 	logger log.EventLogger
 }
 
-func NewBasic(logger log.EventLogger) *Basic {
+func NewBasic(inner Metrics, logger log.EventLogger) *Basic {
 	return &Basic{
-		logger: logger,
+		Metrics: inner,
+		logger:  logger,
 	}
 }
 

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/estuary/cmd/autoretrieve/metrics"
 	"github.com/application-research/filclient"
-	"github.com/application-research/filclient/keystore"
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-address"
@@ -24,18 +22,12 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/chain/wallet"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p-core/host"
 )
 
-const walletSubdir = "wallet"
-
 var (
-	ErrInitKeystoreFailed          = errors.New("init keystore failed")
-	ErrInitWalletFailed            = errors.New("init wallet failed")
-	ErrInitFilClientFailed         = errors.New("init FilClient failed")
 	ErrNoCandidates                = errors.New("no candidates")
 	ErrRetrievalAlreadyRunning     = errors.New("retrieval already running")
 	ErrInvalidEndpointURL          = errors.New("invalid endpoint URL")
@@ -47,16 +39,16 @@ var (
 	ErrAllRetrievalsFailed         = errors.New("all retrievals failed")
 )
 
+// All config values should be safe to leave uninitialized
 type RetrieverConfig struct {
-	DataDir          string
-	Endpoint         string
 	MinerBlacklist   map[address.Address]bool
-	RetrievalTimeout time.Duration
+	RetrievalTimeout time.Duration // Set to zero to disable
 	Metrics          metrics.Metrics
 }
 
 type Retriever struct {
 	config              RetrieverConfig
+	endpoint            string
 	filClient           *filclient.FilClient
 	runningRetrievals   map[cid.Cid]bool
 	runningRetrievalsLk sync.Mutex
@@ -77,38 +69,21 @@ type candidateQuery struct {
 // ErrInitFilClientFailed
 func NewRetriever(
 	config RetrieverConfig,
+	filClient *filclient.FilClient,
+	endpoint string,
 	host host.Host,
 	api api.Gateway,
 	datastore datastore.Batching,
 	blockManager *blocks.Manager,
 ) (*Retriever, error) {
 
-	keystore, err := keystore.OpenOrInitKeystore(filepath.Join(config.DataDir, walletSubdir))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInitKeystoreFailed, err)
-	}
-
-	wallet, err := wallet.NewWallet(keystore)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInitWalletFailed, err)
-	}
-
-	walletAddr, err := wallet.GetDefault()
-	if err != nil {
-		walletAddr = address.Undef
-	}
-	config.Metrics.RecordWallet(metrics.WalletInfo{
-		Err:  err,
-		Addr: walletAddr,
-	})
-
-	filClient, err := filclient.NewClient(host, api, wallet, walletAddr, blockManager, datastore, config.DataDir)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInitFilClientFailed, err)
+	if config.Metrics == nil {
+		config.Metrics = &metrics.Noop{}
 	}
 
 	retriever := &Retriever{
 		config:            config,
+		endpoint:          endpoint,
 		filClient:         filClient,
 		runningRetrievals: make(map[cid.Cid]bool),
 	}
@@ -247,30 +222,38 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	startTime := time.Now()
 
 	retrieveCtx, retrieveCancel := context.WithCancel(ctx)
+	defer retrieveCancel()
 	var lastBytesReceived uint64 = 0
 	var doneLk sync.Mutex
 	done := false
 	timedOut := false
-	lastBytesReceivedTimer := time.AfterFunc(retriever.config.RetrievalTimeout, func() {
-		doneLk.Lock()
-		done = true
-		doneLk.Unlock()
+	var lastBytesReceivedTimer *time.Timer
 
-		retrieveCancel()
-		timedOut = true
-	})
+	// Start the timeout tracker only if retrieval timeout isn't 0
+	if retriever.config.RetrievalTimeout != 0 {
+		lastBytesReceivedTimer = time.AfterFunc(retriever.config.RetrievalTimeout, func() {
+			doneLk.Lock()
+			done = true
+			doneLk.Unlock()
+
+			retrieveCancel()
+			timedOut = true
+		})
+	}
 	stats, err := retriever.filClient.RetrieveContentWithProgressCallback(retrieveCtx, query.candidate.Miner, proposal, func(bytesReceived uint64) {
-		doneLk.Lock()
-		if !done {
-			if lastBytesReceived != bytesReceived {
-				if !lastBytesReceivedTimer.Stop() {
-					<-lastBytesReceivedTimer.C
+		if lastBytesReceivedTimer != nil {
+			doneLk.Lock()
+			if !done {
+				if lastBytesReceived != bytesReceived {
+					if !lastBytesReceivedTimer.Stop() {
+						<-lastBytesReceivedTimer.C
+					}
+					lastBytesReceivedTimer.Reset(retriever.config.RetrievalTimeout)
+					lastBytesReceived = bytesReceived
 				}
-				lastBytesReceivedTimer.Reset(retriever.config.RetrievalTimeout)
-				lastBytesReceived = bytesReceived
 			}
+			doneLk.Unlock()
 		}
-		doneLk.Unlock()
 	})
 	if timedOut {
 		err = fmt.Errorf(
@@ -331,9 +314,9 @@ func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid) {
 // ErrNoCandidates
 func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate, error) {
 	// Create URL with CID
-	endpointURL, err := url.Parse(retriever.config.Endpoint)
+	endpointURL, err := url.Parse(retriever.endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("%w: '%s'", ErrInvalidEndpointURL, retriever.config.Endpoint)
+		return nil, fmt.Errorf("%w: '%s'", ErrInvalidEndpointURL, retriever.endpoint)
 	}
 	endpointURL.Path = path.Join(endpointURL.Path, cid.String())
 

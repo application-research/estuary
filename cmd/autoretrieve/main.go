@@ -15,7 +15,10 @@ import (
 	"github.com/application-research/estuary/cmd/autoretrieve/blocks"
 	"github.com/application-research/estuary/cmd/autoretrieve/filecoin"
 	"github.com/application-research/estuary/cmd/autoretrieve/metrics"
+	"github.com/application-research/filclient"
+	"github.com/application-research/filclient/keystore"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/lotus/chain/wallet"
 	lcli "github.com/filecoin-project/lotus/cli"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-log/v2"
@@ -30,6 +33,7 @@ var logger = log.Logger("autoretrieve")
 
 const minerBlacklistFilename = "blacklist.txt"
 const datastoreSubdir = "datastore"
+const walletSubdir = "wallet"
 
 func main() {
 	log.SetLogLevel("autoretrieve", "DEBUG")
@@ -98,7 +102,7 @@ func run(cctx *cli.Context) error {
 	timeout := cctx.Duration("timeout")
 	maxSendWorkers := cctx.Int("max-send-workers")
 
-	metrics := metrics.NewBasic(logger)
+	metricsInst := metrics.NewBasic(&metrics.Noop{}, logger)
 
 	// Load miner blacklist
 	minerBlacklist, err := readMinerBlacklist(dataDir)
@@ -119,12 +123,6 @@ func run(cctx *cli.Context) error {
 	}
 	defer closer()
 
-	// Open datastore
-	datastore, err := leveldb.NewDatastore(filepath.Join(dataDir, datastoreSubdir), nil)
-	if err != nil {
-		return err
-	}
-
 	// Initialize blockstore manager
 	blockManager, err := blocks.NewManager(blocks.ManagerConfig{
 		DataDir: dataDir,
@@ -133,21 +131,50 @@ func run(cctx *cli.Context) error {
 		return err
 	}
 
+	// Open datastore
+	datastore, err := leveldb.NewDatastore(filepath.Join(dataDir, datastoreSubdir), nil)
+	if err != nil {
+		return err
+	}
+
+	// Set up FilClient
+
+	keystore, err := keystore.OpenOrInitKeystore(filepath.Join(dataDir, walletSubdir))
+	if err != nil {
+		logger.Errorf("Keystore initialization failed: %v", err)
+		return nil
+	}
+
+	wallet, err := wallet.NewWallet(keystore)
+	if err != nil {
+		logger.Errorf("Wallet initialization failed: %v", err)
+	}
+
+	walletAddr, err := wallet.GetDefault()
+	if err != nil {
+		walletAddr = address.Undef
+	}
+	metricsInst.RecordWallet(metrics.WalletInfo{
+		Err:  err,
+		Addr: walletAddr,
+	})
+
+	filClient, err := filclient.NewClient(host, api, wallet, walletAddr, blockManager, datastore, dataDir)
+	if err != nil {
+		logger.Errorf("FilClient initialization failed: %v", err)
+	}
 	// Initialize Filecoin retriever
 	retriever, err := filecoin.NewRetriever(filecoin.RetrieverConfig{
-		DataDir:          dataDir,
-		Endpoint:         endpoint,
 		MinerBlacklist:   minerBlacklist,
 		RetrievalTimeout: timeout,
-		Metrics:          metrics,
-	}, host, api, datastore, blockManager)
+		Metrics:          metricsInst,
+	}, filClient, endpoint, host, api, datastore, blockManager)
 	if err != nil {
 		return err
 	}
 
 	// Initialize Bitswap provider
 	_, err = bitswap.NewProvider(bitswap.ProviderConfig{
-		DataDir:        dataDir,
 		MaxSendWorkers: uint(maxSendWorkers),
 	}, host, datastore, blockManager, retriever)
 	if err != nil {

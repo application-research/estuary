@@ -38,7 +38,6 @@ const (
 const targetMessageSize = 16384
 
 type ProviderConfig struct {
-	DataDir        string
 	MaxSendWorkers uint
 }
 
