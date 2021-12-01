@@ -22,6 +22,7 @@ import (
 	trace "go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) {
@@ -203,7 +204,9 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 			c.Content = cont.ID
 		}
 
-		if err := cm.DB.Create(cols).Error; err != nil {
+		if err := cm.DB.Clauses(clause.OnConflict{
+			UpdateAll: true,
+		}).Create(cols).Error; err != nil {
 			return nil, err
 		}
 	}

@@ -60,6 +60,19 @@ var initCmd = &cli.Command{
 		v.AddConfigPath(filepath.Join(cwd, ".barge"))
 
 		if dbdir := cctx.String("dbdir"); dbdir != "" {
+			parent := filepath.Dir(dbdir)
+			if st, err := os.Stat(parent); err != nil {
+				return err
+			} else {
+				if !st.IsDir() {
+					return fmt.Errorf("invalid path for dbdir, %s is not a directory", parent)
+				}
+
+				if err := os.MkdirAll(dbdir, 0775); err != nil {
+					return err
+				}
+
+			}
 			v.Set("database.directory", dbdir)
 		}
 

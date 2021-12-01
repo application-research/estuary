@@ -17,6 +17,8 @@ import (
 
 	estumetrics "github.com/application-research/estuary/metrics"
 	lru "github.com/hashicorp/golang-lru"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/semconv"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -784,6 +786,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	}
 
 	e.Use(middleware.CORS())
+	e.Use(s.tracingMiddleware)
 
 	e.HTTPErrorHandler = util.ErrorHandler
 
@@ -806,6 +809,51 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.GET("/transfers/list", s.handleListAllTransfers)
 
 	return e.Start(listen)
+}
+
+func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+
+		r := c.Request()
+
+		attrs := []attribute.KeyValue{
+			semconv.HTTPMethodKey.String(r.Method),
+			semconv.HTTPRouteKey.String(r.URL.Path),
+			semconv.HTTPClientIPKey.String(r.RemoteAddr),
+			semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
+		}
+
+		if reqid := r.Header.Get("EstClientReqID"); reqid != "" {
+			if len(reqid) > 64 {
+				reqid = reqid[:64]
+			}
+			attrs = append(attrs, attribute.String("ClientReqID", reqid))
+		}
+
+		tctx, span := s.Tracer.Start(context.Background(),
+			"HTTP "+r.Method+" "+c.Path(),
+			trace.WithAttributes(attrs...),
+		)
+		defer span.End()
+
+		r = r.WithContext(tctx)
+		c.SetRequest(r)
+
+		err := next(c)
+		if err != nil {
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+
+		span.SetAttributes(
+			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
+			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
+		)
+
+		return err
+	}
 }
 
 type logLevelBody struct {
