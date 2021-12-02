@@ -205,7 +205,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 
 		if err := cm.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "path"}},
+			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
 			return nil, err

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -119,6 +120,7 @@ var configCmd = &cli.Command{
 	Name: "config",
 	Subcommands: []*cli.Command{
 		configSetCmd,
+		configShowCmd,
 	},
 }
 
@@ -134,6 +136,24 @@ var configSetCmd = &cli.Command{
 		if err := viper.WriteConfig(); err != nil {
 			return fmt.Errorf("failed to write config file: %w", err)
 		}
+		return nil
+	},
+}
+
+var configShowCmd = &cli.Command{
+	Name: "show",
+	Action: func(cctx *cli.Context) error {
+		var m map[string]interface{}
+		if err := viper.Unmarshal(&m); err != nil {
+			return err
+		}
+
+		b, err := json.MarshalIndent(m, "  ", "")
+		if err != nil {
+			return err
+		}
+
+		fmt.Println(string(b))
 		return nil
 	},
 }
