@@ -102,7 +102,8 @@ func run(cctx *cli.Context) error {
 	timeout := cctx.Duration("timeout")
 	maxSendWorkers := cctx.Int("max-send-workers")
 
-	metricsInst := metrics.NewBasic(&metrics.Noop{}, logger)
+	metrics.GoMetricsInjectPrometheus()
+	metricsInst := metrics.NewPrometheus(cctx.Context, metrics.NewBasic(&metrics.Noop{}, logger))
 
 	// Load miner blacklist
 	minerBlacklist, err := readMinerBlacklist(dataDir)
