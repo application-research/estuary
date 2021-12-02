@@ -42,6 +42,7 @@ var (
 // All config values should be safe to leave uninitialized
 type RetrieverConfig struct {
 	MinerBlacklist   map[address.Address]bool
+	MinerWhitelist   map[address.Address]bool
 	RetrievalTimeout time.Duration // Set to zero to disable
 	Metrics          metrics.Metrics
 }
@@ -336,12 +337,20 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 		return nil, ErrEndpointBodyInvalid
 	}
 
-	// Remove blacklisted miners
+	// Remove blacklisted miners, or non-whitelisted miners
 	var res []retrievalCandidate
 	for _, candidate := range unfiltered {
-		if !retriever.config.MinerBlacklist[candidate.Miner] {
-			res = append(res, candidate)
+		// Skip blacklist
+		if retriever.config.MinerBlacklist[candidate.Miner] {
+			continue
 		}
+
+		// Skip non-whitelist IF the whitelist isn't empty
+		if len(retriever.config.MinerWhitelist) > 0 && retriever.config.MinerWhitelist[candidate.Miner] {
+			continue
+		}
+
+		res = append(res, candidate)
 	}
 
 	return res, nil

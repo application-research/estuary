@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -32,6 +33,7 @@ import (
 var logger = log.Logger("autoretrieve")
 
 const minerBlacklistFilename = "blacklist.txt"
+const minerWhitelistFilename = "whitelist.txt"
 const datastoreSubdir = "datastore"
 const walletSubdir = "wallet"
 
@@ -69,6 +71,10 @@ func main() {
 			Name:   "check-blacklist",
 			Action: cmdCheckBlacklist,
 		},
+		{
+			Name:   "check-whitelist",
+			Action: cmdCheckWhitelist,
+		},
 	}
 
 	ctx := contextWithInterruptCancel()
@@ -105,8 +111,13 @@ func run(cctx *cli.Context) error {
 	metrics.GoMetricsInjectPrometheus()
 	metricsInst := metrics.NewPrometheus(cctx.Context, metrics.NewBasic(&metrics.Noop{}, logger))
 
-	// Load miner blacklist
-	minerBlacklist, err := readMinerBlacklist(dataDir)
+	// Load miner blacklist and whitelist
+	minerBlacklist, err := readMinerList(path.Join(dataDir, minerBlacklistFilename))
+	if err != nil {
+		return err
+	}
+
+	minerWhitelist, err := readMinerList(path.Join(dataDir, minerWhitelistFilename))
 	if err != nil {
 		return err
 	}
@@ -167,6 +178,7 @@ func run(cctx *cli.Context) error {
 	// Initialize Filecoin retriever
 	retriever, err := filecoin.NewRetriever(filecoin.RetrieverConfig{
 		MinerBlacklist:   minerBlacklist,
+		MinerWhitelist:   minerWhitelist,
 		RetrievalTimeout: timeout,
 		Metrics:          metricsInst,
 	}, filClient, endpoint, host, api, datastore, blockManager)
@@ -188,7 +200,7 @@ func run(cctx *cli.Context) error {
 }
 
 func cmdCheckBlacklist(cctx *cli.Context) error {
-	minerBlacklist, err := readMinerBlacklist(cctx.String("datadir"))
+	minerBlacklist, err := readMinerList(filepath.Join(cctx.String("datadir"), minerBlacklistFilename))
 	if err != nil {
 		return err
 	}
@@ -199,6 +211,24 @@ func cmdCheckBlacklist(cctx *cli.Context) error {
 	}
 
 	for miner := range minerBlacklist {
+		fmt.Printf("%s\n", miner)
+	}
+
+	return nil
+}
+
+func cmdCheckWhitelist(cctx *cli.Context) error {
+	minerWhitelist, err := readMinerList(filepath.Join(cctx.String("datadir"), minerWhitelistFilename))
+	if err != nil {
+		return err
+	}
+
+	if len(minerWhitelist) == 0 {
+		fmt.Printf("No whitelisted miners were found\n")
+		return nil
+	}
+
+	for miner := range minerWhitelist {
 		fmt.Printf("%s\n", miner)
 	}
 
@@ -251,8 +281,8 @@ func initHost(ctx context.Context, dataDir string, listenAddrs ...multiaddr.Mult
 	return host, nil
 }
 
-func readMinerBlacklist(dataDir string) (map[address.Address]bool, error) {
-	bytes, err := os.ReadFile(filepath.Join(dataDir, minerBlacklistFilename))
+func readMinerList(path string) (map[address.Address]bool, error) {
+	bytes, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
