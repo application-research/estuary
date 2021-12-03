@@ -218,7 +218,7 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRetrievalRegistrationFailed, err)
 	}
-	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid)
+	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid, query.candidate.Miner)
 
 	proposal, err := retrievehelper.RetrievalProposalForAsk(query.response, query.candidate.RootCid, nil)
 	if err != nil {
@@ -305,17 +305,23 @@ func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid, miner address.
 	if retriever.runningRetrievals[cid] {
 		return ErrRetrievalAlreadyRunning
 	}
+
 	retriever.runningRetrievals[cid] = true
+	retriever.activeRetrievalsPerMiner[miner] = retriever.activeRetrievalsPerMiner[miner] + 1
 
 	return nil
 }
 
 // Unregisters a running retrieval. No-op if no retrieval is running.
-func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid) {
+func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid, miner address.Address) {
 	retriever.runningRetrievalsLk.Lock()
 	defer retriever.runningRetrievalsLk.Unlock()
 
 	delete(retriever.runningRetrievals, cid)
+	retriever.activeRetrievalsPerMiner[miner] = retriever.activeRetrievalsPerMiner[miner] + 1
+	if retriever.activeRetrievalsPerMiner[miner] == 0 {
+		delete(retriever.activeRetrievalsPerMiner, miner)
+	}
 }
 
 // Returns a list of miners known to have the requested block, with blacklisted
