@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -296,9 +297,24 @@ type listPinsResp struct {
 
 func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[string]*types.IpfsPinStatus, error) {
 	var resp listPinsResp
-	_, err := c.doRequest(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp)
-	if err != nil {
-		return nil, err
+	for i := 0; true; i++ { // TODO: reuse this retry logic more places
+		_, err := c.doRequest(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp)
+		if err == nil {
+			break
+		}
+
+		ne, ok := err.(net.Error)
+		if !ok {
+			return nil, err
+		}
+
+		if i > 5 {
+			return nil, err
+		}
+
+		if ne.Temporary() || ne.Timeout() {
+			time.Sleep(time.Second * 2)
+		}
 	}
 
 	out := make(map[string]*types.IpfsPinStatus)

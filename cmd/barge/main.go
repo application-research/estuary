@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb/v3"
+	"github.com/dustin/go-humanize"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
@@ -39,6 +40,7 @@ import (
 	"github.com/libp2p/go-libp2p"
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/host"
+	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
@@ -345,12 +347,12 @@ func addDirectory(ctx context.Context, fstore *filestore.Filestore, dir string) 
 }
 
 func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClient, root cid.Cid, fname string) error {
-	h, bswap, err := setupBitswap(ctx, bstore)
+	pc, err := setupBitswap(ctx, bstore)
 	if err != nil {
 		return err
 	}
 
-	_ = bswap
+	h := pc.host
 
 	var addrs []string
 	for _, a := range h.Addrs() {
@@ -395,7 +397,8 @@ func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClie
 			}
 		}
 
-		fmt.Printf("pinned: %d, pinning: %d, queued: %d, failed: %d (num conns: %d)\n", pinned, pinning, queued, failed, len(h.Network().Conns()))
+		st := pc.bwc.GetBandwidthForProtocol("/ipfs/bitswap/1.2.0")
+		fmt.Printf("pinned: %d, pinning: %d, queued: %d, failed: %d, xfer rate: %s/s (num conns: %d)\n", pinned, pinning, queued, failed, humanize.Bytes(uint64(st.RateOut)), len(h.Network().Conns()))
 		if failed+pinned >= len(pins) {
 			break
 		}
@@ -685,12 +688,12 @@ var plumbSplitAddFileCmd = &cli.Command{
 			}
 		*/
 
-		h, bswap, err := setupBitswap(ctx, fstore)
+		pc, err := setupBitswap(ctx, fstore)
 		if err != nil {
 			return err
 		}
 
-		_ = bswap
+		h := pc.host
 
 		var addrs []string
 		for _, a := range h.Addrs() {
@@ -809,18 +812,25 @@ func connectToDelegates(ctx context.Context, h host.Host, delegates []string) er
 	return nil
 }
 
-func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (host.Host, *bitswap.Bitswap, error) {
+type pinclient struct {
+	host    host.Host
+	bitswap *bitswap.Bitswap
+	bwc     metrics.Reporter
+}
+
+func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (*pinclient, error) {
+	bwc := metrics.NewBandwidthCounter()
 	h, err := libp2p.New(ctx,
 		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/0"),
 		libp2p.NATPortMap(),
 		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
 		//libp2p.Identity(peerkey),
-		//libp2p.BandwidthReporter(bwc),
+		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
 		libp2p.Transport(libp2pquic.NewTransport),
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	bsnet := bsnet.NewFromIpfsHost(h, rhelp.Null{})
@@ -832,7 +842,11 @@ func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (host.Host,
 		bitswap.MaxOutstandingBytesPerPeer(10<<20),
 	)
 
-	return h, bswap.(*bitswap.Bitswap), nil
+	return &pinclient{
+		host:    h,
+		bitswap: bswap.(*bitswap.Bitswap),
+		bwc:     bwc,
+	}, nil
 }
 
 var bargeAddCmd = &cli.Command{
@@ -1235,10 +1249,12 @@ var bargeSyncCmd = &cli.Command{
 			return err
 		}
 
-		h, _, err := setupBitswap(ctx, r.Filestore)
+		pc, err := setupBitswap(ctx, r.Filestore)
 		if err != nil {
 			return err
 		}
+
+		h := pc.host
 
 		var addrs []string
 		for _, a := range h.Addrs() {
@@ -1496,7 +1512,8 @@ var bargeSyncCmd = &cli.Command{
 				}
 			}
 
-			fmt.Printf("pinned: %d, pinning: %d, failed: %d\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed))
+			st := pc.bwc.GetBandwidthForProtocol("/ipfs/bitswap/1.2.0")
+			fmt.Printf("pinned: %d, pinning: %d, failed: %d, xfer rate: %s/s (connections: %d)\n", len(complete), len(inProgress)-(len(complete)+len(failed)), len(failed), humanize.Bytes(uint64(st.RateOut)), len(h.Network().Conns()))
 
 			if len(failed)+len(complete) >= len(inProgress) {
 				break
@@ -1549,10 +1566,12 @@ var bargeShareCmd = &cli.Command{
 			return err
 		}
 
-		h, _, err := setupBitswap(cctx.Context, r.Filestore)
+		pc, err := setupBitswap(cctx.Context, r.Filestore)
 		if err != nil {
 			return err
 		}
+
+		h := pc.host
 
 		for _, a := range h.Addrs() {
 			fmt.Printf("%s/p2p/%s\n", a, h.ID())
