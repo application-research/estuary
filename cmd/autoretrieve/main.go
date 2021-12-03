@@ -108,7 +108,9 @@ func run(cctx *cli.Context) error {
 	timeout := cctx.Duration("timeout")
 	maxSendWorkers := cctx.Int("max-send-workers")
 
-	metrics.GoMetricsInjectPrometheus()
+	if err := metrics.GoMetricsInjectPrometheus(); err != nil {
+		logger.Warnf("Failed to inject prometheus: %v", err)
+	}
 	metricsInst := metrics.NewPrometheus(cctx.Context, metrics.NewBasic(&metrics.Noop{}, logger))
 
 	// Load miner blacklist and whitelist

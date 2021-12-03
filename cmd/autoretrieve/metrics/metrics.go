@@ -77,9 +77,9 @@ type Metrics interface {
 
 type Noop struct{}
 
-func (metrics *Noop) RecordWallet(WalletInfo)
-func (metrics *Noop) RecordGetCandidatesResult(RequestInfo, GetCandidatesResult)
-func (metrics *Noop) RecordQuery(CandidateInfo)
-func (metrics *Noop) RecordQueryResult(CandidateInfo, QueryResult)
-func (metrics *Noop) RecordRetrieval(CandidateInfo)
-func (metrics *Noop) RecordRetrievalResult(CandidateInfo, RetrievalResult)
+func (metrics *Noop) RecordWallet(WalletInfo)                                    {}
+func (metrics *Noop) RecordGetCandidatesResult(RequestInfo, GetCandidatesResult) {}
+func (metrics *Noop) RecordQuery(CandidateInfo)                                  {}
+func (metrics *Noop) RecordQueryResult(CandidateInfo, QueryResult)               {}
+func (metrics *Noop) RecordRetrieval(CandidateInfo)                              {}
+func (metrics *Noop) RecordRetrievalResult(CandidateInfo, RetrievalResult)       {}
