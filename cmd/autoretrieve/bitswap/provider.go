@@ -205,9 +205,13 @@ func (provider *Provider) ReceiveError(err error) {
 	logger.Errorf("Error receiving bitswap message: %v", err)
 }
 
-func (provider *Provider) PeerConnected(peer peer.ID) {}
+func (provider *Provider) PeerConnected(peer peer.ID) {
+	provider.network.ConnectionManager().Protect(peer, "autoretrieve")
+}
 
-func (provider *Provider) PeerDisconnected(peer peer.ID) {}
+func (provider *Provider) PeerDisconnected(peer peer.ID) {
+	provider.network.ConnectionManager().Unprotect(peer, "autoretrieve")
+}
 
 // Sends either a HAVE or a block to a peer, depending on whether the peer
 // requested a WANT_HAVE or WANT_BLOCK.
