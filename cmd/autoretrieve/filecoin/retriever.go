@@ -178,6 +178,10 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 		}
 
 		retriever.config.Metrics.RecordRetrieval(candidateInfo)
+		if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
+			// TODO: send some info to metrics about this
+			continue
+		}
 		stats_, err := retriever.retrieve(ctx, query)
 		if err != nil {
 			// TODO: this should not have to be separate
@@ -196,6 +200,9 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 			})
 
 		}
+
+		retriever.unregisterRunningRetrieval(query.candidate.RootCid, query.candidate.Miner)
+
 		if err != nil {
 			continue
 		}
@@ -215,11 +222,6 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 // Possible errors: ErrRetrievalRegistrationFailed, ErrProposalCreationFailed,
 // ErrRetrievalFailed
 func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
-	if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRetrievalRegistrationFailed, err)
-	}
-	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid, query.candidate.Miner)
-
 	proposal, err := retrievehelper.RetrievalProposalForAsk(query.response, query.candidate.RootCid, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrProposalCreationFailed, err)
