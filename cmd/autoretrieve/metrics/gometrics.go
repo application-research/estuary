@@ -15,7 +15,7 @@ type GoMetrics struct {
 	retrievalFailures  gometrics.Counter
 }
 
-func InjectPrometheus() error {
+func GoMetricsInjectPrometheus() error {
 	return gometricsprometheus.Inject()
 }
 
