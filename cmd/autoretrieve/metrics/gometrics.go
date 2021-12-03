@@ -20,11 +20,13 @@ func GoMetricsInjectPrometheus() error {
 }
 
 func NewPrometheus(ctx context.Context, inner Metrics) *GoMetrics {
+
+	scope := gometrics.CtxScope(ctx, "autoretrieve")
 	metrics := &GoMetrics{
 		Metrics:            inner,
-		activeRetrievals:   gometrics.NewCtx(ctx, "active_retrievals", "active retrieval count").Gauge(),
-		retrievalSuccesses: gometrics.NewCtx(ctx, "retrieval_successes", "retrieval success count").Counter(),
-		retrievalFailures:  gometrics.NewCtx(ctx, "retrieval_failures", "retrieval failure count").Counter(),
+		activeRetrievals:   gometrics.NewCtx(scope, "active_retrievals", "active retrieval count").Gauge(),
+		retrievalSuccesses: gometrics.NewCtx(scope, "retrieval_successes", "retrieval success count").Counter(),
+		retrievalFailures:  gometrics.NewCtx(scope, "retrieval_failures", "retrieval failure count").Counter(),
 	}
 
 	return metrics
