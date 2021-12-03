@@ -55,11 +55,16 @@ func main() {
 			Value: 60 * time.Second,
 			Usage: "Time to wait on a hanging retrieval before moving on, using a Go ParseDuration(...) string, e.g. 60s, 2m",
 		},
+		&cli.UintFlag{
+			Name:  "per-miner-retrieval-limit",
+			Value: 0,
+			Usage: "How many active retrievals to allow per miner - set to 0 (default) for no limit",
+		},
 		&cli.StringFlag{
 			Name:  "endpoint",
 			Value: "https://api.estuary.tech/retrieval-candidates",
 		},
-		&cli.IntFlag{
+		&cli.UintFlag{
 			Name:  "max-send-workers",
 			Value: 4,
 			Usage: "Max bitswap message sender worker thread count",
@@ -108,7 +113,8 @@ func run(cctx *cli.Context) error {
 	dataDir := cctx.String("datadir")
 	endpoint := cctx.String("endpoint")
 	timeout := cctx.Duration("timeout")
-	maxSendWorkers := cctx.Int("max-send-workers")
+	maxSendWorkers := cctx.Uint("max-send-workers")
+	perMinerRetrievalLimit := cctx.Uint("per-miner-retrieval-limit")
 
 	if err := metrics.GoMetricsInjectPrometheus(); err != nil {
 		logger.Warnf("Failed to inject prometheus: %v", err)
@@ -188,10 +194,11 @@ func run(cctx *cli.Context) error {
 	}
 	// Initialize Filecoin retriever
 	retriever, err := filecoin.NewRetriever(filecoin.RetrieverConfig{
-		MinerBlacklist:   minerBlacklist,
-		MinerWhitelist:   minerWhitelist,
-		RetrievalTimeout: timeout,
-		Metrics:          metricsInst,
+		MinerBlacklist:         minerBlacklist,
+		MinerWhitelist:         minerWhitelist,
+		RetrievalTimeout:       timeout,
+		PerMinerRetrievalLimit: perMinerRetrievalLimit,
+		Metrics:                metricsInst,
 	}, filClient, endpoint, host, api, datastore, blockManager)
 	if err != nil {
 		return err

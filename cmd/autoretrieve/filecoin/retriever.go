@@ -30,6 +30,7 @@ import (
 var (
 	ErrNoCandidates                = errors.New("no candidates")
 	ErrRetrievalAlreadyRunning     = errors.New("retrieval already running")
+	ErrHitRetrievalLimit           = errors.New("hit retrieval limit")
 	ErrInvalidEndpointURL          = errors.New("invalid endpoint URL")
 	ErrEndpointRequestFailed       = errors.New("endpoint request failed")
 	ErrEndpointBodyInvalid         = errors.New("endpoint body invalid")
@@ -41,18 +42,21 @@ var (
 
 // All config values should be safe to leave uninitialized
 type RetrieverConfig struct {
-	MinerBlacklist   map[address.Address]bool
-	MinerWhitelist   map[address.Address]bool
-	RetrievalTimeout time.Duration // Set to zero to disable
-	Metrics          metrics.Metrics
+	MinerBlacklist         map[address.Address]bool
+	MinerWhitelist         map[address.Address]bool
+	PerMinerRetrievalLimit uint
+	RetrievalTimeout       time.Duration // Set to zero to disable
+	Metrics                metrics.Metrics
 }
 
 type Retriever struct {
-	config              RetrieverConfig
-	endpoint            string
-	filClient           *filclient.FilClient
-	runningRetrievals   map[cid.Cid]bool
-	runningRetrievalsLk sync.Mutex
+	config    RetrieverConfig
+	endpoint  string
+	filClient *filclient.FilClient
+
+	runningRetrievals        map[cid.Cid]bool
+	activeRetrievalsPerMiner map[address.Address]uint
+	runningRetrievalsLk      sync.Mutex
 }
 
 type retrievalCandidate struct {
@@ -83,10 +87,11 @@ func NewRetriever(
 	}
 
 	retriever := &Retriever{
-		config:            config,
-		endpoint:          endpoint,
-		filClient:         filClient,
-		runningRetrievals: make(map[cid.Cid]bool),
+		config:                   config,
+		endpoint:                 endpoint,
+		filClient:                filClient,
+		runningRetrievals:        make(map[cid.Cid]bool),
+		activeRetrievalsPerMiner: make(map[address.Address]uint),
 	}
 
 	return retriever, nil
@@ -210,7 +215,7 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 // Possible errors: ErrRetrievalRegistrationFailed, ErrProposalCreationFailed,
 // ErrRetrievalFailed
 func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
-	if err := retriever.registerRunningRetrieval(query.candidate.RootCid); err != nil {
+	if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRetrievalRegistrationFailed, err)
 	}
 	defer retriever.unregisterRunningRetrieval(query.candidate.RootCid)
@@ -284,15 +289,20 @@ func (retriever *Retriever) isRetrievalRunning(cid cid.Cid) bool {
 	return retriever.runningRetrievals[cid]
 }
 
-// Will register a retrieval as running, or ErrRetrievalAlreadyRunning if the
-// CID is already registered.
-//
-// Possible errors: ErrRetrievalAlreadyRunning
-func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid) error {
+// Possible errors: ErrRetrievalAlreadyRunning, ErrHitRetrievalLimit
+func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid, miner address.Address) error {
 	retriever.runningRetrievalsLk.Lock()
 	defer retriever.runningRetrievalsLk.Unlock()
 
-	if running := retriever.runningRetrievals[cid]; running {
+	// If limit is enabled (non-zero) and we have already hit it, we can't
+	// allow this retrieval to start
+	noLimit := retriever.config.PerMinerRetrievalLimit == 0
+	atLimit := retriever.activeRetrievalsPerMiner[miner] >= retriever.config.PerMinerRetrievalLimit
+	if !noLimit && atLimit {
+		return ErrHitRetrievalLimit
+	}
+
+	if retriever.runningRetrievals[cid] {
 		return ErrRetrievalAlreadyRunning
 	}
 	retriever.runningRetrievals[cid] = true
