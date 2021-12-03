@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"path"
@@ -27,6 +28,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/urfave/cli/v2"
 )
 
@@ -112,6 +114,13 @@ func run(cctx *cli.Context) error {
 		logger.Warnf("Failed to inject prometheus: %v", err)
 	}
 	metricsInst := metrics.NewPrometheus(cctx.Context, metrics.NewBasic(&metrics.Noop{}, logger))
+
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		if err := http.ListenAndServe("0.0.0.0:8080", nil); err != nil {
+			logger.Errorf("Could not start prometheus endpoint server: %s", err)
+		}
+	}()
 
 	// Load miner blacklist and whitelist
 	minerBlacklist, err := readMinerList(path.Join(dataDir, minerBlacklistFilename))
