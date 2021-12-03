@@ -50,10 +50,9 @@ func (metrics *Basic) RecordQuery(info CandidateInfo) {
 func (metrics *Basic) RecordQueryResult(info CandidateInfo, result QueryResult) {
 	if result.Err != nil {
 		metrics.logger.Errorf(
-			"Failed to query miner %s for %s (root %s): %v",
+			"Failed to query miner %s for %s: %v",
 			info.Miner,
-			shortCid(info.RequestCid),
-			shortCid(info.RootCid),
+			formatCidAndRoot(info.RequestCid, info.RootCid, false),
 			result.Err,
 		)
 	}
@@ -61,31 +60,28 @@ func (metrics *Basic) RecordQueryResult(info CandidateInfo, result QueryResult) 
 
 func (metrics *Basic) RecordRetrieval(info CandidateInfo) {
 	metrics.logger.Infof(
-		"Attempting retrieval from miner %s for %s (root %s)",
+		"Attempting retrieval from miner %s for %s",
 		info.Miner,
-		shortCid(info.RequestCid),
-		shortCid(info.RootCid),
+		formatCidAndRoot(info.RequestCid, info.RootCid, false),
 	)
 }
 
 func (metrics *Basic) RecordRetrievalResult(info CandidateInfo, result RetrievalResult) {
 	if result.Err != nil {
 		metrics.logger.Errorf(
-			"Failed to retrieve from miner %s for %s (root %s): %v",
+			"Failed to retrieve from miner %s for %s: %v",
 			info.Miner,
-			shortCid(info.RequestCid),
-			shortCid(info.RootCid),
+			formatCidAndRoot(info.RequestCid, info.RootCid, false),
 			result.Err,
 		)
 	} else {
 		metrics.logger.Infof(
-			"Successfully retrieved from miner %s for %s (root %s)\n"+
+			"Successfully retrieved from miner %s for %s\n"+
 				"\tDuration: %s\n"+
 				"\tBytes Received: %s\n"+
 				"\tTotal Payment: %s",
 			info.Miner,
-			shortCid(info.RequestCid),
-			shortCid(info.RootCid),
+			formatCidAndRoot(info.RequestCid, info.RootCid, false),
 			result.Duration,
 			humanize.IBytes(result.BytesReceived),
 			result.TotalPayment,
@@ -93,7 +89,19 @@ func (metrics *Basic) RecordRetrievalResult(info CandidateInfo, result Retrieval
 	}
 }
 
-func shortCid(cid cid.Cid) string {
+func formatCidAndRoot(cid cid.Cid, root cid.Cid, short bool) string {
+	if cid.Equals(root) {
+		return formatCid(cid, short)
+	} else {
+		return fmt.Sprintf("%s (root %s)", formatCid(cid, short), formatCid(root, short))
+	}
+}
+
+func formatCid(cid cid.Cid, short bool) string {
 	str := cid.String()
-	return fmt.Sprintf("...%s", str[len(str)-10:])
+	if short {
+		return "..." + str[len(str)-10:]
+	} else {
+		return str
+	}
 }
