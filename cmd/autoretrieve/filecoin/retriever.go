@@ -180,6 +180,11 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 		retriever.config.Metrics.RecordRetrieval(candidateInfo)
 		if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
 			// TODO: send some info to metrics about this
+
+			if errors.Is(err, ErrRetrievalAlreadyRunning) {
+				break
+			}
+
 			continue
 		}
 		stats_, err := retriever.retrieve(ctx, query)
