@@ -172,13 +172,7 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 			RootCid:     query.candidate.RootCid,
 			Miner:       query.candidate.Miner,
 		}
-
-		if retriever.isRetrievalRunning(query.candidate.RootCid) {
-			break
-		}
-
-		retriever.config.Metrics.RecordRetrieval(candidateInfo)
-		if err := retriever.registerRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
+		if err := retriever.tryRegisterRunningRetrieval(query.candidate.RootCid, query.candidate.Miner); err != nil {
 			// TODO: send some info to metrics about this
 
 			if errors.Is(err, ErrRetrievalAlreadyRunning) {
@@ -187,6 +181,7 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 
 			continue
 		}
+		retriever.config.Metrics.RecordRetrieval(candidateInfo)
 		stats_, err := retriever.retrieve(ctx, query)
 		if err != nil {
 			// TODO: this should not have to be separate
@@ -289,15 +284,8 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	return stats, nil
 }
 
-func (retriever *Retriever) isRetrievalRunning(cid cid.Cid) bool {
-	retriever.runningRetrievalsLk.Lock()
-	defer retriever.runningRetrievalsLk.Unlock()
-
-	return retriever.runningRetrievals[cid]
-}
-
 // Possible errors: ErrRetrievalAlreadyRunning, ErrHitRetrievalLimit
-func (retriever *Retriever) registerRunningRetrieval(cid cid.Cid, miner address.Address) error {
+func (retriever *Retriever) tryRegisterRunningRetrieval(cid cid.Cid, miner address.Address) error {
 	retriever.runningRetrievalsLk.Lock()
 	defer retriever.runningRetrievalsLk.Unlock()
 
