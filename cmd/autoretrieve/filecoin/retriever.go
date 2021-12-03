@@ -357,7 +357,7 @@ func (retriever *Retriever) lookupCandidates(cid cid.Cid) ([]retrievalCandidate,
 		}
 
 		// Skip non-whitelist IF the whitelist isn't empty
-		if len(retriever.config.MinerWhitelist) > 0 && retriever.config.MinerWhitelist[candidate.Miner] {
+		if len(retriever.config.MinerWhitelist) > 0 && !retriever.config.MinerWhitelist[candidate.Miner] {
 			continue
 		}
 
