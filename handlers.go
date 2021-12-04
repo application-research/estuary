@@ -248,6 +248,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
+	admin.POST("/cm/move", s.handleMoveContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
@@ -2163,6 +2164,39 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 	})
 }
 
+type moveContentBody struct {
+	Contents    []uint `json:"contents"`
+	Destination string `json:"destination"`
+}
+
+func (s *Server) handleMoveContent(c echo.Context) error {
+	ctx := c.Request().Context()
+	var body moveContentBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	var contents []Content
+	if err := s.DB.Find(&contents, "id in ?", body.Contents).Error; err != nil {
+		return err
+	}
+
+	if len(contents) != len(body.Contents) {
+		log.Warnf("got back fewer contents than requested: %d != %d", len(contents), len(body.Contents))
+	}
+
+	var shuttle Shuttle
+	if err := s.DB.First(&shuttle, "handle = ?", body.Destination).Error; err != nil {
+		return err
+	}
+
+	if err := s.CM.sendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+		return err
+	}
+
+	return c.JSON(200, map[string]string{})
+}
+
 func (s *Server) handleRefreshContent(c echo.Context) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2224,6 +2258,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		return nil, &util.HttpError{
 			Code:    http.StatusForbidden,
 			Message: util.ERR_TOKEN_EXPIRED,
+			Details: fmt.Sprintf("token for user %d expired %s", authToken.User, authToken.Expiry),
 		}
 	}
 
@@ -3966,7 +4001,6 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		log.Errorf("handler error: %s", err)
 		var herr *util.HttpError
 		if xerrors.As(err, &herr) {
 			errmap := map[string]string{
@@ -3989,6 +4023,8 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 				},
 			})
 		}
+
+		log.Errorf("handler error: %s", err)
 
 		// TODO: returning all errors out to the user smells potentially bad
 		return c.JSON(500, map[string]interface{}{
