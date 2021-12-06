@@ -212,7 +212,7 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) (*filclient.RetrievalStats, error) {
 	proposal, err := retrievehelper.RetrievalProposalForAsk(query.response, query.candidate.RootCid, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrProposalCreationFailed, err)
+		return &filclient.RetrievalStats{}, fmt.Errorf("%w: %v", ErrProposalCreationFailed, err)
 	}
 
 	startTime := time.Now()
@@ -274,7 +274,7 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 	doneLk.Unlock()
 
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrRetrievalFailed, err)
+		return stats, fmt.Errorf("%w: %v", ErrRetrievalFailed, err)
 	}
 
 	return stats, nil
