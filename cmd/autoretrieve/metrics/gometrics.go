@@ -39,7 +39,7 @@ func NewPrometheus(ctx context.Context, inner Metrics) *GoMetrics {
 			NewCtx(scope, "average_success_durations", "average success durations in seconds").
 			Histogram([]float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600, 7200}),
 		averageFailureDurations: gometrics.
-			NewCtx(scope, "average_success_durations", "average success durations in seconds").
+			NewCtx(scope, "average_failure_durations", "average failure durations in seconds").
 			Histogram([]float64{1, 5, 10, 30, 60, 300, 600, 1800, 3600, 7200}),
 	}
 

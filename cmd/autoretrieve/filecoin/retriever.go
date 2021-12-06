@@ -183,31 +183,19 @@ func (retriever *Retriever) retrieveFromBestCandidate(ctx context.Context, cid c
 		}
 		retriever.config.Metrics.RecordRetrieval(candidateInfo)
 		stats_, err := retriever.retrieve(ctx, query)
-		if err != nil {
-			// TODO: this should not have to be separate
-			retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
-				Duration:      0,
-				BytesReceived: 0,
-				TotalPayment:  types.FIL(big.Zero()),
-				Err:           err,
-			})
-		} else {
-			retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
-				Duration:      stats_.Duration,
-				BytesReceived: stats_.Size,
-				TotalPayment:  types.FIL(stats_.TotalPayment),
-				Err:           err,
-			})
-
-		}
+		stats = stats_
+		retriever.config.Metrics.RecordRetrievalResult(candidateInfo, metrics.RetrievalResult{
+			Duration:      stats.Duration,
+			BytesReceived: stats.Size,
+			TotalPayment:  types.FIL(stats.TotalPayment),
+			Err:           err,
+		})
 
 		retriever.unregisterRunningRetrieval(query.candidate.RootCid, query.candidate.Miner)
 
 		if err != nil {
 			continue
 		}
-
-		stats = stats_
 
 		break
 	}
@@ -270,6 +258,14 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 			time.Since(startTime),
 			humanize.IBytes(lastBytesReceived),
 		)
+	}
+	// TODO: temporary measure, remove when filclient properly returns data on
+	// failure
+	if stats == nil {
+		stats = &filclient.RetrievalStats{
+			Size:     lastBytesReceived,
+			Duration: time.Since(startTime),
+		}
 	}
 
 	lastBytesReceivedTimer.Stop()
