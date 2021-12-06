@@ -313,7 +313,7 @@ func (retriever *Retriever) unregisterRunningRetrieval(cid cid.Cid, miner addres
 	defer retriever.runningRetrievalsLk.Unlock()
 
 	delete(retriever.runningRetrievals, cid)
-	retriever.activeRetrievalsPerMiner[miner] = retriever.activeRetrievalsPerMiner[miner] + 1
+	retriever.activeRetrievalsPerMiner[miner] = retriever.activeRetrievalsPerMiner[miner] - 1
 	if retriever.activeRetrievalsPerMiner[miner] == 0 {
 		delete(retriever.activeRetrievalsPerMiner, miner)
 	}
