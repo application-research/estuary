@@ -268,7 +268,9 @@ func (retriever *Retriever) retrieve(ctx context.Context, query candidateQuery) 
 		}
 	}
 
-	lastBytesReceivedTimer.Stop()
+	if lastBytesReceivedTimer != nil {
+		lastBytesReceivedTimer.Stop()
+	}
 	doneLk.Lock()
 	done = true
 	doneLk.Unlock()
