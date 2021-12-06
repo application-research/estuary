@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -123,6 +124,25 @@ func run(cctx *cli.Context) error {
 
 	go func() {
 		http.Handle("/metrics", promhttp.Handler())
+		http.HandleFunc("/debug/stacktrace", func(w http.ResponseWriter, r *http.Request) {
+			buf := make([]byte, 64<<20)
+			for i := 0; ; i++ {
+				n := runtime.Stack(buf, true)
+				if n < len(buf) {
+					buf = buf[:n]
+					break
+				}
+				if len(buf) >= 1<<30 {
+					// Filled 1 GB - stop there.
+					break
+				}
+				buf = make([]byte, 2*len(buf))
+			}
+			_, err := w.Write(buf)
+			if err != nil {
+				logger.Error(err)
+			}
+		})
 		if err := http.ListenAndServe("0.0.0.0:8080", nil); err != nil {
 			logger.Errorf("Could not start prometheus endpoint server: %s", err)
 		}
