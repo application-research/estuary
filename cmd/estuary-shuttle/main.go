@@ -544,9 +544,6 @@ type Shuttle struct {
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
-	d.inflightCidsLk.Lock()
-	defer d.inflightCidsLk.Unlock()
-
 	v, ok := d.inflightCids[c]
 	return ok && v > 0
 }
@@ -807,6 +804,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/loglevel", s.handleLogLevel)
 	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
 	admin.GET("/transfers/list", s.handleListAllTransfers)
+	admin.POST("/garbagecheck", s.handleManualGarbageCheck)
 
 	return e.Start(listen)
 }
@@ -1834,4 +1832,26 @@ func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
 	}
 
 	return c.JSON(200, transfers)
+}
+
+type garbageCheckBody struct {
+	Contents []uint `json:"contents"`
+}
+
+func (s *Shuttle) handleManualGarbageCheck(c echo.Context) error {
+	ctx := c.Request().Context()
+
+	var body garbageCheckBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	return s.sendRpcMessage(ctx, &drpc.Message{
+		Op: drpc.OP_GarbageCheck,
+		Params: drpc.MsgParams{
+			GarbageCheck: &drpc.GarbageCheck{
+				Contents: body.Contents,
+			},
+		},
+	})
 }

@@ -29,6 +29,16 @@ type EstClient struct {
 	DoProgress bool
 }
 
+type httpStatusError struct {
+	Status     string
+	StatusCode int
+	Extra      string
+}
+
+func (hse httpStatusError) Error() string {
+	return fmt.Sprintf("received non-200 status: %s (%s)", hse.Status, hse.Extra)
+}
+
 func (c *EstClient) doRequest(ctx context.Context, method string, path string, body interface{}, resp interface{}) (int, error) {
 	var bodyr io.Reader
 	if body != nil {
@@ -59,15 +69,27 @@ func (c *EstClient) doRequest(ctx context.Context, method string, path string, b
 	if !(r.StatusCode >= 200 && r.StatusCode < 300) {
 		var out map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&out); err != nil {
-			return r.StatusCode, fmt.Errorf("received non-200 status: %s (no error given)", r.Status)
+			return r.StatusCode, &httpStatusError{
+				StatusCode: r.StatusCode,
+				Status:     r.Status,
+				Extra:      "no error given",
+			}
 		}
 
 		errstr, ok := out["error"]
 		if !ok {
-			return r.StatusCode, fmt.Errorf("received non-200 status: %s (unrecognized error format)", r.Status)
+			return r.StatusCode, &httpStatusError{
+				StatusCode: r.StatusCode,
+				Status:     r.Status,
+				Extra:      "unrecognized error format",
+			}
 		}
 
-		return r.StatusCode, fmt.Errorf("received non-200 status (%d): %s", r.StatusCode, errstr)
+		return r.StatusCode, &httpStatusError{
+			StatusCode: r.StatusCode,
+			Status:     r.Status,
+			Extra:      errstr.(string),
+		}
 	}
 
 	if resp != nil {
@@ -295,26 +317,43 @@ type listPinsResp struct {
 	Results []*types.IpfsPinStatus
 }
 
+func shouldRetry(err error) bool {
+	if ne, ok := err.(net.Error); ok {
+		return ne.Temporary() || ne.Timeout()
+	}
+
+	if he, ok := err.(*httpStatusError); ok {
+		// This happens randomly-ish from nginx, usually waiting and retrying works
+		return he.StatusCode == 502
+	}
+
+	return false
+}
+
+func (c *EstClient) doRequestRetries(ctx context.Context, method, path string, body, resp interface{}, retries int) (int, error) {
+	for i := 0; true; i++ {
+		st, err := c.doRequest(ctx, method, path, body, resp)
+		if err == nil {
+			return st, nil
+		}
+
+		if i > retries {
+			return st, err
+		}
+
+		if !shouldRetry(err) {
+			return nil, err
+		}
+
+		time.Sleep(time.Second * 2)
+	}
+}
+
 func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[string]*types.IpfsPinStatus, error) {
 	var resp listPinsResp
-	for i := 0; true; i++ { // TODO: reuse this retry logic more places
-		_, err := c.doRequest(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp)
-		if err == nil {
-			break
-		}
-
-		ne, ok := err.(net.Error)
-		if !ok {
-			return nil, err
-		}
-
-		if i > 5 {
-			return nil, err
-		}
-
-		if ne.Temporary() || ne.Timeout() {
-			time.Sleep(time.Second * 2)
-		}
+	_, err := c.doRequestRetries(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp, 5)
+	if err != nil {
+		return nil, err
 	}
 
 	out := make(map[string]*types.IpfsPinStatus)

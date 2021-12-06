@@ -1295,7 +1295,7 @@ var bargeSyncCmd = &cli.Command{
 
 			resp, err := c.PinStatuses(ctx, reqids)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to recheck pin statuses: %w", err)
 			}
 
 			for _, fp := range checkProgress[i:end] {
@@ -1480,7 +1480,7 @@ var bargeSyncCmd = &cli.Command{
 
 			statuses, err := c.PinStatuses(ctx, tocheck)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to check pin statuses: %w", err)
 			}
 
 			var newdone int
