@@ -70,6 +70,12 @@ func main() {
 		bargeCheckCmd,
 		bargeShareCmd,
 	}
+	app.Flags = []cli.Flag{
+		&cli.BoolFlag{
+			Name:  "debug",
+			Usage: "enable debug logging",
+		},
+	}
 	app.Before = func(cctx *cli.Context) error {
 		if err := loadConfig(); err != nil {
 			return err
@@ -239,9 +245,10 @@ func loadClient(cctx *cli.Context) (*EstClient, error) {
 	}
 
 	return &EstClient{
-		Host:    host,
-		Tok:     tok,
-		Shuttle: shuttle,
+		Host:       host,
+		Tok:        tok,
+		Shuttle:    shuttle,
+		LogTimings: cctx.Bool("debug"),
 	}, nil
 }
 

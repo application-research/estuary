@@ -203,7 +203,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 		}
 
 		for _, o := range objs {
-			del, err := cm.deleteIfNotPinned(ctx, o)
+			del, err := cm.deleteIfNotPinnedLock(ctx, o)
 			if err != nil {
 				return deleteCount, err
 			}

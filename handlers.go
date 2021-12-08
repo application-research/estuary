@@ -2280,6 +2280,10 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
+			ctx, span := s.tracer.Start(c.Request().Context(), "authCheck")
+			defer span.End()
+			c.SetRequest(c.Request().WithContext(ctx))
+
 			auth, err := util.ExtractAuth(c)
 			if err != nil {
 				return err
@@ -2289,6 +2293,8 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 			if err != nil {
 				return err
 			}
+
+			span.SetAttributes(attribute.Int("user", int(u.ID)))
 
 			if u.authToken.UploadOnly && level >= util.PermLevelUser {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)

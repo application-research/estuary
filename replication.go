@@ -1931,7 +1931,7 @@ func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) b
 }
 
 type proposalRecord struct {
-	PropCid util.DbCID
+	PropCid util.DbCID `gorm:"index"`
 	Data    []byte
 }
 

@@ -186,6 +186,12 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) (boo
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
+	return cm.deleteIfNotPinnedLock(ctx, o)
+}
+func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *Object) (bool, error) {
+	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinnedLock")
+	defer span.End()
+
 	var objs []Object
 	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
 		return false, err

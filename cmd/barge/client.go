@@ -27,6 +27,8 @@ type EstClient struct {
 	Tok     string
 
 	DoProgress bool
+
+	LogTimings bool
 }
 
 type httpStatusError struct {
@@ -40,6 +42,13 @@ func (hse httpStatusError) Error() string {
 }
 
 func (c *EstClient) doRequest(ctx context.Context, method string, path string, body interface{}, resp interface{}) (int, error) {
+	start := time.Now()
+	defer func() {
+		if c.LogTimings {
+			fmt.Printf("%s %s took %s\n", method, path, time.Since(start))
+		}
+	}()
+
 	var bodyr io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)
@@ -85,10 +94,24 @@ func (c *EstClient) doRequest(ctx context.Context, method string, path string, b
 			}
 		}
 
+		var extra string
+		switch es := errstr.(type) {
+		case string:
+			extra = es
+		case map[string]interface{}:
+			reason, _ := es["reason"].(string)
+			details, _ := es["details"].(string)
+
+			extra = reason
+			if details != "" {
+				extra += ": " + details
+			}
+		}
+
 		return r.StatusCode, &httpStatusError{
 			StatusCode: r.StatusCode,
 			Status:     r.Status,
-			Extra:      errstr.(string),
+			Extra:      extra,
 		}
 	}
 
@@ -331,7 +354,7 @@ func shouldRetry(err error) bool {
 }
 
 func (c *EstClient) doRequestRetries(ctx context.Context, method, path string, body, resp interface{}, retries int) (int, error) {
-	for i := 0; true; i++ {
+	for i := 0; ; i++ {
 		st, err := c.doRequest(ctx, method, path, body, resp)
 		if err == nil {
 			return st, nil
@@ -342,7 +365,7 @@ func (c *EstClient) doRequestRetries(ctx context.Context, method, path string, b
 		}
 
 		if !shouldRetry(err) {
-			return nil, err
+			return 0, err
 		}
 
 		time.Sleep(time.Second * 2)
