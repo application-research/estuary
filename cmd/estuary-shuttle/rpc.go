@@ -496,13 +496,17 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	}
 
 	// Check if we've done this already...
-	if pin.Aggregate && pin.DagSplit {
+	if pin.DagSplit {
 		// This is only set once we've completed the splitting, so this should be fine
+
+		if pin.SplitFrom != 0 {
+			return fmt.Errorf("was asked to split content that is itself split from a larger piece")
+		}
 
 		// However, this might mean that the other side missed receiving some
 		// messages from us, so we need to resend everything
 		var children []Pin
-		if err := s.DB.Find(&children, "aggregated_in = ?", req.Content).Error; err != nil {
+		if err := s.DB.Find(&children, "split_from = ?", req.Content).Error; err != nil {
 			return err
 		}
 
@@ -535,7 +539,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	}
 
 	for i, c := range boxCids {
-		fname := fmt.Sprintf("split-%d", i)
+		fname := fmt.Sprintf("split-%09d", i)
 
 		contid, err := s.shuttleCreateContent(ctx, pin.UserID, c, fname, "", pin.Content)
 		if err != nil {
@@ -543,12 +547,13 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		}
 
 		pin := &Pin{
-			Cid:          util.DbCID{c},
-			Content:      contid,
-			Active:       false,
-			Pinning:      true,
-			UserID:       pin.UserID,
-			AggregatedIn: pin.Content,
+			Cid:       util.DbCID{c},
+			Content:   contid,
+			Active:    false,
+			Pinning:   true,
+			UserID:    pin.UserID,
+			DagSplit:  true,
+			SplitFrom: pin.Content,
 		}
 
 		if err := s.DB.Create(pin).Error; err != nil {
@@ -562,8 +567,10 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
-		"aggregate": true,
 	}).Error; err != nil {
+		return err
+	}
+	if err := s.DB.Where("pin = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
 		return err
 	}
 

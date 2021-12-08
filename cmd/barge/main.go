@@ -46,6 +46,7 @@ import (
 	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
 	"github.com/mitchellh/go-homedir"
+	"github.com/multiformats/go-multiaddr"
 	mh "github.com/multiformats/go-multihash"
 	"github.com/spf13/viper"
 	cli "github.com/urfave/cli/v2"
@@ -792,19 +793,19 @@ func filestoreAdd(fstore *filestore.Filestore, fpath string, progcb func(int64))
 }
 
 func connectToDelegates(ctx context.Context, h host.Host, delegates []string) error {
-	peers := make(map[peer.ID]struct{})
+	peers := make(map[peer.ID][]multiaddr.Multiaddr)
 	for _, d := range delegates {
 		ai, err := peer.AddrInfoFromString(d)
 		if err != nil {
 			return err
 		}
 
-		h.Peerstore().AddAddrs(ai.ID, ai.Addrs, time.Hour)
-
-		peers[ai.ID] = struct{}{}
+		peers[ai.ID] = append(peers[ai.ID], ai.Addrs...)
 	}
 
-	for p := range peers {
+	for p, addrs := range peers {
+		h.Peerstore().AddAddrs(p, addrs, time.Hour)
+
 		if h.Network().Connectedness(p) != network.Connected {
 			if err := h.Connect(ctx, peer.AddrInfo{
 				ID: p,
@@ -1383,6 +1384,7 @@ var bargeSyncCmd = &cli.Command{
 		newpins := make([]*Pin, len(needsNewPin))
 		errs := make([]error, len(needsNewPin))
 		sema := make(chan struct{}, 20)
+		var delegates []string
 		for i := range needsNewPin {
 			wg.Add(1)
 			go func(ix int) {
@@ -1410,11 +1412,8 @@ var bargeSyncCmd = &cli.Command{
 					return
 				}
 
-				if err := connectToDelegates(ctx, h, resp.Delegates); err != nil {
-					fmt.Fprintf(os.Stderr, "failed to connect to deletegates for new pin: %s\n", err)
-				}
-
 				dplk.Lock()
+				delegates = append(delegates, resp.Delegates...)
 				donePins++
 				fmt.Printf("                                                 \r")
 				fmt.Printf("creating new pins %d/%d", donePins, len(needsNewPin))
@@ -1431,6 +1430,10 @@ var bargeSyncCmd = &cli.Command{
 			}(i)
 		}
 		wg.Wait()
+
+		if err := connectToDelegates(ctx, h, delegates); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to connect to deletegates for new pin: %s\n", err)
+		}
 
 		var tocreate []*Pin
 		for _, p := range newpins {

@@ -24,6 +24,10 @@ type User struct {
 	StorageDisabled bool
 }
 
+func (u *User) FlagSplitContent() bool {
+	return u.Flags&8 != 0
+}
+
 type AuthToken struct {
 	gorm.Model
 	Token      string `gorm:"unique"`

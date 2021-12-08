@@ -248,6 +248,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
+	admin.POST("/cm/gc", s.handleRunGc)
 	admin.POST("/cm/move", s.handleMoveContent)
 	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
@@ -2573,11 +2574,11 @@ func (s *Server) getMinersOwnedByUser(u *User) []string {
 }
 
 func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
-	var out []string
 
 	// TODO: this should be a lotttttt smarter
 	s.CM.shuttlesLk.Lock()
 	defer s.CM.shuttlesLk.Unlock()
+	var shuttles []Shuttle
 	for hnd, sh := range s.CM.shuttles {
 		if sh.hostname == "" {
 			continue
@@ -2593,11 +2594,21 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 			continue
 		}
 
-		out = append(out, "https://"+sh.hostname+"/content/add")
+		shuttles = append(shuttles, shuttle)
+	}
+
+	sort.Slice(shuttles, func(i, j int) bool {
+		return shuttles[i].Priority > shuttles[j].Priority
+	})
+
+	var out []string
+	for _, sh := range shuttles {
+		out = append(out, "https://"+sh.Host+"/content/add")
 	}
 	if !s.CM.localContentAddingDisabled {
 		out = append(out, s.CM.hostname+"/content/add")
 	}
+
 	return out, nil
 }
 
@@ -3935,7 +3946,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	}
 	if req.DagSplitRoot != 0 {
 		content.DagSplit = true
-		content.AggregatedIn = req.DagSplitRoot
+		content.SplitFrom = req.DagSplitRoot
 	}
 
 	if err := s.DB.Create(content).Error; err != nil {
@@ -4182,4 +4193,12 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, map[string]string{})
+}
+
+func (s *Server) handleRunGc(c echo.Context) error {
+	if err := s.CM.GarbageCollect(c.Request().Context()); err != nil {
+		return err
+	}
+
+	return nil
 }

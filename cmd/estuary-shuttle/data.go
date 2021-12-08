@@ -30,7 +30,8 @@ type Pin struct {
 	PinMeta string `json:"pinMeta"`
 	Failed  bool   `json:"failed"`
 
-	DagSplit bool `json:"dagSplit"`
+	DagSplit  bool `json:"dagSplit"`
+	SplitFrom uint `json:"splitFrom"`
 }
 
 type Object struct {

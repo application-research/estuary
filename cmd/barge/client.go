@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/application-research/estuary/types"
@@ -341,15 +343,22 @@ type listPinsResp struct {
 }
 
 func shouldRetry(err error) bool {
-	if ne, ok := err.(net.Error); ok {
-		return ne.Temporary() || ne.Timeout()
-	}
+	switch err := err.(type) {
+	case net.Error:
+		return err.Temporary() || err.Timeout()
+	case *httpStatusError:
+		return err.StatusCode == 502
+	case syscall.Errno:
+		if err == syscall.ENETUNREACH {
+			return true
+		}
+	default:
+		if uw := errors.Unwrap(err); uw != nil {
+			return shouldRetry(uw)
+		}
 
-	if he, ok := err.(*httpStatusError); ok {
-		// This happens randomly-ish from nginx, usually waiting and retrying works
-		return he.StatusCode == 502
+		return false
 	}
-
 	return false
 }
 

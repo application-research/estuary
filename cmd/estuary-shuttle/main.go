@@ -804,7 +804,8 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/loglevel", s.handleLogLevel)
 	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
 	admin.GET("/transfers/list", s.handleListAllTransfers)
-	admin.POST("/garbagecheck", s.handleManualGarbageCheck)
+	admin.POST("/garbage/check", s.handleManualGarbageCheck)
+	admin.POST("/garbage/collect", s.handleGarbageCollect)
 
 	return e.Start(listen)
 }
@@ -1658,6 +1659,28 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 	return nil
 }
 
+func (s *Shuttle) GarbageCollect(ctx context.Context) error {
+	keys, err := s.Node.Blockstore.AllKeysChan(ctx)
+	if err != nil {
+		return err
+	}
+
+	count := 0
+	for c := range keys {
+		del, err := s.deleteIfNotPinned(&Object{Cid: util.DbCID{c}})
+		if err != nil {
+			return err
+		}
+
+		if del {
+			count++
+		}
+	}
+
+	log.Infof("garbage collect deleted %d blocks", count)
+	return nil
+}
+
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("cont"))
 	if err != nil {
@@ -1854,4 +1877,8 @@ func (s *Shuttle) handleManualGarbageCheck(c echo.Context) error {
 			},
 		},
 	})
+}
+
+func (s *Shuttle) handleGarbageCollect(c echo.Context) error {
+	return s.GarbageCollect(c.Request().Context())
 }

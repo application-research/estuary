@@ -92,9 +92,8 @@ type Content struct {
 	// In such a case, the 'root' content should be advertised on the dht, but
 	// not have deals made for it, and the children should have deals made for
 	// them (unlike with aggregates)
-	// For efficiencys sake, we will reuse the aggregate fields for describing
-	// the structure of splitdags
-	DagSplit bool `json:"dagSplit"`
+	DagSplit  bool `json:"dagSplit"`
+	SplitFrom uint `json:"splitFrom"`
 }
 
 type Object struct {

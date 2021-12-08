@@ -1228,12 +1228,12 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 
 	verified := true
 
-	if content.AggregatedIn > 0 && !content.DagSplit {
+	if content.AggregatedIn > 0 {
 		// This content is aggregated inside another piece of content, nothing to do here
 		return nil
 	}
 
-	if content.DagSplit && content.AggregatedIn == 0 {
+	if content.DagSplit && content.SplitFrom == 0 {
 		// This is the 'root' of a split dag, we dont need to process it
 		return nil
 	}
@@ -1245,9 +1245,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 
 	// its too big, need to split it up into chunks
 	if content.Size > cm.contentSizeLimit {
-		return fmt.Errorf("content too big (splitting will be implemented soon)")
-		// return cm.splitContent(ctx, content, cm.contentSizeLimit)
-		// done(time.Minute * 10)
+		if err := cm.splitContent(ctx, content, cm.contentSizeLimit); err != nil {
+			return err
+		}
+		done(time.Minute * 15)
+		return nil
 	}
 
 	// check if content has enough deals made for it
@@ -1417,6 +1419,15 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size int64) error {
 	ctx, span := cm.tracer.Start(ctx, "splitContent")
 	defer span.End()
+
+	var u User
+	if err := cm.DB.First(&u, "id = ?", cont.ID).Error; err != nil {
+		return fmt.Errorf("failed to load contents user from db: %w", err)
+	}
+
+	if !u.FlagSplitContent() {
+		return fmt.Errorf("user does not have content splitting enabled")
+	}
 
 	log.Infof("splitting content %d (size: %d)", cont.ID, size)
 
