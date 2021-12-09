@@ -44,7 +44,6 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/lightstep/otel-launcher-go/launcher"
 	"github.com/multiformats/go-multiaddr"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
@@ -55,19 +54,11 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/semconv"
+	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 )
 
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
-	if lsteptok != "" {
-		ls := launcher.ConfigureOpentelemetry(
-			launcher.WithServiceName("estuary-api"),
-			launcher.WithAccessToken(lsteptok),
-		)
-
-		defer ls.Shutdown()
-	}
 
 	e := echo.New()
 
@@ -239,6 +230,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
 	admin.GET("/miners", s.handleAdminGetMiners)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
+	admin.GET("/miners/transfers/:miner", s.handleMinerTransferDiagnostics)
 
 	admin.GET("/cm/progress", s.handleAdminGetProgress)
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
@@ -1269,6 +1261,20 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	minerTransferDiagnostics, err := s.FilClient.MinerTransferDiagnostics(c.Request().Context(), m)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, minerTransferDiagnostics)
 }
 
 func parseChanID(chanid string) (*datatransfer.ChannelID, error) {

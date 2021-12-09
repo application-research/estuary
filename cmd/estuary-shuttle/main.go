@@ -18,7 +18,7 @@ import (
 	estumetrics "github.com/application-research/estuary/metrics"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel/codes"
-	"go.opentelemetry.io/otel/semconv"
+	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -37,6 +37,7 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -804,6 +805,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/loglevel", s.handleLogLevel)
 	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
 	admin.GET("/transfers/list", s.handleListAllTransfers)
+	admin.GET("/transfers/:miner", s.handleMinerTransferDiagnostics)
 	admin.POST("/garbage/check", s.handleManualGarbageCheck)
 	admin.POST("/garbage/collect", s.handleGarbageCollect)
 
@@ -1855,6 +1857,20 @@ func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
 	}
 
 	return c.JSON(200, transfers)
+}
+
+func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("miner"))
+	if err != nil {
+		return err
+	}
+
+	minerTransferDiagnostics, err := s.Filc.MinerTransferDiagnostics(c.Request().Context(), m)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, minerTransferDiagnostics)
 }
 
 type garbageCheckBody struct {
