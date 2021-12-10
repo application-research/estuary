@@ -2,10 +2,10 @@ package metrics
 
 import (
 	logging "github.com/ipfs/go-log/v2"
-	"go.opentelemetry.io/otel/exporters/trace/jaeger"
+	"go.opentelemetry.io/otel/exporters/jaeger"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/semconv"
+	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 )
 
 var log = logging.Logger("metrics")
@@ -23,7 +23,7 @@ func NewJaegerTraceProvider(serviceName, agentEndpoint string, sampleRatio float
 		sampler = sdktrace.NeverSample()
 	}
 
-	exp, err := jaeger.NewRawExporter(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(agentEndpoint)))
+	exp, err := jaeger.New(jaeger.WithCollectorEndpoint(jaeger.WithEndpoint(agentEndpoint)))
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +32,7 @@ func NewJaegerTraceProvider(serviceName, agentEndpoint string, sampleRatio float
 		sdktrace.WithBatcher(exp),
 		sdktrace.WithSampler(sampler),
 		sdktrace.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
 			semconv.ServiceNameKey.String(serviceName),
 		)),
 	)
