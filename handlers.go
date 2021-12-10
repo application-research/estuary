@@ -625,6 +625,10 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	fname := mpf.Filename
+	if fvname := c.FormValue("name"); fvname != "" {
+		fname = fvname
+	}
+
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
