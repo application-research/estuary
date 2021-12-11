@@ -3,7 +3,7 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20211209211700-9af88a7a04c0
+	github.com/application-research/filclient v0.0.0-20211211042701-db19280b7e55
 	github.com/application-research/go-bs-autobatch v0.0.0-20210811233935-cb8cf8232026
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/cheggaaa/pb/v3 v3.0.8
@@ -19,6 +19,7 @@ require (
 	github.com/filecoin-project/go-state-types v0.1.1-0.20210915140513-d354ccf10379
 	github.com/filecoin-project/lotus v1.13.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.1
+	github.com/gdamore/tcell/v2 v2.2.0 // indirect
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/influxdata/influxdb-client-go/v2 v2.5.1
@@ -31,7 +32,7 @@ require (
 	github.com/ipfs/go-ds-flatfs v0.4.5
 	github.com/ipfs/go-ds-leveldb v0.4.2
 	github.com/ipfs/go-filestore v1.0.0
-	github.com/ipfs/go-graphsync v0.10.8
+	github.com/ipfs/go-graphsync v0.10.9
 	github.com/ipfs/go-ipfs-blockstore v1.0.5-0.20210802214209-c56038684c45
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.0.1

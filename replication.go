@@ -1421,7 +1421,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size i
 	defer span.End()
 
 	var u User
-	if err := cm.DB.First(&u, "id = ?", cont.ID).Error; err != nil {
+	if err := cm.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return fmt.Errorf("failed to load contents user from db: %w", err)
 	}
 
