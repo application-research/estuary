@@ -4214,6 +4214,10 @@ func sanitizePath(p string) (string, error) {
 
 func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 	colid := c.QueryParam("col")
+	colidlong := c.QueryParam("collection")
+	if colid == "" {
+		colid = colidlong
+	}
 	contid := c.QueryParam("content")
 	npath := c.QueryParam("path")
 
@@ -4243,15 +4247,19 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	p, err := sanitizePath(npath)
-	if err != nil {
-		return err
+	var path *string
+	if npath != "" {
+		p, err := sanitizePath(npath)
+		if err != nil {
+			return err
+		}
+		path = &p
 	}
 
 	if err := s.DB.Create(&CollectionRef{
 		Collection: col.ID,
 		Content:    content.ID,
-		Path:       &p,
+		Path:       path,
 	}).Error; err != nil {
 		log.Errorf("failed to add content to requested collection: %s", err)
 	}
