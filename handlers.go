@@ -697,6 +697,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if col != nil {
+		fmt.Println("COLLECTION CREATION: ", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -2809,7 +2810,8 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	if err := s.DB.Debug().
 		Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
-		Joins("left join contents on contents.id = collection_refs.collection").
+		Joins("left join contents on contents.id = collection_refs.content").
+		Select("contents.*").
 		Scan(&contents).Error; err != nil {
 		return err
 	}
