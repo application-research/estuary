@@ -806,6 +806,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/transfers/restartall", s.handleRestartAllTransfers)
 	admin.GET("/transfers/list", s.handleListAllTransfers)
 	admin.GET("/transfers/:miner", s.handleMinerTransferDiagnostics)
+	admin.GET("/bitswap/wantlist/:peer", s.handleGetWantlist)
 	admin.POST("/garbage/check", s.handleManualGarbageCheck)
 	admin.POST("/garbage/collect", s.handleGarbageCollect)
 
@@ -1897,4 +1898,14 @@ func (s *Shuttle) handleManualGarbageCheck(c echo.Context) error {
 
 func (s *Shuttle) handleGarbageCollect(c echo.Context) error {
 	return s.GarbageCollect(c.Request().Context())
+}
+
+func (s *Shuttle) handleGetWantlist(c echo.Context) error {
+	p, err := peer.Decode(c.Param("peer"))
+	if err != nil {
+		return err
+	}
+
+	wl := s.Node.Bitswap.WantlistForPeer(p)
+	return c.JSON(200, wl)
 }

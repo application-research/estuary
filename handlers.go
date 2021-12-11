@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -61,6 +62,8 @@ import (
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 
 	e := echo.New()
+
+	e.Binder = new(binder)
 
 	if logging {
 		e.Use(middleware.Logger())
@@ -273,6 +276,13 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
 	return e.Start(srv)
+}
+
+type binder struct{}
+
+func (b binder) Bind(i interface{}, c echo.Context) error {
+	defer c.Request().Body.Close()
+	return json.NewDecoder(c.Request().Body).Decode(i)
 }
 
 func serveCpuProfile(c echo.Context) error {
@@ -2725,8 +2735,9 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 }
 
 type addContentToCollectionParams struct {
-	Contents   []uint `json:"contents"`
-	Collection string `json:"collection"`
+	Contents   []uint   `json:"contents"`
+	Collection string   `json:"collection"`
+	Cids       []string `json:"cids"`
 }
 
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
@@ -2739,9 +2750,13 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("too many contents specified: %d (max 128)", len(params.Contents))
 	}
 
+	if len(params.Cids) > 128 {
+		return fmt.Errorf("too many cids specified: %d (max 128)", len(params.Cids))
+	}
+
 	var col Collection
-	if err := s.DB.First(&col, "user_id = ?", u.ID).Error; err != nil {
-		return err
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
 
 	var contents []Content
@@ -2749,7 +2764,21 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	if len(contents) != len(params.Contents) {
+	for _, c := range params.Cids {
+		cc, err := cid.Decode(c)
+		if err != nil {
+			return fmt.Errorf("cid in params was improperly formatted: %w", err)
+		}
+
+		var cont Content
+		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{cc}, u.ID).Error; err != nil {
+			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
+		}
+
+		contents = append(contents, cont)
+	}
+
+	if len(contents) != len(params.Contents)+len(params.Cids) {
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(params.Contents)-len(contents))
 	}
 
@@ -3599,6 +3628,20 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		return err
 	}
 
+	var collections []Collection
+	for _, c := range req.Collections {
+		var col Collection
+		if err := s.DB.First(&col, "uuid = ?", c).Error; err != nil {
+			return err
+		}
+
+		if col.UserID != u.ID {
+			return fmt.Errorf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID)
+		}
+
+		collections = append(collections, col)
+	}
+
 	content := &Content{
 		Cid:         util.DbCID{req.Root},
 		Name:        req.Name,
@@ -3611,6 +3654,15 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
+	}
+
+	for _, col := range collections {
+		if err := s.DB.Create(&CollectionRef{
+			Collection: col.ID,
+			Content:    content.ID,
+		}).Error; err != nil {
+			return err
+		}
 	}
 
 	return c.JSON(200, createContentResponse{
