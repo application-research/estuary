@@ -1113,23 +1113,15 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
 	// to build the CAR sub-selector
 
-	// SELECT ordinal - 1 FROM (
-	//   SELECT
-	//     id, ROW_NUMBER() OVER ( ORDER BY CAST(id AS TEXT) ) AS ordinal
-	//   FROM contents
-	//   WHERE aggregated_in = ?
-    // ) subq
-	// WHERE id = ?
-
-	subQuery := s.DB.Table("contents").
-		Select("id, ROW_NUMBER() OVER ( ORDER BY CAST(id as TEXT) ) AS ordinal").
-		Where("aggregated_in = ?", aggregatedIn)
-
 	var ordinal uint
-	result := s.DB.Table("(?) subq", subQuery).
-		Select("ordinal - 1").
-		Where("id = ?", contentID).
-		Find(&ordinal)
+	result := s.DB.Raw(`SELECT ordinal - 1 FROM (
+				SELECT
+					id, ROW_NUMBER() OVER ( ORDER BY CAST(id AS TEXT) ) AS ordinal
+				FROM contents
+				WHERE aggregated_in = ?
+			) subq
+				WHERE id = ?
+			`, aggregatedIn, contentID).Scan(&ordinal)
 
 	if result.Error != nil {
 		return "", result.Error 
