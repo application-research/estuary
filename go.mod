@@ -22,7 +22,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/influxdata/influxdb-client-go/v2 v2.5.1
-	github.com/ipfs/go-bitswap v0.5.1
+	github.com/ipfs/go-bitswap v0.5.2-0.20211214021705-dbfc6a1d986e
 	github.com/ipfs/go-block-format v0.0.3
 	github.com/ipfs/go-blockservice v0.2.1
 	github.com/ipfs/go-cid v0.1.0

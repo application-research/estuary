@@ -184,6 +184,10 @@ func main() {
 			Name:  "bitswap-max-work-per-peer",
 			Value: 5 << 20,
 		},
+		&cli.IntFlag{
+			Name:  "bitswap-target-message-size",
+			Value: 16 << 10,
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -223,6 +227,7 @@ func main() {
 			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
 			BitswapConfig: node.BitswapConfig{
 				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
+				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
 			},
 		}
 

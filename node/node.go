@@ -131,6 +131,7 @@ type Config struct {
 
 type BitswapConfig struct {
 	MaxOutstandingBytesPerPeer int64
+	TargetMessageSize          int
 }
 
 func Setup(ctx context.Context, cfg *Config) (*Node, error) {
@@ -232,12 +233,18 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		peerwork = 5 << 20
 	}
 
-	bsctx := metri.CtxScope(ctx, "estuary.exch")
-	bswap := bitswap.New(bsctx, bsnet, blkst,
+	bsopts := []bitswap.Option{
 		bitswap.EngineBlockstoreWorkerCount(600),
 		bitswap.TaskWorkerCount(600),
 		bitswap.MaxOutstandingBytesPerPeer(int(peerwork)),
-	)
+	}
+
+	if tms := cfg.BitswapConfig.TargetMessageSize; tms != 0 {
+		bsopts = append(bsopts, bitswap.WithTargetMessageSize(tms))
+	}
+
+	bsctx := metri.CtxScope(ctx, "estuary.exch")
+	bswap := bitswap.New(bsctx, bsnet, blkst, bsopts...)
 
 	wallet, err := setupWallet(cfg.WalletDir)
 	if err != nil {
