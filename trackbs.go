@@ -154,13 +154,13 @@ func (tbs *TrackingBlockstore) AllKeysChan(context.Context) (<-chan cid.Cid, err
 	return nil, fmt.Errorf("not supported")
 }
 
-func (tbs *TrackingBlockstore) DeleteBlock(_ cid.Cid) error {
+func (tbs *TrackingBlockstore) DeleteBlock(ctx context.Context, _ cid.Cid) error {
 	return fmt.Errorf("deleting blocks not supported through this interface")
 }
 
-func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
+func (tbs *TrackingBlockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block, error) {
 	tbs.getCh <- c // TODO: should we be tracking all requests? or all successful servings?
-	blk, err := tbs.bs.Get(c)
+	blk, err := tbs.bs.Get(ctx, c)
 	if err != nil {
 		if xerrors.Is(err, blockstore.ErrNotFound) {
 			var obj Object
@@ -187,12 +187,12 @@ func (tbs *TrackingBlockstore) Get(c cid.Cid) (blocks.Block, error) {
 	return blk, nil
 }
 
-func (tbs *TrackingBlockstore) GetSize(c cid.Cid) (int, error) {
-	return tbs.bs.GetSize(c)
+func (tbs *TrackingBlockstore) GetSize(ctx context.Context, c cid.Cid) (int, error) {
+	return tbs.bs.GetSize(ctx, c)
 }
 
-func (tbs *TrackingBlockstore) Has(c cid.Cid) (bool, error) {
-	has, err := tbs.bs.Has(c)
+func (tbs *TrackingBlockstore) Has(ctx context.Context, c cid.Cid) (bool, error) {
+	has, err := tbs.bs.Has(ctx, c)
 	if err != nil {
 		return false, err
 	}
@@ -206,14 +206,14 @@ func (tbs *TrackingBlockstore) HashOnRead(hashOnRead bool) {
 	tbs.bs.HashOnRead(hashOnRead)
 }
 
-func (tbs *TrackingBlockstore) Put(blk blocks.Block) error {
+func (tbs *TrackingBlockstore) Put(ctx context.Context, blk blocks.Block) error {
 	// TODO:
 	// return fmt.Errorf("should not be writing blocks through this blockstore")
-	return tbs.bs.Put(blk)
+	return tbs.bs.Put(ctx, blk)
 }
 
-func (tbs *TrackingBlockstore) PutMany(blks []blocks.Block) error {
+func (tbs *TrackingBlockstore) PutMany(ctx context.Context, blks []blocks.Block) error {
 	// TODO:
 	// return fmt.Errorf("should not be writing blocks through this blockstore")
-	return tbs.bs.PutMany(blks)
+	return tbs.bs.PutMany(ctx, blks)
 }

@@ -663,7 +663,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 			return err
 		}
 
-		if err := cm.Blockstore.Put(dir); err != nil {
+		if err := cm.Blockstore.Put(ctx, dir); err != nil {
 			return err
 		}
 
@@ -1324,7 +1324,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			countLk.Lock()
 			defer countLk.Unlock()
 			switch status {
-			case DEAL_CHECK_UNKNOWN:
+			case DEAL_CHECK_UNKNOWN, DEAL_NEARLY_EXPIRED:
 				if err := cm.repairDeal(&d); err != nil {
 					errs[i] = xerrors.Errorf("repairing deal failed: %w", err)
 					return
@@ -1456,7 +1456,10 @@ const (
 	DEAL_CHECK_PROGRESS
 	DEAL_CHECK_DEALID_ON_CHAIN
 	DEAL_CHECK_SECTOR_ON_CHAIN
+	DEAL_NEARLY_EXPIRED
 )
+
+const minSafeDealLifetime = (2880 * 21) // three weeks
 
 func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
@@ -1490,6 +1493,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 				Message: fmt.Sprintf("deal %d was slashed at epoch %d", d.DealID, deal.State.SlashEpoch),
 			})
 			return DEAL_CHECK_UNKNOWN, nil
+		}
+
+		head, err := cm.Api.ChainHead(ctx)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
+		}
+
+		if deal.Proposal.EndEpoch-head.Height() < minSafeDealLifetime {
+			return DEAL_NEARLY_EXPIRED, nil
 		}
 
 		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
@@ -2487,7 +2499,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 		}
 	}
 
-	ch := cm.NotifyBlockstore.WaitFor(c)
+	ch := cm.NotifyBlockstore.WaitFor(ctx, c)
 
 	go func() {
 		if err := cm.retrieveContent(ctx, contentToFetch); err != nil {

@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
-	"time"
 
 	migratebs "github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
@@ -79,7 +78,7 @@ func init() {
 
 type EstuaryBlockstore interface {
 	blockstore.Blockstore
-	DeleteMany([]cid.Cid) error
+	DeleteMany(context.Context, []cid.Cid) error
 }
 
 type Node struct {
@@ -123,9 +122,15 @@ type Config struct {
 
 	WalletDir string
 
+	BitswapConfig BitswapConfig
+
 	BlockstoreWrap func(blockstore.Blockstore) (blockstore.Blockstore, error)
 
 	KeyProviderFunc func(context.Context) (<-chan cid.Cid, error)
+}
+
+type BitswapConfig struct {
+	MaxOutstandingBytesPerPeer int64
 }
 
 func Setup(ctx context.Context, cfg *Config) (*Node, error) {
@@ -141,10 +146,14 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
+	cmgr, err := connmgr.NewConnManager(2000, 3000)
+	if err != nil {
+		return nil, err
+	}
 	opts := []libp2p.Option{
 		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
 		libp2p.NATPortMap(),
-		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
+		libp2p.ConnectionManager(cmgr),
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
@@ -165,7 +174,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		}))
 	}
 
-	h, err := libp2p.New(ctx, opts...)
+	h, err := libp2p.New(opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,11 +227,16 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 
+	peerwork := cfg.BitswapConfig.MaxOutstandingBytesPerPeer
+	if peerwork == 0 {
+		peerwork = 5 << 20
+	}
+
 	bsctx := metri.CtxScope(ctx, "estuary.exch")
 	bswap := bitswap.New(bsctx, bsnet, blkst,
 		bitswap.EngineBlockstoreWorkerCount(600),
 		bitswap.TaskWorkerCount(600),
-		bitswap.MaxOutstandingBytesPerPeer(5<<20),
+		bitswap.MaxOutstandingBytesPerPeer(int(peerwork)),
 	)
 
 	wallet, err := setupWallet(cfg.WalletDir)
@@ -393,7 +407,7 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate, nocache bool) 
 		}
 
 		if flush {
-			if err := ab.Flush(); err != nil {
+			if err := ab.Flush(context.Background()); err != nil {
 				return nil, "", err
 			}
 		}
@@ -492,9 +506,9 @@ type deleteManyWrap struct {
 	blockstore.Blockstore
 }
 
-func (dmw *deleteManyWrap) DeleteMany(cids []cid.Cid) error {
+func (dmw *deleteManyWrap) DeleteMany(ctx context.Context, cids []cid.Cid) error {
 	for _, c := range cids {
-		if err := dmw.Blockstore.DeleteBlock(c); err != nil {
+		if err := dmw.Blockstore.DeleteBlock(ctx, c); err != nil {
 			return err
 		}
 	}

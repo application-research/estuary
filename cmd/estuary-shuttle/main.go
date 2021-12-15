@@ -180,6 +180,10 @@ func main() {
 			Name:  "libp2p-websockets",
 			Value: false,
 		},
+		&cli.Int64Flag{
+			Name:  "bitswap-max-work-per-peer",
+			Value: 5 << 20,
+		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
@@ -217,6 +221,9 @@ func main() {
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),
 			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
+			BitswapConfig: node.BitswapConfig{
+				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
+			},
 		}
 
 		nd, err := node.Setup(context.TODO(), cfg)
@@ -1125,7 +1132,7 @@ func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Re
 	_, span := s.Tracer.Start(ctx, "loadCar")
 	defer span.End()
 
-	return car.LoadCar(bs, r)
+	return car.LoadCar(ctx, bs, r)
 }
 
 func (s *Shuttle) addrsForShuttle() []string {
@@ -1509,7 +1516,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 	var batch []blocks.Block
 
 	for k := range keys {
-		blk, err := from.Get(k)
+		blk, err := from.Get(ctx, k)
 		if err != nil {
 			return err
 		}
@@ -1517,7 +1524,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		batch = append(batch, blk)
 
 		if len(batch) > 500 {
-			if err := to.PutMany(batch); err != nil {
+			if err := to.PutMany(ctx, batch); err != nil {
 				return err
 			}
 			batch = batch[:0]
@@ -1525,7 +1532,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 	}
 
 	if len(batch) > 0 {
-		if err := to.PutMany(batch); err != nil {
+		if err := to.PutMany(ctx, batch); err != nil {
 			return err
 		}
 	}
@@ -1590,7 +1597,7 @@ func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 	var totalDeleted int
 	for _, o := range objs {
 		// TODO: this is safe, but... slow?
-		del, err := s.deleteIfNotPinned(o)
+		del, err := s.deleteIfNotPinned(ctx, o)
 		if err != nil {
 			return err
 		}
@@ -1604,7 +1611,7 @@ func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
 	return nil
 }
 
-func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
+func (s *Shuttle) deleteIfNotPinned(ctx context.Context, o *Object) (bool, error) {
 	s.inflightCidsLk.Lock()
 	defer s.inflightCidsLk.Unlock()
 
@@ -1616,7 +1623,7 @@ func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 		return false, err
 	}
 	if c == 0 {
-		has, err := s.Node.Blockstore.Has(o.Cid.CID)
+		has, err := s.Node.Blockstore.Has(ctx, o.Cid.CID)
 		if err != nil {
 			return false, err
 		}
@@ -1625,7 +1632,7 @@ func (s *Shuttle) deleteIfNotPinned(o *Object) (bool, error) {
 			return false, nil
 		}
 
-		return true, s.Node.Blockstore.DeleteBlock(o.Cid.CID)
+		return true, s.Node.Blockstore.DeleteBlock(ctx, o.Cid.CID)
 	}
 	return false, nil
 }
@@ -1670,7 +1677,7 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 
 	count := 0
 	for c := range keys {
-		del, err := s.deleteIfNotPinned(&Object{Cid: util.DbCID{c}})
+		del, err := s.deleteIfNotPinned(ctx, &Object{Cid: util.DbCID{c}})
 		if err != nil {
 			return err
 		}
@@ -1735,7 +1742,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		log.Errorf("failed to find pins for cid: %s", err)
 	}
 
-	_, rootFetchErr := s.Node.Blockstore.Get(cc)
+	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cc)
 	if rootFetchErr != nil {
 		log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}

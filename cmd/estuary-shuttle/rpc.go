@@ -345,7 +345,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	if err != nil {
 		return err
 	}
-	if err := d.Node.Blockstore.Put(blk); err != nil {
+	if err := d.Node.Blockstore.Put(ctx, blk); err != nil {
 		return err
 	}
 

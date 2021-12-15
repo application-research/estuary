@@ -634,6 +634,9 @@ var plumbSplitAddFileCmd = &cli.Command{
 			Name:  "chunk",
 			Value: uint64(abi.PaddedPieceSize(16 << 30).Unpadded()),
 		},
+		&cli.BoolFlag{
+			Name: "no-pin-only-split",
+		},
 	},
 	Action: func(cctx *cli.Context) error {
 		ctx := cctx.Context
@@ -675,6 +678,7 @@ var plumbSplitAddFileCmd = &cli.Command{
 			}
 
 			tsize := 0
+			/* old way, maybe wrong?
 			if err := merkledag.Walk(ctx, dserv.GetLinks, cc, func(c cid.Cid) bool {
 				size, err := fstore.GetSize(c)
 				if err != nil {
@@ -686,10 +690,26 @@ var plumbSplitAddFileCmd = &cli.Command{
 			}); err != nil {
 				return err
 			}
+			*/
+			cset := cid.NewSet()
+			if err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+				node, err := dserv.Get(ctx, c)
+				if err != nil {
+					return nil, err
+				}
 
+				tsize += len(node.RawData())
+
+				return node.Links(), nil
+			}, cc, cset.Visit); err != nil {
+				return err
+			}
 			fmt.Printf("%d: %s %d\n", i, cc, tsize)
 		}
 
+		if cctx.Bool("no-pin-only-split") {
+			return nil
+		}
 		/*
 			if err := builder.Add(cctx.Context, nd.Cid()); err != nil {
 				return err
@@ -827,11 +847,16 @@ type pinclient struct {
 }
 
 func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (*pinclient, error) {
+	cmgr, err := connmgr.NewConnManager(2000, 3000)
+	if err != nil {
+		return nil, err
+	}
+
 	bwc := metrics.NewBandwidthCounter()
-	h, err := libp2p.New(ctx,
+	h, err := libp2p.New(
 		libp2p.ListenAddrStrings("/ip4/0.0.0.0/tcp/0"),
 		libp2p.NATPortMap(),
-		libp2p.ConnectionManager(connmgr.NewConnManager(2000, 3000, time.Minute)),
+		libp2p.ConnectionManager(cmgr),
 		//libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
@@ -1559,7 +1584,8 @@ var bargeCheckCmd = &cli.Command{
 				return err
 			}
 
-			lres := filestore.Verify(r.Filestore, fcid)
+			ctx := context.TODO()
+			lres := filestore.Verify(ctx, r.Filestore, fcid)
 			fmt.Println(lres.Status.String())
 			fmt.Println(lres.ErrorMsg)
 		}

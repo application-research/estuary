@@ -598,7 +598,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 	_, span := s.tracer.Start(ctx, "loadCar")
 	defer span.End()
 
-	return car.LoadCar(bs, r)
+	return car.LoadCar(ctx, bs, r)
 }
 
 func (s *Server) handleAdd(c echo.Context, u *User) error {
@@ -878,7 +878,7 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 	var batch []blocks.Block
 
 	for k := range keys {
-		blk, err := from.Get(k)
+		blk, err := from.Get(ctx, k)
 		if err != nil {
 			return err
 		}
@@ -886,7 +886,7 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 		batch = append(batch, blk)
 
 		if len(batch) > 500 {
-			if err := to.PutMany(batch); err != nil {
+			if err := to.PutMany(ctx, batch); err != nil {
 				return err
 			}
 			batch = batch[:0]
@@ -894,7 +894,7 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 	}
 
 	if len(batch) > 0 {
-		if err := to.PutMany(batch); err != nil {
+		if err := to.PutMany(ctx, batch); err != nil {
 			return err
 		}
 	}
@@ -3216,7 +3216,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 
 		// just to be safe, put it into the blockstore again
-		if err := s.Node.Blockstore.Put(nd); err != nil {
+		if err := s.Node.Blockstore.Put(ctx, nd); err != nil {
 			return err
 		}
 
@@ -3244,7 +3244,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		})
 	}
 
-	_, rootFetchErr := s.Node.Blockstore.Get(cont.Cid.CID)
+	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cont.Cid.CID)
 	if rootFetchErr != nil {
 		log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}
@@ -3265,7 +3265,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
 		}
 
-		if err := s.Node.Blockstore.Put(nd); err != nil {
+		if err := s.Node.Blockstore.Put(ctx, nd); err != nil {
 			return err
 		}
 	}
@@ -3382,7 +3382,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		log.Errorf("failed to find contents for cid: %s", err)
 	}
 
-	_, rootFetchErr := s.Node.Blockstore.Get(cc)
+	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cc)
 	if rootFetchErr != nil {
 		log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}

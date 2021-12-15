@@ -561,7 +561,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 		if !keep {
 			// can batch these deletes and execute them at the datastore layer for more perfs
-			if err := s.Node.Blockstore.DeleteBlock(c); err != nil {
+			if err := s.Node.Blockstore.DeleteBlock(ctx, c); err != nil {
 				return err
 			}
 		}

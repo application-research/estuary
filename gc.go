@@ -21,7 +21,7 @@ func (cm *ContentManager) GarbageCollect(ctx context.Context) error {
 	}
 
 	for c := range keych {
-		_, err := cm.maybeRemoveObject(c)
+		_, err := cm.maybeRemoveObject(ctx, c)
 		if err != nil {
 			return err
 		}
@@ -30,7 +30,7 @@ func (cm *ContentManager) GarbageCollect(ctx context.Context) error {
 	return nil
 }
 
-func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
+func (cm *ContentManager) maybeRemoveObject(ctx context.Context, c cid.Cid) (bool, error) {
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 	keep, err := cm.trackingObject(c)
@@ -40,7 +40,7 @@ func (cm *ContentManager) maybeRemoveObject(c cid.Cid) (bool, error) {
 
 	if !keep {
 		// can batch these deletes and execute them at the datastore layer for more perfs
-		if err := cm.Blockstore.DeleteBlock(c); err != nil {
+		if err := cm.Blockstore.DeleteBlock(ctx, c); err != nil {
 			return false, err
 		}
 
@@ -138,7 +138,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 			return err
 		}
 
-		if err := cm.Blockstore.DeleteBlock(dbc.CID); err != nil {
+		if err := cm.Blockstore.DeleteBlock(ctx, dbc.CID); err != nil {
 			return err
 		}
 	}
@@ -197,7 +197,7 @@ func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *Object) 
 		return false, err
 	}
 	if len(objs) == 0 {
-		return true, cm.Node.Blockstore.DeleteBlock(o.Cid.CID)
+		return true, cm.Node.Blockstore.DeleteBlock(ctx, o.Cid.CID)
 	}
 	return false, nil
 }
