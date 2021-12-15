@@ -36,7 +36,6 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
-	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	record "github.com/libp2p/go-libp2p-record"
 	"github.com/multiformats/go-multiaddr"
 	bsm "github.com/whyrusleeping/go-bs-measure"
@@ -158,7 +157,6 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
-		libp2p.Transport(libp2pquic.NewTransport),
 	}
 
 	if len(cfg.AnnounceAddrs) > 0 {
