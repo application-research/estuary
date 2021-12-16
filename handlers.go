@@ -1143,7 +1143,29 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 type getContentResponse struct {
 	Content      *Content       `json:"content"`
 	AggregatedIn *Content       `json:"aggregatedIn,omitempty"`
+	Selector     string         `json:"selector,omitempty"`
 	Deals        []*contentDeal `json:"deals"`
+}
+
+func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
+	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
+	// to build the CAR sub-selector
+
+	var ordinal uint
+	result := s.DB.Raw(`SELECT ordinal - 1 FROM (
+				SELECT
+					id, ROW_NUMBER() OVER ( ORDER BY CAST(id AS TEXT) ) AS ordinal
+				FROM contents
+				WHERE aggregated_in = ?
+			) subq
+				WHERE id = ?
+			`, aggregatedIn, contentID).Scan(&ordinal)
+
+	if result.Error != nil {
+		return "", result.Error 
+	}
+
+	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
 }
 
 func (s *Server) handleGetContentByCid(c echo.Context) error {
@@ -1174,6 +1196,12 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 			}
 
 			resp.AggregatedIn = &aggr
+
+			// no need to early return here, the selector is mostly cosmetic atm
+			if selector, err := s.calcSelector(cont.AggregatedIn, cont.ID); err == nil {
+				resp.Selector = selector
+			}
+
 			id = cont.AggregatedIn
 		}
 
