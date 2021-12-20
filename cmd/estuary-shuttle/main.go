@@ -16,6 +16,7 @@ import (
 	"time"
 
 	estumetrics "github.com/application-research/estuary/metrics"
+	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
@@ -42,6 +43,7 @@ import (
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
@@ -808,6 +810,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-car", withUser(s.handleAddCar))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
+	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 
 	admin := e.Group("/admin")
@@ -1920,4 +1923,84 @@ func (s *Shuttle) handleGetWantlist(c echo.Context) error {
 
 	wl := s.Node.Bitswap.WantlistForPeer(p)
 	return c.JSON(200, wl)
+}
+
+type importDealBody struct {
+	Name       string   `json:"name"`
+	DealIDs    []uint64 `json:"dealIDs"`
+	Collection string   `json:"collection"`
+}
+
+func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
+	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
+	defer span.End()
+
+	var body importDealBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
+	var cc cid.Cid
+	var deals []*api.MarketDeal
+	for _, id := range body.DealIDs {
+		deal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(id), types.EmptyTSK)
+		if err != nil {
+			return fmt.Errorf("getting deal info from chain: %w", err)
+		}
+
+		c, err := util.ParseDealLabel(deal.Proposal.Label)
+		if err != nil {
+			return fmt.Errorf("failed to parse deal label in deal %d: %w", id, err)
+		}
+
+		if cc != cid.Undef && cc != c {
+			return fmt.Errorf("cid in label of deal %d did not match the others: %s != %s", id, c, cc)
+		}
+		cc = c
+
+		deals = append(deals, deal)
+	}
+
+	for i, d := range deals {
+		qr, err := s.Filc.RetrievalQuery(ctx, d.Proposal.Provider, cc)
+		if err != nil {
+			log.Warningf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
+		}
+
+		proposal, err := retrievehelper.RetrievalProposalForAsk(qr, cc, nil)
+		if err != nil {
+			return err
+		}
+
+		// TODO: record retrieval metrics?
+		_, err = s.Filc.RetrieveContent(ctx, d.Proposal.Provider, proposal)
+		if err != nil {
+			log.Errorw("failed to retrieve content", "provider", d.Proposal.Provider, "cid", cc, "error", err)
+			if i == len(deals)-1 {
+				return c.JSON(418, map[string]interface{}{
+					"error":          "all retrievals failed",
+					"dealsAttempted": deals,
+				})
+			}
+			continue
+		}
+
+		break
+	}
+
+	contid, err := s.createContent(ctx, u, cc, body.Name, body.Collection)
+	if err != nil {
+		return err
+	}
+
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil); err != nil {
+		return err
+	}
+
+	return c.JSON(200, &util.AddFileResponse{
+		Cid:       cc.String(),
+		EstuaryId: contid,
+		Providers: s.addrsForShuttle(),
+	})
 }
