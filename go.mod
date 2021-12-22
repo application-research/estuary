@@ -3,7 +3,7 @@ module github.com/application-research/estuary
 go 1.16
 
 require (
-	github.com/application-research/filclient v0.0.0-20211215184902-7c883dde89b7
+	github.com/application-research/filclient v0.0.0-20211222231632-ede8b7c17aa6
 	github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402
 	github.com/cenkalti/backoff/v4 v4.1.1
 	github.com/cheggaaa/pb/v3 v3.0.8
@@ -12,7 +12,7 @@ require (
 	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-data-transfer v1.12.0
+	github.com/filecoin-project/go-data-transfer v1.12.1
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.13.5
 	github.com/filecoin-project/go-padreader v0.0.1
@@ -31,12 +31,11 @@ require (
 	github.com/ipfs/go-ds-flatfs v0.5.1
 	github.com/ipfs/go-ds-leveldb v0.5.0
 	github.com/ipfs/go-filestore v1.1.0
-	github.com/ipfs/go-graphsync v0.11.3
+	github.com/ipfs/go-graphsync v0.11.5
 	github.com/ipfs/go-ipfs-blockstore v1.1.2
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.1.0
 	github.com/ipfs/go-ipfs-exchange-offline v0.1.1
-	github.com/ipfs/go-ipfs-pinner v0.2.1
 	github.com/ipfs/go-ipfs-provider v0.7.1
 	github.com/ipfs/go-ipld-cbor v0.0.6
 	github.com/ipfs/go-ipld-format v0.2.0
@@ -66,10 +65,10 @@ require (
 	github.com/whyrusleeping/cbor-gen v0.0.0-20210713220151-be142a5ae1a8
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20211215015044-d56d1cad3b9e
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
-	go.opentelemetry.io/otel v1.2.0
+	go.opentelemetry.io/otel v1.3.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.2.0
 	go.opentelemetry.io/otel/sdk v1.2.0
-	go.opentelemetry.io/otel/trace v1.2.0
+	go.opentelemetry.io/otel/trace v1.3.0
 	golang.org/x/net v0.0.0-20211112202133-69e39bad7dc2
 	golang.org/x/sys v0.0.0-20211209171907-798191bca915
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
