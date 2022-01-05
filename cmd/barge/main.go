@@ -43,7 +43,6 @@ import (
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
-	libp2pquic "github.com/libp2p/go-libp2p-quic-transport"
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
@@ -860,7 +859,6 @@ func setupBitswap(ctx context.Context, bstore blockstore.Blockstore) (*pinclient
 		//libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
-		libp2p.Transport(libp2pquic.NewTransport),
 	)
 	if err != nil {
 		return nil, err

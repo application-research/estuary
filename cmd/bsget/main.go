@@ -51,7 +51,7 @@ func main() {
 
 		// set up libp2p node...
 		ctx := context.Background()
-		h, err := libp2p.New(ctx)
+		h, err := libp2p.New()
 		if err != nil {
 			return err
 		}
