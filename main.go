@@ -124,6 +124,7 @@ func main() {
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
 	logging.SetLogLevel("provider.batched", "info")
+	logging.SetLogLevel("bs-migrate", "info")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
