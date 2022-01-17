@@ -21,18 +21,26 @@ import (
 )
 
 func main() {
-	app := cli.NewApp()
-
-	app.Name = "benchest"
-	app.Commands = []*cli.Command{
-		benchAddFileCmd,
-		benchAddResultCmd,
-	}
+	app := getApp()
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
+}
+
+// App constructor (so we can test against it)
+func getApp() *cli.App {
+	app := cli.NewApp()
+
+	app.Name = "benchest"
+	app.Commands = []*cli.Command{
+		benchAddFileCmd,
+		benchFetchFileCmd,
+		benchAddResultCmd,
+	}
+
+	return app
 }
 
 func getFile(cctx *cli.Context) (io.Reader, string, error) {
@@ -100,7 +108,7 @@ var benchAddFileCmd = &cli.Command{
 				return err
 			}
 
-			outstats, err := RunBench(name, fi, host, estToken)
+			outstats, err := RunBenchAddFile(name, fi, host, estToken)
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "failed to run bench: ", err)
 				time.Sleep(time.Second * 15)
@@ -112,8 +120,9 @@ var benchAddFileCmd = &cli.Command{
 			b, err := json.MarshalIndent(outstats, "", "  ")
 			if err != nil {
 				return err
+			} else {
+				fmt.Println(string(b))
 			}
-			fmt.Println(string(b))
 
 			if resdb != nil {
 				if err := addResultsToDatabase(resdb, outstats); err != nil {
@@ -129,8 +138,6 @@ var benchAddFileCmd = &cli.Command{
 				time.Sleep(interval - took)
 			}
 		}
-
-		return nil
 	},
 }
 
@@ -169,12 +176,92 @@ var benchAddResultCmd = &cli.Command{
 				return err
 			}
 		}
+	},
+}
+
+var benchFetchFileCmd = &cli.Command{
+	Name: "fetch-file",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "host",
+			Value: "api.estuary.tech",
+		},
+		&cli.StringFlag{
+			Name:  "file",
+			Value: "QmducxoYHKULWXeq5wtKoeMzie2QggYphNCVwuFuou9eWE",
+			Usage: "CID for file - defaults to NYC Public Data: QmducxoYHKULWXeq5wtKoeMzie2QggYphNCVwuFuou9eWE",
+		},
+		&cli.StringFlag{
+			Name:  "runner",
+			Value: "",
+		},
+		&cli.StringFlag{
+			Name:  "postgres",
+			Value: "",
+		},
+		&cli.DurationFlag{
+			Name:  "every",
+			Usage: "run benchmark in a loop on the specified interval",
+		},
+	},
+	Action: func(cctx *cli.Context) error {
+		estToken := os.Getenv("ESTUARY_TOKEN")
+		if estToken == "" {
+			return fmt.Errorf("no estuary token found")
+		}
+
+		host := cctx.String("host")
+		interval := cctx.Duration("every")
+		runner := cctx.String("runner")
+		cid := cctx.String("file")
+
+		var resdb *gorm.DB
+		if pg := cctx.String("postgres"); pg != "" {
+			db, err := openDB(pg)
+			if err != nil {
+				return err
+			}
+			resdb = db
+		}
+
+		for {
+			start := time.Now()
+
+			outstats, err := RunBenchFetchFile(cid, host, estToken)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "failed to run bench: ", err)
+				time.Sleep(time.Second * 15)
+				continue
+			}
+
+			outstats.Runner = runner
+
+			b, err := json.MarshalIndent(outstats, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(b))
+
+			if resdb != nil {
+				if err := addResultsToDatabase(resdb, outstats); err != nil {
+					return err
+				}
+			}
+
+			if interval == 0 {
+				return nil
+			}
+			took := time.Since(start)
+			if took < interval {
+				time.Sleep(interval - took)
+			}
+		}
 
 		return nil
 	},
 }
 
-func RunBench(name string, fi io.Reader, host string, estToken string) (*benchResult, error) {
+func RunBenchAddFile(name string, fi io.Reader, host string, estToken string) (*benchResult, error) {
 	buf := new(bytes.Buffer)
 	mw := multipart.NewWriter(buf)
 	part, err := mw.CreateFormFile("data", name)
@@ -192,11 +279,14 @@ func RunBench(name string, fi io.Reader, host string, estToken string) (*benchRe
 	req.Header.Add("Content-Type", mw.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+estToken)
 
+	// Start of HTTP request for a file
 	addReqStart := time.Now()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
+
+	// End of HTTP request for a file
 	addRespAt := time.Now()
 
 	if resp.StatusCode != 200 {
@@ -252,6 +342,29 @@ func RunBench(name string, fi io.Reader, host string, estToken string) (*benchRe
 
 		FetchStats: st,
 		IpfsCheck:  chkresp,
+	}, nil
+}
+
+func RunBenchFetchFile(cid string, host string, estToken string) (*benchResult, error) {
+	// Start of HTTP request for a file
+	addReqStart := time.Now()
+
+	st, err := benchFetch(cid)
+	if err != nil {
+		return nil, err
+	}
+
+	// End of HTTP request for a file
+	addRespAt := time.Now()
+
+	return &benchResult{
+		BenchStart:      addReqStart,
+		FileCID:         cid,
+		AddFileRespTime: addRespAt.Sub(addReqStart),
+		AddFileTime:     addRespAt.Sub(addReqStart),
+
+		FetchStats: st,
+		IpfsCheck:  nil,
 	}, nil
 }
 
