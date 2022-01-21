@@ -43,6 +43,10 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		return d.handleRpcAggregateContent(ctx, cmd.Params.AggregateContent)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
+	case drpc.CMD_PrepareForDataRequest:
+		return d.handleRpcPrepareForDataRequest(ctx, cmd.Params.PrepareForDataRequest)
+	case drpc.CMD_CleanupPreparedRequest:
+		return d.handleRpcCleanupPreparedRequest(ctx, cmd.Params.CleanupPreparedRequest)
 	case drpc.CMD_ReqTxStatus:
 		return d.handleRpcReqTxStatus(ctx, cmd.Params.ReqTxStatus)
 	case drpc.CMD_RetrieveContent:
@@ -189,8 +193,9 @@ func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error
 }
 
 type commpResult struct {
-	CommP cid.Cid
-	Size  abi.UnpaddedPieceSize
+	CommP   cid.Cid
+	Size    abi.UnpaddedPieceSize
+	CarSize uint64
 }
 
 func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCommP) error {
@@ -213,9 +218,10 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 		Op: drpc.OP_CommPComplete,
 		Params: drpc.MsgParams{
 			CommPComplete: &drpc.CommPComplete{
-				Data:  cmd.Data,
-				CommP: commpRes.CommP,
-				Size:  commpRes.Size,
+				Data:    cmd.Data,
+				CommP:   commpRes.CommP,
+				CarSize: commpRes.CarSize,
+				Size:    commpRes.Size,
 			},
 		},
 	})
@@ -381,6 +387,39 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint) {
 	s.trackingChannels[chanid.String()] = &chanTrack{
 		dbid: dealdbid,
 	}
+}
+
+func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.PrepareForDataRequest) error {
+	ctx, span := s.Tracer.Start(ctx, "handleRpcPrepareForDataRequest", trace.WithAttributes(
+		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
+		attribute.String("proposalCID", cmd.ProposalCid.String()),
+		attribute.String("payloadCID", cmd.PayloadCid.String()),
+		attribute.Int64("size", int64(cmd.Size)),
+	))
+	defer span.End()
+
+	// Tell server to prepare to receive a new pull transfer
+	err := s.Filc.Libp2pTransferMgr.PrepareForDataRequest(ctx, cmd.DealDBID, cmd.AuthToken, cmd.ProposalCid, cmd.PayloadCid, cmd.Size)
+	if err != nil {
+		return fmt.Errorf("preparing for data request: %w", err)
+	}
+
+	return nil
+}
+
+func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc.CleanupPreparedRequest) error {
+	ctx, span := s.Tracer.Start(ctx, "handleRpcCleanupPreparedRequest", trace.WithAttributes(
+		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
+	))
+	defer span.End()
+
+	// Tell server to clean up auth token and cancel any running transfer
+	err := s.Filc.Libp2pTransferMgr.CleanupPreparedRequest(ctx, cmd.DealDBID, cmd.AuthToken)
+	if err != nil {
+		return fmt.Errorf("cleaning up prepared request: %w", err)
+	}
+
+	return nil
 }
 
 func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {

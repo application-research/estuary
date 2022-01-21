@@ -287,9 +287,10 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	defer span.End()
 
 	opcr := PieceCommRecord{
-		Data:  util.DbCID{resp.Data},
-		Piece: util.DbCID{resp.CommP},
-		Size:  resp.Size,
+		Data:    util.DbCID{resp.Data},
+		Piece:   util.DbCID{resp.CommP},
+		Size:    resp.Size,
+		CarSize: resp.CarSize,
 	}
 
 	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {

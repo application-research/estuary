@@ -353,7 +353,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
+			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}
@@ -361,8 +361,9 @@ func main() {
 			log.Infof("commp generation over %d bytes took: %s", size, time.Since(start))
 
 			res := &commpResult{
-				CommP: commpcid,
-				Size:  size,
+				CommP:   commpcid,
+				Size:    size,
+				CarSize: carSize,
 			}
 
 			return res, nil
@@ -449,6 +450,31 @@ func main() {
 				})
 			}
 		})
+
+		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
+			if st.Status == datatransfer.Requested {
+				go func() {
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op: drpc.OP_TransferStarted,
+						Params: drpc.MsgParams{
+							TransferStarted: &drpc.TransferStarted{
+								DealDBID: dbid,
+							},
+						},
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
+					}
+				}()
+			}
+
+			go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+				DealDBID: dbid,
+				State:    &st,
+			})
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
 
 		go func() {
 			http.Handle("/debug/metrics", estumetrics.Exporter())
