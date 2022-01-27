@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -37,11 +36,7 @@ func NewGatewayHandler(bs blockstore.Blockstore) *GatewayHandler {
 
 func (gw *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := gw.handleRequest(r.Context(), w, r); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(500)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": err.Error(),
-		})
+		http.Error(w, "error: "+err.Error(), 500)
 		return
 	}
 }

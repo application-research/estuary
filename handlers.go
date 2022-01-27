@@ -4325,9 +4325,11 @@ func (s *Server) handleGateway(c echo.Context) error {
 	return c.Redirect(302, redir)
 }
 
+const bestGateway = "dweb.link"
+
 func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (string, error) {
 	if proto != "ipfs" {
-		return fmt.Sprintf("https://ipfs.io/%s/%s/%s", proto, cc, strings.Join(segs, "/")), nil
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
 	var cont Content
@@ -4342,12 +4344,14 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", nil
 	}
 
+	if !s.CM.shuttleIsOnline(cont.Location) {
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
+	}
+
 	var shuttle Shuttle
 	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
 		return "", err
 	}
-
-	// TODO: maybe check if the shuttle is online?
 
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
