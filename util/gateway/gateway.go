@@ -2,12 +2,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -26,7 +28,22 @@ type httpError struct {
 	Message string
 }
 
+func NewGatewayHandler(bs blockstore.Blockstore) *GatewayHandler {
+	return &GatewayHandler{
+		bs:    bs,
+		dserv: merkledag.NewDAGService(blockservice.New(bs, nil)),
+	}
+}
+
 func (gw *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if err := gw.handleRequest(r.Context(), w, r); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
 }
 
 func (gw *GatewayHandler) handleRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
@@ -98,7 +115,7 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w htt
 }
 
 func (gw *GatewayHandler) resolvePath(ctx context.Context, p string) (cid.Cid, error) {
-	proto, cc, segs, err := parsePath(p)
+	proto, cc, segs, err := ParsePath(p)
 	if err != nil {
 		return cid.Undef, fmt.Errorf("failed to parse request path: %w", err)
 	}
@@ -129,7 +146,7 @@ func (gw *GatewayHandler) resolveIpfsPath(ctx context.Context, cc cid.Cid, segs 
 	return lnk.Cid, nil
 }
 
-func parsePath(p string) (string, cid.Cid, []string, error) {
+func ParsePath(p string) (string, cid.Cid, []string, error) {
 	parts := strings.Split(p, "/")
 	if len(parts) < 3 {
 		return "", cid.Undef, nil, fmt.Errorf("invalid gateway path")

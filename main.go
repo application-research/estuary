@@ -15,6 +15,7 @@ import (
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
+	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
@@ -364,11 +365,12 @@ func main() {
 		}
 
 		s := &Server{
-			Node:       nd,
-			Api:        api,
-			StagingMgr: sbmgr,
-			tracer:     otel.Tracer("api"),
-			cacher:     memo.NewCacher(),
+			Node:        nd,
+			Api:         api,
+			StagingMgr:  sbmgr,
+			tracer:      otel.Tracer("api"),
+			cacher:      memo.NewCacher(),
+			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -540,6 +542,8 @@ type Server struct {
 	Api        api.Gateway
 	CM         *ContentManager
 	StagingMgr *stagingbs.StagingBSMgr
+
+	gwayHandler *gateway.GatewayHandler
 
 	cacher *memo.Cacher
 }
