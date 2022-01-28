@@ -1162,7 +1162,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 			`, aggregatedIn, contentID).Scan(&ordinal)
 
 	if result.Error != nil {
-		return "", result.Error 
+		return "", result.Error
 	}
 
 	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
@@ -4146,15 +4146,17 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 type collectionListQueryRes struct {
 	ContID uint
+	Cid    util.DbCID
 	Size   int64
 	Path   *string
 }
 
 type collectionListResponse struct {
-	Name   string `json:"name"`
-	Dir    bool   `json:"dir"`
-	Size   int64  `json:"size"`
-	ContID uint   `json:"contId"`
+	Name   string      `json:"name"`
+	Dir    bool        `json:"dir"`
+	Size   int64       `json:"size"`
+	ContID uint        `json:"contId"`
+	Cid    *util.DbCID `json:"cid,omitempty"`
 }
 
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
@@ -4183,7 +4185,9 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	var refs []collectionListQueryRes
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Where("collection = ?", col.ID).Select("contents.id as cont_id, path, size").Scan(&refs).Error; err != nil {
+		Where("collection = ?", col.ID).
+		Select("contents.id as cont_id, contents.cid as cid, path, size").
+		Scan(&refs).Error; err != nil {
 		return err
 	}
 
@@ -4212,6 +4216,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				Dir:    false,
 				Size:   r.Size,
 				ContID: r.ContID,
+				Cid:    &r.Cid,
 			})
 			continue
 		}
