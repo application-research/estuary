@@ -19,6 +19,7 @@ import (
 
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
+	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -119,6 +120,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
+
+	e.GET("/gw/:path", s.handleGateway)
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
@@ -4306,4 +4309,54 @@ func (s *Server) handleRunGc(c echo.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Server) handleGateway(c echo.Context) error {
+	proto, cc, segs, err := gateway.ParsePath("/" + c.Param("path"))
+	if err != nil {
+		return err
+	}
+
+	redir, err := s.checkGatewayRedirect(proto, cc, segs)
+	if err != nil {
+		return err
+	}
+
+	if redir == "" {
+		s.gwayHandler.ServeHTTP(c.Response().Writer, c.Request())
+		return nil
+	}
+
+	return c.Redirect(307, redir)
+}
+
+const bestGateway = "dweb.link"
+
+func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (string, error) {
+	if proto != "ipfs" {
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{cc}).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	if cont.Location == "local" {
+		return "", nil
+	}
+
+	if !s.CM.shuttleIsOnline(cont.Location) {
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
+	}
+
+	var shuttle Shuttle
+	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }

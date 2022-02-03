@@ -16,6 +16,7 @@ import (
 	"time"
 
 	estumetrics "github.com/application-research/estuary/metrics"
+	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel/codes"
@@ -312,12 +313,13 @@ func main() {
 		}
 
 		s := &Shuttle{
-			Node:       nd,
-			Api:        api,
-			DB:         db,
-			Filc:       filc,
-			StagingMgr: sbm,
-			Private:    cctx.Bool("private"),
+			Node:        nd,
+			Api:         api,
+			DB:          db,
+			Filc:        filc,
+			StagingMgr:  sbm,
+			Private:     cctx.Bool("private"),
+			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 
 			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
 
@@ -528,6 +530,8 @@ type Shuttle struct {
 	PinMgr     *pinner.PinManager
 	Filc       *filclient.FilClient
 	StagingMgr *stagingbs.StagingBSMgr
+
+	gwayHandler *gateway.GatewayHandler
 
 	Tracer trace.Tracer
 
@@ -804,6 +808,16 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 
 	e.GET("/health", s.handleHealth)
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
+
+	e.GET("/gw/:path", func(e echo.Context) error {
+		p := "/" + e.Param("path")
+
+		req := e.Request().Clone(e.Request().Context())
+		req.URL.Path = p
+
+		s.gwayHandler.ServeHTTP(e.Response().Writer, req)
+		return nil
+	})
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
