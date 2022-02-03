@@ -4322,7 +4322,7 @@ func (s *Server) handleGateway(c echo.Context) error {
 		return nil
 	}
 
-	return c.Redirect(302, redir)
+	return c.Redirect(307, redir)
 }
 
 const bestGateway = "dweb.link"
