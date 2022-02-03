@@ -1378,6 +1378,8 @@ github.com/libp2p/go-libp2p-transport-upgrader v0.5.0/go.mod h1:Rc+XODlB3yce7dvF
 github.com/libp2p/go-libp2p-transport-upgrader v0.6.0/go.mod h1:1e07y1ZSZdHo9HPbuU8IztM1Cj+DR5twgycb4pnRzRo=
 github.com/libp2p/go-libp2p-transport-upgrader v0.7.0 h1:ADnLrL7fC4Vy7HPjk9oGof7nDeTqGXuof85Ar6kin9Q=
 github.com/libp2p/go-libp2p-transport-upgrader v0.7.0/go.mod h1:GIR2aTRp1J5yjVlkUoFqMkdobfob6RnAwYg/RZPhrzg=
+github.com/libp2p/go-libp2p-transport-upgrader v0.7.1-0.20220202172836-b19a80d59b95 h1:KPVtpfha4/plfQ6j5o2wmjRqvbIh+9DdSrWR71WkEJM=
+github.com/libp2p/go-libp2p-transport-upgrader v0.7.1-0.20220202172836-b19a80d59b95/go.mod h1:GIR2aTRp1J5yjVlkUoFqMkdobfob6RnAwYg/RZPhrzg=
 github.com/libp2p/go-libp2p-xor v0.0.0-20210714161855-5c005aca55db h1:EDoDKW8ZAHd6SIDeo+thU51PyQppqLYkBxx0ObvFj/w=
 github.com/libp2p/go-libp2p-xor v0.0.0-20210714161855-5c005aca55db/go.mod h1:LSTM5yRnjGZbWNTA/hRwq2gGFrvRIbQJscoIL/u6InY=
 github.com/libp2p/go-libp2p-yamux v0.1.2/go.mod h1:xUoV/RmYkg6BW/qGxA9XJyg+HzXFYkeXbnhjmnYzKp8=
