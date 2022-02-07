@@ -327,6 +327,7 @@ func main() {
 
 			trackingChannels: make(map[string]*chanTrack),
 			inflightCids:     make(map[cid.Cid]uint),
+			splitsInProgress: make(map[uint]bool),
 
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
@@ -537,6 +538,9 @@ type Shuttle struct {
 
 	tcLk             sync.Mutex
 	trackingChannels map[string]*chanTrack
+
+	splitLk          sync.Mutex
+	splitsInProgress map[uint]bool
 
 	addPinLk sync.Mutex
 
