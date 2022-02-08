@@ -115,7 +115,6 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w htt
 }
 
 func (gw *GatewayHandler) resolvePath(ctx context.Context, p string) (cid.Cid, error) {
-	fmt.Println("RESOLVE PATH: ", p)
 	proto, _, _, err := ParsePath(p) // a sanity check
 	if err != nil {
 		return cid.Undef, fmt.Errorf("failed to parse request path: %w", err)
