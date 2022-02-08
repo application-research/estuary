@@ -44,7 +44,7 @@ func (gw *GatewayHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (gw *GatewayHandler) handleRequest(ctx context.Context, w http.ResponseWriter, r *http.Request) error {
 	cc, err := gw.resolvePath(ctx, r.URL.Path)
 	if err != nil {
-		return err
+		return fmt.Errorf("path resolution failed: %w", err)
 	}
 
 	output := "unixfs"
@@ -142,21 +142,17 @@ func (gw *GatewayHandler) resolveIpfsPath(ctx context.Context, cc cid.Cid, segs 
 }
 
 func ParsePath(p string) (string, cid.Cid, []string, error) {
-	parts := strings.Split(p, "/")
-	if len(parts) < 3 {
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) < 2 {
 		return "", cid.Undef, nil, fmt.Errorf("invalid gateway path")
 	}
 
-	if parts[0] != "" {
-		return "", cid.Undef, nil, fmt.Errorf("path must begin with /PROTOCOL/")
-	}
+	protocol := parts[0]
 
-	protocol := parts[1]
-
-	cc, err := cid.Decode(parts[2])
+	cc, err := cid.Decode(parts[1])
 	if err != nil {
 		return "", cid.Undef, nil, fmt.Errorf("invalid cid in path: %w", err)
 	}
 
-	return protocol, cc, parts[3:], nil
+	return protocol, cc, parts[2:], nil
 }
