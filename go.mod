@@ -32,7 +32,6 @@ require (
 	github.com/ipfs/go-ds-leveldb v0.5.0
 	github.com/ipfs/go-filestore v1.1.0
 	github.com/ipfs/go-graphsync v0.12.0
-	github.com/ipfs/go-hamt-ipld v0.1.1 // indirect
 	github.com/ipfs/go-ipfs-blockstore v1.1.2
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.1.0
@@ -45,6 +44,7 @@ require (
 	github.com/ipfs/go-merkledag v0.5.1
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-metrics-prometheus v0.0.2
+	github.com/ipfs/go-path v0.0.7
 	github.com/ipfs/go-unixfs v0.3.1
 	github.com/ipld/go-car v0.3.3
 	github.com/ipld/go-ipld-prime v0.14.4

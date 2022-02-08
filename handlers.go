@@ -4312,7 +4312,8 @@ func (s *Server) handleRunGc(c echo.Context) error {
 }
 
 func (s *Server) handleGateway(c echo.Context) error {
-	proto, cc, segs, err := gateway.ParsePath("/" + c.Param("path"))
+	npath := "/" + c.Param("path")
+	proto, cc, segs, err := gateway.ParsePath(npath)
 	if err != nil {
 		return err
 	}
@@ -4323,7 +4324,11 @@ func (s *Server) handleGateway(c echo.Context) error {
 	}
 
 	if redir == "" {
-		s.gwayHandler.ServeHTTP(c.Response().Writer, c.Request())
+
+		req := c.Request().Clone(c.Request().Context())
+		req.URL.Path = npath
+
+		s.gwayHandler.ServeHTTP(c.Response().Writer, req)
 		return nil
 	}
 

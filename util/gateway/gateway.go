@@ -13,13 +13,16 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-path"
+	resolver "github.com/ipfs/go-path/resolver"
 	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 )
 
 type GatewayHandler struct {
-	bs    blockstore.Blockstore
-	dserv ipld.DAGService
+	bs       blockstore.Blockstore
+	dserv    ipld.DAGService
+	resolver *resolver.Resolver
 }
 
 type httpError struct {
@@ -28,9 +31,11 @@ type httpError struct {
 }
 
 func NewGatewayHandler(bs blockstore.Blockstore) *GatewayHandler {
+	dserv := merkledag.NewDAGService(blockservice.New(bs, nil))
 	return &GatewayHandler{
-		bs:    bs,
-		dserv: merkledag.NewDAGService(blockservice.New(bs, nil)),
+		bs:       bs,
+		dserv:    dserv,
+		resolver: resolver.NewBasicResolver(dserv),
 	}
 }
 
@@ -110,35 +115,31 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w htt
 }
 
 func (gw *GatewayHandler) resolvePath(ctx context.Context, p string) (cid.Cid, error) {
-	proto, cc, segs, err := ParsePath(p)
+	fmt.Println("RESOLVE PATH: ", p)
+	proto, _, _, err := ParsePath(p) // a sanity check
 	if err != nil {
 		return cid.Undef, fmt.Errorf("failed to parse request path: %w", err)
 	}
 
+	pp, err := path.ParsePath(p)
+	if err != nil {
+		return cid.Undef, fmt.Errorf("failed to parse request path: %w", err)
+	}
+
+	cc, segs, err := gw.resolver.ResolveToLastNode(ctx, pp)
+	if err != nil {
+		return cid.Undef, err
+	}
+
 	switch proto {
 	case "ipfs":
-		return gw.resolveIpfsPath(ctx, cc, segs)
+		if len(segs) > 0 {
+			return cid.Undef, fmt.Errorf("pathing into ipld nodes not supported")
+		}
+		return cc, nil
 	default:
 		return cid.Undef, fmt.Errorf("unsupported protocol: %s", proto)
 	}
-}
-
-func (gw *GatewayHandler) resolveIpfsPath(ctx context.Context, cc cid.Cid, segs []string) (cid.Cid, error) {
-	nd, err := gw.dserv.Get(ctx, cc)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	lnk, rem, err := nd.ResolveLink(segs)
-	if err != nil {
-		return cid.Undef, err
-	}
-
-	if len(rem) > 0 {
-		return cid.Undef, fmt.Errorf("pathing into ipld nodes not supported")
-	}
-
-	return lnk.Cid, nil
 }
 
 func ParsePath(p string) (string, cid.Cid, []string, error) {
