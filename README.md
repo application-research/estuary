@@ -12,7 +12,7 @@ Requirements:
 
 1. Run `make clean all` inside the estuary directory
 
-## Running
+## Running your own node
 
 To run locally in a 'dev' environment, first run:
 ```
@@ -36,7 +36,7 @@ Then run:
 ./estuary --datadir=/path/to/storage --database=IF-YOU-NEED-THIS --logging
 ```
 
-## Systemd
+## Running as daemon with Systemd
 
 The Makefile has a target that will install a generic but workable systemd service for estuary.
 
@@ -44,3 +44,6 @@ Run `make install-estuary-service` on the machine you wish to run estuary on.
 
 Make sure to follow the instructions output by the `make` command as configuration is required before the service can run succesfully.
 
+
+## Developing
+See `DEVELOPMENT.md` for development instructions.
