@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	resolver "github.com/ipfs/go-path/resolver"
 	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
+	"golang.org/x/xerrors"
 )
 
 type GatewayHandler struct {
@@ -75,7 +77,7 @@ func (gw *GatewayHandler) serveUnixfs(ctx context.Context, cc cid.Cid, w http.Re
 			return err
 		}
 		if n.IsDir() {
-			return gw.serveUnixfsDir(ctx, nd, w)
+			return gw.serveUnixfsDir(ctx, nd, w, req)
 		}
 		if n.Type() == unixfs.TSymlink {
 			return fmt.Errorf("symlinks not supported")
@@ -94,17 +96,33 @@ func (gw *GatewayHandler) serveUnixfs(ctx context.Context, cc cid.Cid, w http.Re
 	return nil
 }
 
-func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w http.ResponseWriter) error {
+func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w http.ResponseWriter, req *http.Request) error {
 	// TODO: something less ugly
 	dir, err := uio.NewDirectoryFromNode(gw.dserv, n)
 	if err != nil {
 		return err
 	}
 
+	nd, err := dir.Find(ctx, "index.html")
+	switch {
+	case err == nil:
+		dr, err := uio.NewDagReader(ctx, nd, gw.dserv)
+		if err != nil {
+			return err
+		}
+
+		http.ServeContent(w, req, "index.html", time.Time{}, dr)
+		return nil
+	default:
+		return err
+	case xerrors.Is(err, os.ErrNotExist):
+
+	}
+
 	fmt.Fprintf(w, "<html><body><ul>")
 
 	if err := dir.ForEachLink(ctx, func(lnk *ipld.Link) error {
-		fmt.Fprintf(w, "<li><a href=\"./%s\">%s</a></li>", lnk.Cid, lnk.Name)
+		fmt.Fprintf(w, "<li><a href=\"./%s\">%s</a></li>", lnk.Name, lnk.Name)
 		return nil
 	}); err != nil {
 		return err
