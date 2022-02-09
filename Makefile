@@ -140,3 +140,7 @@ dist-clean:
 
 calibnet: GOFLAGS+=-tags=calibnet
 calibnet: build
+
+.PHONY: test
+test:
+	go test $(GOFLAGS) -v ./...
