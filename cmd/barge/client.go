@@ -133,7 +133,7 @@ func (c *EstClient) Viewer(ctx context.Context) (*util.ViewerResponse, error) {
 	return &vresp, nil
 }
 
-func (c *EstClient) AddCar(fpath, name string) (*util.AddFileResponse, error) {
+func (c *EstClient) AddCar(fpath, name string) (*util.ContentAddResponse, error) {
 	fi, err := os.Open(fpath)
 	if err != nil {
 		return nil, err
@@ -172,7 +172,7 @@ func (c *EstClient) AddCar(fpath, name string) (*util.AddFileResponse, error) {
 		return nil, fmt.Errorf("got invalid status code: %d", resp.StatusCode)
 	}
 
-	var rbody util.AddFileResponse
+	var rbody util.ContentAddResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (c *EstClient) AddCar(fpath, name string) (*util.AddFileResponse, error) {
 	return &rbody, nil
 }
 
-func (c *EstClient) AddFile(fpath, name string) (*util.AddFileResponse, error) {
+func (c *EstClient) AddFile(fpath, name string) (*util.ContentAddResponse, error) {
 	r, w := io.Pipe()
 	fi, err := os.Open(fpath)
 	if err != nil {
@@ -244,7 +244,7 @@ func (c *EstClient) AddFile(fpath, name string) (*util.AddFileResponse, error) {
 		return nil, fmt.Errorf("got invalid status code: %d", resp.StatusCode)
 	}
 
-	var rbody util.AddFileResponse
+	var rbody util.ContentAddResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
 		return nil, err
 	}
