@@ -40,7 +40,8 @@ import (
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipfs/go-merkledag"
+	merkledag "github.com/ipfs/go-merkledag"
+	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
@@ -4201,8 +4202,37 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			return err
 		}
 
+		// Build a new local DAGService to query for the CID if our ref and see if it's a directory
+		bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+		dserv := merkledag.NewDAGService(bserv)
+		ctx := c.Request().Context()
+		nd, err := dserv.Get(ctx, r.Cid.CID)
+		if err != nil {
+			return err
+		}
+
 		// if the relative path requires pathing up, its definitely not in this dir
 		if strings.HasPrefix(relp, "..") {
+			continue
+		}
+
+		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
+		// Need to transform node into a unixfs node to check if it's dir
+		fsNode, err := unixfs.ExtractFSNode(nd)
+		if err != nil {
+			return err
+		}
+		if fsNode.IsDir() { // if CID is a dir
+			if !dirs[relp] {
+				dirs[relp] = true
+				out = append(out, collectionListResponse{
+					Name:   relp,
+					Dir:    true,
+					Size:   r.Size,
+					ContID: r.ContID,
+					Cid:    &r.Cid,
+				})
+			}
 			continue
 		}
 
@@ -4217,7 +4247,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			continue
 		}
 
-		parts := strings.Split(relp, "/")
+		parts := strings.Split(relp, "/") // if it is a subcollection
 		if !dirs[parts[0]] {
 			dirs[parts[0]] = true
 			out = append(out, collectionListResponse{
