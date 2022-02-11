@@ -649,10 +649,16 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	if commpcid.Defined() {
+		carSize, err := s.CM.calculateCarSize(header.Roots[0])
+		if err != nil {
+			return fmt.Errorf("failed to calculate CAR size: %w", err)
+		}
+
 		opcr := PieceCommRecord{
-			Data:  util.DbCID{CID: rootCID},
-			Piece: util.DbCID{CID: commpcid},
-			Size:  commpSize,
+			Data:    util.DbCID{rootCID},
+			Piece:   util.DbCID{commpcid},
+			Size:    commpSize,
+			CarSize: carSize,
 		}
 
 		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
@@ -1472,12 +1478,7 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 		return err
 	}
 
-	out := make(map[string]*filclient.ChannelState)
-	for chanid, state := range transfers {
-		out[chanid.String()] = filclient.ChannelStateConv(state)
-	}
-
-	return c.JSON(200, out)
+	return c.JSON(200, transfers)
 }
 
 func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {

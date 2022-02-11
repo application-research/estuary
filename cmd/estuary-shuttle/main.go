@@ -574,9 +574,9 @@ func main() {
 				var received uint64
 
 				for _, xfer := range txs {
-					byState[xfer.Status()]++
-					sent += xfer.Sent()
-					received += xfer.Received()
+					byState[xfer.Status]++
+					sent += xfer.Sent
+					received += xfer.Received
 				}
 
 				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
@@ -1259,13 +1259,19 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	if commpcid.Defined() {
+		carSize, err := s.calculateCarSize(root)
+		if err != nil {
+			return xerrors.Errorf("failed to calculate CAR size: %w", err)
+		}
+
 		if err := s.sendRpcMessage(ctx, &drpc.Message{
 			Op: drpc.OP_CommPComplete,
 			Params: drpc.MsgParams{
 				CommPComplete: &drpc.CommPComplete{
-					Data:  root,
-					CommP: commpcid,
-					Size:  commpSize,
+					Data:    root,
+					CommP:   commpcid,
+					Size:    commpSize,
+					CarSize: carSize,
 				},
 			},
 		}); err != nil {
@@ -1279,6 +1285,27 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+// calculateCarSize works out the CAR size using the cids and block sizes
+// for the content stored in the DB
+func (s *Shuttle) calculateCarSize(data cid.Cid) (uint64, error) {
+	var objects []Object
+	where := "id in (select object from objref where content = (select id from content where cid = ?))"
+	if err := s.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
+		return 0, err
+	}
+
+	if len(objects) == 0 {
+		return 0, fmt.Errorf("not found")
+	}
+
+	os := make([]util.Object, len(objects))
+	for i, o := range objects {
+		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
+	}
+
+	return util.CalculateCarSize(data, os)
 }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -1974,7 +2001,7 @@ func writeAllGoroutineStacks(w io.Writer) error {
 
 func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 	ctx := e.Request().Context()
-	transfers, err := s.Filc.TransfersInProgress(ctx)
+	transfers, err := s.Filc.V110TransfersInProgress(ctx)
 	if err != nil {
 		return err
 	}

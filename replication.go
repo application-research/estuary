@@ -2188,8 +2188,15 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	size := netprop.Piece.RawBlockSize
 	var announceAddr multiaddr.Multiaddr
 	if contentLoc == "local" {
-		// TODO:
-		// announceAddr = ?
+		if len(cm.Node.Config.AnnounceAddrs) == 0 {
+			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured")
+		}
+
+		addrstr := cm.Node.Config.AnnounceAddrs[0]
+		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
+		if err != nil {
+			return nil, false, xerrors.Errorf("cannot parse announce address '%s': %w", addrstr, err)
+		}
 
 		// Add an auth token for the data to the auth DB
 		err := cm.FilClient.Libp2pTransferMgr.PrepareForDataRequest(ctx, dbid, authToken, propCid, rootCid, size)
@@ -2497,6 +2504,27 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return &pcr, nil
 }
 
+// calculateCarSize works out the CAR size using the cids and block sizes
+// for the content stored in the DB
+func (cm *ContentManager) calculateCarSize(data cid.Cid) (uint64, error) {
+	var objects []Object
+	where := "id in (select object from objref where content = (select id from content where cid = ?))"
+	if err := cm.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
+		return 0, err
+	}
+
+	if len(objects) == 0 {
+		return 0, fmt.Errorf("not found")
+	}
+
+	os := make([]util.Object, len(objects))
+	for i, o := range objects {
+		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
+	}
+
+	return util.CalculateCarSize(data, os)
+}
+
 var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
 
 func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
@@ -2528,14 +2556,29 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 	_, span := cm.tracer.Start(ctx, "getPieceComm")
 	defer span.End()
 
+	// Get the piece comm record from the DB
 	pcr, err := cm.lookupPieceCommRecord(data)
 	if err != nil {
 		return cid.Undef, 0, 0, err
 	}
-	if pcr != nil && pcr.CarSize > 0 {
+	if pcr != nil {
+		if pcr.CarSize > 0 {
+			return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
+		}
+
+		// The CAR size field was added later, so if it's not on the piece comm
+		// record, calculate it
+		carSize, err := cm.calculateCarSize(data)
+		if err != nil {
+			return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
+		}
+
+		pcr.CarSize = carSize
+		cm.DB.Save(pcr) //nolint:errcheck
 		return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
 	}
 
+	// The piece comm record isn't in the DB so calculate it
 	pc, carSize, size, err := cm.runPieceCommCompute(ctx, data, bs)
 	if err != nil {
 		return cid.Undef, 0, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
@@ -2552,7 +2595,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 		return cid.Undef, 0, 0, err
 	}
 
-	return pc, 0, size, nil
+	return pc, carSize, size, nil
 }
 
 func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error) {
