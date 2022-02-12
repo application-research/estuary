@@ -427,7 +427,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 		var colp *string
 		if params.CollectionPath != "" {
-			p, err := sanitizePath(params.CollectionPath)
+			p, err := sanitizePath(*params.CollectionPath)
 			if err != nil {
 				return err
 			}
@@ -4232,6 +4232,10 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 }
 
 func sanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
 	if p[0] != '/' {
 		return "", fmt.Errorf("all paths must be absolute")
 	}
