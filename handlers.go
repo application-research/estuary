@@ -471,6 +471,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
+	filename := params.Name
+	if filename == "" {
+		filename = params.Root
+	}
+
 	var cols []*CollectionRef
 	if params.Collection != "" {
 		var srchCol Collection
@@ -488,10 +493,12 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			}
 			colp = &p
 		}
+		// TODO: path is a dir or is the entire path with file? (if we put / the file is named . when listing)
+		pathWithFilename := *colp + filename
 
 		cols = []*CollectionRef{&CollectionRef{
 			Collection: srchCol.ID,
-			Path:       colp,
+			Path:       &pathWithFilename,
 		}}
 	}
 
@@ -518,11 +525,6 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		if count > 0 {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
-	}
-
-	filename := params.Name
-	if filename == "" {
-		filename = params.Root
 	}
 
 	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
@@ -4707,6 +4709,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				contentType = Dir
 			}
 			out = append(out, collectionListResponse{
+				// Name:   filepath.Base(relp),
 				Name:   *r.Filename,
 				Type:   contentType,
 				Size:   r.Size,
@@ -4741,7 +4744,7 @@ func sanitizePath(p string) (string, error) {
 
 	// TODO: prevent use of special weird characters
 
-	return filepath.Clean(p), nil
+	return filepath.Clean(p) + "/", nil
 }
 
 // handleColfsAdd godoc
