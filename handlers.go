@@ -425,7 +425,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		var colp *string
+		// if collectionPath is "" or nil, put the file on the root dir (/filename)
+		defaultPath := "/" + params.Name
+		colp := &defaultPath
 		if params.CollectionPath != "" {
 			p, err := sanitizePath(*params.CollectionPath)
 			if err != nil {
