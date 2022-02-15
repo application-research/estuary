@@ -146,8 +146,8 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	lim := rcmgr.NewDefaultLimiter()
-	lim.SystemLimits.WithFDLimit(8192).WithConnLimit(16<<10, 32<<10, 32<<10).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
-	lim.TransientLimits.WithConnLimit(1024, 2048, 2048).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
+	lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(16<<10, 32<<10, 32<<10).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
+	lim.TransientLimits = lim.TransientLimits.WithConnLimit(1024, 2048, 2048).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
 	rcm, err := rcmgr.NewResourceManager(lim)
 	if err != nil {
 		return nil, err
