@@ -99,12 +99,6 @@ type ViewerResponse struct {
 	Settings UserSettings `json:"settings"`
 }
 
-type AddFileResponse struct {
-	Cid       string   `json:"cid"`
-	EstuaryId uint     `json:"estuaryId"`
-	Providers []string `json:"providers"`
-}
-
 func ErrorHandler(err error, ctx echo.Context) {
 	log.Errorf("handler error: %s", err)
 	var herr *HttpError

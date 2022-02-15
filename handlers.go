@@ -403,14 +403,6 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	return c.JSON(200, out)
 }
 
-type addFromIpfsParams struct {
-	Root           string   `json:"root"`
-	Name           string   `json:"name"`
-	Collection     string   `json:"collection"`
-	CollectionPath *string  `json:"collectionPath"`
-	Peers          []string `json:"peers"`
-}
-
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -421,7 +413,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	var params addFromIpfsParams
+	var params util.ContentAddIpfsBody
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
@@ -434,8 +426,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 
 		var colp *string
-		if params.CollectionPath != nil {
-			p, err := sanitizePath(*params.CollectionPath)
+		if params.CollectionPath != "" {
+			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
 				return err
 			}
@@ -739,7 +731,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
-	return c.JSON(200, &util.AddFileResponse{
+	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
@@ -2655,7 +2647,11 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 
 	var out []string
 	for _, sh := range shuttles {
-		out = append(out, "https://"+sh.Host+"/content/add")
+		host := "https://" + sh.Host
+		if strings.HasPrefix(sh.Host, "http://") || strings.HasPrefix(sh.Host, "https://") {
+			host = sh.Host
+		}
+		out = append(out, host+"/content/add")
 	}
 	if !s.CM.localContentAddingDisabled {
 		out = append(out, s.CM.hostname+"/content/add")
@@ -3644,35 +3640,21 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 	return c.JSON(200, recs)
 }
 
-type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
-}
-
-type createContentResponse struct {
-	ID uint `json:"id"`
-}
-
 func (s *Server) handleCreateContent(c echo.Context, u *User) error {
-	var req createContentBody
+	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
 
-	var collections []Collection
-	for _, c := range req.Collections {
-		var col Collection
-		if err := s.DB.First(&col, "uuid = ?", c).Error; err != nil {
+	var col Collection
+	if req.Collection != "" {
+		if err := s.DB.First(&col, "uuid = ?", req.Collection).Error; err != nil {
 			return err
 		}
 
 		if col.UserID != u.ID {
 			return fmt.Errorf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID)
 		}
-
-		collections = append(collections, col)
 	}
 
 	content := &Content{
@@ -3689,16 +3671,27 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	for _, col := range collections {
+	if req.Collection != "" {
+		var path *string
+		if req.CollectionPath != "" {
+			sp, err := sanitizePath(req.CollectionPath)
+			if err != nil {
+				return err
+			}
+
+			path = &sp
+		}
+
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
+			Path:       path,
 		}).Error; err != nil {
 			return err
 		}
 	}
 
-	return c.JSON(200, createContentResponse{
+	return c.JSON(200, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }
@@ -4048,7 +4041,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, createContentResponse{
+	return c.JSON(200, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }

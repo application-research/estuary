@@ -210,7 +210,7 @@ func RunBench(name string, fi io.Reader, host string, estToken string) (*benchRe
 		}, nil
 	}
 
-	var rbody util.AddFileResponse
+	var rbody util.ContentAddResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
 		return nil, err
 	}
