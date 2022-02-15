@@ -86,6 +86,7 @@ func main() {
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
 	logging.SetLogLevel("bs-migrate", "info")
+	logging.SetLogLevel("rcmgr", "debug")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
