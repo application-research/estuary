@@ -48,7 +48,7 @@ func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceMan
 
 	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
 
-	if os.Getenv("LOTUS_DEBUG_RCMGR") != "" {
+	if os.Getenv("ESTUARY_DEBUG_RCMGR") != "" {
 		debugPath := filepath.Join(repoPath, "debug")
 		if err := os.MkdirAll(debugPath, 0755); err != nil {
 			return nil, fmt.Errorf("error creating debug directory: %w", err)
