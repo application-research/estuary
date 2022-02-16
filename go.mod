@@ -55,7 +55,7 @@ require (
 	github.com/libp2p/go-libp2p-core v0.14.0
 	github.com/libp2p/go-libp2p-kad-dht v0.15.0
 	github.com/libp2p/go-libp2p-record v0.1.3
-	github.com/libp2p/go-libp2p-resource-manager v0.1.2
+	github.com/libp2p/go-libp2p-resource-manager v0.1.4
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/libp2p/go-libp2p-transport-upgrader v0.7.1-0.20220202172836-b19a80d59b95 // indirect
 	github.com/mitchellh/go-homedir v1.1.0

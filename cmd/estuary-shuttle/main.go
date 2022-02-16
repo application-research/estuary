@@ -375,6 +375,7 @@ func main() {
 		})
 
 		go func() {
+			http.Handle("/debug/metrics", estumetrics.Exporter())
 			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
 				if err := writeAllGoroutineStacks(w); err != nil {
