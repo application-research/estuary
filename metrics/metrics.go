@@ -144,7 +144,7 @@ var (
 )
 
 // DefaultViews is an array of OpenCensus views for metric gathering purposes
-var DefaultViews = func() []*view.View {
+var ResourceManagerViews = func() []*view.View {
 	views := []*view.View{
 		InfoView,
 		RcmgrAllowConnView,

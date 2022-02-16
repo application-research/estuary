@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go.opencensus.io/stats/view"
 	"os"
 	"path/filepath"
 	"time"
@@ -335,6 +336,12 @@ func main() {
 		nd, err := node.Setup(context.Background(), cfg)
 		if err != nil {
 			return err
+		}
+
+		if err = view.Register(
+			metrics.ResourceManagerViews...,
+		); err != nil {
+			log.Fatalf("Cannot register the view: %v", err)
 		}
 
 		addr, err := nd.Wallet.GetDefault()
