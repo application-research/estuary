@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p"
 	"os"
 	"path/filepath"
 
@@ -45,7 +44,6 @@ func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceMan
 		return nil, err
 	}
 
-	// TODO: also set appropriate default limits for lotus protocols
 	libp2p.SetDefaultServiceLimits(limiter)
 
 	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
