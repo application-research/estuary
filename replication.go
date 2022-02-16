@@ -2508,7 +2508,7 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 // for the content stored in the DB
 func (cm *ContentManager) calculateCarSize(data cid.Cid) (uint64, error) {
 	var objects []Object
-	where := "id in (select object from objref where content = (select id from content where cid = ?))"
+	where := "id in (select object from obj_refs where content = (select id from contents where cid = ?))"
 	if err := cm.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
 		return 0, err
 	}
@@ -2574,7 +2574,12 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 		}
 
 		pcr.CarSize = carSize
-		cm.DB.Save(pcr) //nolint:errcheck
+
+		// Save updated car size to DB
+		cm.DB.Model(PieceCommRecord{}).Where("piece = ?", pcr.Piece).UpdateColumns(map[string]interface{}{
+			"car_size": carSize,
+		}) //nolint:errcheck
+
 		return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
 	}
 
