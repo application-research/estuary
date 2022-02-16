@@ -24,7 +24,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/net/websocket"
@@ -38,8 +37,6 @@ import (
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/cenkalti/backoff/v4"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -47,18 +44,13 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
-	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipfs/go-merkledag"
-	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
-	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
@@ -375,7 +367,7 @@ func main() {
 		})
 
 		go func() {
-			http.Handle("/debug/metrics", estumetrics.Exporter())
+			http.Handle("/debug/metrics/opencensus", estumetrics.Exporter())
 			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
 			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
 				if err := writeAllGoroutineStacks(w); err != nil {

@@ -21,10 +21,8 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	commcid "github.com/filecoin-project/go-fil-commcid"
-	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
@@ -33,20 +31,15 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
-	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipfs/go-merkledag"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
-	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multiaddr"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
@@ -54,6 +47,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	esmetrics "github.com/application-research/estuary/metrics"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
@@ -106,6 +100,12 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	phandle := promhttp.Handler()
 	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
 		phandle.ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+
+	exporter := esmetrics.Exporter()
+	e.GET("/debug/metrics/opencensus", func(e echo.Context) error {
+		exporter.ServeHTTP(e.Response().Writer, e.Request())
 		return nil
 	})
 
