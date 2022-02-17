@@ -6,7 +6,7 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0
 	github.com/application-research/filclient v0.0.0-20220202010800-86ee27425384
 	github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402
-	github.com/cenkalti/backoff/v4 v4.1.1
+	github.com/cenkalti/backoff/v4 v4.1.2 // indirect
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/dustin/go-humanize v1.0.0
@@ -17,7 +17,7 @@ require (
 	github.com/filecoin-project/go-fil-commcid v0.1.0
 	github.com/filecoin-project/go-fil-markets v1.19.0
 	github.com/filecoin-project/go-jsonrpc v0.1.5
-	github.com/filecoin-project/go-padreader v0.0.1
+	github.com/filecoin-project/go-padreader v0.0.1 // indirect
 	github.com/filecoin-project/go-state-types v0.1.3
 	github.com/filecoin-project/lotus v1.13.3-0.20220126152212-3e6c482229fb
 	github.com/filecoin-project/specs-actors/v6 v6.0.1

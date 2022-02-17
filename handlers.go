@@ -18,11 +18,14 @@ import (
 	"time"
 
 	drpc "github.com/application-research/estuary/drpc"
+	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
+	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	commcid "github.com/filecoin-project/go-fil-commcid"
+	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
@@ -31,15 +34,20 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
+	"github.com/ipfs/go-blockservice"
+	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/ipfs/go-merkledag"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
+	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multiaddr"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
@@ -47,7 +55,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
-	esmetrics "github.com/application-research/estuary/metrics"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
@@ -425,7 +432,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		var colp *string
+		// if collectionPath is "" or nil, put the file on the root dir (/filename)
+		defaultPath := "/" + params.Name
+		colp := &defaultPath
 		if params.CollectionPath != "" {
 			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
@@ -4212,7 +4221,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				Dir:    false,
 				Size:   r.Size,
 				ContID: r.ContID,
-				Cid:    &r.Cid,
+				Cid:    &util.DbCID{r.Cid.CID},
 			})
 			continue
 		}
@@ -4232,6 +4241,10 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 }
 
 func sanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
 	if p[0] != '/' {
 		return "", fmt.Errorf("all paths must be absolute")
 	}
