@@ -44,17 +44,16 @@ func NewResourceManagerWithLifecycleRepo(lc fx.Lifecycle, repo repo.LockedRepo) 
 	repoPath := repo.Path()
 	limitsFile := filepath.Join(repoPath, "limits.json")
 	limitsIn, err := os.Open(limitsFile)
-	switch {
-	case err == nil:
-		defer limitsIn.Close() //nolint:errcheck
-		limiter, err = rcmgr.NewDefaultLimiterFromJSON(limitsIn)
-		if err != nil {
-			return nil, fmt.Errorf("error parsing limit file: %w", err)
-		}
-	case errors.Is(err, os.ErrNotExist):
+
+	if errors.Is(err, os.ErrNotExist) {
 		limiter = rcmgr.NewDefaultLimiter()
-	default:
+	} else if err != nil {
 		return nil, err
+	}
+	defer limitsIn.Close() //nolint:errcheck
+	limiter, err = rcmgr.NewDefaultLimiterFromJSON(limitsIn)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing limit file: %w", err)
 	}
 
 	libp2p.SetDefaultServiceLimits(limiter)
@@ -86,51 +85,51 @@ type rcmgrMetrics struct{}
 
 func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 	ctx := context.Background()
+	dirStr := "outbound"
 	if dir == network.DirInbound {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "outbound"))
+		dirStr = "inbound"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
+	usefdStr := "false"
 	if usefd {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, "true"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, "false"))
+		usefdStr = "true"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
 	stats.Record(ctx, metrics.RcmgrAllowConn.M(1))
 }
 
 func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
 	ctx := context.Background()
+	dirStr := "outbound"
 	if dir == network.DirInbound {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "outbound"))
+		dirStr = "inbound"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
+	usefdStr := "false"
 	if usefd {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, "true"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, "false"))
+		usefdStr = "true"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
 	stats.Record(ctx, metrics.RcmgrBlockConn.M(1))
 }
 
 func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
 	ctx := context.Background()
+	dirStr := "outbound"
 	if dir == network.DirInbound {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "outbound"))
+		dirStr = "inbound"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
 	stats.Record(ctx, metrics.RcmgrAllowStream.M(1))
 }
 
 func (r rcmgrMetrics) BlockStream(p peer.ID, dir network.Direction) {
 	ctx := context.Background()
+	dirStr := "outbound"
 	if dir == network.DirInbound {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "inbound"))
-	} else {
-		ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, "outbound"))
+		dirStr = "inbound"
 	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
 	stats.Record(ctx, metrics.RcmgrBlockStream.M(1))
 }
 
