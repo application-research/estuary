@@ -322,7 +322,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return err
 		}
 	} else if param.State != nil {
-		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.ChannelID.String()).Error; err != nil {
+		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.TransferID).Error; err != nil {
 			return err
 		}
 	} else {

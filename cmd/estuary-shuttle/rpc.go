@@ -489,14 +489,14 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 
 	go func() {
 		ctx := context.TODO()
-		st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
+		st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
 		if err != nil {
 			log.Errorf("failed to get requested transfer status: %s", err)
 			return
 		}
 
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-			Chanid: req.ChanID.String(),
+			Chanid: req.ChanID,
 
 			// NB: this parameter is only here because
 			//its wanted on the other side. We could probably just look up by

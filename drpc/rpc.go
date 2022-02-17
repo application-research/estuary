@@ -109,7 +109,7 @@ const CMD_ReqTxStatus = "ReqTxStatus"
 
 type ReqTxStatus struct {
 	DealDBID uint
-	ChanID   datatransfer.ChannelID
+	ChanID   string
 }
 
 const CMD_SplitContent = "SplitContent"

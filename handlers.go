@@ -200,6 +200,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	deals.GET("/transfer/status/:id", s.handleTransferStatusByID)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
@@ -1457,6 +1458,15 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 	}
 
 	status, err := s.FilClient.TransferStatus(context.TODO(), &chanid)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, status)
+}
+
+func (s *Server) handleTransferStatusByID(c echo.Context) error {
+	status, err := s.FilClient.TransferStatusByID(context.TODO(), c.Param("id"))
 	if err != nil {
 		return err
 	}

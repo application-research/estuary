@@ -459,6 +459,7 @@ func main() {
 						Params: drpc.MsgParams{
 							TransferStarted: &drpc.TransferStarted{
 								DealDBID: dbid,
+								Chanid:   st.TransferID,
 							},
 						},
 					}); err != nil {
@@ -468,6 +469,7 @@ func main() {
 			}
 
 			go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+				Chanid:   st.TransferID,
 				DealDBID: dbid,
 				State:    &st,
 			})

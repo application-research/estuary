@@ -727,7 +727,9 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 	for _, d := range deals {
 		chid, err := d.ChannelID()
 		if err != nil {
-			log.Errorf("failed to get channel id from deal %d: %s", d.ID, err)
+			// Only legacy (push) transfers need to be restarted by Estuary.
+			// Newer (pull) transfers are restarted by the Storage Provider.
+			// So if it's not a legacy channel ID, ignore it.
 			continue
 		}
 

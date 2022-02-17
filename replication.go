@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -1068,31 +1066,12 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 		return datatransfer.ChannelID{}, ErrNoChannelID
 	}
 
-	parts := strings.Split(cd.DTChan, "-")
-	if len(parts) != 3 {
+	chid := filclient.ChannelIDFromString(cd.DTChan)
+	if chid == nil {
 		return datatransfer.ChannelID{}, fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record")
 	}
 
-	initiator, err := peer.Decode(parts[0])
-	if err != nil {
-		return datatransfer.ChannelID{}, err
-	}
-
-	responder, err := peer.Decode(parts[1])
-	if err != nil {
-		return datatransfer.ChannelID{}, err
-	}
-
-	id, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return datatransfer.ChannelID{}, err
-	}
-
-	return datatransfer.ChannelID{
-		Initiator: initiator,
-		Responder: responder,
-		ID:        datatransfer.TransferID(id),
-	}, nil
+	return *chid, nil
 }
 
 func (cm *ContentManager) contentInStagingZone(ctx context.Context, content Content) bool {
@@ -1680,11 +1659,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			// No channel ID yet, shouldnt be able to get here actually
 			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
 		} else {
-			chid, err := d.ChannelID()
-			if err != nil {
-				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: %w", d.ID, err)
+			if d.DTChan == "" {
+				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: empty dtchan", d.ID)
 			}
-			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, chid); err != nil {
+			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, d.DTChan); err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 
@@ -1829,32 +1807,24 @@ func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *content
 		return nil, err
 	}
 
-	chanid, err := d.ChannelID()
-	switch err {
-	case nil:
-		chanst, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
-			return nil, err
-		}
-		return chanst, nil
-	case ErrNoChannelID:
-		chanst, err := cm.FilClient.TransferStatusForContent(ctx, ccid, miner)
-		if err != nil && err != filclient.ErrNoTransferFound {
-			return nil, err
-		}
+	if d.DTChan != "" {
+		return cm.FilClient.TransferStatusByID(ctx, d.DTChan)
+	}
 
-		if chanst != nil {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-				"dt_chan": chanst.ChannelID.String(),
-			}).Error; err != nil {
-				return nil, err
-			}
-		}
-
-		return chanst, nil
-	default:
+	chanst, err := cm.FilClient.TransferStatusForContent(ctx, ccid, miner)
+	if err != nil && err != filclient.ErrNoTransferFound {
 		return nil, err
 	}
+
+	if chanst != nil {
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+			"dt_chan": chanst.TransferID,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return chanst, nil
 }
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
@@ -2225,7 +2195,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := cm.FilClient.SendProposalV120(ctx, netprop, announceAddr, authToken)
+	propPhase, err := cm.FilClient.SendProposalV120(ctx, dbid, netprop, announceAddr, authToken)
 	return cleanup, propPhase, err
 }
 
@@ -3119,7 +3089,7 @@ func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont
 	})
 }
 
-func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid datatransfer.ChannelID) error {
+func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_ReqTxStatus,
 		Params: drpc.CmdParams{
