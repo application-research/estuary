@@ -9,6 +9,7 @@ import (
 
 	"go.uber.org/fx"
 
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -21,13 +22,26 @@ import (
 	"go.opencensus.io/tag"
 )
 
-func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceManager, error) {
+func NewDefaultLimiter() *rcmgr.BasicLimiter {
+	return rcmgr.NewDefaultLimiter()
+}
+
+func NewResourceManager(limiter *rcmgr.BasicLimiter) (network.ResourceManager, error) {
+	var opts []rcmgr.Option
+	libp2p.SetDefaultServiceLimits(limiter)
+	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
+	mgr, err := rcmgr.NewResourceManager(limiter, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating resource manager: %w", err)
+	}
+	return mgr, nil
+}
+
+func NewResourceManagerWithLifecycleRepo(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceManager, error) {
 	var limiter *rcmgr.BasicLimiter
 	var opts []rcmgr.Option
 
 	repoPath := repo.Path()
-
-	// create limiter -- parse $repo/limits.json if exists
 	limitsFile := filepath.Join(repoPath, "limits.json")
 	limitsIn, err := os.Open(limitsFile)
 	switch {
@@ -37,7 +51,6 @@ func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceMan
 		if err != nil {
 			return nil, fmt.Errorf("error parsing limit file: %w", err)
 		}
-
 	case errors.Is(err, os.ErrNotExist):
 		limiter = rcmgr.NewDefaultLimiter()
 	default:
@@ -45,7 +58,6 @@ func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceMan
 	}
 
 	libp2p.SetDefaultServiceLimits(limiter)
-
 	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
 
 	if os.Getenv("ESTUARY_DEBUG_RCMGR") != "" {
@@ -68,12 +80,6 @@ func ResourceManager(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceMan
 		}})
 
 	return mgr, nil
-}
-
-func ResourceManagerOption(mgr network.ResourceManager) Libp2pOpts {
-	return Libp2pOpts{
-		Opts: []libp2p.Option{libp2p.ResourceManager(mgr)},
-	}
 }
 
 type rcmgrMetrics struct{}
