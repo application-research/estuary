@@ -425,7 +425,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		var colp *string
+		// if collectionPath is "" or nil, put the file on the root dir (/filename)
+		defaultPath := "/" + params.Name
+		colp := &defaultPath
 		if params.CollectionPath != "" {
 			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
@@ -4212,7 +4214,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				Dir:    false,
 				Size:   r.Size,
 				ContID: r.ContID,
-				Cid:    &r.Cid,
+				Cid:    &util.DbCID{r.Cid.CID},
 			})
 			continue
 		}
@@ -4232,6 +4234,10 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 }
 
 func sanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
 	if p[0] != '/' {
 		return "", fmt.Errorf("all paths must be absolute")
 	}
