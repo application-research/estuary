@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go.opencensus.io/stats/view"
 	"os"
 	"path/filepath"
 	"time"
+
+	"go.opencensus.io/stats/view"
 
 	"github.com/application-research/estuary/build"
 	drpc "github.com/application-research/estuary/drpc"
@@ -339,9 +340,10 @@ func main() {
 		}
 
 		if err = view.Register(
-			metrics.ResourceManagerViews...,
+			metrics.DefaultViews...,
 		); err != nil {
-			log.Fatalf("Cannot register the view: %v", err)
+			log.Fatalf("Cannot register the OpenCensus view: %v", err)
+			return err
 		}
 
 		addr, err := nd.Wallet.GetDefault()
