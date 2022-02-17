@@ -2,12 +2,7 @@ package lp2p
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-
-	"go.uber.org/fx"
 
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -16,7 +11,6 @@ import (
 	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 
 	"github.com/application-research/estuary/metrics"
-	"github.com/filecoin-project/lotus/node/repo"
 
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
@@ -34,50 +28,6 @@ func NewResourceManager(limiter *rcmgr.BasicLimiter) (network.ResourceManager, e
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource manager: %w", err)
 	}
-	return mgr, nil
-}
-
-func NewResourceManagerWithLifecycleRepo(lc fx.Lifecycle, repo repo.LockedRepo) (network.ResourceManager, error) {
-	var limiter *rcmgr.BasicLimiter
-	var opts []rcmgr.Option
-
-	repoPath := repo.Path()
-	limitsFile := filepath.Join(repoPath, "limits.json")
-	limitsIn, err := os.Open(limitsFile)
-
-	if errors.Is(err, os.ErrNotExist) {
-		limiter = rcmgr.NewDefaultLimiter()
-	} else if err != nil {
-		return nil, err
-	}
-	defer limitsIn.Close() //nolint:errcheck
-	limiter, err = rcmgr.NewDefaultLimiterFromJSON(limitsIn)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing limit file: %w", err)
-	}
-
-	libp2p.SetDefaultServiceLimits(limiter)
-	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
-
-	if os.Getenv("ESTUARY_DEBUG_RCMGR") != "" {
-		debugPath := filepath.Join(repoPath, "debug")
-		if err := os.MkdirAll(debugPath, 0755); err != nil {
-			return nil, fmt.Errorf("error creating debug directory: %w", err)
-		}
-		traceFile := filepath.Join(debugPath, "rcmgr.json.gz")
-		opts = append(opts, rcmgr.WithTrace(traceFile))
-	}
-
-	mgr, err := rcmgr.NewResourceManager(limiter, opts...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating resource manager: %w", err)
-	}
-
-	lc.Append(fx.Hook{
-		OnStop: func(_ context.Context) error {
-			return mgr.Close()
-		}})
-
 	return mgr, nil
 }
 
