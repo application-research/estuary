@@ -16,6 +16,7 @@ import (
 	"time"
 
 	estumetrics "github.com/application-research/estuary/metrics"
+	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"go.opentelemetry.io/otel/codes"
@@ -85,6 +86,7 @@ func main() {
 	logging.SetLogLevel("rpc", "info")
 	logging.SetLogLevel("bs-wal", "info")
 	logging.SetLogLevel("bs-migrate", "info")
+	logging.SetLogLevel("rcmgr", "debug")
 
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
@@ -312,12 +314,13 @@ func main() {
 		}
 
 		s := &Shuttle{
-			Node:       nd,
-			Api:        api,
-			DB:         db,
-			Filc:       filc,
-			StagingMgr: sbm,
-			Private:    cctx.Bool("private"),
+			Node:        nd,
+			Api:         api,
+			DB:          db,
+			Filc:        filc,
+			StagingMgr:  sbm,
+			Private:     cctx.Bool("private"),
+			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 
 			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
 
@@ -325,6 +328,7 @@ func main() {
 
 			trackingChannels: make(map[string]*chanTrack),
 			inflightCids:     make(map[cid.Cid]uint),
+			splitsInProgress: make(map[uint]bool),
 
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
@@ -529,10 +533,15 @@ type Shuttle struct {
 	Filc       *filclient.FilClient
 	StagingMgr *stagingbs.StagingBSMgr
 
+	gwayHandler *gateway.GatewayHandler
+
 	Tracer trace.Tracer
 
 	tcLk             sync.Mutex
 	trackingChannels map[string]*chanTrack
+
+	splitLk          sync.Mutex
+	splitsInProgress map[uint]bool
 
 	addPinLk sync.Mutex
 
@@ -644,9 +653,14 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 		return nil, err
 	}
 
-	log.Infow("sending hello", "hostname", d.hostname, "address", addr, "pid", d.Node.Host.ID())
+	hostname := d.hostname
+	if d.dev {
+		hostname = "http://" + d.hostname
+	}
+
+	log.Infow("sending hello", "hostname", hostname, "address", addr, "pid", d.Node.Host.ID())
 	return &drpc.Hello{
-		Host:    d.hostname,
+		Host:    hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),
 		Address: addr,
 		Private: d.Private,
@@ -805,6 +819,16 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	e.GET("/health", s.handleHealth)
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
+	e.GET("/gw/:path", func(e echo.Context) error {
+		p := "/" + e.Param("path")
+
+		req := e.Request().Clone(e.Request().Context())
+		req.URL.Path = p
+
+		s.gwayHandler.ServeHTTP(e.Response().Writer, req)
+		return nil
+	})
+
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
@@ -918,7 +942,10 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	defer fi.Close()
 
-	collection := c.FormValue("collection")
+	cic := util.ContentInCollection{
+		Collection:     c.FormValue("collection"),
+		CollectionPath: c.FormValue("collectionPath"),
+	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
 	if err != nil {
@@ -941,7 +968,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, collection)
+	contid, err := s.createContent(ctx, u, nd.Cid(), fname, cic)
 	if err != nil {
 		return err
 	}
@@ -971,7 +998,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		log.Warn(err)
 	}
 
-	return c.JSON(200, &util.AddFileResponse{
+	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
@@ -1083,7 +1110,10 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, fname, c.QueryParam("collection"))
+	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
+		Collection:     c.QueryParam("collection"),
+		CollectionPath: c.QueryParam("collectionPath"),
+	})
 	if err != nil {
 		return err
 	}
@@ -1129,7 +1159,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	}
 
-	return c.JSON(200, &util.AddFileResponse{
+	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       root.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
@@ -1151,28 +1181,12 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
-}
-
-type createContentResponse struct {
-	ID uint `json:"id"`
-}
-
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname, collection string) (uint, error) {
-	var cols []string
-	if collection != "" {
-		cols = []string{collection}
-	}
-
-	data, err := json.Marshal(createContentBody{
-		Root:        root,
-		Name:        fname,
-		Collections: cols,
-		Location:    s.shuttleHandle,
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
+	data, err := json.Marshal(util.ContentCreateBody{
+		ContentInCollection: cic,
+		Root:                root,
+		Name:                fname,
+		Location:            s.shuttleHandle,
 	})
 	if err != nil {
 		return 0, err
@@ -1198,7 +1212,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 
 	defer resp.Body.Close()
 
-	var rbody createContentResponse
+	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
 		return 0, err
 	}
@@ -1257,7 +1271,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 	defer resp.Body.Close()
 
-	var rbody createContentResponse
+	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
 		return 0, err
 	}
@@ -1926,9 +1940,10 @@ func (s *Shuttle) handleGetWantlist(c echo.Context) error {
 }
 
 type importDealBody struct {
-	Name       string   `json:"name"`
-	DealIDs    []uint64 `json:"dealIDs"`
-	Collection string   `json:"collection"`
+	util.ContentInCollection
+
+	Name    string   `json:"name"`
+	DealIDs []uint64 `json:"dealIDs"`
 }
 
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
@@ -1988,7 +2003,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		break
 	}
 
-	contid, err := s.createContent(ctx, u, cc, body.Name, body.Collection)
+	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInCollection)
 	if err != nil {
 		return err
 	}
@@ -1998,7 +2013,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, &util.AddFileResponse{
+	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       cc.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),

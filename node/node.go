@@ -37,6 +37,7 @@ import (
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	record "github.com/libp2p/go-libp2p-record"
+	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 	"github.com/multiformats/go-multiaddr"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
@@ -144,6 +145,14 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
+	lim := rcmgr.NewDefaultLimiter()
+	lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(16<<10, 32<<10, 32<<10).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
+	lim.TransientLimits = lim.TransientLimits.WithConnLimit(1024, 2048, 2048).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
+	rcm, err := rcmgr.NewResourceManager(lim)
+	if err != nil {
+		return nil, err
+	}
+
 	bwc := metrics.NewBandwidthCounter()
 
 	cmgr, err := connmgr.NewConnManager(2000, 3000)
@@ -157,6 +166,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
+		libp2p.ResourceManager(rcm),
 	}
 
 	if len(cfg.AnnounceAddrs) > 0 {

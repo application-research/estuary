@@ -489,7 +489,30 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinCont
 	return nil
 }
 
+func (s *Shuttle) markStartSplit(cont uint) error {
+	s.splitLk.Lock()
+	defer s.splitLk.Unlock()
+
+	if s.splitsInProgress[cont] {
+		return fmt.Errorf("split for content %d already in progress", cont)
+	}
+
+	s.splitsInProgress[cont] = true
+	return nil
+}
+
+func (s *Shuttle) finishSplit(cont uint) {
+	s.splitLk.Lock()
+	defer s.splitLk.Unlock()
+	delete(s.splitsInProgress, cont)
+}
+
 func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
+	if err := s.markStartSplit(req.Content); err != nil {
+		return err
+	}
+	defer s.finishSplit(req.Content)
+
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", req.Content).Error; err != nil {
 		return xerrors.Errorf("no pin with content %d found for split content request: %w", err)

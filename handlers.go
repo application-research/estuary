@@ -19,6 +19,7 @@ import (
 
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
+	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -119,6 +120,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
+
+	e.GET("/gw/:path", s.handleGateway)
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
@@ -400,14 +403,6 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	return c.JSON(200, out)
 }
 
-type addFromIpfsParams struct {
-	Root           string   `json:"root"`
-	Name           string   `json:"name"`
-	Collection     string   `json:"collection"`
-	CollectionPath *string  `json:"collectionPath"`
-	Peers          []string `json:"peers"`
-}
-
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -418,7 +413,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	var params addFromIpfsParams
+	var params util.ContentAddIpfsBody
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
@@ -430,9 +425,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		var colp *string
-		if params.CollectionPath != nil {
-			p, err := sanitizePath(*params.CollectionPath)
+		// if collectionPath is "" or nil, put the file on the root dir (/filename)
+		defaultPath := "/" + params.Name
+		colp := &defaultPath
+		if params.CollectionPath != "" {
+			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
 				return err
 			}
@@ -736,7 +733,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
-	return c.JSON(200, &util.AddFileResponse{
+	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
@@ -1162,7 +1159,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 			`, aggregatedIn, contentID).Scan(&ordinal)
 
 	if result.Error != nil {
-		return "", result.Error 
+		return "", result.Error
 	}
 
 	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
@@ -2652,7 +2649,11 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 
 	var out []string
 	for _, sh := range shuttles {
-		out = append(out, "https://"+sh.Host+"/content/add")
+		host := "https://" + sh.Host
+		if strings.HasPrefix(sh.Host, "http://") || strings.HasPrefix(sh.Host, "https://") {
+			host = sh.Host
+		}
+		out = append(out, host+"/content/add")
 	}
 	if !s.CM.localContentAddingDisabled {
 		out = append(out, s.CM.hostname+"/content/add")
@@ -3641,35 +3642,21 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 	return c.JSON(200, recs)
 }
 
-type createContentBody struct {
-	Root        cid.Cid  `json:"root"`
-	Name        string   `json:"name"`
-	Collections []string `json:"collections"`
-	Location    string   `json:"location"`
-}
-
-type createContentResponse struct {
-	ID uint `json:"id"`
-}
-
 func (s *Server) handleCreateContent(c echo.Context, u *User) error {
-	var req createContentBody
+	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
 
-	var collections []Collection
-	for _, c := range req.Collections {
-		var col Collection
-		if err := s.DB.First(&col, "uuid = ?", c).Error; err != nil {
+	var col Collection
+	if req.Collection != "" {
+		if err := s.DB.First(&col, "uuid = ?", req.Collection).Error; err != nil {
 			return err
 		}
 
 		if col.UserID != u.ID {
 			return fmt.Errorf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID)
 		}
-
-		collections = append(collections, col)
 	}
 
 	content := &Content{
@@ -3686,16 +3673,27 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	for _, col := range collections {
+	if req.Collection != "" {
+		var path *string
+		if req.CollectionPath != "" {
+			sp, err := sanitizePath(req.CollectionPath)
+			if err != nil {
+				return err
+			}
+
+			path = &sp
+		}
+
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
+			Path:       path,
 		}).Error; err != nil {
 			return err
 		}
 	}
 
-	return c.JSON(200, createContentResponse{
+	return c.JSON(200, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }
@@ -4045,7 +4043,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, createContentResponse{
+	return c.JSON(200, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }
@@ -4146,15 +4144,17 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 
 type collectionListQueryRes struct {
 	ContID uint
+	Cid    util.DbCID
 	Size   int64
 	Path   *string
 }
 
 type collectionListResponse struct {
-	Name   string `json:"name"`
-	Dir    bool   `json:"dir"`
-	Size   int64  `json:"size"`
-	ContID uint   `json:"contId"`
+	Name   string      `json:"name"`
+	Dir    bool        `json:"dir"`
+	Size   int64       `json:"size"`
+	ContID uint        `json:"contId"`
+	Cid    *util.DbCID `json:"cid,omitempty"`
 }
 
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
@@ -4183,7 +4183,9 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	var refs []collectionListQueryRes
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Where("collection = ?", col.ID).Select("contents.id as cont_id, path, size").Scan(&refs).Error; err != nil {
+		Where("collection = ?", col.ID).
+		Select("contents.id as cont_id, contents.cid as cid, path, size").
+		Scan(&refs).Error; err != nil {
 		return err
 	}
 
@@ -4212,6 +4214,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				Dir:    false,
 				Size:   r.Size,
 				ContID: r.ContID,
+				Cid:    &util.DbCID{r.Cid.CID},
 			})
 			continue
 		}
@@ -4231,6 +4234,10 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 }
 
 func sanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
 	if p[0] != '/' {
 		return "", fmt.Errorf("all paths must be absolute")
 	}
@@ -4301,4 +4308,59 @@ func (s *Server) handleRunGc(c echo.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Server) handleGateway(c echo.Context) error {
+	npath := "/" + c.Param("path")
+	proto, cc, segs, err := gateway.ParsePath(npath)
+	if err != nil {
+		return err
+	}
+
+	redir, err := s.checkGatewayRedirect(proto, cc, segs)
+	if err != nil {
+		return err
+	}
+
+	if redir == "" {
+
+		req := c.Request().Clone(c.Request().Context())
+		req.URL.Path = npath
+
+		s.gwayHandler.ServeHTTP(c.Response().Writer, req)
+		return nil
+	}
+
+	return c.Redirect(307, redir)
+}
+
+const bestGateway = "dweb.link"
+
+func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (string, error) {
+	if proto != "ipfs" {
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
+	}
+
+	var cont Content
+	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{cc}).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	if cont.Location == "local" {
+		return "", nil
+	}
+
+	if !s.CM.shuttleIsOnline(cont.Location) {
+		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
+	}
+
+	var shuttle Shuttle
+	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }

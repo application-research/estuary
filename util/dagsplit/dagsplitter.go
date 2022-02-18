@@ -149,6 +149,7 @@ func (b *Builder) Pack(ctx context.Context, root cid.Cid) error {
 			packed.Add(cur)
 			pref := cur.Prefix()
 			pref.Codec = cid.Raw
+			pref.Version = 1
 
 			ncid, err := pref.Sum(nd.RawData())
 			if err != nil {
