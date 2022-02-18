@@ -32,5 +32,10 @@ jobs:
     - name: Build
       run: make clean all
 
+    - name: Setup
+      run: echo "ESTUARY_TOKEN=$(./estuary setup | grep Token | cut -d ' ' -f 3)" >> $GITHUB_ENV
+
     - name: Test
       run: go test -v ./...
+      env:
+        ESTUARY_TOKEN: $ESTUARY_TOKEN
