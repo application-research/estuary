@@ -484,17 +484,24 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 
 		// if collectionPath is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + params.Name
-		colp := &defaultPath
+		defaultPath := "/" + filename
+		colp := defaultPath
 		if params.CollectionPath != "" {
 			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
 				return err
 			}
-			colp = &p
+			colp = p
 		}
-		// TODO: path is a dir or is the entire path with file? (if we put / the file is named . when listing)
-		pathWithFilename := *colp + filename
+
+		// default: colp ends in / (does not include filename e.g. /hello/)
+		pathWithFilename := colp + filename
+
+		// if path is does not end in /, it includes the filename
+		if !strings.HasSuffix(colp, "/") {
+			pathWithFilename = colp
+			filename = filepath.Base(colp)
+		}
 
 		cols = []*CollectionRef{&CollectionRef{
 			Collection: srchCol.ID,
@@ -4655,7 +4662,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == nil {
+		if r.Path == nil || r.Filename == nil {
 			continue
 		}
 
@@ -4709,7 +4716,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				contentType = Dir
 			}
 			out = append(out, collectionListResponse{
-				// Name:   filepath.Base(relp),
+				// Name: filepath.Base(relp),
 				Name:   *r.Filename,
 				Type:   contentType,
 				Size:   r.Size,
@@ -4744,7 +4751,14 @@ func sanitizePath(p string) (string, error) {
 
 	// TODO: prevent use of special weird characters
 
-	return filepath.Clean(p) + "/", nil
+	cleanPath := filepath.Clean(p)
+
+	// if original path ends in /, append / to cleaned path
+	// needed for full path vs dir+filename magic to work in handleAddIpfs
+	if strings.HasSuffix(p, "/") {
+		cleanPath = cleanPath + "/"
+	}
+	return cleanPath, nil
 }
 
 // handleColfsAdd godoc
