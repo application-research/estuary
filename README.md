@@ -58,7 +58,7 @@ If you get the following error:
 It is because you do not have enough open file handles available. Update this with the following command:
 
 ```sh
-ulimit -n 100000
+ulimit -n 10000
 ```
 
 ## Developing
