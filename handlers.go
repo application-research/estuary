@@ -497,7 +497,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		// default: colp ends in / (does not include filename e.g. /hello/)
 		pathWithFilename := colp + filename
 
-		// if path is does not end in /, it includes the filename
+		// if path does not end in /, it includes the filename
 		if !strings.HasSuffix(colp, "/") {
 			pathWithFilename = colp
 			filename = filepath.Base(colp)
@@ -4746,7 +4746,7 @@ func sanitizePath(p string) (string, error) {
 	}
 
 	if p[0] != '/' {
-		return "", fmt.Errorf("all paths must be absolute")
+		return "", fmt.Errorf("paths must start with /")
 	}
 
 	// TODO: prevent use of special weird characters
