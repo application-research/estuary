@@ -3,7 +3,7 @@
 To run benchest, you must compile it directly:
 
 ```sh
-go build ./cmd/benchest
+make benchest
 ```
 
 You also need to have your `ESTUARY_TOKEN` set as an environment variable.
