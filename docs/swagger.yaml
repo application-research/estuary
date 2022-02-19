@@ -67,6 +67,222 @@ paths:
       summary: List all collections
       tags:
       - collections
+  /content/add:
+    post:
+      description: Add a new content
+      produces:
+      - application/json
+      responses: {}
+      summary: Add a new content
+      tags:
+      - content
+  /content/add-car:
+    post:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - content
+  /content/add-ipfs:
+    post:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - content
+  /content/aggregated/:content:
+    get:
+      description: Get aggregated content stats
+      produces:
+      - application/json
+      responses: {}
+      summary: Get aggregated content stats
+      tags:
+      - content
+  /content/all-deals:
+    get:
+      description: Get all deals for a user
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all deals for a user
+      tags:
+      - content
+  /content/bw-usage/:content:
+    get:
+      description: Get content bandwidth
+      produces:
+      - application/json
+      responses: {}
+      summary: Get content bandwidth
+      tags:
+      - content
+  /content/create:
+    post:
+      description: Add a new content
+      produces:
+      - application/json
+      responses: {}
+      summary: Add a new content
+      tags:
+      - content
+  /content/deals:
+    get:
+      description: Content with deals
+      produces:
+      - application/json
+      responses: {}
+      summary: Content with deals
+      tags:
+      - content
+  /content/ensure-replication/:datacid:
+    get:
+      description: Ensure Replication
+      produces:
+      - application/json
+      responses: {}
+      summary: Ensure Replication
+      tags:
+      - content
+  /content/failures/:content:
+    get:
+      description: List all failures for a content
+      produces:
+      - application/json
+      responses: {}
+      summary: List all failures for a content
+      tags:
+      - content
+  /content/list:
+    get:
+      description: List all pinned objects
+      produces:
+      - application/json
+      responses: {}
+      summary: List all pinned objects
+      tags:
+      - content
+  /content/staging-zones:
+    get:
+      description: Get staging zone for user
+      produces:
+      - application/json
+      responses: {}
+      summary: Get staging zone for user
+      tags:
+      - content
+  /content/stats:
+    get:
+      description: Add a new content
+      produces:
+      - application/json
+      responses: {}
+      summary: Add a new content
+      tags:
+      - content
+  /content/status/:id:
+    get:
+      description: Content Status
+      produces:
+      - application/json
+      responses: {}
+      summary: Content Status
+      tags:
+      - content
+  /deal/estimate:
+    get:
+      description: Estimate the cost of a deal
+      produces:
+      - application/json
+      responses: {}
+      summary: Estimate the cost of a deal
+      tags:
+      - deals
+  /deal/info/:dealid:
+    get:
+      description: Get Deal Info
+      produces:
+      - application/json
+      responses: {}
+      summary: Get Deal Info
+      tags:
+      - deals
+  /deal/make/:miner:
+    post:
+      description: Make Deal
+      produces:
+      - application/json
+      responses: {}
+      summary: Make Deal
+      tags:
+      - deals
+  /deal/proposal/:propcid:
+    get:
+      description: Get Proposal
+      produces:
+      - application/json
+      responses: {}
+      summary: Get Proposal
+      tags:
+      - deals
+  /deal/query/:miner:
+    get:
+      description: Query Ask
+      produces:
+      - application/json
+      responses: {}
+      summary: Query Ask
+      tags:
+      - deals
+  /deal/status-by-proposal/:propcid:
+    get:
+      description: Get Deal Status by PropCid
+      produces:
+      - application/json
+      responses: {}
+      summary: Get Deal Status by PropCid
+      tags:
+      - deals
+  /deal/status/:deal:
+    get:
+      description: Get Deal Status
+      produces:
+      - application/json
+      responses: {}
+      summary: Get Deal Status
+      tags:
+      - deals
+  /deal/status/:miner/:propcid:
+    get:
+      description: Deal Status
+      produces:
+      - application/json
+      responses: {}
+      summary: Deal Status
+      tags:
+      - deals
+  /deal/transfer/in-progress:
+    get:
+      description: Transfer In Progress
+      produces:
+      - application/json
+      responses: {}
+      summary: Transfer In Progress
+      tags:
+      - deals
+  /deal/transfer/status:
+    post:
+      description: Transfer Status
+      produces:
+      - application/json
+      responses: {}
+      summary: Transfer Status
+      tags:
+      - deals
   /pinning/pins:
     get:
       description: List all pinned objects
@@ -138,4 +354,130 @@ paths:
       summary: Replace a pinned object
       tags:
       - pinning
+  /public/by-cid/:cid:
+    get:
+      description: Get Content by Cid
+      produces:
+      - application/json
+      responses: {}
+      summary: Get Content by Cid
+      tags:
+      - public
+  /public/deal/failures:
+    get:
+      description: Get storage failures
+      produces:
+      - application/json
+      responses: {}
+      summary: Get storage failures
+      tags:
+      - public
+      - deals
+  /public/info:
+    get:
+      description: Get public node info
+      produces:
+      - application/json
+      responses: {}
+      summary: Get public node info
+      tags:
+      - public
+      - deals
+  /public/metrics/deals-on-chain:
+    get:
+      description: Get deal metrics
+      produces:
+      - application/json
+      responses: {}
+      summary: Get deal metrics
+      tags:
+      - public
+      - metrics
+  /public/miners:
+    get:
+      description: Get all miners
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all miners
+      tags:
+      - public
+      - net
+  /public/miners/deals/:miner:
+    get:
+      description: Get all miners
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all miners
+      tags:
+      - public
+      - miner
+  /public/miners/failures/:miners:
+    get:
+      description: Get all miners
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all miners
+      tags:
+      - public
+      - net
+  /public/miners/stats/:miner:
+    get:
+      description: Get miner stats
+      produces:
+      - application/json
+      responses: {}
+      summary: Get miner stats
+      tags:
+      - public
+      - miner
+  /public/net/addrs:
+    get:
+      description: Net Addrs
+      produces:
+      - application/json
+      responses: {}
+      summary: Net Addrs
+      tags:
+      - public
+      - net
+  /public/net/peers:
+    get:
+      description: Net Peers
+      produces:
+      - application/json
+      responses: {}
+      summary: Net Peers
+      tags:
+      - public
+      - net
+  /public/stats:
+    get:
+      description: Public stats
+      produces:
+      - application/json
+      responses: {}
+      summary: Public stats
+      tags:
+      - public
+  /user/add:
+    post:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - content
+  /user/api-keys:
+    post:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - User
 swagger: "2.0"
