@@ -1,0 +1,141 @@
+basePath: /
+host: localhost:3004
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: This is the API for the Estuary application.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://estuary.tech
+  title: Estuary API
+  version: "1.0"
+paths:
+  /collections/add-content:
+    post:
+      description: Add contents to a collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Add contents to a collection
+      tags:
+      - collections
+  /collections/content/:collection-id:
+    get:
+      description: Get contents in a collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Get contents in a collection
+      tags:
+      - collections
+  /collections/create:
+    post:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - collections
+  /collections/fs/add:
+    post:
+      description: Add a file to a collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Add a file to a collection
+      tags:
+      - collections
+  /collections/fs/list:
+    get:
+      description: Create a new collection
+      produces:
+      - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+      - collections
+  /collections/list:
+    get:
+      description: List all pinned objects
+      produces:
+      - application/json
+      responses: {}
+      summary: List all collections
+      tags:
+      - collections
+  /pinning/pins:
+    get:
+      description: List all pinned objects
+      produces:
+      - application/json
+      responses: {}
+      summary: List all pinned objects
+      tags:
+      - pinning
+    post:
+      description: Add and pin an object
+      parameters:
+      - description: cid
+        in: path
+        name: cid
+        required: true
+        type: string
+      - description: name
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Add and pin object
+      tags:
+      - pinning
+  /pinning/pins/:id:
+    delete:
+      description: Delete a pinned object
+      parameters:
+      - description: id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Delete a pinned object
+      tags:
+      - pinning
+    get:
+      description: Get a pinned objects
+      parameters:
+      - description: cid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Get a pinned objects
+      tags:
+      - pinning
+    post:
+      description: Replace a pinned object
+      parameters:
+      - description: id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses: {}
+      summary: Replace a pinned object
+      tags:
+      - pinning
+swagger: "2.0"
