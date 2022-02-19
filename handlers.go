@@ -18,6 +18,7 @@ import (
 	"time"
 
 	drpc "github.com/application-research/estuary/drpc"
+	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -58,8 +59,26 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
+
+	echoSwagger "github.com/swaggo/echo-swagger"
+
+	_ "github.com/application-research/estuary/docs"
 )
 
+// @title Estuary API
+// @version 1.0
+// @description This is the API for the Estuary application.
+// @termsOfService http://estuary.tech
+
+// @contact.name API Support
+// @contact.url http://www.swagger.io/support
+// @contact.email support@swagger.io
+
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host localhost:3004
+// @BasePath /
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 
 	e := echo.New()
@@ -106,6 +125,12 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	phandle := promhttp.Handler()
 	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
 		phandle.ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+
+	exporter := esmetrics.Exporter()
+	e.GET("/debug/metrics/opencensus", func(e echo.Context) error {
+		exporter.ServeHTTP(e.Response().Writer, e.Request())
 		return nil
 	})
 
@@ -278,6 +303,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
+	e.GET("/swagger/*", echoSwagger.WrapHandler)
 	return e.Start(srv)
 }
 
@@ -403,6 +429,12 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	return c.JSON(200, out)
 }
 
+// handleAddIpfs godoc
+// @Summary      Create a new collection
+// @Description  Create a new collection
+// @Tags         content
+// @Produce      json
+// @Router       /content/add-ipfs [post]
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -480,6 +512,12 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	return c.JSON(202, pinstatus)
 }
 
+// handleAddCar godoc
+// @Summary      Create a new collection
+// @Description  Create a new collection
+// @Tags         content
+// @Produce      json
+// @Router       /content/add-car [post]
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -2713,6 +2751,12 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 	})
 }
 
+// handleUserGetApiKeys godoc
+// @Summary      Create a new collection
+// @Description  Create a new collection
+// @Tags         User
+// @Produce      json
+// @Router       /user/api-keys [post]
 func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 	var keys []AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
@@ -2735,6 +2779,12 @@ type createCollectionBody struct {
 	Description string `json:"description"`
 }
 
+// handleCreateCollection godoc
+// @Summary      Create a new collection
+// @Description  Create a new collection
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/create [post]
 func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
@@ -2755,6 +2805,12 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 	return c.JSON(200, col)
 }
 
+// handleListCollections godoc
+// @Summary      List all collections
+// @Description  List all pinned objects
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/list [get]
 func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	var cols []Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
@@ -2770,6 +2826,12 @@ type addContentToCollectionParams struct {
 	Cids       []string `json:"cids"`
 }
 
+// handleAddContentsToCollection godoc
+// @Summary      Add contents to a collection
+// @Description  Add contents to a collection
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/add-content [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	var params addContentToCollectionParams
 	if err := c.Bind(&params); err != nil {
@@ -2827,6 +2889,12 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	return c.JSON(200, map[string]string{})
 }
 
+// handleGetCollectionContents godoc
+// @Summary      Get contents in a collection
+// @Description  Get contents in a collection
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/content/:collection-id [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	colid := c.Param("coluuid")
 
@@ -4157,6 +4225,12 @@ type collectionListResponse struct {
 	Cid    *util.DbCID `json:"cid,omitempty"`
 }
 
+// handleColfsListDir godoc
+// @Summary      Create a new collection
+// @Description  Create a new collection
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/fs/list [get]
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	colid := c.QueryParam("col")
 	dir := c.QueryParam("dir")
@@ -4247,6 +4321,12 @@ func sanitizePath(p string) (string, error) {
 	return filepath.Clean(p), nil
 }
 
+// handleColfsAdd godoc
+// @Summary      Add a file to a collection
+// @Description  Add a file to a collection
+// @Tags         collections
+// @Produce      json
+// @Router       /collections/fs/add [post]
 func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 	colid := c.QueryParam("col")
 	colidlong := c.QueryParam("collection")

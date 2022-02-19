@@ -1,0 +1,202 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "This is the API for the Estuary application.",
+        "title": "Estuary API",
+        "termsOfService": "http://estuary.tech",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.swagger.io/support",
+            "email": "support@swagger.io"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:3004",
+    "basePath": "/",
+    "paths": {
+        "/collections/add-content": {
+            "post": {
+                "description": "Add contents to a collection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Add contents to a collection",
+                "responses": {}
+            }
+        },
+        "/collections/content/:collection-id": {
+            "get": {
+                "description": "Get contents in a collection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Get contents in a collection",
+                "responses": {}
+            }
+        },
+        "/collections/create": {
+            "post": {
+                "description": "Create a new collection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Create a new collection",
+                "responses": {}
+            }
+        },
+        "/collections/fs/add": {
+            "post": {
+                "description": "Add a file to a collection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Add a file to a collection",
+                "responses": {}
+            }
+        },
+        "/collections/fs/list": {
+            "get": {
+                "description": "Create a new collection",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Create a new collection",
+                "responses": {}
+            }
+        },
+        "/collections/list": {
+            "get": {
+                "description": "List all pinned objects",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "List all collections",
+                "responses": {}
+            }
+        },
+        "/pinning/pins": {
+            "get": {
+                "description": "List all pinned objects",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "List all pinned objects",
+                "responses": {}
+            },
+            "post": {
+                "description": "Add and pin an object",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Add and pin object",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "cid",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "name",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/pinning/pins/:id": {
+            "get": {
+                "description": "Get a pinned objects",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Get a pinned objects",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "cid",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            },
+            "post": {
+                "description": "Replace a pinned object",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Replace a pinned object",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            },
+            "delete": {
+                "description": "Delete a pinned object",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Delete a pinned object",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            }
+        }
+    }
+}

@@ -1,0 +1,8 @@
+#!/bin/sh
+
+## Download Swag and put it here
+curl -o https://github.com/swaggo/swag/archive/refs/tags/v1.7.9-p1.tar.gz
+tar -xvf ./scripts/swag/swag_1.7.9-p1_Linux_x86_64.tar.gz -C ./scripts/swag/
+## Run Swag on handler.go
+
+## Auto Generate
