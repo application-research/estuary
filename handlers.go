@@ -368,6 +368,12 @@ func (s *Server) handleTestError(c echo.Context) error {
 	return fmt.Errorf("i am a scary error, log me please more")
 }
 
+// handleStats godoc
+// @Summary      Add a new content
+// @Description  Add a new content
+// @Tags         content
+// @Produce      json
+// @Router       /content/stats [get]
 func (s *Server) handleStats(c echo.Context, u *User) error {
 	limit := 500
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -643,6 +649,12 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 	return car.LoadCar(ctx, bs, r)
 }
 
+// handleAdd godoc
+// @Summary      Add a new content
+// @Description  Add a new content
+// @Tags         content
+// @Produce      json
+// @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
@@ -944,6 +956,12 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 	return nil
 }
 
+// handleEnsureReplication godoc
+// @Summary      Ensure Replication
+// @Description  Ensure Replication
+// @Tags         content
+// @Produce      json
+// @Router       /content/ensure-replication/:datacid [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
 	data, err := cid.Decode(c.Param("datacid"))
 	if err != nil {
@@ -961,6 +979,12 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 	return nil
 }
 
+// handleListContent godoc
+// @Summary      List all pinned objects
+// @Description  List all pinned objects
+// @Tags         content
+// @Produce      json
+// @Router       /content/list [get]
 func (s *Server) handleListContent(c echo.Context, u *User) error {
 	var contents []Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
@@ -975,6 +999,12 @@ type expandedContent struct {
 	AggregatedFiles int64 `json:"aggregatedFiles"`
 }
 
+// handleListContentWithDeals godoc
+// @Summary      Content with deals
+// @Description  Content with deals
+// @Tags         content
+// @Produce      json
+// @Router       /content/deals [get]
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 
 	var limit int = 20
@@ -1031,6 +1061,12 @@ type dealStatus struct {
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
 
+// handleContentStatus godoc
+// @Summary      Content Status
+// @Description  Content Status
+// @Tags         content
+// @Produce      json
+// @Router       /content/status/:id [get]
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
@@ -1108,6 +1144,12 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	})
 }
 
+// handleGetDealStatus godoc
+// @Summary      Get Deal Status
+// @Description  Get Deal Status
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/status/:deal [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1124,6 +1166,12 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	return c.JSON(200, dstatus)
 }
 
+// handleGetDealStatusByPropCid godoc
+// @Summary      Get Deal Status by PropCid
+// @Description  Get Deal Status by PropCid
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/status-by-proposal/:propcid [get]
 func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1210,6 +1258,12 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
 }
 
+// handleGetContentByCid godoc
+// @Summary      Get Content by Cid
+// @Description  Get Content by Cid
+// @Tags         public
+// @Produce      json
+// @Router       /public/by-cid/:cid [get]
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
@@ -1260,6 +1314,12 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	return c.JSON(200, out)
 }
 
+// handleQueryAsk godoc
+// @Summary      Query Ask
+// @Description  Query Ask
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/query/:miner [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -1283,6 +1343,12 @@ type dealRequest struct {
 	Miner   address.Address `json:"miner"`
 }
 
+// handleMakeDeal godoc
+// @Summary      Make Deal
+// @Description  Make Deal
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/make/:miner [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1318,6 +1384,12 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	})
 }
 
+// handleTransferStatus godoc
+// @Summary      Transfer Status
+// @Description  Transfer Status
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/transfer/status [post]
 func (s *Server) handleTransferStatus(c echo.Context) error {
 	var chanid datatransfer.ChannelID
 	if err := c.Bind(&chanid); err != nil {
@@ -1332,6 +1404,12 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 	return c.JSON(200, status)
 }
 
+// handleTransferInProgress godoc
+// @Summary      Transfer In Progress
+// @Description  Transfer In Progress
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/transfer/in-progress [get]
 func (s *Server) handleTransferInProgress(c echo.Context) error {
 	ctx := context.TODO()
 
@@ -1455,6 +1533,12 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 	return c.JSON(200, chanid)
 }
 
+// handleDealStatus godoc
+// @Summary      Deal Status
+// @Description  Deal Status
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/status/:miner/:propcid [get]
 func (s *Server) handleDealStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1476,6 +1560,12 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 	return c.JSON(200, status)
 }
 
+// handleGetProposal godoc
+// @Summary      Get Proposal
+// @Description  Get Proposal
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/proposal/:propcid [get]
 func (s *Server) handleGetProposal(c echo.Context) error {
 	propCid, err := cid.Decode(c.Param("propcid"))
 	if err != nil {
@@ -1495,6 +1585,12 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 	return c.JSON(200, prop)
 }
 
+// handleGetDealInfo godoc
+// @Summary      Get Deal Info
+// @Description  Get Deal Info
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/info/:dealid [get]
 func (s *Server) handleGetDealInfo(c echo.Context) error {
 	dealid, err := strconv.ParseInt(c.Param("dealid"), 10, 64)
 	if err != nil {
@@ -1651,6 +1747,12 @@ type minerResp struct {
 	Version         string          `json:"version"`
 }
 
+// handleAdminGetMiners godoc
+// @Summary      Get all miners
+// @Description  Get all miners
+// @Tags         public,net
+// @Produce      json
+// @Router       /public/miners [get]
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	var miners []storageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
@@ -1973,6 +2075,12 @@ type priceEstimateResponse struct {
 	Asks     []*minerStorageAsk
 }
 
+// handleEstimateDealCost godoc
+// @Summary      Estimate the cost of a deal
+// @Description  Estimate the cost of a deal
+// @Tags         deals
+// @Produce      json
+// @Router       /deal/estimate [get]
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1995,6 +2103,12 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	})
 }
 
+// handleGetMinerFailures godoc
+// @Summary      Get all miners
+// @Description  Get all miners
+// @Tags         public,net
+// @Produce      json
+// @Router       /public/miners/failures/:miners [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -2030,6 +2144,12 @@ type minerChainInfo struct {
 	Worker string `json:"worker"`
 }
 
+// handleGetMinerStats godoc
+// @Summary      Get miner stats
+// @Description  Get miner stats
+// @Tags         public,miner
+// @Produce      json
+// @Router       /public/miners/stats/:miner [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
 	defer span.End()
@@ -2114,6 +2234,12 @@ type minerDealsResp struct {
 	ContentCid util.DbCID `json:"contentCid"`
 }
 
+// handleGetMinerDeals godoc
+// @Summary      Get all miners
+// @Description  Get all miners
+// @Tags         public,miner
+// @Produce      json
+// @Router       /public/miners/deals/:miner [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -2140,6 +2266,12 @@ type bandwidthResponse struct {
 	TotalOut int64 `json:"totalOut"`
 }
 
+// handleGetContentBandwidth godoc
+// @Summary      Get content bandwidth
+// @Description  Get content bandwidth
+// @Tags         content
+// @Produce      json
+// @Router       /content/bw-usage/:content [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2173,6 +2305,12 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 	})
 }
 
+// handleGetAggregatedForContent godoc
+// @Summary      Get aggregated content stats
+// @Description  Get aggregated content stats
+// @Tags         content
+// @Produce      json
+// @Router       /content/aggregated/:content [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2199,6 +2337,12 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	return c.JSON(200, sub)
 }
 
+// handleGetContentFailures godoc
+// @Summary      List all failures for a content
+// @Description  List all failures for a content
+// @Tags         content
+// @Produce      json
+// @Router       /content/failures/:content [get]
 func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -3006,6 +3150,12 @@ type publicStatsResponse struct {
 	DealsOnChain     int64 `json:"dealsOnChain"`
 }
 
+// handlePublicStats godoc
+// @Summary      Public stats
+// @Description  Public stats
+// @Tags         public
+// @Produce      json
+// @Router       /public/stats [get]
 func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
@@ -3039,6 +3189,12 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 	return c.JSON(200, s.CM.getStagingZoneSnapshot(c.Request().Context()))
 }
 
+// handleGetStagingZoneForUser godoc
+// @Summary      Get staging zone for user
+// @Description  Get staging zone for user
+// @Tags         content
+// @Produce      json
+// @Router       /content/staging-zones [get]
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 	return c.JSON(200, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }
@@ -3052,10 +3208,22 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 	return c.JSON(200, export)
 }
 
+// handleNetPeers godoc
+// @Summary      Net Peers
+// @Description  Net Peers
+// @Tags         public,net
+// @Produce      json
+// @Router       /public/net/peers [get]
 func (s *Server) handleNetPeers(c echo.Context) error {
 	return c.JSON(200, s.Node.Host.Network().Peers())
 }
 
+// handleNetAddrs godoc
+// @Summary      Net Addrs
+// @Description  Net Addrs
+// @Tags         public,net
+// @Produce      json
+// @Router       /public/net/addrs [get]
 func (s *Server) handleNetAddrs(c echo.Context) error {
 	id := s.Node.Host.ID()
 	addrs := s.Node.Host.Addrs()
@@ -3089,6 +3257,12 @@ type metricsDealJoin struct {
 	SealedAt  time.Time `json:"sealedAt"`
 }
 
+// handleMetricsDealOnChain godoc
+// @Summary      Get deal metrics
+// @Description  Get deal metrics
+// @Tags         public,metrics
+// @Produce      json
+// @Router       /public/metrics/deals-on-chain [get]
 func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
 		return s.computeDealMetrics()
@@ -3215,6 +3389,12 @@ type dealPairs struct {
 	Cids  []cid.Cid `json:"cids"`
 }
 
+// handleGetAllDealsForUser godoc
+// @Summary      Get all deals for a user
+// @Description  Get all deals for a user
+// @Tags         content
+// @Produce      json
+// @Router       /content/all-deals [get]
 func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 
 	begin := time.Now().Add(time.Hour * 24)
@@ -3737,6 +3917,12 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 	return c.JSON(200, map[string]interface{}{})
 }
 
+// handleStorageFailures godoc
+// @Summary      Get storage failures
+// @Description  Get storage failures
+// @Tags         public,deals
+// @Produce      json
+// @Router       /public/deal/failures [get]
 func (s *Server) handleStorageFailures(c echo.Context) error {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -3766,6 +3952,12 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 	return c.JSON(200, recs)
 }
 
+// handleCreateContent godoc
+// @Summary      Add a new content
+// @Description  Add a new content
+// @Tags         content
+// @Produce      json
+// @Router       /content/create [post]
 func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
@@ -4074,6 +4266,12 @@ type publicNodeInfo struct {
 	PrimaryAddress address.Address `json:"primaryAddress"`
 }
 
+// handleGetPublicNodeInfo godoc
+// @Summary      Get public node info
+// @Description  Get public node info
+// @Tags         public,deals
+// @Produce      json
+// @Router       /public/info [get]
 func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	return c.JSON(200, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,

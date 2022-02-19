@@ -920,7 +920,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  Create a new collection
 // @Tags         content
 // @Produce      json
-// @Router       /user/api-keys [post]
+// @Router       /user/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
