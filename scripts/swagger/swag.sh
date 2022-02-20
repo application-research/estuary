@@ -15,9 +15,11 @@ os=$(uname)
 swag=''
 yq=''
 localhost='localhost:3004'
+
+# Arguments
 host=$1
 
-#Swag
+# Swag
 linuxSwag=https://github.com/swaggo/swag/releases/download/v1.7.9-p1/swag_1.7.9-p1_Linux_x86_64.tar.gz
 darwinSwag=https://github.com/swaggo/swag/releases/download/v1.7.9-p1/swag_1.7.9-p1_Darwin_x86_64.tar.gz
 

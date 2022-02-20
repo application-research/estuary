@@ -76,7 +76,7 @@ import (
 // @license.name Apache 2.0 Apache-2.0 OR MIT
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host      localhost:3004
+// @host localhost:3004
 // @BasePath  /
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 
