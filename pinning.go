@@ -639,8 +639,8 @@ func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool,
 // @Tags         pinning
 // @Produce      json
 // @in           200,400,default  string  Token "token"
-// @Param        cid    path      string  true  "cid"
-// @Param        name   path      string  true  "name"
+// @Param        cid   path  string  true  "cid"
+// @Param        name  path  string  true  "name"
 // @Router       /pinning/pins [post]
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	ctx := e.Request().Context()
@@ -709,7 +709,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 // @Description  Get a pinned objects
 // @Tags         pinning
 // @Produce      json
-// @Param        id   path      string  true  "cid"
+// @Param        id  path  string  true  "cid"
 // @Router       /pinning/pins/:id [get]
 func (s *Server) handleGetPin(e echo.Context, u *User) error {
 	id, err := strconv.Atoi(e.Param("requestid"))
@@ -735,7 +735,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Description  Replace a pinned object
 // @Tags         pinning
 // @Produce      json
-// @Param        id   path      string  true  "id"
+// @Param        id  path  string  true  "id"
 // @Router       /pinning/pins/:id [post]
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
@@ -795,7 +795,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 // @Description  Delete a pinned object
 // @Tags         pinning
 // @Produce      json
-// @Param        id   path      string  true  "id"
+// @Param        id  path  string  true  "id"
 // @Router       /pinning/pins/:id [delete]
 func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	// TODO: need to cancel any in-progress pinning operation

@@ -112,3 +112,12 @@ At this point you may begin adding files to estuary via the API described in the
 Most Estuary open source projects are licensed under the [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0).
 
 To view the license, go [here](LICENSE.md)
+## Building
+
+Estuary is an open source experimental IPFS node and is open for anyone to propose changes and modify. 
+
+### API Changes
+We use swagger to document all of our endpoints and we require developers to annotate the function that complies with the echo-swagger specification. 
+
+- [echo-swagger](https://github.com/swaggo/echo-swagger)
+- Add comments to your API source code, See [Declarative Comments Format](https://github.com/swaggo/swag#declarative-comments-format).

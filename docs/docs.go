@@ -13,11 +13,10 @@ const docTemplate_swagger = `{
         "termsOfService": "http://estuary.tech",
         "contact": {
             "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
+            "url": "https://docs.estuary.tech/feedback"
         },
         "license": {
-            "name": "Apache 2.0",
+            "name": "Apache 2.0 Apache-2.0 OR MIT",
             "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
         },
         "version": "{{.Version}}"
@@ -25,6 +24,20 @@ const docTemplate_swagger = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/users": {
+            "get": {
+                "description": "Get all users",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin",
+                    "Users"
+                ],
+                "summary": "Get all users",
+                "responses": {}
+            }
+        },
         "/collections/add-content": {
             "post": {
                 "description": "Add contents to a collection",
@@ -700,7 +713,7 @@ const docTemplate_swagger = `{
 
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
-	Version:          "1.0",
+	Version:          "0.0.0",
 	Host:             "localhost:3004",
 	BasePath:         "/",
 	Schemes:          []string{},
