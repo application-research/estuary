@@ -1,5 +1,5 @@
 basePath: /
-host: localhost:3004
+host: "1111"
 info:
   contact:
     name: API Support
@@ -16,477 +16,477 @@ paths:
     get:
       description: Get all users
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get all users
       tags:
-      - Admin
-      - Users
+        - Admin
+        - Users
   /collections/add-content:
     post:
       description: Add contents to a collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add contents to a collection
       tags:
-      - collections
+        - collections
   /collections/content/:collection-id:
     get:
       description: Get contents in a collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get contents in a collection
       tags:
-      - collections
+        - collections
   /collections/create:
     post:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - collections
+        - collections
   /collections/fs/add:
     post:
       description: Add a file to a collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add a file to a collection
       tags:
-      - collections
+        - collections
   /collections/fs/list:
     get:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - collections
+        - collections
   /collections/list:
     get:
       description: List all pinned objects
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: List all collections
       tags:
-      - collections
+        - collections
   /content/add:
     post:
       description: Add a new content
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add a new content
       tags:
-      - content
+        - content
   /content/add-car:
     post:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - content
+        - content
   /content/add-ipfs:
     post:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - content
+        - content
   /content/aggregated/:content:
     get:
       description: Get aggregated content stats
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get aggregated content stats
       tags:
-      - content
+        - content
   /content/all-deals:
     get:
       description: Get all deals for a user
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get all deals for a user
       tags:
-      - content
+        - content
   /content/bw-usage/:content:
     get:
       description: Get content bandwidth
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get content bandwidth
       tags:
-      - content
+        - content
   /content/create:
     post:
       description: Add a new content
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add a new content
       tags:
-      - content
+        - content
   /content/deals:
     get:
       description: Content with deals
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Content with deals
       tags:
-      - content
+        - content
   /content/ensure-replication/:datacid:
     get:
       description: Ensure Replication
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Ensure Replication
       tags:
-      - content
+        - content
   /content/failures/:content:
     get:
       description: List all failures for a content
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: List all failures for a content
       tags:
-      - content
+        - content
   /content/list:
     get:
       description: List all pinned objects
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: List all pinned objects
       tags:
-      - content
+        - content
   /content/staging-zones:
     get:
       description: Get staging zone for user
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get staging zone for user
       tags:
-      - content
+        - content
   /content/stats:
     get:
       description: Add a new content
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add a new content
       tags:
-      - content
+        - content
   /content/status/:id:
     get:
       description: Content Status
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Content Status
       tags:
-      - content
+        - content
   /deal/estimate:
     get:
       description: Estimate the cost of a deal
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Estimate the cost of a deal
       tags:
-      - deals
+        - deals
   /deal/info/:dealid:
     get:
       description: Get Deal Info
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get Deal Info
       tags:
-      - deals
+        - deals
   /deal/make/:miner:
     post:
       description: Make Deal
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Make Deal
       tags:
-      - deals
+        - deals
   /deal/proposal/:propcid:
     get:
       description: Get Proposal
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get Proposal
       tags:
-      - deals
+        - deals
   /deal/query/:miner:
     get:
       description: Query Ask
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Query Ask
       tags:
-      - deals
+        - deals
   /deal/status-by-proposal/:propcid:
     get:
       description: Get Deal Status by PropCid
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get Deal Status by PropCid
       tags:
-      - deals
+        - deals
   /deal/status/:deal:
     get:
       description: Get Deal Status
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get Deal Status
       tags:
-      - deals
+        - deals
   /deal/status/:miner/:propcid:
     get:
       description: Deal Status
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Deal Status
       tags:
-      - deals
+        - deals
   /deal/transfer/in-progress:
     get:
       description: Transfer In Progress
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Transfer In Progress
       tags:
-      - deals
+        - deals
   /deal/transfer/status:
     post:
       description: Transfer Status
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Transfer Status
       tags:
-      - deals
+        - deals
   /pinning/pins:
     get:
       description: List all pinned objects
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: List all pinned objects
       tags:
-      - pinning
+        - pinning
     post:
       description: Add and pin an object
       parameters:
-      - description: cid
-        in: path
-        name: cid
-        required: true
-        type: string
-      - description: name
-        in: path
-        name: name
-        required: true
-        type: string
+        - description: cid
+          in: path
+          name: cid
+          required: true
+          type: string
+        - description: name
+          in: path
+          name: name
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Add and pin object
       tags:
-      - pinning
+        - pinning
   /pinning/pins/:id:
     delete:
       description: Delete a pinned object
       parameters:
-      - description: id
-        in: path
-        name: id
-        required: true
-        type: string
+        - description: id
+          in: path
+          name: id
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Delete a pinned object
       tags:
-      - pinning
+        - pinning
     get:
       description: Get a pinned objects
       parameters:
-      - description: cid
-        in: path
-        name: id
-        required: true
-        type: string
+        - description: cid
+          in: path
+          name: id
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get a pinned objects
       tags:
-      - pinning
+        - pinning
     post:
       description: Replace a pinned object
       parameters:
-      - description: id
-        in: path
-        name: id
-        required: true
-        type: string
+        - description: id
+          in: path
+          name: id
+          required: true
+          type: string
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Replace a pinned object
       tags:
-      - pinning
+        - pinning
   /public/by-cid/:cid:
     get:
       description: Get Content by Cid
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get Content by Cid
       tags:
-      - public
+        - public
   /public/deal/failures:
     get:
       description: Get storage failures
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get storage failures
       tags:
-      - public
-      - deals
+        - public
+        - deals
   /public/info:
     get:
       description: Get public node info
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get public node info
       tags:
-      - public
-      - deals
+        - public
+        - deals
   /public/metrics/deals-on-chain:
     get:
       description: Get deal metrics
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get deal metrics
       tags:
-      - public
-      - metrics
+        - public
+        - metrics
   /public/miners:
     get:
       description: Get all miners
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get all miners
       tags:
-      - public
-      - net
+        - public
+        - net
   /public/miners/deals/:miner:
     get:
       description: Get all miners
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get all miners
       tags:
-      - public
-      - miner
+        - public
+        - miner
   /public/miners/failures/:miners:
     get:
       description: Get all miners
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get all miners
       tags:
-      - public
-      - net
+        - public
+        - net
   /public/miners/stats/:miner:
     get:
       description: Get miner stats
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Get miner stats
       tags:
-      - public
-      - miner
+        - public
+        - miner
   /public/net/addrs:
     get:
       description: Net Addrs
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Net Addrs
       tags:
-      - public
-      - net
+        - public
+        - net
   /public/net/peers:
     get:
       description: Net Peers
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Net Peers
       tags:
-      - public
-      - net
+        - public
+        - net
   /public/stats:
     get:
       description: Public stats
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Public stats
       tags:
-      - public
+        - public
   /user/add:
     post:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - content
+        - content
   /user/api-keys:
     post:
       description: Create a new collection
       produces:
-      - application/json
+        - application/json
       responses: {}
       summary: Create a new collection
       tags:
-      - User
+        - User
 swagger: "2.0"

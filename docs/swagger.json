@@ -14,7 +14,7 @@
     },
     "version": "0.0.0"
   },
-  "host": "localhost:3004",
+  "host": "1111",
   "basePath": "/",
   "paths": {
     "/admin/users": {
