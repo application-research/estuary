@@ -2,17 +2,26 @@ basePath: /
 host: localhost:3004
 info:
   contact:
-    email: support@swagger.io
     name: API Support
-    url: http://www.swagger.io/support
+    url: https://docs.estuary.tech/feedback
   description: This is the API for the Estuary application.
   license:
-    name: Apache 2.0
+    name: Apache 2.0 Apache-2.0 OR MIT
     url: http://www.apache.org/licenses/LICENSE-2.0.html
   termsOfService: http://estuary.tech
   title: Estuary API
-  version: "1.0"
+  version: 0.0.0
 paths:
+  /admin/users:
+    get:
+      description: Get all users
+      produces:
+      - application/json
+      responses: {}
+      summary: Get all users
+      tags:
+      - Admin
+      - Users
   /collections/add-content:
     post:
       description: Add contents to a collection

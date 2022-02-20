@@ -66,19 +66,18 @@ import (
 )
 
 // @title Estuary API
-// @version 1.0
+// @version 0.0.0
 // @description This is the API for the Estuary application.
 // @termsOfService http://estuary.tech
 
 // @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
+// @contact.url https://docs.estuary.tech/feedback
 
-// @license.name Apache 2.0
+// @license.name Apache 2.0 Apache-2.0 OR MIT
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:3004
-// @BasePath /
+// @host      localhost:3004
+// @BasePath  /
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 
 	e := echo.New()
@@ -3113,6 +3112,12 @@ type adminUserResponse struct {
 	NumFiles  int `json:"numFiles"`
 }
 
+// handleAdminGetUsers godoc
+// @Summary      Get all users
+// @Description  Get all users
+// @Tags         Admin,Users
+// @Produce      json
+// @Router       /admin/users [get]
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
 	if err := s.DB.Model(Content{}).

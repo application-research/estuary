@@ -1,692 +1,705 @@
 {
-    "swagger": "2.0",
-    "info": {
-        "description": "This is the API for the Estuary application.",
-        "title": "Estuary API",
-        "termsOfService": "http://estuary.tech",
-        "contact": {
-            "name": "API Support",
-            "url": "http://www.swagger.io/support",
-            "email": "support@swagger.io"
-        },
-        "license": {
-            "name": "Apache 2.0",
-            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
-        },
-        "version": "1.0"
+  "swagger": "2.0",
+  "info": {
+    "description": "This is the API for the Estuary application.",
+    "title": "Estuary API",
+    "termsOfService": "http://estuary.tech",
+    "contact": {
+      "name": "API Support",
+      "url": "https://docs.estuary.tech/feedback"
     },
-    "host": "localhost:3004",
-    "basePath": "/",
-    "paths": {
-        "/collections/add-content": {
-            "post": {
-                "description": "Add contents to a collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Add contents to a collection",
-                "responses": {}
-            }
-        },
-        "/collections/content/:collection-id": {
-            "get": {
-                "description": "Get contents in a collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Get contents in a collection",
-                "responses": {}
-            }
-        },
-        "/collections/create": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        },
-        "/collections/fs/add": {
-            "post": {
-                "description": "Add a file to a collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Add a file to a collection",
-                "responses": {}
-            }
-        },
-        "/collections/fs/list": {
-            "get": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        },
-        "/collections/list": {
-            "get": {
-                "description": "List all pinned objects",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "List all collections",
-                "responses": {}
-            }
-        },
-        "/content/add": {
-            "post": {
-                "description": "Add a new content",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Add a new content",
-                "responses": {}
-            }
-        },
-        "/content/add-car": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        },
-        "/content/add-ipfs": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        },
-        "/content/aggregated/:content": {
-            "get": {
-                "description": "Get aggregated content stats",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Get aggregated content stats",
-                "responses": {}
-            }
-        },
-        "/content/all-deals": {
-            "get": {
-                "description": "Get all deals for a user",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Get all deals for a user",
-                "responses": {}
-            }
-        },
-        "/content/bw-usage/:content": {
-            "get": {
-                "description": "Get content bandwidth",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Get content bandwidth",
-                "responses": {}
-            }
-        },
-        "/content/create": {
-            "post": {
-                "description": "Add a new content",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Add a new content",
-                "responses": {}
-            }
-        },
-        "/content/deals": {
-            "get": {
-                "description": "Content with deals",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Content with deals",
-                "responses": {}
-            }
-        },
-        "/content/ensure-replication/:datacid": {
-            "get": {
-                "description": "Ensure Replication",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Ensure Replication",
-                "responses": {}
-            }
-        },
-        "/content/failures/:content": {
-            "get": {
-                "description": "List all failures for a content",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "List all failures for a content",
-                "responses": {}
-            }
-        },
-        "/content/list": {
-            "get": {
-                "description": "List all pinned objects",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "List all pinned objects",
-                "responses": {}
-            }
-        },
-        "/content/staging-zones": {
-            "get": {
-                "description": "Get staging zone for user",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Get staging zone for user",
-                "responses": {}
-            }
-        },
-        "/content/stats": {
-            "get": {
-                "description": "Add a new content",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Add a new content",
-                "responses": {}
-            }
-        },
-        "/content/status/:id": {
-            "get": {
-                "description": "Content Status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Content Status",
-                "responses": {}
-            }
-        },
-        "/deal/estimate": {
-            "get": {
-                "description": "Estimate the cost of a deal",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Estimate the cost of a deal",
-                "responses": {}
-            }
-        },
-        "/deal/info/:dealid": {
-            "get": {
-                "description": "Get Deal Info",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Deal Info",
-                "responses": {}
-            }
-        },
-        "/deal/make/:miner": {
-            "post": {
-                "description": "Make Deal",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Make Deal",
-                "responses": {}
-            }
-        },
-        "/deal/proposal/:propcid": {
-            "get": {
-                "description": "Get Proposal",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Proposal",
-                "responses": {}
-            }
-        },
-        "/deal/query/:miner": {
-            "get": {
-                "description": "Query Ask",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Query Ask",
-                "responses": {}
-            }
-        },
-        "/deal/status-by-proposal/:propcid": {
-            "get": {
-                "description": "Get Deal Status by PropCid",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Deal Status by PropCid",
-                "responses": {}
-            }
-        },
-        "/deal/status/:deal": {
-            "get": {
-                "description": "Get Deal Status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Deal Status",
-                "responses": {}
-            }
-        },
-        "/deal/status/:miner/:propcid": {
-            "get": {
-                "description": "Deal Status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Deal Status",
-                "responses": {}
-            }
-        },
-        "/deal/transfer/in-progress": {
-            "get": {
-                "description": "Transfer In Progress",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Transfer In Progress",
-                "responses": {}
-            }
-        },
-        "/deal/transfer/status": {
-            "post": {
-                "description": "Transfer Status",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Transfer Status",
-                "responses": {}
-            }
-        },
-        "/pinning/pins": {
-            "get": {
-                "description": "List all pinned objects",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "List all pinned objects",
-                "responses": {}
-            },
-            "post": {
-                "description": "Add and pin an object",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Add and pin object",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "cid",
-                        "name": "cid",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "name",
-                        "name": "name",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/pinning/pins/:id": {
-            "get": {
-                "description": "Get a pinned objects",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Get a pinned objects",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "cid",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            },
-            "post": {
-                "description": "Replace a pinned object",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Replace a pinned object",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "id",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            },
-            "delete": {
-                "description": "Delete a pinned object",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Delete a pinned object",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "id",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/public/by-cid/:cid": {
-            "get": {
-                "description": "Get Content by Cid",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public"
-                ],
-                "summary": "Get Content by Cid",
-                "responses": {}
-            }
-        },
-        "/public/deal/failures": {
-            "get": {
-                "description": "Get storage failures",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "deals"
-                ],
-                "summary": "Get storage failures",
-                "responses": {}
-            }
-        },
-        "/public/info": {
-            "get": {
-                "description": "Get public node info",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "deals"
-                ],
-                "summary": "Get public node info",
-                "responses": {}
-            }
-        },
-        "/public/metrics/deals-on-chain": {
-            "get": {
-                "description": "Get deal metrics",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "metrics"
-                ],
-                "summary": "Get deal metrics",
-                "responses": {}
-            }
-        },
-        "/public/miners": {
-            "get": {
-                "description": "Get all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Get all miners",
-                "responses": {}
-            }
-        },
-        "/public/miners/deals/:miner": {
-            "get": {
-                "description": "Get all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "miner"
-                ],
-                "summary": "Get all miners",
-                "responses": {}
-            }
-        },
-        "/public/miners/failures/:miners": {
-            "get": {
-                "description": "Get all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Get all miners",
-                "responses": {}
-            }
-        },
-        "/public/miners/stats/:miner": {
-            "get": {
-                "description": "Get miner stats",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "miner"
-                ],
-                "summary": "Get miner stats",
-                "responses": {}
-            }
-        },
-        "/public/net/addrs": {
-            "get": {
-                "description": "Net Addrs",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Net Addrs",
-                "responses": {}
-            }
-        },
-        "/public/net/peers": {
-            "get": {
-                "description": "Net Peers",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Net Peers",
-                "responses": {}
-            }
-        },
-        "/public/stats": {
-            "get": {
-                "description": "Public stats",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public"
-                ],
-                "summary": "Public stats",
-                "responses": {}
-            }
-        },
-        "/user/add": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        },
-        "/user/api-keys": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "User"
-                ],
-                "summary": "Create a new collection",
-                "responses": {}
-            }
-        }
+    "license": {
+      "name": "Apache 2.0 Apache-2.0 OR MIT",
+      "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+    },
+    "version": "0.0.0"
+  },
+  "host": "localhost:3004",
+  "basePath": "/",
+  "paths": {
+    "/admin/users": {
+      "get": {
+        "description": "Get all users",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "Admin",
+          "Users"
+        ],
+        "summary": "Get all users",
+        "responses": {}
+      }
+    },
+    "/collections/add-content": {
+      "post": {
+        "description": "Add contents to a collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Add contents to a collection",
+        "responses": {}
+      }
+    },
+    "/collections/content/:collection-id": {
+      "get": {
+        "description": "Get contents in a collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Get contents in a collection",
+        "responses": {}
+      }
+    },
+    "/collections/create": {
+      "post": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
+    },
+    "/collections/fs/add": {
+      "post": {
+        "description": "Add a file to a collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Add a file to a collection",
+        "responses": {}
+      }
+    },
+    "/collections/fs/list": {
+      "get": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
+    },
+    "/collections/list": {
+      "get": {
+        "description": "List all pinned objects",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "List all collections",
+        "responses": {}
+      }
+    },
+    "/content/add": {
+      "post": {
+        "description": "Add a new content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add a new content",
+        "responses": {}
+      }
+    },
+    "/content/add-car": {
+      "post": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
+    },
+    "/content/add-ipfs": {
+      "post": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
+    },
+    "/content/aggregated/:content": {
+      "get": {
+        "description": "Get aggregated content stats",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get aggregated content stats",
+        "responses": {}
+      }
+    },
+    "/content/all-deals": {
+      "get": {
+        "description": "Get all deals for a user",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get all deals for a user",
+        "responses": {}
+      }
+    },
+    "/content/bw-usage/:content": {
+      "get": {
+        "description": "Get content bandwidth",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get content bandwidth",
+        "responses": {}
+      }
+    },
+    "/content/create": {
+      "post": {
+        "description": "Add a new content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add a new content",
+        "responses": {}
+      }
+    },
+    "/content/deals": {
+      "get": {
+        "description": "Content with deals",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Content with deals",
+        "responses": {}
+      }
+    },
+    "/content/ensure-replication/:datacid": {
+      "get": {
+        "description": "Ensure Replication",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Ensure Replication",
+        "responses": {}
+      }
+    },
+    "/content/failures/:content": {
+      "get": {
+        "description": "List all failures for a content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "List all failures for a content",
+        "responses": {}
+      }
+    },
+    "/content/list": {
+      "get": {
+        "description": "List all pinned objects",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "List all pinned objects",
+        "responses": {}
+      }
+    },
+    "/content/staging-zones": {
+      "get": {
+        "description": "Get staging zone for user",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get staging zone for user",
+        "responses": {}
+      }
+    },
+    "/content/stats": {
+      "get": {
+        "description": "Add a new content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add a new content",
+        "responses": {}
+      }
+    },
+    "/content/status/:id": {
+      "get": {
+        "description": "Content Status",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Content Status",
+        "responses": {}
+      }
+    },
+    "/deal/estimate": {
+      "get": {
+        "description": "Estimate the cost of a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Estimate the cost of a deal",
+        "responses": {}
+      }
+    },
+    "/deal/info/:dealid": {
+      "get": {
+        "description": "Get Deal Info",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Info",
+        "responses": {}
+      }
+    },
+    "/deal/make/:miner": {
+      "post": {
+        "description": "Make Deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Make Deal",
+        "responses": {}
+      }
+    },
+    "/deal/proposal/:propcid": {
+      "get": {
+        "description": "Get Proposal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Proposal",
+        "responses": {}
+      }
+    },
+    "/deal/query/:miner": {
+      "get": {
+        "description": "Query Ask",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Query Ask",
+        "responses": {}
+      }
+    },
+    "/deal/status-by-proposal/:propcid": {
+      "get": {
+        "description": "Get Deal Status by PropCid",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Status by PropCid",
+        "responses": {}
+      }
+    },
+    "/deal/status/:deal": {
+      "get": {
+        "description": "Get Deal Status",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Status",
+        "responses": {}
+      }
+    },
+    "/deal/status/:miner/:propcid": {
+      "get": {
+        "description": "Deal Status",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Deal Status",
+        "responses": {}
+      }
+    },
+    "/deal/transfer/in-progress": {
+      "get": {
+        "description": "Transfer In Progress",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Transfer In Progress",
+        "responses": {}
+      }
+    },
+    "/deal/transfer/status": {
+      "post": {
+        "description": "Transfer Status",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Transfer Status",
+        "responses": {}
+      }
+    },
+    "/pinning/pins": {
+      "get": {
+        "description": "List all pinned objects",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "List all pinned objects",
+        "responses": {}
+      },
+      "post": {
+        "description": "Add and pin an object",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Add and pin object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "cid",
+            "name": "cid",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/pinning/pins/:id": {
+      "get": {
+        "description": "Get a pinned objects",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Get a pinned objects",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "cid",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      },
+      "post": {
+        "description": "Replace a pinned object",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Replace a pinned object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      },
+      "delete": {
+        "description": "Delete a pinned object",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Delete a pinned object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/by-cid/:cid": {
+      "get": {
+        "description": "Get Content by Cid",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public"
+        ],
+        "summary": "Get Content by Cid",
+        "responses": {}
+      }
+    },
+    "/public/deal/failures": {
+      "get": {
+        "description": "Get storage failures",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "deals"
+        ],
+        "summary": "Get storage failures",
+        "responses": {}
+      }
+    },
+    "/public/info": {
+      "get": {
+        "description": "Get public node info",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "deals"
+        ],
+        "summary": "Get public node info",
+        "responses": {}
+      }
+    },
+    "/public/metrics/deals-on-chain": {
+      "get": {
+        "description": "Get deal metrics",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "metrics"
+        ],
+        "summary": "Get deal metrics",
+        "responses": {}
+      }
+    },
+    "/public/miners": {
+      "get": {
+        "description": "Get all miners",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Get all miners",
+        "responses": {}
+      }
+    },
+    "/public/miners/deals/:miner": {
+      "get": {
+        "description": "Get all miners",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "miner"
+        ],
+        "summary": "Get all miners",
+        "responses": {}
+      }
+    },
+    "/public/miners/failures/:miners": {
+      "get": {
+        "description": "Get all miners",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Get all miners",
+        "responses": {}
+      }
+    },
+    "/public/miners/stats/:miner": {
+      "get": {
+        "description": "Get miner stats",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "miner"
+        ],
+        "summary": "Get miner stats",
+        "responses": {}
+      }
+    },
+    "/public/net/addrs": {
+      "get": {
+        "description": "Net Addrs",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Net Addrs",
+        "responses": {}
+      }
+    },
+    "/public/net/peers": {
+      "get": {
+        "description": "Net Peers",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Net Peers",
+        "responses": {}
+      }
+    },
+    "/public/stats": {
+      "get": {
+        "description": "Public stats",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public"
+        ],
+        "summary": "Public stats",
+        "responses": {}
+      }
+    },
+    "/user/add": {
+      "post": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
+    },
+    "/user/api-keys": {
+      "post": {
+        "description": "Create a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Create a new collection",
+        "responses": {}
+      }
     }
+  }
 }

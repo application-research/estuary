@@ -144,3 +144,7 @@ calibnet: build
 .PHONY: test
 test:
 	go test $(GOFLAGS) -v ./...
+
+.PHONY: generate-swagger
+generate-swagger:
+	scripts/swagger/swag.sh
