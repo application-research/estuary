@@ -79,3 +79,8 @@ The above commands can be repeated to create more shuttle nodes.
 ### API
 
 At this point you may begin adding files to estuary via the API described in the [documentation](https://docs.estuary.tech/api-content-add), or using the golang client [creek](https://github.com/iand/creek).
+
+## Prometheus opencensus flags
+
+The following flags can be set to enable the prometheus views
+- `ENABLE_RCMGR_BLOCK_PROTO_PEER_VIEW` enable this only if it's required. Setting this to true will enable the `RcmgrBlockProtoPeerView` which can affect the prometheus performance. To enable set this to `true`.

@@ -45,7 +45,7 @@ func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 		usefdStr = "true"
 	}
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrAllowConn.M(1))
+	stats.Record(ctx, metrics.RcmgrConns.M(1))
 }
 
 func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
@@ -60,7 +60,7 @@ func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
 		usefdStr = "true"
 	}
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrBlockConn.M(1))
+	stats.Record(ctx, metrics.RcmgrConns.M(1))
 }
 
 func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
