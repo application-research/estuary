@@ -18,3 +18,5 @@ estuary_calibnet.db
 cidlistsdir/*
 
 build/.*
+
+.vscode
