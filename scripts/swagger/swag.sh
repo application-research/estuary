@@ -4,7 +4,7 @@
 # Script Name	:   swag.sh                                                                                          
 # Description	:   Simple script to run swag.sh                                                                                                                                                                        
 # Author       	:   ARG
-# Running
+# How to run    :   ./scripts/swagger/swag.sh
 # The proper way to run this script is to run the following command:
 # `cd estuary (root directory of the project)`
 # `make generate-swagger`
@@ -79,27 +79,18 @@ chmod +x ./scripts/swagger/echo-swag/yq
 
 ./scripts/swagger/echo-swag/swag init -g handlers.go
 
+## workaround to add the security and host - this so we can add the Bearer token to the header
 ## Json 
-jq '.host = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
-jq '.securityDefinitions.bearerAuth = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
-jq '.securityDefinitions.name = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
-jq '.securityDefinitions.in = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
-
+jq '.host = "'${host}'"' ./docs/swagger.json > ./docs/swagger_host.json
+jq '."securityDefinitions"={"bearerAuth":{"type":"apiKey","name":"Authorization","in":"header"}}' ./docs/swagger_host.json > ./docs/swagger_security.json
+jq '."security"=[{"bearerAuth":[]}]' ./docs/swagger_security.json > ./docs/swagger_temp.json
 
 ## yaml
-./scripts/swagger/echo-swag/yq '.host = "'${host}'"' ./docs/swagger.yaml > ./docs/swagger_temp.yaml
+./scripts/swagger/echo-swag/yq e '.host = "'${host}'"' ./docs/swagger.yaml > ./docs/swagger_host.yaml
+./scripts/swagger/echo-swag/yq e '."securityDefinitions"={"bearerAuth":{"type":"apiKey","name":"Authorization","in":"header"}}' ./docs/swagger_host.yaml > ./docs/swagger_security.yaml
+./scripts/swagger/echo-swag/yq e '."security"=[{"bearerAuth":[]}]' ./docs/swagger_security.yaml > ./docs/swagger_temp.yaml
 
-
-## workaround to add the security and host 
-
-# securityDefinitions:
-#   bearerAuth:
-#     type: apiKey
-#     name: Authorization
-#     in: header
-# security: 
-#   - bearerAuth: []
-
+##  Move the files back
 mv ./docs/swagger_temp.json ./docs/swagger.json
 mv ./docs/swagger_temp.yaml ./docs/swagger.yaml
 
@@ -109,3 +100,4 @@ echo "Cleaning up"
 rm -Rf ./scripts/swagger/swag.tar.gz
 rm -Rf ./scripts/swagger/yq.tar.gz
 rm -Rf ./scripts/swagger/echo-swag
+rm -Rf ./docs/swagger_*

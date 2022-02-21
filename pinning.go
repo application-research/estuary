@@ -424,6 +424,9 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 // @Description  List all pinned objects
 // @Tags         pinning
 // @Produce      json
+// @Failure      400  {object}  util.HttpError
+// @Failure      404  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
 func (s *Server) handleListPins(e echo.Context, u *User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")

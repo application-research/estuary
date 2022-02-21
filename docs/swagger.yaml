@@ -1,4 +1,41 @@
 basePath: /
+definitions:
+  main.Collection:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      userId:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  main.getApiKeysResp:
+    properties:
+      expiry:
+        type: string
+      token:
+        type: string
+    type: object
+  main.userStatsResponse:
+    properties:
+      numPins:
+        type: integer
+      totalSize:
+        type: integer
+    type: object
+  util.HttpError:
+    properties:
+      code:
+        type: integer
+      details:
+        type: string
+      message:
+        type: string
+    type: object
 host: localhost:3004
 info:
   contact:
@@ -42,10 +79,26 @@ paths:
         - collections
   /collections/create:
     post:
-      description: Create a new collection
+      description: This endpoint is used to create a new collection
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Collection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Create a new collection
       tags:
         - collections
@@ -69,10 +122,34 @@ paths:
         - collections
   /collections/list:
     get:
-      description: List all pinned objects
+      description: This endpoint is used to list all collections
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Collection'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List all collections
       tags:
         - collections
@@ -297,7 +374,19 @@ paths:
       description: List all pinned objects
       produces:
         - application/json
-      responses: {}
+      responses:
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List all pinned objects
       tags:
         - pinning
@@ -481,12 +570,70 @@ paths:
       tags:
         - content
   /user/api-keys:
-    post:
-      description: Create a new collection
+    delete:
+      description: This endpoint is used to get API keys for a user.
       produces:
         - application/json
       responses: {}
-      summary: Create a new collection
+      summary: Get API keys for a user
+      tags:
+        - User
+    get:
+      description: This endpoint is used to get API keys for a user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Export user data
+      tags:
+        - User
+    post:
+      description: This endpoint is used to create API keys for a user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.getApiKeysResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create API keys for a user
+      tags:
+        - User
+  /user/stats:
+    get:
+      description: This endpoint is used to create API keys for a user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.userStatsResponse'
+      summary: Create API keys for a user
       tags:
         - User
 swagger: "2.0"
+securityDefinitions:
+  bearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+security:
+  - bearerAuth: []

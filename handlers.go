@@ -2717,6 +2717,13 @@ type userStatsResponse struct {
 	NumPins   int64 `json:"numPins"`
 }
 
+// handleGetUserStats godoc
+// @Summary      Create API keys for a user
+// @Description  This endpoint is used to create API keys for a user.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  userStatsResponse
+// @Router       /user/stats [get]
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
 	if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).
@@ -2854,6 +2861,12 @@ type getApiKeysResp struct {
 	Expiry time.Time `json:"expiry"`
 }
 
+// handleUserRevokeApiKey godoc
+// @Summary      Get API keys for a user
+// @Description  This endpoint is used to get API keys for a user.
+// @Tags         User
+// @Produce      json
+// @Router       /user/api-keys [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 	kval := c.Param("key")
 
@@ -2864,6 +2877,16 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 	return c.NoContent(200)
 }
 
+// handleUserCreateApiKey godoc
+// @Summary      Create API keys for a user
+// @Description  This endpoint is used to create API keys for a user.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  getApiKeysResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      404  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Router       /user/api-keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 	expiry := time.Now().Add(time.Hour * 24 * 30)
 	if exp := c.QueryParam("expiry"); exp != "" {
@@ -2895,11 +2918,15 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 }
 
 // handleUserGetApiKeys godoc
-// @Summary      Create a new collection
-// @Description  Create a new collection
+// @Summary      Get API keys for a user
+// @Description  This endpoint is used to get API keys for a user.
 // @Tags         User
 // @Produce      json
-// @Router       /user/api-keys [post]
+// @Success      200  {object}  []getApiKeysResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      404  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Router       /user/api-keys [get]
 func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 	var keys []AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
@@ -2924,9 +2951,13 @@ type createCollectionBody struct {
 
 // handleCreateCollection godoc
 // @Summary      Create a new collection
-// @Description  Create a new collection
+// @Description  This endpoint is used to create a new collection
 // @Tags         collections
 // @Produce      json
+// @Success      200  {object}  Collection
+// @Failure      400  {object}  util.HttpError
+// @Failure      404  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/create [post]
 func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 	var body createCollectionBody
@@ -2950,9 +2981,14 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 
 // handleListCollections godoc
 // @Summary      List all collections
-// @Description  List all pinned objects
+// @Description  This endpoint is used to list all collections
 // @Tags         collections
 // @Produce      json
+// @Param        id   path      int  true  "User ID"
+// @Success      200  {object}  []Collection
+// @Failure      400  {object}  util.HttpError
+// @Failure      404  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/list [get]
 func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	var cols []Collection
@@ -3188,6 +3224,13 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 	return c.JSON(200, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
+// handleUserExportData godoc
+// @Summary      Export user data
+// @Description  This endpoint is used to get API keys for a user.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  map[string]string
+// @Router       /user/api-keys [get]
 func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
