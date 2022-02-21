@@ -81,11 +81,28 @@ chmod +x ./scripts/swagger/echo-swag/yq
 
 ## Json 
 jq '.host = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
-mv ./docs/swagger_temp.json ./docs/swagger.json
+jq '.securityDefinitions.bearerAuth = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
+jq '.securityDefinitions.name = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
+jq '.securityDefinitions.in = "'${host}'"' ./docs/swagger.json > ./docs/swagger_temp.json
+
 
 ## yaml
 ./scripts/swagger/echo-swag/yq '.host = "'${host}'"' ./docs/swagger.yaml > ./docs/swagger_temp.yaml
+
+
+## workaround to add the security and host 
+
+# securityDefinitions:
+#   bearerAuth:
+#     type: apiKey
+#     name: Authorization
+#     in: header
+# security: 
+#   - bearerAuth: []
+
+mv ./docs/swagger_temp.json ./docs/swagger.json
 mv ./docs/swagger_temp.yaml ./docs/swagger.yaml
+
 
 ## Clean up. 
 echo "Cleaning up"

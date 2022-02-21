@@ -1,5 +1,5 @@
 basePath: /
-host: "1111"
+host: localhost:3004
 info:
   contact:
     name: API Support
