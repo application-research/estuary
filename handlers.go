@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	httpprof "net/http/pprof"
+	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
@@ -18,7 +19,6 @@ import (
 	"time"
 
 	drpc "github.com/application-research/estuary/drpc"
-	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -78,6 +78,10 @@ import (
 
 // @host localhost:3004
 // @BasePath  /
+// @securityDefinitions.Bearer
+// @securityDefinitions.Bearer.type apiKey
+// @securityDefinitions.Bearer.in header
+// @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
 
 	e := echo.New()
@@ -124,12 +128,6 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	phandle := promhttp.Handler()
 	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
 		phandle.ServeHTTP(e.Response().Writer, e.Request())
-		return nil
-	})
-
-	exporter := esmetrics.Exporter()
-	e.GET("/debug/metrics/opencensus", func(e echo.Context) error {
-		exporter.ServeHTTP(e.Response().Writer, e.Request())
 		return nil
 	})
 
@@ -302,7 +300,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
-	e.GET("/swagger/*", echoSwagger.WrapHandler)
+	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
+		e.GET("/swagger/*", echoSwagger.WrapHandler)
+	}
 	return e.Start(srv)
 }
 
