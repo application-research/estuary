@@ -60,6 +60,7 @@ import (
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
@@ -848,6 +849,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.GET("/bitswap/wantlist/:peer", s.handleGetWantlist)
 	admin.POST("/garbage/check", s.handleManualGarbageCheck)
 	admin.POST("/garbage/collect", s.handleGarbageCollect)
+	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
 
 	return e.Start(listen)
 }
@@ -2018,4 +2020,10 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+func (s *Shuttle) handleRcmgrStats(e echo.Context) error {
+	rcm := s.Node.Host.Network().ResourceManager()
+
+	return e.JSON(200, rcm.(rcmgr.ResourceManagerState).Stat())
 }
