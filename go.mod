@@ -51,8 +51,8 @@ require (
 	github.com/ipld/go-car v0.3.3
 	github.com/ipld/go-ipld-prime v0.14.4
 	github.com/jinzhu/gorm v1.9.16
-	github.com/labstack/echo/v4 v4.6.3
-	github.com/libp2p/go-libp2p v0.18.0-rc2
+	github.com/labstack/echo/v4 v4.6.1
+	github.com/libp2p/go-libp2p v0.18.0-rc5
 	github.com/libp2p/go-libp2p-connmgr v0.3.1
 	github.com/libp2p/go-libp2p-core v0.14.0
 	github.com/libp2p/go-libp2p-kad-dht v0.15.0
