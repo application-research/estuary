@@ -27,8 +27,7 @@ var (
 	ProtocolID, _ = tag.NewKey("proto")
 	Direction, _  = tag.NewKey("direction")
 	UseFD, _      = tag.NewKey("use_fd")
-	Block, _      = tag.NewKey("block")
-	Allow, _      = tag.NewKey("allow")
+	Op, _         = tag.NewKey("op")
 )
 
 // Measures
@@ -39,7 +38,10 @@ var (
 	APIRequestDuration = stats.Float64("api/request_duration_ms", "Duration of API requests", stats.UnitMilliseconds)
 
 	// rcmgr
-	RcmgrConns          = stats.Int64("rcmgr/conns", "Number of connections", stats.UnitDimensionless)
+	RcmgrConn           = stats.Int64("rcmgr/conn", "Number of connections", stats.UnitDimensionless)
+	RcmgrStream         = stats.Int64("rcmgr/stream", "Number of allowed streams", stats.UnitDimensionless)
+	RcmgrAllowConn      = stats.Int64("rcmgr/allow_conn", "Number of allowed connections", stats.UnitDimensionless)
+	RcmgrBlockConn      = stats.Int64("rcmgr/block_conn", "Number of blocked connections", stats.UnitDimensionless)
 	RcmgrAllowStream    = stats.Int64("rcmgr/allow_stream", "Number of allowed streams", stats.UnitDimensionless)
 	RcmgrBlockStream    = stats.Int64("rcmgr/block_stream", "Number of blocked streams", stats.UnitDimensionless)
 	RcmgrAllowPeer      = stats.Int64("rcmgr/allow_peer", "Number of allowed peer connections", stats.UnitDimensionless)
@@ -64,10 +66,27 @@ var (
 	}
 
 	// rcmgr
-	RcmgrConnsView = &view.View{
-		Measure:     RcmgrConns,
+	RcmgrConnView = &view.View{
+		Measure:     RcmgrConn,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{Direction, UseFD, Block, Allow},
+		TagKeys:     []tag.Key{Direction, UseFD, Op},
+	}
+
+	RcmgrStreamView = &view.View{
+		Measure:     RcmgrStream,
+		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Direction, UseFD, Op},
+	}
+
+	RcmgrAllowConnView = &view.View{
+		Measure:     RcmgrAllowConn,
+		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Direction, UseFD},
+	}
+	RcmgrBlockConnView = &view.View{
+		Measure:     RcmgrBlockConn,
+		Aggregation: view.Count(),
+		TagKeys:     []tag.Key{Direction, UseFD},
 	}
 	RcmgrAllowStreamView = &view.View{
 		Measure:     RcmgrAllowStream,
@@ -133,7 +152,10 @@ var (
 var DefaultViews = func() []*view.View {
 	views := []*view.View{
 		InfoView,
-		RcmgrConnsView,
+		RcmgrConnView,
+		RcmgrStreamView,
+		RcmgrAllowConnView,
+		RcmgrBlockConnView,
 		RcmgrAllowStreamView,
 		RcmgrBlockStreamView,
 		RcmgrAllowPeerView,
@@ -149,11 +171,10 @@ var DefaultViews = func() []*view.View {
 	views = append(views, blockstore.DefaultViews...)
 	views = append(views, rpcmetrics.DefaultViews...)
 
-	//	additional optional views based on environment variable
-	if os.Getenv("ENABLE_RCMGR_BLOCK_PROTO_PEER_VIEW") == "true" {
+	//	additional optional views based on environment
+	if os.Getenv("RCMGR_BLOCK_PROTO_PEER_VIEW") == "true" {
 		views = append(views, RcmgrBlockProtoPeerView)
 	}
-
 	return views
 }()
 

@@ -33,6 +33,48 @@ func NewResourceManager(limiter *rcmgr.BasicLimiter) (network.ResourceManager, e
 
 type rcmgrMetrics struct{}
 
+func (r rcmgrMetrics) Conn(dir network.Direction, usefd bool, op string) {
+	ctx := context.Background()
+	dirStr := "outbound"
+	if dir == network.DirInbound {
+		dirStr = "inbound"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
+	usefdStr := "false"
+	if usefd {
+		usefdStr = "true"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrConn.M(1))
+
+}
+func (r rcmgrMetrics) Stream(dir network.Direction, usefd bool, op string) {
+	ctx := context.Background()
+	dirStr := "outbound"
+	if dir == network.DirInbound {
+		dirStr = "inbound"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
+
+	usefdStr := "false"
+	if usefd {
+		usefdStr = "true"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
+
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrStream.M(1))
+}
+
 func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 	ctx := context.Background()
 	dirStr := "outbound"
@@ -45,7 +87,7 @@ func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
 		usefdStr = "true"
 	}
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrConns.M(1))
+	stats.Record(ctx, metrics.RcmgrAllowConn.M(1))
 }
 
 func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
@@ -60,7 +102,7 @@ func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
 		usefdStr = "true"
 	}
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrConns.M(1))
+	stats.Record(ctx, metrics.RcmgrBlockConn.M(1))
 }
 
 func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
