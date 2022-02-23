@@ -421,7 +421,7 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 
 // handleListPins godoc
 // @Summary      List all pinned objects
-// @Description  List all pinned objects
+// @Description  This endpoint lists all pinned objects
 // @Tags         pinning
 // @Produce      json
 // @Failure      400  {object}  util.HttpError
@@ -635,7 +635,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool,
 
 // handleAddPin  godoc
 // @Summary      Add and pin object
-// @Description  Add and pin an object
+// @Description  This endpoint adds a pin to the IPFS daemon.
 // @Tags         pinning
 // @Produce      json
 // @in           200,400,default  string  Token "token"
@@ -706,7 +706,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 // handleGetPin  godoc
 // @Summary      Get a pinned objects
-// @Description  Get a pinned objects
+// @Description  This endpoint returns a pinned object.
 // @Tags         pinning
 // @Produce      json
 // @Param        id  path  string  true  "cid"
@@ -732,7 +732,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 
 // handleReplacePin godoc
 // @Summary      Replace a pinned object
-// @Description  Replace a pinned object
+// @Description  This endpoint replaces a pinned object.
 // @Tags         pinning
 // @Produce      json
 // @Param        id  path  string  true  "id"
@@ -792,7 +792,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 
 // handleDeletePin godoc
 // @Summary      Delete a pinned object
-// @Description  Delete a pinned object
+// @Description  This endpoint deletes a pinned object.
 // @Tags         pinning
 // @Produce      json
 // @Param        id  path  string  true  "id"

@@ -26,6 +26,4 @@ NOTE: Be sure to merge the latest from "upstream" before making a pull request!
 
 Most Estuary open source projects are licensed under the [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0).
 
-Estuary does not require you to assign the copyright of your contributions, you retain the copyright. Estuary does require that you make your contributions available under the Apache 2.0 license in order for it be included in the main repo.
-
-If appropriate, include the Apache 2.0 license summary at the top of each file along with the copyright info. If you are adding a new file that you wrote, include your name in the copyright notice in the license summary at the top of the file.
+To view the license, go [here](LICENSE.md)
