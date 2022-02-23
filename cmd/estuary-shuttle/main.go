@@ -916,8 +916,8 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 }
 
 // handleAdd godoc
-// @Summary      Create a new collection
-// @Description  This endpoint creates a new collection
+// @Summary      Upload a file
+// @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
 // @Router       /content/add [post]
@@ -1039,8 +1039,8 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 }
 
 // handleAddCar godoc
-// @Summary      Create a new car
-// @Description  This endpoint creates a new car
+// @Summary      Upload content via a car file
+// @Description  This endpoint uploads content via a car file
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-car [post]
