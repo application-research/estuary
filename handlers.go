@@ -74,9 +74,9 @@ import (
 // @contact.url https://docs.estuary.tech/feedback
 
 // @license.name Apache 2.0 Apache-2.0 OR MIT
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @license.url https://github.com/application-research/estuary/blob/master/LICENSE.md
 
-// @host localhost:3004
+// @host api.estuary.tech
 // @BasePath  /
 // @securityDefinitions.Bearer
 // @securityDefinitions.Bearer.type apiKey
@@ -368,8 +368,8 @@ func (s *Server) handleTestError(c echo.Context) error {
 }
 
 // handleStats godoc
-// @Summary      Add a new content
-// @Description  Add a new content
+// @Summary      Get content stats
+// @Description  Get content stats
 // @Tags         content
 // @Produce      json
 // @Router       /content/stats [get]
@@ -442,8 +442,8 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 }
 
 // handleAddIpfs godoc
-// @Summary      Create a new collection
-// @Description  Create a new collection
+// @Summary      Add IPFS object
+// @Description  Add IPFS object
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-ipfs [post]
@@ -525,8 +525,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 }
 
 // handleAddCar godoc
-// @Summary      Create a new collection
-// @Description  Create a new collection
+// @Summary      Add Car object
+// @Description  Add Car object
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-car [post]
@@ -649,8 +649,8 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 }
 
 // handleAdd godoc
-// @Summary      Add a new content
-// @Description  Add a new content
+// @Summary      Add new content
+// @Description  This endpoint is used to upload new content
 // @Tags         content
 // @Produce      json
 // @Router       /content/add [post]
@@ -957,7 +957,7 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 
 // handleEnsureReplication godoc
 // @Summary      Ensure Replication
-// @Description  Ensure Replication
+// @Description  This endpoint ensures that the content is replicated to the specified number of providers
 // @Tags         content
 // @Produce      json
 // @Router       /content/ensure-replication/:datacid [get]
@@ -979,8 +979,8 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 }
 
 // handleListContent godoc
-// @Summary      List all pinned objects
-// @Description  List all pinned objects
+// @Summary      List all pinned content
+// @Description  This endpoint lists all content
 // @Tags         content
 // @Produce      json
 // @Router       /content/list [get]
@@ -1000,7 +1000,7 @@ type expandedContent struct {
 
 // handleListContentWithDeals godoc
 // @Summary      Content with deals
-// @Description  Content with deals
+// @Description  This endpoint lists all content with deals
 // @Tags         content
 // @Produce      json
 // @Router       /content/deals [get]
@@ -1062,7 +1062,7 @@ type dealStatus struct {
 
 // handleContentStatus godoc
 // @Summary      Content Status
-// @Description  Content Status
+// @Description  This endpoint returns the status of a content
 // @Tags         content
 // @Produce      json
 // @Router       /content/status/:id [get]
@@ -1145,7 +1145,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 // handleGetDealStatus godoc
 // @Summary      Get Deal Status
-// @Description  Get Deal Status
+// @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/status/:deal [get]
@@ -1259,7 +1259,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 
 // handleGetContentByCid godoc
 // @Summary      Get Content by Cid
-// @Description  Get Content by Cid
+// @Description  This endpoint returns the content associated with a CID
 // @Tags         public
 // @Produce      json
 // @Router       /public/by-cid/:cid [get]
@@ -1315,7 +1315,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 
 // handleQueryAsk godoc
 // @Summary      Query Ask
-// @Description  Query Ask
+// @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/query/:miner [get]
@@ -1344,7 +1344,7 @@ type dealRequest struct {
 
 // handleMakeDeal godoc
 // @Summary      Make Deal
-// @Description  Make Deal
+// @Description  This endpoint makes a deal for a given content and miner
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/make/:miner [post]
@@ -1385,7 +1385,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 // handleTransferStatus godoc
 // @Summary      Transfer Status
-// @Description  Transfer Status
+// @Description  This endpoint returns the status of a transfer
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/transfer/status [post]
@@ -1405,7 +1405,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 
 // handleTransferInProgress godoc
 // @Summary      Transfer In Progress
-// @Description  Transfer In Progress
+// @Description  This endpoint returns the in-progress transfers
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/transfer/in-progress [get]
@@ -1534,7 +1534,7 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 
 // handleDealStatus godoc
 // @Summary      Deal Status
-// @Description  Deal Status
+// @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/status/:miner/:propcid [get]
@@ -1561,7 +1561,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 
 // handleGetProposal godoc
 // @Summary      Get Proposal
-// @Description  Get Proposal
+// @Description  This endpoint returns the proposal for a deal
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/proposal/:propcid [get]
@@ -1586,7 +1586,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 
 // handleGetDealInfo godoc
 // @Summary      Get Deal Info
-// @Description  Get Deal Info
+// @Description  This endpoint returns the deal info for a deal
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/info/:dealid [get]
@@ -1748,7 +1748,7 @@ type minerResp struct {
 
 // handleAdminGetMiners godoc
 // @Summary      Get all miners
-// @Description  Get all miners
+// @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
 // @Router       /public/miners [get]
@@ -2076,7 +2076,7 @@ type priceEstimateResponse struct {
 
 // handleEstimateDealCost godoc
 // @Summary      Estimate the cost of a deal
-// @Description  Estimate the cost of a deal
+// @Description  This endpoint estimates the cost of a deal
 // @Tags         deals
 // @Produce      json
 // @Router       /deal/estimate [get]
@@ -2104,7 +2104,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 
 // handleGetMinerFailures godoc
 // @Summary      Get all miners
-// @Description  Get all miners
+// @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
 // @Router       /public/miners/failures/:miners [get]
@@ -2145,7 +2145,7 @@ type minerChainInfo struct {
 
 // handleGetMinerStats godoc
 // @Summary      Get miner stats
-// @Description  Get miner stats
+// @Description  This endpoint returns miner stats
 // @Tags         public,miner
 // @Produce      json
 // @Router       /public/miners/stats/:miner [get]
@@ -2234,8 +2234,8 @@ type minerDealsResp struct {
 }
 
 // handleGetMinerDeals godoc
-// @Summary      Get all miners
-// @Description  Get all miners
+// @Summary      Get all miners deals
+// @Description  This endpoint returns all miners deals
 // @Tags         public,miner
 // @Produce      json
 // @Router       /public/miners/deals/:miner [get]
@@ -2267,7 +2267,7 @@ type bandwidthResponse struct {
 
 // handleGetContentBandwidth godoc
 // @Summary      Get content bandwidth
-// @Description  Get content bandwidth
+// @Description  This endpoint returns content bandwidth
 // @Tags         content
 // @Produce      json
 // @Router       /content/bw-usage/:content [get]
@@ -2306,7 +2306,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 
 // handleGetAggregatedForContent godoc
 // @Summary      Get aggregated content stats
-// @Description  Get aggregated content stats
+// @Description  This endpoint returns aggregated content stats
 // @Tags         content
 // @Produce      json
 // @Router       /content/aggregated/:content [get]
@@ -2338,7 +2338,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 
 // handleGetContentFailures godoc
 // @Summary      List all failures for a content
-// @Description  List all failures for a content
+// @Description  This endpoint returns all failures for a content
 // @Tags         content
 // @Produce      json
 // @Router       /content/failures/:content [get]
@@ -3023,7 +3023,7 @@ type addContentToCollectionParams struct {
 
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
-// @Description  Add contents to a collection
+// @Description  This endpoint is used to add contents to a collection
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/add-content [post]
@@ -3086,7 +3086,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 
 // handleGetCollectionContents godoc
 // @Summary      Get contents in a collection
-// @Description  Get contents in a collection
+// @Description  This endpoint is used to get contents in a collection
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/content/:collection-id [get]
@@ -3166,7 +3166,7 @@ type adminUserResponse struct {
 
 // handleAdminGetUsers godoc
 // @Summary      Get all users
-// @Description  Get all users
+// @Description  This endpoint is used to get all users
 // @Tags         Admin,Users
 // @Produce      json
 // @Router       /admin/users [get]
@@ -3193,7 +3193,7 @@ type publicStatsResponse struct {
 
 // handlePublicStats godoc
 // @Summary      Public stats
-// @Description  Public stats
+// @Description  This endpoint is used to get public stats
 // @Tags         public
 // @Produce      json
 // @Router       /public/stats [get]
@@ -3232,7 +3232,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 
 // handleGetStagingZoneForUser godoc
 // @Summary      Get staging zone for user
-// @Description  Get staging zone for user
+// @Description  This endpoint is used to get staging zone for user
 // @Tags         content
 // @Produce      json
 // @Router       /content/staging-zones [get]
@@ -3258,7 +3258,7 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 
 // handleNetPeers godoc
 // @Summary      Net Peers
-// @Description  Net Peers
+// @Description  This endpoint is used to get net peers
 // @Tags         public,net
 // @Produce      json
 // @Router       /public/net/peers [get]
@@ -3268,7 +3268,7 @@ func (s *Server) handleNetPeers(c echo.Context) error {
 
 // handleNetAddrs godoc
 // @Summary      Net Addrs
-// @Description  Net Addrs
+// @Description  This endpoint is used to get net addrs
 // @Tags         public,net
 // @Produce      json
 // @Router       /public/net/addrs [get]
@@ -3307,7 +3307,7 @@ type metricsDealJoin struct {
 
 // handleMetricsDealOnChain godoc
 // @Summary      Get deal metrics
-// @Description  Get deal metrics
+// @Description  This endpoint is used to get deal metrics
 // @Tags         public,metrics
 // @Produce      json
 // @Router       /public/metrics/deals-on-chain [get]
@@ -3439,7 +3439,7 @@ type dealPairs struct {
 
 // handleGetAllDealsForUser godoc
 // @Summary      Get all deals for a user
-// @Description  Get all deals for a user
+// @Description  This endpoint is used to get all deals for a user
 // @Tags         content
 // @Produce      json
 // @Router       /content/all-deals [get]
@@ -3967,7 +3967,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 
 // handleStorageFailures godoc
 // @Summary      Get storage failures
-// @Description  Get storage failures
+// @Description  This endpoint returns a list of storage failures
 // @Tags         public,deals
 // @Produce      json
 // @Router       /public/deal/failures [get]
@@ -4002,7 +4002,7 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 
 // handleCreateContent godoc
 // @Summary      Add a new content
-// @Description  Add a new content
+// @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
 // @Router       /content/create [post]
@@ -4316,7 +4316,7 @@ type publicNodeInfo struct {
 
 // handleGetPublicNodeInfo godoc
 // @Summary      Get public node info
-// @Description  Get public node info
+// @Description  This endpoint returns information about the node
 // @Tags         public,deals
 // @Produce      json
 // @Router       /public/info [get]
@@ -4529,7 +4529,7 @@ type collectionListResponse struct {
 
 // handleColfsListDir godoc
 // @Summary      Create a new collection
-// @Description  Create a new collection
+// @Description  This endpoint creates a new collection
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/fs/list [get]
@@ -4661,7 +4661,7 @@ func sanitizePath(p string) (string, error) {
 
 // handleColfsAdd godoc
 // @Summary      Add a file to a collection
-// @Description  Add a file to a collection
+// @Description  This endpoint adds a file to a collection
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/fs/add [post]
