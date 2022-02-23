@@ -53,20 +53,13 @@ func (r rcmgrMetrics) Conn(dir network.Direction, usefd bool, op string) {
 	stats.Record(ctx, metrics.RcmgrConn.M(1))
 
 }
-func (r rcmgrMetrics) Stream(dir network.Direction, usefd bool, op string) {
+func (r rcmgrMetrics) Stream(p peer.ID, dir network.Direction, op string) {
 	ctx := context.Background()
 	dirStr := "outbound"
 	if dir == network.DirInbound {
 		dirStr = "inbound"
 	}
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
-
-	usefdStr := "false"
-	if usefd {
-		usefdStr = "true"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-
 	opStr := "block"
 	if op == "allow" {
 		opStr = "allow"
@@ -75,106 +68,125 @@ func (r rcmgrMetrics) Stream(dir network.Direction, usefd bool, op string) {
 	stats.Record(ctx, metrics.RcmgrStream.M(1))
 }
 
-func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
+func (r rcmgrMetrics) Peer(p peer.ID, op string) {
 	ctx := context.Background()
-	dirStr := "outbound"
-	if dir == network.DirInbound {
-		dirStr = "inbound"
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
 	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
-	usefdStr := "false"
-	if usefd {
-		usefdStr = "true"
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrPeer.M(1))
+}
+
+func (r rcmgrMetrics) Proto(proto protocol.ID, op string) {
+	ctx := context.Background()
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
 	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrAllowConn.M(1))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrProto.M(1))
+}
+
+func (r rcmgrMetrics) ProtoPeer(proto protocol.ID, p peer.ID, op string) {
+	ctx := context.Background()
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrProto.M(1))
+}
+
+func (r rcmgrMetrics) Svc(svc string, op string) {
+	ctx := context.Background()
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, string(svc)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrSvc.M(1))
+}
+
+func (r rcmgrMetrics) SvcPeer(svc string, p peer.ID, op string) {
+	ctx := context.Background()
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, string(svc)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrSvcPeer.M(1))
+}
+
+func (r rcmgrMetrics) Mem(size int, op string) {
+	ctx := context.Background()
+	opStr := "block"
+	if op == "allow" {
+		opStr = "allow"
+	}
+	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
+	stats.Record(ctx, metrics.RcmgrMem.M(1))
+}
+
+func (r rcmgrMetrics) AllowConn(dir network.Direction, usefd bool) {
+	r.Conn(dir, usefd, "allow")
 }
 
 func (r rcmgrMetrics) BlockConn(dir network.Direction, usefd bool) {
-	ctx := context.Background()
-	dirStr := "outbound"
-	if dir == network.DirInbound {
-		dirStr = "inbound"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
-	usefdStr := "false"
-	if usefd {
-		usefdStr = "true"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.UseFD, usefdStr))
-	stats.Record(ctx, metrics.RcmgrBlockConn.M(1))
+	r.Conn(dir, usefd, "block")
 }
 
 func (r rcmgrMetrics) AllowStream(p peer.ID, dir network.Direction) {
-	ctx := context.Background()
-	dirStr := "outbound"
-	if dir == network.DirInbound {
-		dirStr = "inbound"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
-	stats.Record(ctx, metrics.RcmgrAllowStream.M(1))
+	r.Stream(p, dir, "allow")
 }
 
 func (r rcmgrMetrics) BlockStream(p peer.ID, dir network.Direction) {
-	ctx := context.Background()
-	dirStr := "outbound"
-	if dir == network.DirInbound {
-		dirStr = "inbound"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Direction, dirStr))
-	stats.Record(ctx, metrics.RcmgrBlockStream.M(1))
+	r.Stream(p, dir, "block")
 }
 
 func (r rcmgrMetrics) AllowPeer(p peer.ID) {
-	ctx := context.Background()
-	stats.Record(ctx, metrics.RcmgrAllowPeer.M(1))
+	r.Peer(p, "allow")
 }
 
 func (r rcmgrMetrics) BlockPeer(p peer.ID) {
-	ctx := context.Background()
-	stats.Record(ctx, metrics.RcmgrBlockPeer.M(1))
+	r.Peer(p, "block")
 }
 
 func (r rcmgrMetrics) AllowProtocol(proto protocol.ID) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
-	stats.Record(ctx, metrics.RcmgrAllowProto.M(1))
+	r.Proto(proto, "allow")
 }
 
 func (r rcmgrMetrics) BlockProtocol(proto protocol.ID) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
-	stats.Record(ctx, metrics.RcmgrBlockProto.M(1))
+	r.Proto(proto, "block")
 }
 
 func (r rcmgrMetrics) BlockProtocolPeer(proto protocol.ID, p peer.ID) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
-	stats.Record(ctx, metrics.RcmgrBlockProtoPeer.M(1))
+	r.ProtoPeer(proto, p, "block")
 }
 
 func (r rcmgrMetrics) AllowService(svc string) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
-	stats.Record(ctx, metrics.RcmgrAllowSvc.M(1))
+	r.Svc(svc, "allow")
 }
 
 func (r rcmgrMetrics) BlockService(svc string) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
-	stats.Record(ctx, metrics.RcmgrBlockSvc.M(1))
+	r.Svc(svc, "block")
 }
 
 func (r rcmgrMetrics) BlockServicePeer(svc string, p peer.ID) {
-	ctx := context.Background()
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, svc))
-	stats.Record(ctx, metrics.RcmgrBlockSvcPeer.M(1))
+	r.SvcPeer(svc, p, "block")
 }
 
 func (r rcmgrMetrics) AllowMemory(size int) {
-	stats.Record(context.Background(), metrics.RcmgrAllowMem.M(1))
+	r.Mem(size, "allow")
 }
 
 func (r rcmgrMetrics) BlockMemory(size int) {
-	stats.Record(context.Background(), metrics.RcmgrBlockMem.M(1))
+	r.Mem(size, "block")
 }

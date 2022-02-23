@@ -2,7 +2,6 @@ package metrics
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"go.opencensus.io/stats"
@@ -38,22 +37,14 @@ var (
 	APIRequestDuration = stats.Float64("api/request_duration_ms", "Duration of API requests", stats.UnitMilliseconds)
 
 	// rcmgr
-	RcmgrConn           = stats.Int64("rcmgr/conn", "Number of connections", stats.UnitDimensionless)
-	RcmgrStream         = stats.Int64("rcmgr/stream", "Number of allowed streams", stats.UnitDimensionless)
-	RcmgrAllowConn      = stats.Int64("rcmgr/allow_conn", "Number of allowed connections", stats.UnitDimensionless)
-	RcmgrBlockConn      = stats.Int64("rcmgr/block_conn", "Number of blocked connections", stats.UnitDimensionless)
-	RcmgrAllowStream    = stats.Int64("rcmgr/allow_stream", "Number of allowed streams", stats.UnitDimensionless)
-	RcmgrBlockStream    = stats.Int64("rcmgr/block_stream", "Number of blocked streams", stats.UnitDimensionless)
-	RcmgrAllowPeer      = stats.Int64("rcmgr/allow_peer", "Number of allowed peer connections", stats.UnitDimensionless)
-	RcmgrBlockPeer      = stats.Int64("rcmgr/block_peer", "Number of blocked peer connections", stats.UnitDimensionless)
-	RcmgrAllowProto     = stats.Int64("rcmgr/allow_proto", "Number of allowed streams attached to a protocol", stats.UnitDimensionless)
-	RcmgrBlockProto     = stats.Int64("rcmgr/block_proto", "Number of blocked blocked streams attached to a protocol", stats.UnitDimensionless)
-	RcmgrBlockProtoPeer = stats.Int64("rcmgr/block_proto", "Number of blocked blocked streams attached to a protocol for a specific peer", stats.UnitDimensionless)
-	RcmgrAllowSvc       = stats.Int64("rcmgr/allow_svc", "Number of allowed streams attached to a service", stats.UnitDimensionless)
-	RcmgrBlockSvc       = stats.Int64("rcmgr/block_svc", "Number of blocked blocked streams attached to a service", stats.UnitDimensionless)
-	RcmgrBlockSvcPeer   = stats.Int64("rcmgr/block_svc", "Number of blocked blocked streams attached to a service for a specific peer", stats.UnitDimensionless)
-	RcmgrAllowMem       = stats.Int64("rcmgr/allow_mem", "Number of allowed memory reservations", stats.UnitDimensionless)
-	RcmgrBlockMem       = stats.Int64("rcmgr/block_mem", "Number of blocked memory reservations", stats.UnitDimensionless)
+	RcmgrConn      = stats.Int64("rcmgr/conn", "Number of connections", stats.UnitDimensionless)
+	RcmgrStream    = stats.Int64("rcmgr/stream", "Number of allowed streams", stats.UnitDimensionless)
+	RcmgrPeer      = stats.Int64("rcmgr/peer", "Number of peers", stats.UnitDimensionless)
+	RcmgrProto     = stats.Int64("rcmgr/proto", "Number of allowed streams attached to a protocol", stats.UnitDimensionless)
+	RcmgrProtoPeer = stats.Int64("rcmgr/proto", "Number of allowed streams attached to a protocol for a specific peer", stats.UnitDimensionless)
+	RcmgrSvc       = stats.Int64("rcmgr/svc", "Number of streams attached to a service", stats.UnitDimensionless)
+	RcmgrSvcPeer   = stats.Int64("rcmgr/svc", "Number of streams attached to a service for a specific peer", stats.UnitDimensionless)
+	RcmgrMem       = stats.Int64("rcmgr/mem", "Number of memory reservations", stats.UnitDimensionless)
 )
 
 var (
@@ -78,72 +69,38 @@ var (
 		TagKeys:     []tag.Key{Direction, UseFD, Op},
 	}
 
-	RcmgrAllowConnView = &view.View{
-		Measure:     RcmgrAllowConn,
+	RcmgrPeerView = &view.View{
+		Measure:     RcmgrPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{Direction, UseFD},
+		TagKeys:     []tag.Key{PeerID, Op},
 	}
-	RcmgrBlockConnView = &view.View{
-		Measure:     RcmgrBlockConn,
+
+	RcmgrProtoView = &view.View{
+		Measure:     RcmgrProto,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{Direction, UseFD},
+		TagKeys:     []tag.Key{ProtocolID, Op},
 	}
-	RcmgrAllowStreamView = &view.View{
-		Measure:     RcmgrAllowStream,
+
+	RcmgrProtoPeerView = &view.View{
+		Measure:     RcmgrProtoPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID, Direction},
+		TagKeys:     []tag.Key{ProtocolID, PeerID, Op},
 	}
-	RcmgrBlockStreamView = &view.View{
-		Measure:     RcmgrBlockStream,
+
+	RcmgrSvcView = &view.View{
+		Measure:     RcmgrSvc,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID, Direction},
+		TagKeys:     []tag.Key{ServiceID, Op},
 	}
-	RcmgrAllowPeerView = &view.View{
-		Measure:     RcmgrAllowPeer,
+
+	RcmgrSvcPeerView = &view.View{
+		Measure:     RcmgrSvcPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID},
+		TagKeys:     []tag.Key{ServiceID, PeerID, Op},
 	}
-	RcmgrBlockPeerView = &view.View{
-		Measure:     RcmgrBlockPeer,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID},
-	}
-	RcmgrAllowProtoView = &view.View{
-		Measure:     RcmgrAllowProto,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID},
-	}
-	RcmgrBlockProtoView = &view.View{
-		Measure:     RcmgrBlockProto,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID},
-	}
-	RcmgrBlockProtoPeerView = &view.View{
-		Measure:     RcmgrBlockProtoPeer,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID, PeerID},
-	}
-	RcmgrAllowSvcView = &view.View{
-		Measure:     RcmgrAllowSvc,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID},
-	}
-	RcmgrBlockSvcView = &view.View{
-		Measure:     RcmgrBlockSvc,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID},
-	}
-	RcmgrBlockSvcPeerView = &view.View{
-		Measure:     RcmgrBlockSvcPeer,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID, PeerID},
-	}
-	RcmgrAllowMemView = &view.View{
-		Measure:     RcmgrAllowMem,
-		Aggregation: view.Count(),
-	}
-	RcmgrBlockMemView = &view.View{
-		Measure:     RcmgrBlockMem,
+
+	RcmgrMemView = &view.View{
+		Measure:     RcmgrMem,
 		Aggregation: view.Count(),
 	}
 )
@@ -154,27 +111,15 @@ var DefaultViews = func() []*view.View {
 		InfoView,
 		RcmgrConnView,
 		RcmgrStreamView,
-		RcmgrAllowConnView,
-		RcmgrBlockConnView,
-		RcmgrAllowStreamView,
-		RcmgrBlockStreamView,
-		RcmgrAllowPeerView,
-		RcmgrBlockPeerView,
-		RcmgrAllowProtoView,
-		RcmgrBlockProtoView,
-		RcmgrAllowSvcView,
-		RcmgrBlockSvcView,
-		RcmgrBlockSvcPeerView,
-		RcmgrAllowMemView,
-		RcmgrBlockMemView,
+		RcmgrPeerView,
+		RcmgrProtoView,
+		RcmgrProtoPeerView,
+		RcmgrSvcView,
+		RcmgrSvcPeerView,
+		RcmgrMemView,
 	}
 	views = append(views, blockstore.DefaultViews...)
 	views = append(views, rpcmetrics.DefaultViews...)
-
-	//	additional optional views based on environment
-	if os.Getenv("RCMGR_BLOCK_PROTO_PEER_VIEW") == "true" {
-		views = append(views, RcmgrBlockProtoPeerView)
-	}
 	return views
 }()
 
