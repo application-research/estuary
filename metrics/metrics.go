@@ -84,7 +84,7 @@ var (
 	RcmgrProtoPeerView = &view.View{
 		Measure:     RcmgrProtoPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID, PeerID, Op},
+		TagKeys:     []tag.Key{ProtocolID, Op},
 	}
 
 	RcmgrSvcView = &view.View{
@@ -96,7 +96,7 @@ var (
 	RcmgrSvcPeerView = &view.View{
 		Measure:     RcmgrSvcPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID, PeerID, Op},
+		TagKeys:     []tag.Key{ServiceID, Op},
 	}
 
 	RcmgrMemView = &view.View{

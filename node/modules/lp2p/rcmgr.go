@@ -12,9 +12,12 @@ import (
 
 	"github.com/application-research/estuary/metrics"
 
+	logging "github.com/ipfs/go-log/v2"
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 )
+
+var log = logging.Logger("rcmgr")
 
 func NewDefaultLimiter() *rcmgr.BasicLimiter {
 	return rcmgr.NewDefaultLimiter()
@@ -90,18 +93,6 @@ func (r rcmgrMetrics) Proto(proto protocol.ID, op string) {
 	stats.Record(ctx, metrics.RcmgrProto.M(1))
 }
 
-func (r rcmgrMetrics) ProtoPeer(proto protocol.ID, p peer.ID, op string) {
-	ctx := context.Background()
-	opStr := "block"
-	if op == "allow" {
-		opStr = "allow"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ProtocolID, string(proto)))
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
-	stats.Record(ctx, metrics.RcmgrProto.M(1))
-}
-
 func (r rcmgrMetrics) Svc(svc string, op string) {
 	ctx := context.Background()
 	opStr := "block"
@@ -111,18 +102,6 @@ func (r rcmgrMetrics) Svc(svc string, op string) {
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, string(svc)))
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
 	stats.Record(ctx, metrics.RcmgrSvc.M(1))
-}
-
-func (r rcmgrMetrics) SvcPeer(svc string, p peer.ID, op string) {
-	ctx := context.Background()
-	opStr := "block"
-	if op == "allow" {
-		opStr = "allow"
-	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.ServiceID, string(svc)))
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
-	stats.Record(ctx, metrics.RcmgrSvcPeer.M(1))
 }
 
 func (r rcmgrMetrics) Mem(size int, op string) {
@@ -168,7 +147,7 @@ func (r rcmgrMetrics) BlockProtocol(proto protocol.ID) {
 }
 
 func (r rcmgrMetrics) BlockProtocolPeer(proto protocol.ID, p peer.ID) {
-	r.ProtoPeer(proto, p, "block")
+	log.Infow("BlockProtocolPeer", "ProtocolID", proto, "PeerID", p)
 }
 
 func (r rcmgrMetrics) AllowService(svc string) {
@@ -180,7 +159,7 @@ func (r rcmgrMetrics) BlockService(svc string) {
 }
 
 func (r rcmgrMetrics) BlockServicePeer(svc string, p peer.ID) {
-	r.SvcPeer(svc, p, "block")
+	log.Infow("BlockServicePeer", "Svc", svc, "PeerID", p)
 }
 
 func (r rcmgrMetrics) AllowMemory(size int) {
