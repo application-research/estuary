@@ -37,14 +37,12 @@ var (
 	APIRequestDuration = stats.Float64("api/request_duration_ms", "Duration of API requests", stats.UnitMilliseconds)
 
 	// rcmgr
-	RcmgrConn      = stats.Int64("rcmgr/conn", "Number of connections", stats.UnitDimensionless)
-	RcmgrStream    = stats.Int64("rcmgr/stream", "Number of allowed streams", stats.UnitDimensionless)
-	RcmgrPeer      = stats.Int64("rcmgr/peer", "Number of peers", stats.UnitDimensionless)
-	RcmgrProto     = stats.Int64("rcmgr/proto", "Number of allowed streams attached to a protocol", stats.UnitDimensionless)
-	RcmgrProtoPeer = stats.Int64("rcmgr/proto", "Number of allowed streams attached to a protocol for a specific peer", stats.UnitDimensionless)
-	RcmgrSvc       = stats.Int64("rcmgr/svc", "Number of streams attached to a service", stats.UnitDimensionless)
-	RcmgrSvcPeer   = stats.Int64("rcmgr/svc", "Number of streams attached to a service for a specific peer", stats.UnitDimensionless)
-	RcmgrMem       = stats.Int64("rcmgr/mem", "Number of memory reservations", stats.UnitDimensionless)
+	RcmgrConn   = stats.Int64("rcmgr/conn", "Number of connections", stats.UnitDimensionless)
+	RcmgrStream = stats.Int64("rcmgr/stream", "Number of allowed streams", stats.UnitDimensionless)
+	RcmgrPeer   = stats.Int64("rcmgr/peer", "Number of peers", stats.UnitDimensionless)
+	RcmgrProto  = stats.Int64("rcmgr/proto", "Number of allowed streams attached to a protocol", stats.UnitDimensionless)
+	RcmgrSvc    = stats.Int64("rcmgr/svc", "Number of streams attached to a service", stats.UnitDimensionless)
+	RcmgrMem    = stats.Int64("rcmgr/mem", "Number of memory reservations", stats.UnitDimensionless)
 )
 
 var (
@@ -81,20 +79,8 @@ var (
 		TagKeys:     []tag.Key{ProtocolID, Op},
 	}
 
-	RcmgrProtoPeerView = &view.View{
-		Measure:     RcmgrProtoPeer,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ProtocolID, Op},
-	}
-
 	RcmgrSvcView = &view.View{
 		Measure:     RcmgrSvc,
-		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{ServiceID, Op},
-	}
-
-	RcmgrSvcPeerView = &view.View{
-		Measure:     RcmgrSvcPeer,
 		Aggregation: view.Count(),
 		TagKeys:     []tag.Key{ServiceID, Op},
 	}
@@ -113,9 +99,7 @@ var DefaultViews = func() []*view.View {
 		RcmgrStreamView,
 		RcmgrPeerView,
 		RcmgrProtoView,
-		RcmgrProtoPeerView,
 		RcmgrSvcView,
-		RcmgrSvcPeerView,
 		RcmgrMemView,
 	}
 	views = append(views, blockstore.DefaultViews...)
