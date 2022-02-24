@@ -70,7 +70,7 @@ var (
 	RcmgrPeerView = &view.View{
 		Measure:     RcmgrPeer,
 		Aggregation: view.Count(),
-		TagKeys:     []tag.Key{PeerID, Op},
+		TagKeys:     []tag.Key{Op},
 	}
 
 	RcmgrProtoView = &view.View{
