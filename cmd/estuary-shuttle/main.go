@@ -1186,7 +1186,7 @@ func (s *Shuttle) addrsForShuttle() []string {
 func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-	contentType := util.FindCIDType(root, dserv)
+	contentType := util.FindCIDType(ctx, root, dserv)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,

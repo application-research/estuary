@@ -50,23 +50,26 @@ type ContentCreateResponse struct {
 // FindCIDType checks if a pinned CID (root) is a file, a dir or unknown
 // Returns dbmgr.File or dbmgr.Directory on success
 // Returns dbmgr.Unknown otherwise
-func FindCIDType(root cid.Cid, dserv ipld.NodeGetter) ContentType {
-	contentType := Unknown
+func FindCIDType(ctx context.Context, root cid.Cid, dserv ipld.NodeGetter) (contentType ContentType) {
+	contentType = Unknown
 	nilCID := cid.Cid{}
-	ctx := context.Background()
-
-	if root != nilCID && dserv != nil {
-		nd, err := dserv.Get(ctx, root)
-		if err == nil {
-			fsNode, err := TryExtractFSNode(nd)
-			if err == nil {
-				contentType = File
-				if fsNode.IsDir() {
-					contentType = Directory
-				}
-			}
-		}
+	if root == nilCID || dserv == nil {
+		return
 	}
 
-	return contentType
+	nd, err := dserv.Get(ctx, root)
+	if err != nil {
+		return
+	}
+
+	contentType = File
+	fsNode, err := TryExtractFSNode(nd)
+	if err != nil {
+		return
+	}
+
+	if fsNode.IsDir() {
+		contentType = Directory
+	}
+	return
 }
