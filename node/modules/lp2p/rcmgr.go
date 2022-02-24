@@ -71,13 +71,12 @@ func (r rcmgrMetrics) Stream(p peer.ID, dir network.Direction, op string) {
 	stats.Record(ctx, metrics.RcmgrStream.M(1))
 }
 
-func (r rcmgrMetrics) Peer(p peer.ID, op string) {
+func (r rcmgrMetrics) Peer(op string) {
 	ctx := context.Background()
 	opStr := "block"
 	if op == "allow" {
 		opStr = "allow"
 	}
-	ctx, _ = tag.New(ctx, tag.Upsert(metrics.PeerID, string(p)))
 	ctx, _ = tag.New(ctx, tag.Upsert(metrics.Op, opStr))
 	stats.Record(ctx, metrics.RcmgrPeer.M(1))
 }
@@ -131,11 +130,11 @@ func (r rcmgrMetrics) BlockStream(p peer.ID, dir network.Direction) {
 }
 
 func (r rcmgrMetrics) AllowPeer(p peer.ID) {
-	r.Peer(p, "allow")
+	r.Peer("allow")
 }
 
 func (r rcmgrMetrics) BlockPeer(p peer.ID) {
-	r.Peer(p, "block")
+	r.Peer("block")
 }
 
 func (r rcmgrMetrics) AllowProtocol(proto protocol.ID) {
