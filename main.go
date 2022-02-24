@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"go.opencensus.io/stats/view"
+
 	"github.com/application-research/estuary/build"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/metrics"
@@ -334,6 +336,13 @@ func main() {
 
 		nd, err := node.Setup(context.Background(), cfg)
 		if err != nil {
+			return err
+		}
+
+		if err = view.Register(
+			metrics.DefaultViews...,
+		); err != nil {
+			log.Fatalf("Cannot register the OpenCensus view: %v", err)
 			return err
 		}
 
