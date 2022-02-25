@@ -19,6 +19,7 @@ import (
 	"time"
 
 	drpc "github.com/application-research/estuary/drpc"
+	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -129,6 +130,12 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	phandle := promhttp.Handler()
 	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
 		phandle.ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+
+	exporter := esmetrics.Exporter()
+	e.GET("/debug/metrics/opencensus", func(e echo.Context) error {
+		exporter.ServeHTTP(e.Response().Writer, e.Request())
 		return nil
 	})
 
