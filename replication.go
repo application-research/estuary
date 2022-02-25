@@ -2162,7 +2162,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured")
 		}
 
-		addrstr := cm.Node.Config.AnnounceAddrs[0]
+		addrstr := cm.Node.Config.AnnounceAddrs[0] + "/p2p/" + cm.Node.Host.ID().String()
 		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
 		if err != nil {
 			return nil, false, xerrors.Errorf("cannot parse announce address '%s': %w", addrstr, err)
@@ -2175,8 +2175,16 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		addrInfo := cm.shuttleAddrInfo(contentLoc)
-		// TODO: How to figure out which address is the Announce address
-		announceAddr = addrInfo.Addrs[0]
+		// TODO: This is the address that the shuttle reports to the Estuary
+		// primary node, but is it ok if it's also the address reported
+		// as where to download files publically? If it's a public IP does
+		// that mean that messages from Estuary primary node would go through
+		// public internet to get to shuttle?
+		addrstr := addrInfo.Addrs[0].String() + "/p2p/" + addrInfo.ID.String()
+		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
+		if err != nil {
+			return nil, false, xerrors.Errorf("cannot parse announce address '%s': %w", addrstr, err)
+		}
 
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
