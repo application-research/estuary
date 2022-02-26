@@ -17,7 +17,7 @@ const docTemplate_swagger = `{
         },
         "license": {
             "name": "Apache 2.0 Apache-2.0 OR MIT",
-            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+            "url": "https://github.com/application-research/estuary/blob/master/LICENSE.md"
         },
         "version": "{{.Version}}"
     },
@@ -26,7 +26,7 @@ const docTemplate_swagger = `{
     "paths": {
         "/admin/users": {
             "get": {
-                "description": "Get all users",
+                "description": "This endpoint is used to get all users.",
                 "produces": [
                     "application/json"
                 ],
@@ -40,7 +40,7 @@ const docTemplate_swagger = `{
         },
         "/collections/add-content": {
             "post": {
-                "description": "Add contents to a collection",
+                "description": "When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.",
                 "produces": [
                     "application/json"
                 ],
@@ -53,7 +53,7 @@ const docTemplate_swagger = `{
         },
         "/collections/content/:collection-id": {
             "get": {
-                "description": "Get contents in a collection",
+                "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
                 "produces": [
                     "application/json"
                 ],
@@ -66,7 +66,7 @@ const docTemplate_swagger = `{
         },
         "/collections/create": {
             "post": {
-                "description": "This endpoint is used to create a new collection",
+                "description": "This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.",
                 "produces": [
                     "application/json"
                 ],
@@ -104,7 +104,7 @@ const docTemplate_swagger = `{
         },
         "/collections/fs/add": {
             "post": {
-                "description": "Add a file to a collection",
+                "description": "This endpoint adds a file to a collection",
                 "produces": [
                     "application/json"
                 ],
@@ -117,7 +117,7 @@ const docTemplate_swagger = `{
         },
         "/collections/fs/list": {
             "get": {
-                "description": "Create a new collection",
+                "description": "This endpoint creates a new collection",
                 "produces": [
                     "application/json"
                 ],
@@ -130,7 +130,7 @@ const docTemplate_swagger = `{
         },
         "/collections/list": {
             "get": {
-                "description": "This endpoint is used to list all collections",
+                "description": "This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.",
                 "produces": [
                     "application/json"
                 ],
@@ -180,46 +180,46 @@ const docTemplate_swagger = `{
         },
         "/content/add": {
             "post": {
-                "description": "Add a new content",
+                "description": "This endpoint is used to upload new content",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Add a new content",
+                "summary": "Add new content",
                 "responses": {}
             }
         },
         "/content/add-car": {
             "post": {
-                "description": "Create a new collection",
+                "description": "Add Car object",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Create a new collection",
+                "summary": "Add Car object",
                 "responses": {}
             }
         },
         "/content/add-ipfs": {
             "post": {
-                "description": "Create a new collection",
+                "description": "Add IPFS object",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Create a new collection",
+                "summary": "Add IPFS object",
                 "responses": {}
             }
         },
         "/content/aggregated/:content": {
             "get": {
-                "description": "Get aggregated content stats",
+                "description": "This endpoint returns aggregated content stats",
                 "produces": [
                     "application/json"
                 ],
@@ -232,7 +232,7 @@ const docTemplate_swagger = `{
         },
         "/content/all-deals": {
             "get": {
-                "description": "Get all deals for a user",
+                "description": "This endpoint is used to get all deals for a user",
                 "produces": [
                     "application/json"
                 ],
@@ -245,7 +245,7 @@ const docTemplate_swagger = `{
         },
         "/content/bw-usage/:content": {
             "get": {
-                "description": "Get content bandwidth",
+                "description": "This endpoint returns content bandwidth",
                 "produces": [
                     "application/json"
                 ],
@@ -258,7 +258,7 @@ const docTemplate_swagger = `{
         },
         "/content/create": {
             "post": {
-                "description": "Add a new content",
+                "description": "This endpoint adds a new content",
                 "produces": [
                     "application/json"
                 ],
@@ -271,7 +271,7 @@ const docTemplate_swagger = `{
         },
         "/content/deals": {
             "get": {
-                "description": "Content with deals",
+                "description": "This endpoint lists all content with deals",
                 "produces": [
                     "application/json"
                 ],
@@ -284,7 +284,7 @@ const docTemplate_swagger = `{
         },
         "/content/ensure-replication/:datacid": {
             "get": {
-                "description": "Ensure Replication",
+                "description": "This endpoint ensures that the content is replicated to the specified number of providers",
                 "produces": [
                     "application/json"
                 ],
@@ -297,7 +297,7 @@ const docTemplate_swagger = `{
         },
         "/content/failures/:content": {
             "get": {
-                "description": "List all failures for a content",
+                "description": "This endpoint returns all failures for a content",
                 "produces": [
                     "application/json"
                 ],
@@ -308,22 +308,48 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/content/list": {
-            "get": {
-                "description": "List all pinned objects",
+        "/content/importdeal": {
+            "post": {
+                "description": "This endpoint imports a deal into the shuttle.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "List all pinned objects",
+                "summary": "Import a deal",
+                "responses": {}
+            }
+        },
+        "/content/list": {
+            "get": {
+                "description": "This endpoint lists all content",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "List all pinned content",
+                "responses": {}
+            }
+        },
+        "/content/read/:cont": {
+            "get": {
+                "description": "This endpoint reads content from the blockstore",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Read content",
                 "responses": {}
             }
         },
         "/content/staging-zones": {
             "get": {
-                "description": "Get staging zone for user",
+                "description": "This endpoint is used to get staging zone for user",
                 "produces": [
                     "application/json"
                 ],
@@ -336,20 +362,20 @@ const docTemplate_swagger = `{
         },
         "/content/stats": {
             "get": {
-                "description": "Add a new content",
+                "description": "Get content stats",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Add a new content",
+                "summary": "Get content stats",
                 "responses": {}
             }
         },
         "/content/status/:id": {
             "get": {
-                "description": "Content Status",
+                "description": "This endpoint returns the status of a content",
                 "produces": [
                     "application/json"
                 ],
@@ -362,7 +388,7 @@ const docTemplate_swagger = `{
         },
         "/deal/estimate": {
             "get": {
-                "description": "Estimate the cost of a deal",
+                "description": "This endpoint estimates the cost of a deal",
                 "produces": [
                     "application/json"
                 ],
@@ -375,7 +401,7 @@ const docTemplate_swagger = `{
         },
         "/deal/info/:dealid": {
             "get": {
-                "description": "Get Deal Info",
+                "description": "This endpoint returns the deal info for a deal",
                 "produces": [
                     "application/json"
                 ],
@@ -388,7 +414,7 @@ const docTemplate_swagger = `{
         },
         "/deal/make/:miner": {
             "post": {
-                "description": "Make Deal",
+                "description": "This endpoint makes a deal for a given content and miner",
                 "produces": [
                     "application/json"
                 ],
@@ -401,7 +427,7 @@ const docTemplate_swagger = `{
         },
         "/deal/proposal/:propcid": {
             "get": {
-                "description": "Get Proposal",
+                "description": "This endpoint returns the proposal for a deal",
                 "produces": [
                     "application/json"
                 ],
@@ -414,7 +440,7 @@ const docTemplate_swagger = `{
         },
         "/deal/query/:miner": {
             "get": {
-                "description": "Query Ask",
+                "description": "This endpoint returns the ask for a given CID",
                 "produces": [
                     "application/json"
                 ],
@@ -440,7 +466,7 @@ const docTemplate_swagger = `{
         },
         "/deal/status/:deal": {
             "get": {
-                "description": "Get Deal Status",
+                "description": "This endpoint returns the status of a deal",
                 "produces": [
                     "application/json"
                 ],
@@ -453,7 +479,7 @@ const docTemplate_swagger = `{
         },
         "/deal/status/:miner/:propcid": {
             "get": {
-                "description": "Deal Status",
+                "description": "This endpoint returns the status of a deal",
                 "produces": [
                     "application/json"
                 ],
@@ -466,7 +492,7 @@ const docTemplate_swagger = `{
         },
         "/deal/transfer/in-progress": {
             "get": {
-                "description": "Transfer In Progress",
+                "description": "This endpoint returns the in-progress transfers",
                 "produces": [
                     "application/json"
                 ],
@@ -479,7 +505,7 @@ const docTemplate_swagger = `{
         },
         "/deal/transfer/status": {
             "post": {
-                "description": "Transfer Status",
+                "description": "This endpoint returns the status of a transfer",
                 "produces": [
                     "application/json"
                 ],
@@ -492,7 +518,7 @@ const docTemplate_swagger = `{
         },
         "/pinning/pins": {
             "get": {
-                "description": "List all pinned objects",
+                "description": "This endpoint lists all pinned objects",
                 "produces": [
                     "application/json"
                 ],
@@ -522,7 +548,7 @@ const docTemplate_swagger = `{
                 }
             },
             "post": {
-                "description": "Add and pin an object",
+                "description": "This endpoint adds a pin to the IPFS daemon.",
                 "produces": [
                     "application/json"
                 ],
@@ -551,7 +577,7 @@ const docTemplate_swagger = `{
         },
         "/pinning/pins/:id": {
             "get": {
-                "description": "Get a pinned objects",
+                "description": "This endpoint returns a pinned object.",
                 "produces": [
                     "application/json"
                 ],
@@ -571,7 +597,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             },
             "post": {
-                "description": "Replace a pinned object",
+                "description": "This endpoint replaces a pinned object.",
                 "produces": [
                     "application/json"
                 ],
@@ -591,7 +617,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             },
             "delete": {
-                "description": "Delete a pinned object",
+                "description": "This endpoint deletes a pinned object.",
                 "produces": [
                     "application/json"
                 ],
@@ -613,7 +639,7 @@ const docTemplate_swagger = `{
         },
         "/public/by-cid/:cid": {
             "get": {
-                "description": "Get Content by Cid",
+                "description": "This endpoint returns the content associated with a CID",
                 "produces": [
                     "application/json"
                 ],
@@ -626,7 +652,7 @@ const docTemplate_swagger = `{
         },
         "/public/deal/failures": {
             "get": {
-                "description": "Get storage failures",
+                "description": "This endpoint returns a list of storage failures",
                 "produces": [
                     "application/json"
                 ],
@@ -640,7 +666,7 @@ const docTemplate_swagger = `{
         },
         "/public/info": {
             "get": {
-                "description": "Get public node info",
+                "description": "This endpoint returns information about the node",
                 "produces": [
                     "application/json"
                 ],
@@ -654,7 +680,7 @@ const docTemplate_swagger = `{
         },
         "/public/metrics/deals-on-chain": {
             "get": {
-                "description": "Get deal metrics",
+                "description": "This endpoint is used to get deal metrics",
                 "produces": [
                     "application/json"
                 ],
@@ -668,7 +694,7 @@ const docTemplate_swagger = `{
         },
         "/public/miners": {
             "get": {
-                "description": "Get all miners",
+                "description": "This endpoint returns all miners",
                 "produces": [
                     "application/json"
                 ],
@@ -682,7 +708,7 @@ const docTemplate_swagger = `{
         },
         "/public/miners/deals/:miner": {
             "get": {
-                "description": "Get all miners",
+                "description": "This endpoint returns all miners deals",
                 "produces": [
                     "application/json"
                 ],
@@ -690,13 +716,13 @@ const docTemplate_swagger = `{
                     "public",
                     "miner"
                 ],
-                "summary": "Get all miners",
+                "summary": "Get all miners deals",
                 "responses": {}
             }
         },
         "/public/miners/failures/:miners": {
             "get": {
-                "description": "Get all miners",
+                "description": "This endpoint returns all miners",
                 "produces": [
                     "application/json"
                 ],
@@ -710,7 +736,7 @@ const docTemplate_swagger = `{
         },
         "/public/miners/stats/:miner": {
             "get": {
-                "description": "Get miner stats",
+                "description": "This endpoint returns miner stats",
                 "produces": [
                     "application/json"
                 ],
@@ -724,7 +750,7 @@ const docTemplate_swagger = `{
         },
         "/public/net/addrs": {
             "get": {
-                "description": "Net Addrs",
+                "description": "This endpoint is used to get net addrs",
                 "produces": [
                     "application/json"
                 ],
@@ -738,7 +764,7 @@ const docTemplate_swagger = `{
         },
         "/public/net/peers": {
             "get": {
-                "description": "Net Peers",
+                "description": "This endpoint is used to get net peers",
                 "produces": [
                     "application/json"
                 ],
@@ -752,7 +778,7 @@ const docTemplate_swagger = `{
         },
         "/public/stats": {
             "get": {
-                "description": "Public stats",
+                "description": "This endpoint is used to get public stats.",
                 "produces": [
                     "application/json"
                 ],
@@ -760,19 +786,6 @@ const docTemplate_swagger = `{
                     "public"
                 ],
                 "summary": "Public stats",
-                "responses": {}
-            }
-        },
-        "/user/add": {
-            "post": {
-                "description": "Create a new collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Create a new collection",
                 "responses": {}
             }
         },
@@ -799,7 +812,7 @@ const docTemplate_swagger = `{
                 }
             },
             "post": {
-                "description": "This endpoint is used to create API keys for a user.",
+                "description": "This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.",
                 "produces": [
                     "application/json"
                 ],
@@ -835,14 +848,14 @@ const docTemplate_swagger = `{
                 }
             },
             "delete": {
-                "description": "This endpoint is used to get API keys for a user.",
+                "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "User"
                 ],
-                "summary": "Get API keys for a user",
+                "summary": "Revoke a User API Key.",
                 "responses": {}
             }
         },
@@ -930,7 +943,7 @@ const docTemplate_swagger = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "0.0.0",
-	Host:             "localhost:3004",
+	Host:             "api.estuary.tech",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Estuary API",

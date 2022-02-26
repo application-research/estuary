@@ -2,7 +2,7 @@
 
 ###################################################################
 # Script Name	:   swag.sh                                                                                          
-# Description	:   Simple script to run swag.sh                                                                                                                                                                        
+# Description	:   Simple script to generate swagger documentation for estuary.
 # Author       	:   ARG
 # How to run    :   ./scripts/swagger/swag.sh
 # The proper way to run this script is to run the following command:
