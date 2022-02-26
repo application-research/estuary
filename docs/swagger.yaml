@@ -44,14 +44,14 @@ info:
   description: This is the API for the Estuary application.
   license:
     name: Apache 2.0 Apache-2.0 OR MIT
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
+    url: https://github.com/application-research/estuary/blob/master/LICENSE.md
   termsOfService: http://estuary.tech
   title: Estuary API
   version: 0.0.0
 paths:
   /admin/users:
     get:
-      description: Get all users
+      description: This endpoint is used to get all users.
       produces:
         - application/json
       responses: {}
@@ -61,7 +61,7 @@ paths:
         - Users
   /collections/add-content:
     post:
-      description: Add contents to a collection
+      description: When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
       produces:
         - application/json
       responses: {}
@@ -70,7 +70,7 @@ paths:
         - collections
   /collections/content/:collection-id:
     get:
-      description: Get contents in a collection
+      description: This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
       produces:
         - application/json
       responses: {}
@@ -79,7 +79,7 @@ paths:
         - collections
   /collections/create:
     post:
-      description: This endpoint is used to create a new collection
+      description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
       produces:
         - application/json
       responses:
@@ -104,7 +104,7 @@ paths:
         - collections
   /collections/fs/add:
     post:
-      description: Add a file to a collection
+      description: This endpoint adds a file to a collection
       produces:
         - application/json
       responses: {}
@@ -113,7 +113,7 @@ paths:
         - collections
   /collections/fs/list:
     get:
-      description: Create a new collection
+      description: This endpoint creates a new collection
       produces:
         - application/json
       responses: {}
@@ -122,7 +122,7 @@ paths:
         - collections
   /collections/list:
     get:
-      description: This endpoint is used to list all collections
+      description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
       parameters:
         - description: User ID
           in: path
@@ -155,34 +155,34 @@ paths:
         - collections
   /content/add:
     post:
-      description: Add a new content
+      description: This endpoint is used to upload new content
       produces:
         - application/json
       responses: {}
-      summary: Add a new content
+      summary: Add new content
       tags:
         - content
   /content/add-car:
     post:
-      description: Create a new collection
+      description: Add Car object
       produces:
         - application/json
       responses: {}
-      summary: Create a new collection
+      summary: Add Car object
       tags:
         - content
   /content/add-ipfs:
     post:
-      description: Create a new collection
+      description: Add IPFS object
       produces:
         - application/json
       responses: {}
-      summary: Create a new collection
+      summary: Add IPFS object
       tags:
         - content
   /content/aggregated/:content:
     get:
-      description: Get aggregated content stats
+      description: This endpoint returns aggregated content stats
       produces:
         - application/json
       responses: {}
@@ -191,7 +191,7 @@ paths:
         - content
   /content/all-deals:
     get:
-      description: Get all deals for a user
+      description: This endpoint is used to get all deals for a user
       produces:
         - application/json
       responses: {}
@@ -200,7 +200,7 @@ paths:
         - content
   /content/bw-usage/:content:
     get:
-      description: Get content bandwidth
+      description: This endpoint returns content bandwidth
       produces:
         - application/json
       responses: {}
@@ -209,7 +209,7 @@ paths:
         - content
   /content/create:
     post:
-      description: Add a new content
+      description: This endpoint adds a new content
       produces:
         - application/json
       responses: {}
@@ -218,7 +218,7 @@ paths:
         - content
   /content/deals:
     get:
-      description: Content with deals
+      description: This endpoint lists all content with deals
       produces:
         - application/json
       responses: {}
@@ -227,7 +227,7 @@ paths:
         - content
   /content/ensure-replication/:datacid:
     get:
-      description: Ensure Replication
+      description: This endpoint ensures that the content is replicated to the specified number of providers
       produces:
         - application/json
       responses: {}
@@ -236,25 +236,43 @@ paths:
         - content
   /content/failures/:content:
     get:
-      description: List all failures for a content
+      description: This endpoint returns all failures for a content
       produces:
         - application/json
       responses: {}
       summary: List all failures for a content
       tags:
         - content
-  /content/list:
-    get:
-      description: List all pinned objects
+  /content/importdeal:
+    post:
+      description: This endpoint imports a deal into the shuttle.
       produces:
         - application/json
       responses: {}
-      summary: List all pinned objects
+      summary: Import a deal
+      tags:
+        - content
+  /content/list:
+    get:
+      description: This endpoint lists all content
+      produces:
+        - application/json
+      responses: {}
+      summary: List all pinned content
+      tags:
+        - content
+  /content/read/:cont:
+    get:
+      description: This endpoint reads content from the blockstore
+      produces:
+        - application/json
+      responses: {}
+      summary: Read content
       tags:
         - content
   /content/staging-zones:
     get:
-      description: Get staging zone for user
+      description: This endpoint is used to get staging zone for user
       produces:
         - application/json
       responses: {}
@@ -263,16 +281,16 @@ paths:
         - content
   /content/stats:
     get:
-      description: Add a new content
+      description: Get content stats
       produces:
         - application/json
       responses: {}
-      summary: Add a new content
+      summary: Get content stats
       tags:
         - content
   /content/status/:id:
     get:
-      description: Content Status
+      description: This endpoint returns the status of a content
       produces:
         - application/json
       responses: {}
@@ -281,7 +299,7 @@ paths:
         - content
   /deal/estimate:
     get:
-      description: Estimate the cost of a deal
+      description: This endpoint estimates the cost of a deal
       produces:
         - application/json
       responses: {}
@@ -290,7 +308,7 @@ paths:
         - deals
   /deal/info/:dealid:
     get:
-      description: Get Deal Info
+      description: This endpoint returns the deal info for a deal
       produces:
         - application/json
       responses: {}
@@ -299,7 +317,7 @@ paths:
         - deals
   /deal/make/:miner:
     post:
-      description: Make Deal
+      description: This endpoint makes a deal for a given content and miner
       produces:
         - application/json
       responses: {}
@@ -308,7 +326,7 @@ paths:
         - deals
   /deal/proposal/:propcid:
     get:
-      description: Get Proposal
+      description: This endpoint returns the proposal for a deal
       produces:
         - application/json
       responses: {}
@@ -317,7 +335,7 @@ paths:
         - deals
   /deal/query/:miner:
     get:
-      description: Query Ask
+      description: This endpoint returns the ask for a given CID
       produces:
         - application/json
       responses: {}
@@ -335,7 +353,7 @@ paths:
         - deals
   /deal/status/:deal:
     get:
-      description: Get Deal Status
+      description: This endpoint returns the status of a deal
       produces:
         - application/json
       responses: {}
@@ -344,7 +362,7 @@ paths:
         - deals
   /deal/status/:miner/:propcid:
     get:
-      description: Deal Status
+      description: This endpoint returns the status of a deal
       produces:
         - application/json
       responses: {}
@@ -353,7 +371,7 @@ paths:
         - deals
   /deal/transfer/in-progress:
     get:
-      description: Transfer In Progress
+      description: This endpoint returns the in-progress transfers
       produces:
         - application/json
       responses: {}
@@ -362,7 +380,7 @@ paths:
         - deals
   /deal/transfer/status:
     post:
-      description: Transfer Status
+      description: This endpoint returns the status of a transfer
       produces:
         - application/json
       responses: {}
@@ -371,7 +389,7 @@ paths:
         - deals
   /pinning/pins:
     get:
-      description: List all pinned objects
+      description: This endpoint lists all pinned objects
       produces:
         - application/json
       responses:
@@ -391,7 +409,7 @@ paths:
       tags:
         - pinning
     post:
-      description: Add and pin an object
+      description: This endpoint adds a pin to the IPFS daemon.
       parameters:
         - description: cid
           in: path
@@ -411,7 +429,7 @@ paths:
         - pinning
   /pinning/pins/:id:
     delete:
-      description: Delete a pinned object
+      description: This endpoint deletes a pinned object.
       parameters:
         - description: id
           in: path
@@ -425,7 +443,7 @@ paths:
       tags:
         - pinning
     get:
-      description: Get a pinned objects
+      description: This endpoint returns a pinned object.
       parameters:
         - description: cid
           in: path
@@ -439,7 +457,7 @@ paths:
       tags:
         - pinning
     post:
-      description: Replace a pinned object
+      description: This endpoint replaces a pinned object.
       parameters:
         - description: id
           in: path
@@ -454,7 +472,7 @@ paths:
         - pinning
   /public/by-cid/:cid:
     get:
-      description: Get Content by Cid
+      description: This endpoint returns the content associated with a CID
       produces:
         - application/json
       responses: {}
@@ -463,7 +481,7 @@ paths:
         - public
   /public/deal/failures:
     get:
-      description: Get storage failures
+      description: This endpoint returns a list of storage failures
       produces:
         - application/json
       responses: {}
@@ -473,7 +491,7 @@ paths:
         - deals
   /public/info:
     get:
-      description: Get public node info
+      description: This endpoint returns information about the node
       produces:
         - application/json
       responses: {}
@@ -483,7 +501,7 @@ paths:
         - deals
   /public/metrics/deals-on-chain:
     get:
-      description: Get deal metrics
+      description: This endpoint is used to get deal metrics
       produces:
         - application/json
       responses: {}
@@ -493,7 +511,7 @@ paths:
         - metrics
   /public/miners:
     get:
-      description: Get all miners
+      description: This endpoint returns all miners
       produces:
         - application/json
       responses: {}
@@ -503,17 +521,17 @@ paths:
         - net
   /public/miners/deals/:miner:
     get:
-      description: Get all miners
+      description: This endpoint returns all miners deals
       produces:
         - application/json
       responses: {}
-      summary: Get all miners
+      summary: Get all miners deals
       tags:
         - public
         - miner
   /public/miners/failures/:miners:
     get:
-      description: Get all miners
+      description: This endpoint returns all miners
       produces:
         - application/json
       responses: {}
@@ -523,7 +541,7 @@ paths:
         - net
   /public/miners/stats/:miner:
     get:
-      description: Get miner stats
+      description: This endpoint returns miner stats
       produces:
         - application/json
       responses: {}
@@ -533,7 +551,7 @@ paths:
         - miner
   /public/net/addrs:
     get:
-      description: Net Addrs
+      description: This endpoint is used to get net addrs
       produces:
         - application/json
       responses: {}
@@ -543,7 +561,7 @@ paths:
         - net
   /public/net/peers:
     get:
-      description: Net Peers
+      description: This endpoint is used to get net peers
       produces:
         - application/json
       responses: {}
@@ -553,29 +571,20 @@ paths:
         - net
   /public/stats:
     get:
-      description: Public stats
+      description: This endpoint is used to get public stats.
       produces:
         - application/json
       responses: {}
       summary: Public stats
       tags:
         - public
-  /user/add:
-    post:
-      description: Create a new collection
-      produces:
-        - application/json
-      responses: {}
-      summary: Create a new collection
-      tags:
-        - content
   /user/api-keys:
     delete:
-      description: This endpoint is used to get API keys for a user.
+      description: This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
       produces:
         - application/json
       responses: {}
-      summary: Get API keys for a user
+      summary: Revoke a User API Key.
       tags:
         - User
     get:
@@ -593,7 +602,7 @@ paths:
       tags:
         - User
     post:
-      description: This endpoint is used to create API keys for a user.
+      description: This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
       produces:
         - application/json
       responses:

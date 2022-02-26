@@ -10,7 +10,7 @@
 os=$(uname)
 swag=''
 yq=''
-localhost='localhost:3004'
+localhost='api.estuary.tech'
 
 # Arguments
 host=$1
