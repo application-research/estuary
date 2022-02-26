@@ -47,26 +47,28 @@ Run `make install-estuary-service` on the machine you wish to run estuary on.
 
 Make sure to follow the instructions output by the `make` command as configuration is required before the service can run succesfully.
 
-## Errors
-
-If you get the following error:
-
-```sh
-/ERROR basichost basic/basic_host.go:328 failed to resolve local interface addresses {"error": "route ip+net: netlinkrib: too many open files"}
-```
-
-It is because you do not have enough open file handles available. Update this with the following command:
-
-```sh
-ulimit -n 10000
-```
-
 ## Developing
 See `DEVELOPMENT.md` for development instructions.
 
 ## Troubleshooting
 Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
 
+## Guide for: `route ip+net: netlinkrib: too many open files`
+#### Error
+If you get the following error:
+
+```sh
+/ERROR basichost basic/basic_host.go:328 failed to resolve local interface addresses {"error": "route ip+net: netlinkrib: too many open files"}
+```
+
+It is because you do not have enough open file handles available. 
+
+#### Solution
+Update this with the following command:
+
+```sh
+ulimit -n 10000
+```
 ### Guide for: Missing `hwloc` on M1 Macs
 The Portable Hardware Locality (hwloc) software package provides a portable abstraction of the hierarchical structure of current architectures, including NUMA memory nodes, sockets, shared caches, cores, and simultaneous multi-threading (across OS, versions, architectures, etc.).
 
