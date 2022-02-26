@@ -63,3 +63,24 @@ ulimit -n 10000
 
 ## Developing
 See `DEVELOPMENT.md` for development instructions.
+
+## Troubleshooting
+Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
+
+### Guide for: Missing `hwloc` on M1 Macs
+The Portable Hardware Locality (hwloc) software package provides a portable abstraction of the hierarchical structure of current architectures, including NUMA memory nodes, sockets, shared caches, cores, and simultaneous multi-threading (across OS, versions, architectures, etc.).
+
+`lhwloc` is used by libp2p-core. Estuary uses libp2p for the majority of its features including network communication, pinning, replication and resource manager. 
+
+#### Error
+```
+`ld: library not found for -lhwloc`
+```
+
+#### Solution
+For M1 Macs, here's the following steps needed
+- Step 1: `brew install go bzr jq pkg-config rustup hwloc` - Uninstall rust as it would clash with rustup in case you have installed.
+- Step 2: export LIBRARY_PATH=/opt/homebrew/lib
+- Step 3: Follow the steps as per the docs.
+
+---
