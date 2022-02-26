@@ -369,8 +369,8 @@ func (s *Server) handleTestError(c echo.Context) error {
 }
 
 // handleStats godoc
-// @Summary      Get content stats
-// @Description  Get content stats
+// @Summary      Get content statistics
+// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
 // @Tags         content
 // @Produce      json
 // @Router       /content/stats [get]
@@ -444,7 +444,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 
 // handleAddIpfs godoc
 // @Summary      Add IPFS object
-// @Description  Add IPFS object
+// @Description  This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-ipfs [post]
@@ -527,7 +527,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 // handleAddCar godoc
 // @Summary      Add Car object
-// @Description  Add Car object
+// @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-car [post]
@@ -651,7 +651,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 
 // handleAdd godoc
 // @Summary      Add new content
-// @Description  This endpoint is used to upload new content
+// @Description  This endpoint is used to upload new content.
 // @Tags         content
 // @Produce      json
 // @Router       /content/add [post]
@@ -2874,7 +2874,7 @@ type getApiKeysResp struct {
 // @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
 // @Tags         User
 // @Produce      json
-// @Router       /user/api-keys [delete]
+// @Router       /user/api-keys/:key [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 	kval := c.Param("key")
 
@@ -3238,7 +3238,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  map[string]string
-// @Router       /user/api-keys [get]
+// @Router       /user/export [get]
 func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {

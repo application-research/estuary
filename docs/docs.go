@@ -180,7 +180,7 @@ const docTemplate_swagger = `{
         },
         "/content/add": {
             "post": {
-                "description": "This endpoint is used to upload new content",
+                "description": "This endpoint is used to upload new content.",
                 "produces": [
                     "application/json"
                 ],
@@ -193,7 +193,7 @@ const docTemplate_swagger = `{
         },
         "/content/add-car": {
             "post": {
-                "description": "Add Car object",
+                "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
                 "produces": [
                     "application/json"
                 ],
@@ -206,7 +206,7 @@ const docTemplate_swagger = `{
         },
         "/content/add-ipfs": {
             "post": {
-                "description": "Add IPFS object",
+                "description": "This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.",
                 "produces": [
                     "application/json"
                 ],
@@ -362,14 +362,14 @@ const docTemplate_swagger = `{
         },
         "/content/stats": {
             "get": {
-                "description": "Get content stats",
+                "description": "This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Get content stats",
+                "summary": "Get content statistics",
                 "responses": {}
             }
         },
@@ -791,22 +791,40 @@ const docTemplate_swagger = `{
         },
         "/user/api-keys": {
             "get": {
-                "description": "This endpoint is used to get API keys for a user.",
+                "description": "This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "User"
                 ],
-                "summary": "Export user data",
+                "summary": "Get API keys for a user",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/main.getApiKeysResp"
                             }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
                         }
                     }
                 }
@@ -846,7 +864,9 @@ const docTemplate_swagger = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/user/api-keys/:key": {
             "delete": {
                 "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.",
                 "produces": [
@@ -857,6 +877,29 @@ const docTemplate_swagger = `{
                 ],
                 "summary": "Revoke a User API Key.",
                 "responses": {}
+            }
+        },
+        "/user/export": {
+            "get": {
+                "description": "This endpoint is used to get API keys for a user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Export user data",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/user/stats": {
