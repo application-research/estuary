@@ -10,7 +10,7 @@
 . run.config
 
 miner="$1"
-cid="$2"
+cid="{/:$2}"
 price="$3"
 duration="$4"
 
@@ -19,8 +19,8 @@ data="{\"Cid\":{\"/\":\"$cid\"},\"Price\":\"$price\",\"Duration\":$duration}"
 data="$(echo {} | jq \
   --arg name "$name" \
   --arg description "$description" \
-  --arg cid "$cid" \
-  '. + { "Cid": { /: $cid },
+  --argjson cid "$cid" \
+  '. + { "Cid": $cid,
          "Price": $price,
          "Duration": $duration
        }'

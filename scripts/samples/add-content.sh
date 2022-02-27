@@ -14,13 +14,15 @@ name="Sample Collection"
 description="This is a sample collection"
 
 # Let's add a collection
-data="$(echo {} | jq \
+data="$(echo {} | jq --raw-output \
   --arg name "$name" \
   --arg description "$description" \
-  '. + { "channel": $channel,
-         "text": $text
+  '. + { "name": $name,
+         "description": $description
        }'
 )"
 
+echo $data
+
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer  $ESTUARY_TOKEN" -H "Content-Type: application/json" -d $data -F $EST_HOST/content/add
+curl --progress-bar -X POST -H "Authorization: Bearer  $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add
