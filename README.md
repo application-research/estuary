@@ -85,4 +85,19 @@ For M1 Macs, here's the following steps needed
 - Step 2: export LIBRARY_PATH=/opt/homebrew/lib
 - Step 3: Follow the steps as per the docs.
 
----
+### Guide for: `cannot find -lfilcrypto collect2`
+Related issue [here](https://github.com/application-research/estuary/issues/71)
+
+#### Error
+When trying to build estuary in an ARM machine, it returns an error
+
+```
+# github.com/filecoin-project/filecoin-ffi/generated /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: cannot find -lfilcrypto collect2: error: ld returned 1 exit status make: *** [Makefile:67: estuary] Error 2
+```
+
+#### Solution
+Related solution [here](https://github.com/filecoin-project/lotus/issues/1779#issuecomment-629932097)
+
+```
+RUSTFLAGS="-C target-cpu=native -g" FFI_BUILD_FROM_SOURCE=1 make clean deps bench
+```
