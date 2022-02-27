@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ###################################################################
-#Script Name	: make-deal.sh                                                                                             
+#Script Name	: add-collection.sh                                                                                             
 #Description	: This is a script file that runs a curl command to add a file to the estuary content server.                                                                                       
 #Author         : ARG
 #Email          : 
@@ -9,22 +9,18 @@
 
 . run.config
 
-miner="$1"
-cid="$2"
-price="$3"
-duration="$4"
+fname=$(basename $EST_SAMPLE_FILE)
+name="Sample Collection"
+description="This is a sample collection"
 
-data="{\"Cid\":{\"/\":\"$cid\"},\"Price\":\"$price\",\"Duration\":$duration}"
-
+# Let's add a collection
 data="$(echo {} | jq \
   --arg name "$name" \
   --arg description "$description" \
-  --arg cid "$cid" \
-  '. + { "Cid": { /: $cid },
-         "Price": $price,
-         "Duration": $duration
+  '. + { "channel": $channel,
+         "text": $text
        }'
 )"
 
-echo $data
-curl -X POST -H "Content-Type: application/json" -d "$data" http://$EST_HOST/deals/make/$miner
+set -x
+curl --progress-bar -X POST -H "Authorization: Bearer  $ESTUARY_TOKEN" -H "Content-Type: application/json" -d $data -F $EST_HOST/content/create

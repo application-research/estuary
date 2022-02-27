@@ -1,23 +1,17 @@
 #!/bin/bash
 
-fname="$2"
-if [ -z "$fname" ]; then
-  fname=$(basename $1)
-fi
+###################################################################
+#Script Name	: add-file.sh                                                                                             
+#Description	: This is a script file that runs a curl command to add a file to the estuary content server.                                                                                       
+#Author       : ARG
+#Email        : 
+###################################################################
 
-echo "$1"
-echo "$fname"
+. run.config
 
-#ESTUARY_TOKEN="whysaccesstoken3"
-#EST_HOST="http://localhost:3004"
-#EST_HOST="https://api.estuary.tech"
-#EST_HOST="https://upload.estuary.tech"
-EST_HOST="https://shuttle-4.estuary.tech"
-#EST_HOST="https://shuttle-5.estuary.tech"
-
+fname=$(basename $EST_SAMPLE_FILE)
 COLLECTION=""
 
 set -x
-#curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$1" -F "name=$fname" $EST_HOST/content/add
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$1" -F "name=$fname" $EST_HOST/content/add\?collection="$COLLECTION"
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$EST_SAMPLE_FILE" -F "name=$fname" $EST_HOST/content/add\?collection="$COLLECTION"
 
