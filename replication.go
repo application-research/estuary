@@ -2180,6 +2180,9 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// as where to download files publically? If it's a public IP does
 		// that mean that messages from Estuary primary node would go through
 		// public internet to get to shuttle?
+		if addrInfo == nil || len(addrInfo.Addrs) == 0 {
+			return nil, false, xerrors.Errorf("no announce address found for shuttle: %s", contentLoc)
+		}
 		addrstr := addrInfo.Addrs[0].String() + "/p2p/" + addrInfo.ID.String()
 		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
 		if err != nil {
