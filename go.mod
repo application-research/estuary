@@ -392,4 +392,5 @@ replace github.com/raulk/go-bs-tests => github.com/whyrusleeping/go-bs-tests v0.
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
-replace github.com/application-research/filclient => github.com/dirkmc/filclient v0.0.0-20220228093607-80ae91acfa0c
+replace github.com/application-research/filclient => github.com/dirkmc/filclient v0.0.0-20220228110328-ef167221b15b
+
