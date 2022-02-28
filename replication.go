@@ -2041,7 +2041,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		proto, err := cm.FilClient.DataTransferProtocolForMiner(ctx, ms[i])
+		proto, err := cm.FilClient.DealProtocolForMiner(ctx, ms[i])
 		if err != nil {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   ms[i],
@@ -2251,7 +2251,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 		return 0, err
 	}
 
-	proto, err := cm.FilClient.DataTransferProtocolForMiner(ctx, miner)
+	proto, err := cm.FilClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
