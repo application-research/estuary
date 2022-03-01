@@ -67,6 +67,21 @@ definitions:
       totalSize:
         type: integer
     type: object
+  util.ContentAddIpfsBody:
+    properties:
+      collection:
+        type: string
+      collectionPath:
+        type: string
+      name:
+        type: string
+      peers:
+        items:
+          type: string
+        type: array
+      root:
+        type: string
+    type: object
   util.HttpError:
     properties:
       code:
@@ -240,6 +255,13 @@ paths:
   /content/add-ipfs:
     post:
       description: This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
+      parameters:
+        - description: IPFS Body
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/util.ContentAddIpfsBody'
       produces:
         - application/json
       responses: {}
@@ -348,6 +370,12 @@ paths:
   /content/stats:
     get:
       description: This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+      parameters:
+        - description: limit
+          in: path
+          name: limit
+          required: true
+          type: string
       produces:
         - application/json
       responses: {}
