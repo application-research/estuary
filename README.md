@@ -47,19 +47,57 @@ Run `make install-estuary-service` on the machine you wish to run estuary on.
 
 Make sure to follow the instructions output by the `make` command as configuration is required before the service can run succesfully.
 
-## Errors
+## Developing
+See `DEVELOPMENT.md` for development instructions.
 
+## Troubleshooting
+Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
+
+## Guide for: `route ip+net: netlinkrib: too many open files`
+#### Error
 If you get the following error:
 
 ```sh
 /ERROR basichost basic/basic_host.go:328 failed to resolve local interface addresses {"error": "route ip+net: netlinkrib: too many open files"}
 ```
 
-It is because you do not have enough open file handles available. Update this with the following command:
+It is because you do not have enough open file handles available. 
+
+#### Solution
+Update this with the following command:
 
 ```sh
 ulimit -n 10000
 ```
+### Guide for: Missing `hwloc` on M1 Macs
+The Portable Hardware Locality (hwloc) software package provides a portable abstraction of the hierarchical structure of current architectures, including NUMA memory nodes, sockets, shared caches, cores, and simultaneous multi-threading (across OS, versions, architectures, etc.).
 
-## Developing
-See `DEVELOPMENT.md` for development instructions.
+`lhwloc` is used by libp2p-core. Estuary uses libp2p for the majority of its features including network communication, pinning, replication and resource manager. 
+
+#### Error
+```
+`ld: library not found for -lhwloc`
+```
+
+#### Solution
+For M1 Macs, here's the following steps needed
+- Step 1: `brew install go bzr jq pkg-config rustup hwloc` - Uninstall rust as it would clash with rustup in case you have installed.
+- Step 2: export LIBRARY_PATH=/opt/homebrew/lib
+- Step 3: Follow the steps as per the docs.
+
+### Guide for: `cannot find -lfilcrypto collect2`
+Related issue [here](https://github.com/application-research/estuary/issues/71)
+
+#### Error
+When trying to build estuary in an ARM machine, it returns an error
+
+```
+# github.com/filecoin-project/filecoin-ffi/generated /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: skipping incompatible extern/filecoin-ffi/generated/../libfilcrypto.a when searching for -lfilcrypto /usr/bin/ld: cannot find -lfilcrypto collect2: error: ld returned 1 exit status make: *** [Makefile:67: estuary] Error 2
+```
+
+#### Solution
+Related solution [here](https://github.com/filecoin-project/lotus/issues/1779#issuecomment-629932097)
+
+```
+RUSTFLAGS="-C target-cpu=native -g" FFI_BUILD_FROM_SOURCE=1 make clean deps bench
+```
