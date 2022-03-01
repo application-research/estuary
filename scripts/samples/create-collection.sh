@@ -24,4 +24,4 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer  $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/collections/create
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/collections/create

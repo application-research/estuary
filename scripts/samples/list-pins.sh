@@ -47,4 +47,4 @@ if[ $qreqids != "" ]; then
 fi
 
 set -x
-curl --progress-bar -X GET -H "Authorization: Bearer  $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
+curl --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
