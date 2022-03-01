@@ -13,12 +13,52 @@ definitions:
       uuid:
         type: string
     type: object
+  main.addContentToCollectionParams:
+    properties:
+      cids:
+        items:
+          type: string
+        type: array
+      collection:
+        type: string
+      contents:
+        items:
+          type: integer
+        type: array
+    type: object
+  main.adminUserResponse:
+    properties:
+      id:
+        type: integer
+      numFiles:
+        type: integer
+      spaceUsed:
+        type: integer
+      username:
+        type: string
+    type: object
+  main.createCollectionBody:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
   main.getApiKeysResp:
     properties:
       expiry:
         type: string
       token:
         type: string
+    type: object
+  main.publicStatsResponse:
+    properties:
+      dealsOnChain:
+        type: integer
+      totalFiles:
+        type: integer
+      totalStorage:
+        type: integer
     type: object
   main.userStatsResponse:
     properties:
@@ -54,7 +94,13 @@ paths:
       description: This endpoint is used to get all users.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.adminUserResponse'
+            type: array
       summary: Get all users
       tags:
         - Admin
@@ -62,6 +108,13 @@ paths:
   /collections/add-content:
     post:
       description: When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
+      parameters:
+        - description: Contents to add to collection
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.addContentToCollectionParams'
       produces:
         - application/json
       responses: {}
@@ -71,6 +124,12 @@ paths:
   /collections/content/:collection-id:
     get:
       description: This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
+      parameters:
+        - description: coluuid
+          in: path
+          name: coluuid
+          required: true
+          type: string
       produces:
         - application/json
       responses: {}
@@ -80,6 +139,13 @@ paths:
   /collections/create:
     post:
       description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
+      parameters:
+        - description: Collection name and description
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.createCollectionBody'
       produces:
         - application/json
       responses:
@@ -554,7 +620,13 @@ paths:
       description: This endpoint is used to get net addrs
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
       summary: Net Addrs
       tags:
         - public
@@ -564,7 +636,13 @@ paths:
       description: This endpoint is used to get net peers
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
       summary: Net Peers
       tags:
         - public
@@ -574,7 +652,11 @@ paths:
       description: This endpoint is used to get public stats.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.publicStatsResponse'
       summary: Public stats
       tags:
         - public

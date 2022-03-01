@@ -2962,6 +2962,7 @@ type createCollectionBody struct {
 // @Description  This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
 // @Tags         collections
 // @Produce      json
+// @Param        body     body     createCollectionBody  true        "Collection name and description"
 // @Success      200  {object}  Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
@@ -3016,6 +3017,7 @@ type addContentToCollectionParams struct {
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
 // @Description  When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
+// @Param        body     body     addContentToCollectionParams  true     "Contents to add to collection"
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/add-content [post]
@@ -3079,6 +3081,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 // handleGetCollectionContents godoc
 // @Summary      Get contents in a collection
 // @Description  This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
+// @Param        coluuid     path     string  true     "coluuid"
 // @Tags         collections
 // @Produce      json
 // @Router       /collections/content/:collection-id [get]
@@ -3161,6 +3164,7 @@ type adminUserResponse struct {
 // @Description  This endpoint is used to get all users.
 // @Tags         Admin,Users
 // @Produce      json
+// @Success 	 200 {array} adminUserResponse
 // @Router       /admin/users [get]
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
@@ -3188,6 +3192,7 @@ type publicStatsResponse struct {
 // @Description  This endpoint is used to get public stats.
 // @Tags         public
 // @Produce      json
+// @Success 	 200 {object} publicStatsResponse
 // @Router       /public/stats [get]
 func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
@@ -3253,6 +3258,7 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 // @Description  This endpoint is used to get net peers
 // @Tags         public,net
 // @Produce      json
+// @Success      200  {array}  string
 // @Router       /public/net/peers [get]
 func (s *Server) handleNetPeers(c echo.Context) error {
 	return c.JSON(200, s.Node.Host.Network().Peers())
@@ -3263,6 +3269,7 @@ func (s *Server) handleNetPeers(c echo.Context) error {
 // @Description  This endpoint is used to get net addrs
 // @Tags         public,net
 // @Produce      json
+// @Success      200  {array}  string
 // @Router       /public/net/addrs [get]
 func (s *Server) handleNetAddrs(c echo.Context) error {
 	id := s.Node.Host.ID()
