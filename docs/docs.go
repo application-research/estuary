@@ -35,7 +35,17 @@ const docTemplate_swagger = `{
                     "Users"
                 ],
                 "summary": "Get all users",
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/main.adminUserResponse"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/collections/add-content": {
@@ -48,6 +58,17 @@ const docTemplate_swagger = `{
                     "collections"
                 ],
                 "summary": "Add contents to a collection",
+                "parameters": [
+                    {
+                        "description": "Contents to add to collection",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.addContentToCollectionParams"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -61,6 +82,15 @@ const docTemplate_swagger = `{
                     "collections"
                 ],
                 "summary": "Get contents in a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "coluuid",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -74,6 +104,17 @@ const docTemplate_swagger = `{
                     "collections"
                 ],
                 "summary": "Create a new collection",
+                "parameters": [
+                    {
+                        "description": "Collection name and description",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.createCollectionBody"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -759,7 +800,17 @@ const docTemplate_swagger = `{
                     "net"
                 ],
                 "summary": "Net Addrs",
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/public/net/peers": {
@@ -773,7 +824,17 @@ const docTemplate_swagger = `{
                     "net"
                 ],
                 "summary": "Net Peers",
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/public/stats": {
@@ -786,7 +847,14 @@ const docTemplate_swagger = `{
                     "public"
                 ],
                 "summary": "Public stats",
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/main.publicStatsResponse"
+                        }
+                    }
+                }
             }
         },
         "/user/api-keys": {
@@ -944,6 +1012,54 @@ const docTemplate_swagger = `{
                 }
             }
         },
+        "main.addContentToCollectionParams": {
+            "type": "object",
+            "properties": {
+                "cids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "collection": {
+                    "type": "string"
+                },
+                "contents": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                }
+            }
+        },
+        "main.adminUserResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "numFiles": {
+                    "type": "integer"
+                },
+                "spaceUsed": {
+                    "type": "integer"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.createCollectionBody": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "main.getApiKeysResp": {
             "type": "object",
             "properties": {
@@ -952,6 +1068,20 @@ const docTemplate_swagger = `{
                 },
                 "token": {
                     "type": "string"
+                }
+            }
+        },
+        "main.publicStatsResponse": {
+            "type": "object",
+            "properties": {
+                "dealsOnChain": {
+                    "type": "integer"
+                },
+                "totalFiles": {
+                    "type": "integer"
+                },
+                "totalStorage": {
+                    "type": "integer"
                 }
             }
         },
