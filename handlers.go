@@ -372,6 +372,7 @@ func (s *Server) handleTestError(c echo.Context) error {
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
 // @Tags         content
+// @Param        limit path string true "limit"
 // @Produce      json
 // @Router       /content/stats [get]
 func (s *Server) handleStats(c echo.Context, u *User) error {
@@ -447,6 +448,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 // @Description  This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
+// @Param        body body util.ContentAddIpfsBody true "IPFS Body"
 // @Router       /content/add-ipfs [post]
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()

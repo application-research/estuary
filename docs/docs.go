@@ -255,6 +255,17 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Add IPFS object",
+                "parameters": [
+                    {
+                        "description": "IPFS Body",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/util.ContentAddIpfsBody"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -411,6 +422,15 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Get content statistics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -1093,6 +1113,29 @@ const docTemplate_swagger = `{
                 },
                 "totalSize": {
                     "type": "integer"
+                }
+            }
+        },
+        "util.ContentAddIpfsBody": {
+            "type": "object",
+            "properties": {
+                "collection": {
+                    "type": "string"
+                },
+                "collectionPath": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "peers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "root": {
+                    "type": "string"
                 }
             }
         },
