@@ -2818,7 +2818,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
 		"active":   true,
-		"type":     util.FindCIDType(ctx, root, dserv),
 		"size":     totalSize,
 		"pinning":  false,
 		"location": loc,

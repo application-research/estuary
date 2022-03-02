@@ -3666,15 +3666,10 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
-	dserv := merkledag.NewDAGService(bserv)
-	contentType := util.FindCIDType(context.Background(), req.Root, dserv)
-
 	content := &Content{
 		Cid:         util.DbCID{req.Root},
 		Name:        req.Name,
 		Active:      false,
-		Type:        contentType,
 		Pinning:     false,
 		UserID:      u.ID,
 		Replication: defaultReplication,
