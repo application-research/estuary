@@ -42,7 +42,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	merkledag "github.com/ipfs/go-merkledag"
-	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
@@ -838,7 +837,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		return err
 	}
 
-	if err = cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
+	if err = cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local"); err != nil {
 		return err
 	}
 
@@ -3667,10 +3666,15 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+	contentType := util.FindCIDType(context.Background(), req.Root, dserv)
+
 	content := &Content{
 		Cid:         util.DbCID{req.Root},
 		Name:        req.Name,
 		Active:      false,
+		Type:        contentType,
 		Pinning:     false,
 		UserID:      u.ID,
 		Replication: defaultReplication,
@@ -4155,6 +4159,7 @@ type collectionListQueryRes struct {
 	Cid    util.DbCID
 	Size   int64
 	Path   *string
+	Type   util.ContentType
 }
 
 type CidType string
@@ -4200,7 +4205,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, path, size").
+		Select("contents.id as cont_id, contents.cid as cid, path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
@@ -4219,13 +4224,9 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			return err
 		}
 
-		// Build a new local DAGService to query for the CID if our ref and see if it's a directory
-		bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
-		dserv := merkledag.NewDAGService(bserv)
-		ctx := c.Request().Context()
-		nd, err := dserv.Get(ctx, r.Cid.CID)
-		if err != nil {
-			return err
+		// trying to list a CID dir, not allowed
+		if relp == "." && r.Type == util.Directory {
+			return fmt.Errorf("listing CID directories is not allowed")
 		}
 
 		// if the relative path requires pathing up, its definitely not in this dir
@@ -4234,8 +4235,6 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 		}
 
 		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		// Need to transform node into a unixfs node to check if it's dir
-		fsNode, err := unixfs.ExtractFSNode(nd)
 		if err != nil { // Can't cast to unixfs node, set type as raw
 			out = append(out, collectionListResponse{
 				Name:   filepath.Base(relp),
@@ -4247,7 +4246,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			continue
 		}
 
-		if fsNode.IsDir() { // if CID is a dir
+		if r.Type == util.Directory { // if CID is a dir
 			if !dirs[relp] {
 				dirs[relp] = true
 				out = append(out, collectionListResponse{
@@ -4262,9 +4261,14 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 		}
 
 		if !strings.Contains(relp, "/") {
+			var contentType CidType
+			contentType = File
+			if r.Type == util.Directory {
+				contentType = Dir
+			}
 			out = append(out, collectionListResponse{
 				Name:   filepath.Base(relp),
-				Type:   File,
+				Type:   contentType,
 				Size:   r.Size,
 				ContID: r.ContID,
 				Cid:    &util.DbCID{r.Cid.CID},

@@ -341,6 +341,7 @@ type Content struct {
 	UserID      UserID
 	Description string
 	Size        int64
+	Type        util.ContentType
 	Active      bool
 	Offloaded   bool
 	Replication int

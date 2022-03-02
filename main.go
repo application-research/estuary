@@ -65,14 +65,15 @@ type Content struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         util.DbCID `json:"cid"`
-	Name        string     `json:"name"`
-	UserID      uint       `json:"userId" gorm:"index"`
-	Description string     `json:"description"`
-	Size        int64      `json:"size"`
-	Active      bool       `json:"active"`
-	Offloaded   bool       `json:"offloaded"`
-	Replication int        `json:"replication"`
+	Cid         util.DbCID       `json:"cid"`
+	Name        string           `json:"name"`
+	UserID      uint             `json:"userId" gorm:"index"`
+	Description string           `json:"description"`
+	Size        int64            `json:"size"`
+	Type        util.ContentType `json:"type"`
+	Active      bool             `json:"active"`
+	Offloaded   bool             `json:"offloaded"`
+	Replication int              `json:"replication"`
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler

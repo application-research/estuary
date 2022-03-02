@@ -2790,7 +2790,10 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	return nil
 }
 
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object, loc string) error {
+// addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
+// These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
+// The link between the `objects` and `contents` tables is the `obj_refs` table
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*Object, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -2815,6 +2818,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
 		"active":   true,
+		"type":     util.FindCIDType(ctx, root, dserv),
 		"size":     totalSize,
 		"pinning":  false,
 		"location": loc,
