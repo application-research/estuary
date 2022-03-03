@@ -280,6 +280,12 @@ paths:
       consumes:
         - multipart/form-data
       description: This endpoint is used to upload new content.
+      parameters:
+        - description: File to upload
+          in: formData
+          name: file
+          required: true
+          type: file
       produces:
         - application/json
       responses: {}
@@ -289,6 +295,25 @@ paths:
   /content/add-car:
     post:
       description: This endpoint is used to add a car object to the network. The object can be a file or a directory.
+      parameters:
+        - description: Car
+          in: body
+          name: body
+          required: true
+          schema:
+            type: string
+        - description: Filename
+          in: query
+          name: filename
+          type: string
+        - description: Commp
+          in: query
+          name: commp
+          type: string
+        - description: Size
+          in: query
+          name: size
+          type: string
       produces:
         - application/json
       responses: {}
