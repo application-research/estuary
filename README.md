@@ -50,10 +50,12 @@ Make sure to follow the instructions output by the `make` command as configurati
 ## Developing
 See `DEVELOPMENT.md` for development instructions.
 
+## Contributing
+See `CONTRIBUTING.md` for contributing instructions.
 ## Troubleshooting
 Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
 
-## Guide for: `route ip+net: netlinkrib: too many open files`
+### Guide for: `route ip+net: netlinkrib: too many open files`
 #### Error
 If you get the following error:
 
