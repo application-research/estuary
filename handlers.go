@@ -1619,7 +1619,22 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.FilClient.DealStatus(ctx, addr, propCid)
+	var d contentDeal
+	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		return err
+	}
+
+	// Get deal UUID, if there is one for the deal.
+	// (There should be a UUID for deals made with deal protocol v1.2.0)
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+		}
+		dealUUID = &parsed
+	}
+	status, err := s.FilClient.DealStatus(ctx, addr, propCid, dealUUID)
 	if err != nil {
 		return xerrors.Errorf("getting deal status: %w", err)
 	}
@@ -2011,9 +2026,23 @@ func (s *Server) handleDealStats(c echo.Context) error {
 			return err
 		}
 
-		st, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID)
+		// Get deal UUID, if there is one for the deal.
+		// (There should be a UUID for deals made with deal protocol v1.2.0)
+		var dealUUID *uuid.UUID
+		if d.DealUUID != "" {
+			parsed, err := uuid.Parse(d.DealUUID)
+			if err != nil {
+				return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+			}
+			dealUUID = &parsed
+		}
+		st, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 		if err != nil {
 			log.Errorf("checking deal status failed (%s): %s", maddr, err)
+			continue
+		}
+		if st.Proposal == nil {
+			log.Errorf("deal status proposal is empty (%s): %s", maddr, d.PropCid.CID)
 			continue
 		}
 

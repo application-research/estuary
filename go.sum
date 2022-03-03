@@ -286,8 +286,8 @@ github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZm
 github.com/dgryski/go-farm v0.0.0-20190104051053-3adb47b1fb0f/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 h1:tdlZCpZ/P9DhczCTSixgIKmwPv6+wP5DGjqLYw5SUiA=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
-github.com/dirkmc/filclient v0.0.0-20220228093607-80ae91acfa0c h1:qGVYrPSjFuxOgVECT3CZm3y31oQTVSrNhB1jgQORqPI=
-github.com/dirkmc/filclient v0.0.0-20220228093607-80ae91acfa0c/go.mod h1:XjXeIeZ8C7bnMZLUxRZcOFzOJWK1ZIkgZFxqYd7KgaY=
+github.com/dirkmc/filclient v0.0.0-20220303091146-540e2eb8606e h1:RNX6emhtmnsDmi/4uPMRCCxyNqOjIidv67qJT9ruLIM=
+github.com/dirkmc/filclient v0.0.0-20220303091146-540e2eb8606e/go.mod h1:BkyZ1W3sWKLNVHC5gsxi4AqjShwELk1GDZzBQJn3fUw=
 github.com/docker/go-units v0.4.0 h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=
 github.com/docker/go-units v0.4.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
 github.com/drand/bls12-381 v0.3.2/go.mod h1:dtcLgPtYT38L3NO6mPDYH0nbpc5tjPassDqiniuAt4Y=
@@ -338,8 +338,8 @@ github.com/fatih/color v1.10.0/go.mod h1:ELkj/draVOlAH/xkhN6mQ50Qd0MPOk5AAr3maGE
 github.com/fatih/color v1.12.0/go.mod h1:ELkj/draVOlAH/xkhN6mQ50Qd0MPOk5AAr3maGEBuJM=
 github.com/fatih/color v1.13.0 h1:8LOYc1KYPPmyKMuN8QV2DNRWNbLo6LZ0iLs8+mlH53w=
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
-github.com/filecoin-project/boost v0.0.0-20220217131829-8ed913c2efdc h1:WSWCvPffjqniSvHAostZMg482ldfwzG3v4q6WtxLBa8=
-github.com/filecoin-project/boost v0.0.0-20220217131829-8ed913c2efdc/go.mod h1:VkD/uKSGZm0egfwGq7lAM86GGbJaj2dnqhSnS5I6J4s=
+github.com/filecoin-project/boost v0.0.0-20220302163315-f1e558ab8801 h1:vceepCQrcev4BNtFRZaG1cS2BKtZdsjSdvSt+Hh4TcA=
+github.com/filecoin-project/boost v0.0.0-20220302163315-f1e558ab8801/go.mod h1:JxeLUKQJJi+qZYAd/qXiD1DHauWfsMFyMZG/oTVhX8k=
 github.com/filecoin-project/dagstore v0.4.3-0.20211211192320-72b849e131d2/go.mod h1:tlV8C11UljvFq3WWlMh2oMViEaVaPb6uT8eL/YQgDfk=
 github.com/filecoin-project/dagstore v0.4.4/go.mod h1:7BlOvaTJrFJ1Qemt5jHlLJ4VhDIuSIzGS0IwO/0AXPA=
 github.com/filecoin-project/dagstore v0.5.2 h1:Nd6oXdnolbbVhpMpkYT5PJHOjQp4OBSntHpMV5pxj3c=
@@ -423,7 +423,7 @@ github.com/filecoin-project/go-storedcounter v0.1.0 h1:Mui6wSUBC+cQGHbDUBcO7rfh5
 github.com/filecoin-project/go-storedcounter v0.1.0/go.mod h1:4ceukaXi4vFURIoxYMfKzaRF5Xv/Pinh2oTnoxpv+z8=
 github.com/filecoin-project/index-provider v0.5.0 h1:k2C1RFvOvxmA2i8bhmkb3b4qun7RDRDzzs/y25/TwQg=
 github.com/filecoin-project/index-provider v0.5.0/go.mod h1:KHVrP2vU3YuScb+fawObwTFoR882up9U07kk0ZrfP0c=
-github.com/filecoin-project/lotus v1.14.0-rc6.0.20220214114358-4df3c89b7282/go.mod h1:azUOK7wK37MP3OJ/n9saAE8RygO0pE965kulG2wwTc4=
+github.com/filecoin-project/lotus v1.14.0-rc6.0.20220223145324-b7081dc4f67c/go.mod h1:azUOK7wK37MP3OJ/n9saAE8RygO0pE965kulG2wwTc4=
 github.com/filecoin-project/lotus v1.15.1-rc5 h1:1phU8B5abrjcd/4CzN5/wivvapnjZAesc/RbB6rjbKk=
 github.com/filecoin-project/lotus v1.15.1-rc5/go.mod h1:S/8iC5pQwAM9PEG92anrRSPxKNFJvHtvXUVCZPxJEMY=
 github.com/filecoin-project/specs-actors v0.9.13/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=

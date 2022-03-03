@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"math/rand"
 	"sort"
 	"sync"
@@ -1042,6 +1043,7 @@ type contentDeal struct {
 	gorm.Model
 	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
+	DealUUID         string     `json:"dealUuid"`
 	Miner            string     `json:"miner"`
 	DealID           int64      `json:"dealId"`
 	Failed           bool       `json:"failed"`
@@ -1513,7 +1515,23 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
 	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
-	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
+
+	// Get deal UUID, if there is one for the deal.
+	// (There should be a UUID for deals made with deal protocol v1.2.0)
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		parsed, parseErr := uuid.Parse(d.DealUUID)
+		if parseErr == nil {
+			dealUUID = &parsed
+		} else {
+			err = fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, parseErr)
+		}
+	}
+
+	var provds *storagemarket.ProviderDealState
+	if err == nil {
+		provds, err = cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID, dealUUID)
+	}
 	if err != nil {
 		log.Warnf("failed to check deal status with miner %s: %s", maddr, err)
 		// if we cant get deal status from a miner and the data hasnt landed on
@@ -2057,9 +2075,11 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 		}
 
+		dealUUID := uuid.New()
 		cd := &contentDeal{
 			Content:  content.ID,
 			PropCid:  util.DbCID{propnd.Cid()},
+			DealUUID: dealUUID.String(),
 			Miner:    ms[i].String(),
 			Verified: verified,
 		}
@@ -2076,7 +2096,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		case proto == filclient.DealProtocolv110:
 			propPhase, err = cm.FilClient.SendProposalV110(ctx, *p, propnd.Cid())
 		case proto == filclient.DealProtocolv120:
-			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *p, propnd.Cid(), cd.ID)
+			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *p, propnd.Cid(), dealUUID, cd.ID)
 		default:
 			err = fmt.Errorf("unrecognized deal protocol %s", proto)
 		}
@@ -2143,7 +2163,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	return nil
 }
 
-func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc string, netprop network.Proposal, propCid cid.Cid, dbid uint) (func() error, bool, error) {
+func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc string, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func() error, bool, error) {
 	// In deal protocol v120 the transfer will be initiated by the
 	// storage provider (a pull transfer) so we need to prepare for
 	// the data request
@@ -2206,7 +2226,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	}
 
 	// Send the deal proposal to the storage provider
-	propPhase, err := cm.FilClient.SendProposalV120(ctx, dbid, netprop, announceAddr, authToken)
+	propPhase, err := cm.FilClient.SendProposalV120(ctx, dbid, netprop, dealUUID, announceAddr, authToken)
 	return cleanup, propPhase, err
 }
 
@@ -2270,9 +2290,11 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 		return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 	}
 
+	dealUUID := uuid.New()
 	deal := &contentDeal{
 		Content:  content.ID,
 		PropCid:  util.DbCID{propnd.Cid()},
+		DealUUID: dealUUID.String(),
 		Miner:    miner.String(),
 		Verified: verified,
 	}
@@ -2289,7 +2311,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	case proto == filclient.DealProtocolv110:
 		propPhase, err = cm.FilClient.SendProposalV110(ctx, *prop, propnd.Cid())
 	case proto == filclient.DealProtocolv120:
-		cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), deal.ID)
+		cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), dealUUID, deal.ID)
 	default:
 		err = fmt.Errorf("unrecognized deal protocol %s", proto)
 	}
@@ -2876,7 +2898,19 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 
-			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID)
+			// Get deal UUID, if there is one for the deal.
+			// (There should be a UUID for deals made with deal protocol v1.2.0)
+			var dealUUID *uuid.UUID
+			if d.DealUUID != "" {
+				parsed, parseErr := uuid.Parse(d.DealUUID)
+				if parseErr != nil {
+					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+						d.DealUUID, d.ID, miner, parseErr)
+					return
+				}
+				dealUUID = &parsed
+			}
+			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return
