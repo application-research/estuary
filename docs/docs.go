@@ -31,26 +31,18 @@ const docTemplate_swagger = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Admin",
-                    "Users"
+                    "admin"
                 ],
                 "summary": "Get all users",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/main.adminUserResponse"
-                            }
-                        }
-                    }
-                }
+                "responses": {}
             }
         },
         "/collections/add-content": {
             "post": {
                 "description": "When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -69,10 +61,20 @@ const docTemplate_swagger = `{
                         }
                     }
                 ],
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
-        "/collections/content/:collection-id": {
+        "/collections/content/{collection-id}": {
             "get": {
                 "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
                 "produces": [
@@ -91,7 +93,14 @@ const docTemplate_swagger = `{
                         "required": true
                     }
                 ],
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
             }
         },
         "/collections/create": {
@@ -153,6 +162,36 @@ const docTemplate_swagger = `{
                     "collections"
                 ],
                 "summary": "Add a file to a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "col",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection ID Long",
+                        "name": "collection",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content",
+                        "name": "content",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Path to file",
+                        "name": "path",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -166,6 +205,22 @@ const docTemplate_swagger = `{
                     "collections"
                 ],
                 "summary": "Create a new collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection",
+                        "name": "col",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -222,6 +277,9 @@ const docTemplate_swagger = `{
         "/content/add": {
             "post": {
                 "description": "This endpoint is used to upload new content.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -269,7 +327,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/content/aggregated/:content": {
+        "/content/aggregated/{content}": {
             "get": {
                 "description": "This endpoint returns aggregated content stats",
                 "produces": [
@@ -279,7 +337,23 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Get aggregated content stats",
-                "responses": {}
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "content",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
             }
         },
         "/content/all-deals": {
@@ -292,10 +366,33 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Get all deals for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Begin",
+                        "name": "begin",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Duration",
+                        "name": "duration",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "All",
+                        "name": "all",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/content/bw-usage/:content": {
+        "/content/bw-usage/{content}": {
             "get": {
                 "description": "This endpoint returns content bandwidth",
                 "produces": [
@@ -305,6 +402,15 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Get content bandwidth",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "content",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -318,6 +424,17 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Add a new content",
+                "parameters": [
+                    {
+                        "description": "Content",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -331,10 +448,24 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Content with deals",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/content/ensure-replication/:datacid": {
+        "/content/ensure-replication/{datacid}": {
             "get": {
                 "description": "This endpoint ensures that the content is replicated to the specified number of providers",
                 "produces": [
@@ -344,10 +475,19 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Ensure Replication",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Data CID",
+                        "name": "datacid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/content/failures/:content": {
+        "/content/failures/{content}": {
             "get": {
                 "description": "This endpoint returns all failures for a content",
                 "produces": [
@@ -357,7 +497,23 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "List all failures for a content",
-                "responses": {}
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "content",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
             }
         },
         "/content/importdeal": {
@@ -370,6 +526,17 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Import a deal",
+                "parameters": [
+                    {
+                        "description": "Import a deal",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.importDealBody"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -383,10 +550,20 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "List all pinned content",
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
-        "/content/read/:cont": {
+        "/content/read/{cont}": {
             "get": {
                 "description": "This endpoint reads content from the blockstore",
                 "produces": [
@@ -396,12 +573,21 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Read content",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CID",
+                        "name": "cont",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
         "/content/staging-zones": {
             "get": {
-                "description": "This endpoint is used to get staging zone for user",
+                "description": "This endpoint is used to get staging zone for user.",
                 "produces": [
                     "application/json"
                 ],
@@ -434,7 +620,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/content/status/:id": {
+        "/content/status/{id}": {
             "get": {
                 "description": "This endpoint returns the status of a content",
                 "produces": [
@@ -444,11 +630,20 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Content Status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Content ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
         "/deal/estimate": {
-            "get": {
+            "post": {
                 "description": "This endpoint estimates the cost of a deal",
                 "produces": [
                     "application/json"
@@ -457,10 +652,21 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Estimate the cost of a deal",
+                "parameters": [
+                    {
+                        "description": "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.estimateDealBody"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/info/:dealid": {
+        "/deal/info/{dealid}": {
             "get": {
                 "description": "This endpoint returns the deal info for a deal",
                 "produces": [
@@ -470,10 +676,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Get Deal Info",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Deal ID",
+                        "name": "dealid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/make/:miner": {
+        "/deal/make/{miner}": {
             "post": {
                 "description": "This endpoint makes a deal for a given content and miner",
                 "produces": [
@@ -483,10 +698,28 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Make Deal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deal Request",
+                        "name": "dealRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/proposal/:propcid": {
+        "/deal/proposal/{propcid}": {
             "get": {
                 "description": "This endpoint returns the proposal for a deal",
                 "produces": [
@@ -496,10 +729,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Get Proposal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Proposal CID",
+                        "name": "propcid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/query/:miner": {
+        "/deal/query/{miner}": {
             "get": {
                 "description": "This endpoint returns the ask for a given CID",
                 "produces": [
@@ -509,10 +751,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Query Ask",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CID",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/status-by-proposal/:propcid": {
+        "/deal/status-by-proposal/{propcid}": {
             "get": {
                 "description": "Get Deal Status by PropCid",
                 "produces": [
@@ -522,10 +773,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Get Deal Status by PropCid",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "PropCid",
+                        "name": "propcid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/status/:deal": {
+        "/deal/status/{deal}": {
             "get": {
                 "description": "This endpoint returns the status of a deal",
                 "produces": [
@@ -535,10 +795,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Get Deal Status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Deal ID",
+                        "name": "deal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/deal/status/:miner/:propcid": {
+        "/deal/status/{miner}/{propcid}": {
             "get": {
                 "description": "This endpoint returns the status of a deal",
                 "produces": [
@@ -548,6 +817,22 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Deal Status",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Proposal CID",
+                        "name": "propcid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -574,6 +859,19 @@ const docTemplate_swagger = `{
                     "deals"
                 ],
                 "summary": "Transfer Status",
+                "responses": {}
+            }
+        },
+        "/deals/failures": {
+            "get": {
+                "description": "This endpoint returns a list of storage failures",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Get storage failures",
                 "responses": {}
             }
         },
@@ -636,27 +934,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/pinning/pins/:id": {
-            "get": {
-                "description": "This endpoint returns a pinned object.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Get a pinned objects",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "cid",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            },
+        "/pinning/pins/{id}": {
             "post": {
                 "description": "This endpoint replaces a pinned object.",
                 "produces": [
@@ -676,6 +954,28 @@ const docTemplate_swagger = `{
                     }
                 ],
                 "responses": {}
+            }
+        },
+        "/pinning/pins/{requestid}": {
+            "get": {
+                "description": "This endpoint returns a pinned object.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Get a pinned objects",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "cid",
+                        "name": "requestid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
             },
             "delete": {
                 "description": "This endpoint deletes a pinned object.",
@@ -689,8 +989,8 @@ const docTemplate_swagger = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "id",
-                        "name": "id",
+                        "description": "requestid",
+                        "name": "requestid",
                         "in": "path",
                         "required": true
                     }
@@ -698,7 +998,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/public/by-cid/:cid": {
+        "/public/by-cid/{cid}": {
             "get": {
                 "description": "This endpoint returns the content associated with a CID",
                 "produces": [
@@ -708,20 +1008,15 @@ const docTemplate_swagger = `{
                     "public"
                 ],
                 "summary": "Get Content by Cid",
-                "responses": {}
-            }
-        },
-        "/public/deal/failures": {
-            "get": {
-                "description": "This endpoint returns a list of storage failures",
-                "produces": [
-                    "application/json"
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cid",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    }
                 ],
-                "tags": [
-                    "public",
-                    "deals"
-                ],
-                "summary": "Get storage failures",
                 "responses": {}
             }
         },
@@ -732,8 +1027,7 @@ const docTemplate_swagger = `{
                     "application/json"
                 ],
                 "tags": [
-                    "public",
-                    "deals"
+                    "public"
                 ],
                 "summary": "Get public node info",
                 "responses": {}
@@ -767,7 +1061,7 @@ const docTemplate_swagger = `{
                 "responses": {}
             }
         },
-        "/public/miners/deals/:miner": {
+        "/public/miners/deals/{miner}": {
             "get": {
                 "description": "This endpoint returns all miners deals",
                 "produces": [
@@ -778,10 +1072,18 @@ const docTemplate_swagger = `{
                     "miner"
                 ],
                 "summary": "Get all miners deals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by miner",
+                        "name": "miner",
+                        "in": "path"
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/public/miners/failures/:miners": {
+        "/public/miners/failures/{miner}": {
             "get": {
                 "description": "This endpoint returns all miners",
                 "produces": [
@@ -792,10 +1094,18 @@ const docTemplate_swagger = `{
                     "net"
                 ],
                 "summary": "Get all miners",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by miner",
+                        "name": "miner",
+                        "in": "query"
+                    }
+                ],
                 "responses": {}
             }
         },
-        "/public/miners/stats/:miner": {
+        "/public/miners/stats/{miner}": {
             "get": {
                 "description": "This endpoint returns miner stats",
                 "produces": [
@@ -806,6 +1116,14 @@ const docTemplate_swagger = `{
                     "miner"
                 ],
                 "summary": "Get miner stats",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by miner",
+                        "name": "miner",
+                        "in": "path"
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -867,14 +1185,7 @@ const docTemplate_swagger = `{
                     "public"
                 ],
                 "summary": "Public stats",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/main.publicStatsResponse"
-                        }
-                    }
-                }
+                "responses": {}
             }
         },
         "/user/api-keys": {
@@ -954,7 +1265,7 @@ const docTemplate_swagger = `{
                 }
             }
         },
-        "/user/api-keys/:key": {
+        "/user/api-keys/{key}": {
             "delete": {
                 "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.",
                 "produces": [
@@ -964,6 +1275,15 @@ const docTemplate_swagger = `{
                     "User"
                 ],
                 "summary": "Revoke a User API Key.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Key",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -981,10 +1301,7 @@ const docTemplate_swagger = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
-                            }
+                            "type": "string"
                         }
                     }
                 }
@@ -1052,23 +1369,6 @@ const docTemplate_swagger = `{
                 }
             }
         },
-        "main.adminUserResponse": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "type": "integer"
-                },
-                "numFiles": {
-                    "type": "integer"
-                },
-                "spaceUsed": {
-                    "type": "integer"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
         "main.createCollectionBody": {
             "type": "object",
             "properties": {
@@ -1077,6 +1377,23 @@ const docTemplate_swagger = `{
                 },
                 "name": {
                     "type": "string"
+                }
+            }
+        },
+        "main.estimateDealBody": {
+            "type": "object",
+            "properties": {
+                "durationBlks": {
+                    "type": "integer"
+                },
+                "replication": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "verified": {
+                    "type": "boolean"
                 }
             }
         },
@@ -1091,17 +1408,23 @@ const docTemplate_swagger = `{
                 }
             }
         },
-        "main.publicStatsResponse": {
+        "main.importDealBody": {
             "type": "object",
             "properties": {
-                "dealsOnChain": {
-                    "type": "integer"
+                "collection": {
+                    "type": "string"
                 },
-                "totalFiles": {
-                    "type": "integer"
+                "collectionPath": {
+                    "type": "string"
                 },
-                "totalStorage": {
-                    "type": "integer"
+                "dealIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

@@ -656,6 +656,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Description  This endpoint is used to upload new content.
 // @Tags         content
 // @Produce      json
+// @Accept       multipart/form-data
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -963,7 +964,8 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 // @Description  This endpoint ensures that the content is replicated to the specified number of providers
 // @Tags         content
 // @Produce      json
-// @Router       /content/ensure-replication/:datacid [get]
+// @Param        datacid path string true "Data CID"
+// @Router       /content/ensure-replication/{datacid} [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
 	data, err := cid.Decode(c.Param("datacid"))
 	if err != nil {
@@ -986,6 +988,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Description  This endpoint lists all content
 // @Tags         content
 // @Produce      json
+// @Success 	200 {array} string
 // @Router       /content/list [get]
 func (s *Server) handleListContent(c echo.Context, u *User) error {
 	var contents []Content
@@ -1006,6 +1009,8 @@ type expandedContent struct {
 // @Description  This endpoint lists all content with deals
 // @Tags         content
 // @Produce      json
+// @Param limit query int false "Limit"
+// @Param offset query int false "Offset"
 // @Router       /content/deals [get]
 func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 
@@ -1068,7 +1073,8 @@ type dealStatus struct {
 // @Description  This endpoint returns the status of a content
 // @Tags         content
 // @Produce      json
-// @Router       /content/status/:id [get]
+// @Param id path int true "Content ID"
+// @Router       /content/status/{id} [get]
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
@@ -1151,7 +1157,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/status/:deal [get]
+// @Param deal path int true "Deal ID"
+// @Router       /deal/status/{deal} [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1173,7 +1180,8 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 // @Description  Get Deal Status by PropCid
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/status-by-proposal/:propcid [get]
+// @Param 		propcid path string true "PropCid"
+// @Router       /deal/status-by-proposal/{propcid} [get]
 func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1265,7 +1273,8 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 // @Description  This endpoint returns the content associated with a CID
 // @Tags         public
 // @Produce      json
-// @Router       /public/by-cid/:cid [get]
+// @Param 		cid path string true "Cid"
+// @Router       /public/by-cid/{cid} [get]
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
@@ -1321,7 +1330,8 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 // @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/query/:miner [get]
+// @Param 		 miner path string true "CID"
+// @Router       /deal/query/{miner} [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -1350,7 +1360,9 @@ type dealRequest struct {
 // @Description  This endpoint makes a deal for a given content and miner
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/make/:miner [post]
+// @Param miner path string true "Miner"
+// @Param dealRequest body string true "Deal Request"
+// @Router       /deal/make/{miner} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1540,7 +1552,9 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 // @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/status/:miner/:propcid [get]
+// @Param miner path string true "Miner"
+// @Param propcid path string true "Proposal CID"
+// @Router       /deal/status/{miner}/{propcid} [get]
 func (s *Server) handleDealStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1567,7 +1581,8 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 // @Description  This endpoint returns the proposal for a deal
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/proposal/:propcid [get]
+// @Param propcid path string true "Proposal CID"
+// @Router       /deal/proposal/{propcid} [get]
 func (s *Server) handleGetProposal(c echo.Context) error {
 	propCid, err := cid.Decode(c.Param("propcid"))
 	if err != nil {
@@ -1592,7 +1607,8 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 // @Description  This endpoint returns the deal info for a deal
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/info/:dealid [get]
+// @Param 	  	 dealid path int true "Deal ID"
+// @Router       /deal/info/{dealid} [get]
 func (s *Server) handleGetDealInfo(c echo.Context) error {
 	dealid, err := strconv.ParseInt(c.Param("dealid"), 10, 64)
 	if err != nil {
@@ -2073,7 +2089,8 @@ type priceEstimateResponse struct {
 // @Description  This endpoint estimates the cost of a deal
 // @Tags         deals
 // @Produce      json
-// @Router       /deal/estimate [get]
+// @Param body body main.estimateDealBody true "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
+// @Router       /deal/estimate [post]
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -2101,7 +2118,8 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Router       /public/miners/failures/:miners [get]
+// @Param miner query string false "Filter by miner"
+// @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -2142,7 +2160,8 @@ type minerChainInfo struct {
 // @Description  This endpoint returns miner stats
 // @Tags         public,miner
 // @Produce      json
-// @Router       /public/miners/stats/:miner [get]
+// @Param miner path string false "Filter by miner"
+// @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
 	defer span.End()
@@ -2232,7 +2251,8 @@ type minerDealsResp struct {
 // @Description  This endpoint returns all miners deals
 // @Tags         public,miner
 // @Produce      json
-// @Router       /public/miners/deals/:miner [get]
+// @Param miner path string false "Filter by miner"
+// @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -2264,7 +2284,8 @@ type bandwidthResponse struct {
 // @Description  This endpoint returns content bandwidth
 // @Tags         content
 // @Produce      json
-// @Router       /content/bw-usage/:content [get]
+// @Param 		 content path string true "Content ID"
+// @Router       /content/bw-usage/{content} [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2303,7 +2324,9 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 // @Description  This endpoint returns aggregated content stats
 // @Tags         content
 // @Produce      json
-// @Router       /content/aggregated/:content [get]
+// @Param content path string true "Content ID"
+// @Success 	200 {object} string
+// @Router       /content/aggregated/{content} [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2335,7 +2358,9 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 // @Description  This endpoint returns all failures for a content
 // @Tags         content
 // @Produce      json
-// @Router       /content/failures/:content [get]
+// @Param content path string true "Content ID"
+// @Success 	200 {object} string
+// @Router       /content/failures/{content} [get]
 func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2876,7 +2901,8 @@ type getApiKeysResp struct {
 // @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
 // @Tags         User
 // @Produce      json
-// @Router       /user/api-keys/:key [delete]
+// @Param        key path string true "Key"
+// @Router       /user/api-keys/{key} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 	kval := c.Param("key")
 
@@ -2996,7 +3022,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Tags         collections
 // @Produce      json
 // @Param        id   path      int  true  "User ID"
-// @Success      200  {object}  []Collection
+// @Success      200  {object}  []main.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3019,9 +3045,11 @@ type addContentToCollectionParams struct {
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
 // @Description  When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
-// @Param        body     body     addContentToCollectionParams  true     "Contents to add to collection"
 // @Tags         collections
+// @Accept       json
 // @Produce      json
+// @Param        body     body     main.addContentToCollectionParams  true     "Contents to add to collection"
+// @Success      200  {object}  map[string]string
 // @Router       /collections/add-content [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	var params addContentToCollectionParams
@@ -3086,7 +3114,8 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 // @Param        coluuid     path     string  true     "coluuid"
 // @Tags         collections
 // @Produce      json
-// @Router       /collections/content/:collection-id [get]
+// @Success      200  {object}  string
+// @Router       /collections/content/{collection-id} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	colid := c.Param("coluuid")
 
@@ -3164,9 +3193,8 @@ type adminUserResponse struct {
 // handleAdminGetUsers godoc
 // @Summary      Get all users
 // @Description  This endpoint is used to get all users.
-// @Tags         Admin,Users
+// @Tags       	 admin
 // @Produce      json
-// @Success 	 200 {array} adminUserResponse
 // @Router       /admin/users [get]
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
@@ -3194,7 +3222,6 @@ type publicStatsResponse struct {
 // @Description  This endpoint is used to get public stats.
 // @Tags         public
 // @Produce      json
-// @Success 	 200 {object} publicStatsResponse
 // @Router       /public/stats [get]
 func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
@@ -3231,7 +3258,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 
 // handleGetStagingZoneForUser godoc
 // @Summary      Get staging zone for user
-// @Description  This endpoint is used to get staging zone for user
+// @Description  This endpoint is used to get staging zone for user.
 // @Tags         content
 // @Produce      json
 // @Router       /content/staging-zones [get]
@@ -3244,7 +3271,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 // @Description  This endpoint is used to get API keys for a user.
 // @Tags         User
 // @Produce      json
-// @Success      200  {object}  map[string]string
+// @Success      200  {object}  string
 // @Router       /user/export [get]
 func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 	export, err := s.exportUserData(u.ID)
@@ -3443,6 +3470,9 @@ type dealPairs struct {
 // @Description  This endpoint is used to get all deals for a user
 // @Tags         content
 // @Produce      json
+// @Param        begin query string true "Begin"
+// @Param        duration query string true "Duration"
+// @Param        all query string true "All"
 // @Router       /content/all-deals [get]
 func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 
@@ -3929,9 +3959,9 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 // handleStorageFailures godoc
 // @Summary      Get storage failures
 // @Description  This endpoint returns a list of storage failures
-// @Tags         public,deals
+// @Tags         deals
 // @Produce      json
-// @Router       /public/deal/failures [get]
+// @Router       /deals/failures [get]
 func (s *Server) handleStorageFailures(c echo.Context) error {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -3966,6 +3996,7 @@ func (s *Server) handleStorageFailures(c echo.Context) error {
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
+// @Param        body body string true "Content"
 // @Router       /content/create [post]
 func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	var req util.ContentCreateBody
@@ -4278,7 +4309,7 @@ type publicNodeInfo struct {
 // handleGetPublicNodeInfo godoc
 // @Summary      Get public node info
 // @Description  This endpoint returns information about the node
-// @Tags         public,deals
+// @Tags         public
 // @Produce      json
 // @Router       /public/info [get]
 func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
@@ -4501,6 +4532,8 @@ type collectionListResponse struct {
 // @Description  This endpoint creates a new collection
 // @Tags         collections
 // @Produce      json
+// @Param        col query string true "Collection"
+// @Param        dir query string true "Directory"
 // @Router       /collections/fs/list [get]
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	colid := c.QueryParam("col")
@@ -4633,6 +4666,10 @@ func sanitizePath(p string) (string, error) {
 // @Summary      Add a file to a collection
 // @Description  This endpoint adds a file to a collection
 // @Tags         collections
+// @Param        col query string true "Collection ID"
+// @Param        collection query string true "Collection ID Long"
+// @Param        content query string true "Content"
+// @Param        path query string true "Path to file"
 // @Produce      json
 // @Router       /collections/fs/add [post]
 func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
