@@ -287,6 +287,15 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Add new content",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File to upload",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -300,6 +309,35 @@ const docTemplate_swagger = `{
                     "content"
                 ],
                 "summary": "Add Car object",
+                "parameters": [
+                    {
+                        "description": "Car",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename",
+                        "name": "filename",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Commp",
+                        "name": "commp",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Size",
+                        "name": "size",
+                        "in": "query"
+                    }
+                ],
                 "responses": {}
             }
         },

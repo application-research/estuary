@@ -532,6 +532,10 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 // @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
+// @Param        body body string true "Car"
+// @Param 		 filename query string false "Filename"
+// @Param 		 commp query string false "Commp"
+// @Param 		 size query string false "Size"
 // @Router       /content/add-car [post]
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -657,6 +661,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
+// @Param        file formData file true "File to upload"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
