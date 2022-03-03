@@ -712,8 +712,8 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 // @Description  This endpoint returns a pinned object.
 // @Tags         pinning
 // @Produce      json
-// @Param        id  path  string  true  "cid"
-// @Router       /pinning/pins/:id [get]
+// @Param        requestid  path  string  true  "cid"
+// @Router       /pinning/pins/{requestid} [get]
 func (s *Server) handleGetPin(e echo.Context, u *User) error {
 	id, err := strconv.Atoi(e.Param("requestid"))
 	if err != nil {
@@ -739,7 +739,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Tags         pinning
 // @Produce      json
 // @Param        id  path  string  true  "id"
-// @Router       /pinning/pins/:id [post]
+// @Router       /pinning/pins/{id} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
@@ -798,8 +798,8 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 // @Description  This endpoint deletes a pinned object.
 // @Tags         pinning
 // @Produce      json
-// @Param        id  path  string  true  "id"
-// @Router       /pinning/pins/:id [delete]
+// @Param        requestid  path  string  true  "requestid"
+// @Router       /pinning/pins/{requestid} [delete]
 func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	// TODO: need to cancel any in-progress pinning operation
 	ctx := e.Request().Context()

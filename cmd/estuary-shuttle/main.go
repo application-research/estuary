@@ -1724,7 +1724,8 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 // @Description  This endpoint reads content from the blockstore
 // @Tags         content
 // @Produce      json
-// @Router       /content/read/:cont [get]
+// @Param        cont path string true "CID"
+// @Router       /content/read/{cont} [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("cont"))
 	if err != nil {
@@ -1963,6 +1964,7 @@ type importDealBody struct {
 // @Description  This endpoint imports a deal into the shuttle.
 // @Tags         content
 // @Produce      json
+// @Param        body body main.importDealBody true "Import a deal"
 // @Router       /content/importdeal [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
