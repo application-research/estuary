@@ -3465,11 +3465,6 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	})
 }
 
-type initShuttleResponse struct {
-	Handle string `json:"handle"`
-	Token  string `json:"token"`
-}
-
 func (s *Server) handleShuttleInit(c echo.Context) error {
 	shuttle := &Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
@@ -3480,22 +3475,10 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &initShuttleResponse{
+	return c.JSON(200, &util.InitShuttleResponse{
 		Handle: shuttle.Handle,
 		Token:  shuttle.Token,
 	})
-}
-
-type shuttleListResponse struct {
-	Handle         string          `json:"handle"`
-	Token          string          `json:"token"`
-	Online         bool            `json:"online"`
-	LastConnection time.Time       `json:"lastConnection"`
-	AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
-	Address        address.Address `json:"address"`
-	Hostname       string          `json:"hostname"`
-
-	StorageStats *shuttleStorageStats `json:"storageStats"`
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
@@ -3504,9 +3487,9 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 		return err
 	}
 
-	var out []shuttleListResponse
+	var out []util.ShuttleListResponse
 	for _, d := range shuttles {
-		out = append(out, shuttleListResponse{
+		out = append(out, util.ShuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
@@ -4015,17 +3998,8 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, candidates)
 }
 
-type shuttleCreateContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
-	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
-	DagSplitRoot uint     `json:"dagSplitRoot"`
-	User         uint     `json:"user"`
-}
-
 func (s *Server) handleShuttleCreateContent(c echo.Context) error {
-	var req shuttleCreateContentBody
+	var req util.ShuttleCreateContentBody
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
