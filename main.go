@@ -487,6 +487,13 @@ func main() {
 	}
 }
 
+type Autoretrieve struct {
+	gorm.Model
+
+	Handle string `gorm:"unique"`
+	Token  string `gorm:"unique"`
+}
+
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
 
@@ -523,6 +530,8 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&InviteCode{})
 
 	db.AutoMigrate(&Shuttle{})
+
+	db.AutoMigrate(&Autoretrieve{})
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {

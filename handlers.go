@@ -282,6 +282,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	shuttle.POST("/init", s.handleShuttleInit)
 	shuttle.GET("/list", s.handleShuttleList)
 
+	autoretrieve := admin.Group("/autoretrieve")
+	autoretrieve.POST("/init", s.handleAutoretrieveInit)
+
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
@@ -3584,6 +3587,26 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
+}
+
+type initAutoretrieveResponse struct {
+	Handle string `json:"handle"`
+	Token  string `json:"token"`
+}
+
+func (s *Server) handleAutoretrieveInit(c echo.Context) error {
+	autoretrieve := &Autoretrieve{
+		Handle: "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+		Token:  "SECRET" + uuid.New().String() + "SECRET",
+	}
+	if err := s.DB.Create(autoretrieve).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &initAutoretrieveResponse{
+		Handle: autoretrieve.Handle,
+		Token:  autoretrieve.Token,
+	})
 }
 
 type allDealsQuery struct {
