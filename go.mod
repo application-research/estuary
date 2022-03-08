@@ -10,7 +10,7 @@ require (
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/dustin/go-humanize v1.0.0
-	github.com/filecoin-project/boost v0.0.0-20220308093246-cfb1ee67a5f2
+	github.com/filecoin-project/boost v0.0.0-20220310131759-cd38741e464d
 	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
@@ -392,4 +392,4 @@ replace github.com/raulk/go-bs-tests => github.com/whyrusleeping/go-bs-tests v0.
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
-replace github.com/application-research/filclient => github.com/dirkmc/filclient v0.0.0-20220308134601-41799935deba
+replace github.com/application-research/filclient => github.com/dirkmc/filclient v0.0.0-20220311052559-e50e813ae997
