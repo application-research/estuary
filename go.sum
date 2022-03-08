@@ -286,8 +286,8 @@ github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZm
 github.com/dgryski/go-farm v0.0.0-20190104051053-3adb47b1fb0f/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 h1:tdlZCpZ/P9DhczCTSixgIKmwPv6+wP5DGjqLYw5SUiA=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
-github.com/dirkmc/filclient v0.0.0-20220303091146-540e2eb8606e h1:RNX6emhtmnsDmi/4uPMRCCxyNqOjIidv67qJT9ruLIM=
-github.com/dirkmc/filclient v0.0.0-20220303091146-540e2eb8606e/go.mod h1:BkyZ1W3sWKLNVHC5gsxi4AqjShwELk1GDZzBQJn3fUw=
+github.com/dirkmc/filclient v0.0.0-20220308085623-cd9e34347772 h1:rkiXF7YJwFWpMLzMFr1UcgjLf0nJo9gBP9jaKOtRk4Y=
+github.com/dirkmc/filclient v0.0.0-20220308085623-cd9e34347772/go.mod h1:BkyZ1W3sWKLNVHC5gsxi4AqjShwELk1GDZzBQJn3fUw=
 github.com/docker/go-units v0.4.0 h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=
 github.com/docker/go-units v0.4.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
 github.com/drand/bls12-381 v0.3.2/go.mod h1:dtcLgPtYT38L3NO6mPDYH0nbpc5tjPassDqiniuAt4Y=
