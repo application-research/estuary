@@ -1512,14 +1512,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	// case where deal isnt yet on chain...
 
-	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
+	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
 	// Get deal UUID, if there is one for the deal.
 	// (There should be a UUID for deals made with deal protocol v1.2.0)
+	statusCheckID := d.PropCid.CID.String()
 	var dealUUID *uuid.UUID
 	if d.DealUUID != "" {
+		statusCheckID = d.DealUUID
 		parsed, parseErr := uuid.Parse(d.DealUUID)
 		if parseErr == nil {
 			dealUUID = &parsed
@@ -1533,7 +1535,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		provds, err = cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID, dealUUID)
 	}
 	if err != nil {
-		log.Warnf("failed to check deal status with miner %s: %s", maddr, err)
+		log.Warnf("failed to check deal status for deal %s with miner %s: %s", statusCheckID, maddr, err)
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
 		expired, err := cm.dealHasExpired(ctx, d)
@@ -1556,7 +1558,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	if provds.State == storagemarket.StorageDealError {
-		log.Errorf("deal state from miner is error: %s", provds.Message)
+		log.Errorf("deal state for deal %s from miner %s is error: %s",
+			statusCheckID, maddr.String(), provds.Message)
 	}
 
 	content, err := cm.getContent(d.Content)
@@ -1619,7 +1622,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	if provds.Proposal == nil {
-		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID)
+		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 		if time.Since(d.CreatedAt) > time.Hour*24*14 {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
@@ -1630,7 +1633,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			return DEAL_CHECK_UNKNOWN, nil
 
 		}
-		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner for deal status check")
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner %s for deal %s deal status check: %s",
+			statusCheckID, maddr.String(), provds.Message)
 	}
 
 	if provds.Proposal.StartEpoch < head.Height() {
