@@ -212,6 +212,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 	public.GET("/deals/failures", s.handleStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
+	public.GET("/miners", s.handlePublicGetMinerStats)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -1629,6 +1630,15 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
+	_, stats, err := s.CM.sortedMinerList()
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, stats)
 }
 
 func (s *Server) handleAdminGetMinerStats(c echo.Context) error {

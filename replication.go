@@ -85,6 +85,7 @@ type ContentManager struct {
 	// Some fields for miner reputation management
 	minerLk      sync.Mutex
 	sortedMiners []address.Address
+	rawData      []*minerDealStats
 	lastComputed time.Time
 
 	// deal bucketing stuff
@@ -878,7 +879,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, s
 		}
 	}
 
-	sortedminers, err := cm.sortedMinerList()
+	sortedminers, _, err := cm.sortedMinerList()
 	if err != nil {
 		return nil, err
 	}
