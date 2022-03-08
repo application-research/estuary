@@ -10,3 +10,8 @@ type RetrievalFailureRecord struct {
 	Content uint   `json:"content"`
 	Cid     DbCID  `json:"cid"`
 }
+
+type RetrievalProgress struct {
+	Wait   chan struct{}
+	EndErr error
+}
