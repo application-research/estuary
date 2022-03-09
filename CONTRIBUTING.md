@@ -1,6 +1,6 @@
 # Contributing to Estuary
 
-Estuary welcomes contributions to our [open source projects on Github](https://github.com/application-research/estuary).
+Estuary welcomes contributions to our [open source projects on Github](https://github.com/application-research).
 
 Please refer to each project's style and contribution guidelines for submitting patches and additions. In general, we follow the "fork-and-pull" Git workflow.
 
@@ -11,6 +11,7 @@ Please refer to each project's style and contribution guidelines for submitting 
  5. Submit a **Pull request** so that we can review your changes
 
 NOTE: Be sure to merge the latest from "upstream" before making a pull request!
+
 ## Issues
 
 Feel free to submit issues and enhancement requests.
