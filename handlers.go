@@ -284,7 +284,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 
 	autoretrieve := admin.Group("/autoretrieve")
 	autoretrieve.POST("/init", s.handleAutoretrieveInit)
-	autoretrieve.POST("/list", s.handleAutoretrieveList)
+	autoretrieve.GET("/list", s.handleAutoretrieveList)
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
