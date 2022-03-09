@@ -282,6 +282,10 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	shuttle.POST("/init", s.handleShuttleInit)
 	shuttle.GET("/list", s.handleShuttleList)
 
+	autoretrieve := admin.Group("/autoretrieve")
+	autoretrieve.POST("/init", s.handleAutoretrieveInit)
+	autoretrieve.POST("/list", s.handleAutoretrieveList)
+
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
@@ -3567,6 +3571,55 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
+}
+
+type initAutoretrieveResponse struct {
+	Handle string `json:"handle"`
+	Token  string `json:"token"`
+}
+
+func (s *Server) handleAutoretrieveInit(c echo.Context) error {
+	autoretrieve := &Autoretrieve{
+		Handle: "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+		Token:  "SECRET" + uuid.New().String() + "SECRET",
+	}
+	if err := s.DB.Create(autoretrieve).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &initAutoretrieveResponse{
+		Handle: autoretrieve.Handle,
+		Token:  autoretrieve.Token,
+	})
+}
+
+type autoretrieveListResponse struct {
+	Handle string `json:"handle"`
+	Token  string `json:"token"`
+	// Online         bool            `json:"online"`
+	// LastConnection time.Time       `json:"lastConnection"`
+	// AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
+	// Address        address.Address `json:"address"`
+	// Hostname       string          `json:"hostname"`
+
+	// StorageStats *shuttleStorageStats `json:"storageStats"`
+}
+
+func (s *Server) handleAutoretrieveList(c echo.Context) error {
+	var autoretrieves []Autoretrieve
+	if err := s.DB.Find(&autoretrieves).Error; err != nil {
+		return err
+	}
+
+	var out []autoretrieveListResponse
+	for _, a := range autoretrieves {
+		out = append(out, autoretrieveListResponse{
+			Handle: a.Handle,
+			Token:  a.Token,
+		})
+	}
+
+	return c.JSON(200, out)
 }
 
 type allDealsQuery struct {
