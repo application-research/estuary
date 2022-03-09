@@ -286,6 +286,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	autoretrieve.POST("/init", s.handleAutoretrieveInit)
 	autoretrieve.GET("/list", s.handleAutoretrieveList)
 
+	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat)
+
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
@@ -3573,36 +3575,20 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 	return nil
 }
 
-type initAutoretrieveResponse struct {
-	Handle string `json:"handle"`
-	Token  string `json:"token"`
-}
-
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	autoretrieve := &Autoretrieve{
-		Handle: "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
-		Token:  "SECRET" + uuid.New().String() + "SECRET",
+		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+		Token:          "SECRET" + uuid.New().String() + "SECRET",
+		LastConnection: time.Now(),
 	}
 	if err := s.DB.Create(autoretrieve).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, &initAutoretrieveResponse{
+	return c.JSON(200, &util.InitAutoretrieveResponse{
 		Handle: autoretrieve.Handle,
 		Token:  autoretrieve.Token,
 	})
-}
-
-type autoretrieveListResponse struct {
-	Handle string `json:"handle"`
-	Token  string `json:"token"`
-	// Online         bool            `json:"online"`
-	// LastConnection time.Time       `json:"lastConnection"`
-	// AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
-	// Address        address.Address `json:"address"`
-	// Hostname       string          `json:"hostname"`
-
-	// StorageStats *shuttleStorageStats `json:"storageStats"`
 }
 
 func (s *Server) handleAutoretrieveList(c echo.Context) error {
@@ -3611,12 +3597,36 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 		return err
 	}
 
-	var out []autoretrieveListResponse
+	var out []util.AutoretrieveListResponse
 	for _, a := range autoretrieves {
-		out = append(out, autoretrieveListResponse{
+		out = append(out, util.AutoretrieveListResponse{
 			Handle: a.Handle,
 			Token:  a.Token,
 		})
+	}
+
+	return c.JSON(200, out)
+}
+
+func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
+	auth, err := util.ExtractAuth(c)
+	if err != nil {
+		return err
+	}
+
+	var autoretrieve Autoretrieve
+	if err := s.DB.First(&autoretrieve, "token = ?", auth).Error; err != nil {
+		return err
+	}
+
+	autoretrieve.LastConnection = time.Now().UTC()
+	if err := s.DB.Save(&autoretrieve).Error; err != nil {
+		return err
+	}
+
+	out := util.HeartbeatAutoretrieveResponse{
+		Handle:         autoretrieve.Handle,
+		LastConnection: autoretrieve.LastConnection,
 	}
 
 	return c.JSON(200, out)
