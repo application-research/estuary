@@ -11,6 +11,7 @@ import (
 	"go.opencensus.io/stats/view"
 
 	"github.com/application-research/estuary/build"
+	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
@@ -279,7 +280,7 @@ func main() {
 		if bs := cctx.String("blockstore"); bs != "" {
 			bstore = bs
 		}
-		cfg := &node.Config{
+		cfg := &config.Config{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},

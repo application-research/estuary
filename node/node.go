@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/application-research/estuary/config"
 	migratebs "github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
@@ -102,39 +103,10 @@ type Node struct {
 
 	Bwc *metrics.BandwidthCounter
 
-	Config *Config
+	Config *config.Config
 }
 
-type Config struct {
-	ListenAddrs   []string
-	AnnounceAddrs []string
-
-	Blockstore string
-
-	WriteLog          string
-	HardFlushWriteLog bool
-	WriteLogTruncate  bool
-	NoBlockstoreCache bool
-
-	Libp2pKeyFile string
-
-	Datastore string
-
-	WalletDir string
-
-	BitswapConfig BitswapConfig
-
-	BlockstoreWrap func(blockstore.Blockstore) (blockstore.Blockstore, error)
-
-	KeyProviderFunc func(context.Context) (<-chan cid.Cid, error)
-}
-
-type BitswapConfig struct {
-	MaxOutstandingBytesPerPeer int64
-	TargetMessageSize          int
-}
-
-func Setup(ctx context.Context, cfg *Config) (*Node, error) {
+func Setup(ctx context.Context, cfg *config.Config) (*Node, error) {
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
 	if err != nil {
