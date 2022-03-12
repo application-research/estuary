@@ -490,8 +490,9 @@ func main() {
 type Autoretrieve struct {
 	gorm.Model
 
-	Handle string `gorm:"unique"`
-	Token  string `gorm:"unique"`
+	Handle         string `gorm:"unique"`
+	Token          string `gorm:"unique"`
+	LastConnection time.Time
 }
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
