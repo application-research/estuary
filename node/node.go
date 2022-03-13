@@ -82,6 +82,12 @@ type EstuaryBlockstore interface {
 	DeleteMany(context.Context, []cid.Cid) error
 }
 
+type NodeInitializer interface {
+	BlockstoreWrap(blockstore.Blockstore) (blockstore.Blockstore, error)
+	KeyProviderFunc(context.Context) (<-chan cid.Cid, error)
+	Config() *config.Config
+}
+
 type Node struct {
 	Dht      *dht.IpfsDHT
 	Provider *batched.BatchProvidingSystem
@@ -106,7 +112,9 @@ type Node struct {
 	Config *config.Config
 }
 
-func Setup(ctx context.Context, cfg *config.Config) (*Node, error) {
+func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
+
+	cfg := init.Config()
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
 	if err != nil {
@@ -202,13 +210,11 @@ func Setup(ctx context.Context, cfg *config.Config) (*Node, error) {
 	}
 
 	var blkst blockstore.Blockstore = mbs
-	if cfg.BlockstoreWrap != nil {
-		wrapper, err := cfg.BlockstoreWrap(blkst)
-		if err != nil {
-			return nil, err
-		}
-		blkst = wrapper
+	wrapper, err := init.BlockstoreWrap(blkst)
+	if err != nil {
+		return nil, err
 	}
+	blkst = wrapper
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 
@@ -241,7 +247,7 @@ func Setup(ctx context.Context, cfg *config.Config) (*Node, error) {
 	}
 
 	prov, err := batched.New(frt, provq,
-		batched.KeyProvider(cfg.KeyProviderFunc),
+		batched.KeyProvider(init.KeyProviderFunc),
 		batched.Datastore(ds),
 	)
 	if err != nil {

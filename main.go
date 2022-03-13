@@ -23,7 +23,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
@@ -306,37 +305,9 @@ func main() {
 
 		defaultReplication = cctx.Int("default-replication")
 
-		cfg.KeyProviderFunc = func(rpctx context.Context) (<-chan cid.Cid, error) {
-			log.Infof("running key provider func")
-			out := make(chan cid.Cid)
-			go func() {
-				defer close(out)
+		init := Initializer{cfg, db, nil}
 
-				var contents []Content
-				if err := db.Find(&contents, "active").Error; err != nil {
-					log.Errorf("failed to load contents for reproviding: %s", err)
-					return
-				}
-				log.Infof("key provider func returning %d values", len(contents))
-
-				for _, c := range contents {
-					select {
-					case out <- c.Cid.CID:
-					case <-rpctx.Done():
-						return
-					}
-				}
-			}()
-			return out, nil
-		}
-
-		var trackingBstore *TrackingBlockstore
-		cfg.BlockstoreWrap = func(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-			trackingBstore = NewTrackingBlockstore(bs, db)
-			return trackingBstore, nil
-		}
-
-		nd, err := node.Setup(context.Background(), cfg)
+		nd, err := node.Setup(context.Background(), init)
 		if err != nil {
 			return err
 		}
@@ -434,7 +405,7 @@ func main() {
 
 		s.DB = db
 
-		cm, err := NewContentManager(db, api, fc, trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
+		cm, err := NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
 		if err != nil {
 			return err
 		}
@@ -450,7 +421,7 @@ func main() {
 		cm.tracer = otel.Tracer("replicator")
 
 		if cctx.Bool("enable-auto-retrive") {
-			trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
+			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
 		if !cctx.Bool("no-storage-cron") {

@@ -237,7 +237,9 @@ func main() {
 			},
 		}
 
-		nd, err := node.Setup(context.TODO(), cfg)
+		init := Initializer{cfg}
+
+		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
 			return err
 		}
