@@ -140,7 +140,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 					fmt.Println("online: ", ar) // TODO: remove
 				}
 			} else {
-				fmt.Println("no autoretrieve servers online")
+				log.Info("no autoretrieve servers online")
 			}
 		case <-quit:
 			ticker.Stop()
@@ -507,10 +507,11 @@ func main() {
 
 		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
 
-		if os.Getenv("INDEX_UPDATE_INTERVAL") == "" {
-			os.Setenv("INDEX_UPDATE_INTERVAL", "720")
+		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
+		if !ok {
+			updateInterval = "720"
 		}
-		intervalMinutes, err := strconv.Atoi(os.Getenv("INDEX_UPDATE_INTERVAL"))
+		intervalMinutes, err := strconv.Atoi(updateInterval)
 		if err != nil {
 			return err
 		}
@@ -540,6 +541,8 @@ type Autoretrieve struct {
 	Handle         string `gorm:"unique"`
 	Token          string `gorm:"unique"`
 	LastConnection time.Time
+	PeerID         string `gorm:"unique"`
+	Addresses      string
 }
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {

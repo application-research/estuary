@@ -3586,18 +3586,29 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 }
 
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
+	// validate peerid and peer multi addresses
+	addresses := strings.Split(c.FormValue("addresses"), ",")
+	addrInfo, err := util.ValidatePeerInfo(c.FormValue("peerId"), addresses)
+	if err != nil {
+		return err
+	}
+
 	autoretrieve := &Autoretrieve{
 		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
 		Token:          "SECRET" + uuid.New().String() + "SECRET",
 		LastConnection: time.Now(),
+		PeerID:         c.FormValue("peerId"),
+		Addresses:      c.FormValue("addresses"), // cant store []string in gorm
 	}
 	if err := s.DB.Create(autoretrieve).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, &util.InitAutoretrieveResponse{
-		Handle: autoretrieve.Handle,
-		Token:  autoretrieve.Token,
+	return c.JSON(200, &util.AutoretrieveInitResponse{
+		Handle:         autoretrieve.Handle,
+		Token:          autoretrieve.Token,
+		LastConnection: autoretrieve.LastConnection,
+		AddrInfo:       addrInfo,
 	})
 }
 
@@ -3608,10 +3619,20 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 	}
 
 	var out []util.AutoretrieveListResponse
-	for _, a := range autoretrieves {
+
+	for _, ar := range autoretrieves {
+		// any of the multiaddresses of the peer should work to get addrInfo
+		// we get the first one
+		addresses := strings.Split(ar.Addresses, ",")
+		addrInfo, err := peer.AddrInfoFromString(addresses[0])
+		if err != nil {
+			return err
+		}
+
 		out = append(out, util.AutoretrieveListResponse{
-			Handle: a.Handle,
-			Token:  a.Token,
+			Handle:         ar.Handle,
+			LastConnection: ar.LastConnection,
+			AddrInfo:       addrInfo,
 		})
 	}
 
@@ -3634,9 +3655,18 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
+	// any of the multiaddresses of the peer should work to get addrInfo
+	// we get the first one
+	addresses := strings.Split(autoretrieve.Addresses, ",")
+	addrInfo, err := peer.AddrInfoFromString(addresses[0])
+	if err != nil {
+		return err
+	}
+
 	out := util.HeartbeatAutoretrieveResponse{
 		Handle:         autoretrieve.Handle,
 		LastConnection: autoretrieve.LastConnection,
+		AddrInfo:       addrInfo,
 	}
 
 	return c.JSON(200, out)
