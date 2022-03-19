@@ -547,8 +547,11 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		}
 	}
 
+	if len(out) == 0 {
+		out = make([]*types.IpfsPinStatus, 0)
+	}
 	return e.JSON(200, map[string]interface{}{
-		"count":   len(contents),
+		"count":   len(out),
 		"results": out,
 	})
 }
