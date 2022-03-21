@@ -235,6 +235,7 @@ func main() {
 				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
 				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
 			},
+			NoLimiter: true,
 		}
 
 		init := Initializer{cfg}

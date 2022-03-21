@@ -18,6 +18,7 @@ type Config struct {
 	HardFlushWriteLog bool
 	WriteLogTruncate  bool
 	NoBlockstoreCache bool
+	NoLimiter         bool
 
 	Libp2pKeyFile string
 

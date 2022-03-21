@@ -288,6 +288,7 @@ func main() {
 			Datastore:        filepath.Join(ddir, "estuary-leveldb"),
 			WalletDir:        filepath.Join(ddir, "estuary-wallet"),
 			WriteLogTruncate: cctx.Bool("write-log-truncate"),
+			NoLimiter:        true,
 		}
 
 		if wl := cctx.String("write-log"); wl != "" {

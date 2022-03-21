@@ -35,6 +35,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	metrics "github.com/libp2p/go-libp2p-core/metrics"
+	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
@@ -126,10 +127,16 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	lim := rcmgr.NewDefaultLimiter()
-	lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(256, 256, 1024).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
-	lim.TransientLimits = lim.TransientLimits.WithConnLimit(256, 256, 512).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
-	rcm, err := rcmgr.NewResourceManager(lim)
+	var rcm network.ResourceManager
+
+	if cfg.NoLimiter {
+		rcm, err = network.NullResourceManager, nil
+	} else {
+		lim := rcmgr.NewDefaultLimiter()
+		lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(256, 256, 1024).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
+		lim.TransientLimits = lim.TransientLimits.WithConnLimit(256, 256, 512).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
+		rcm, err = rcmgr.NewResourceManager(lim)
+	}
 
 	if err != nil {
 		return nil, err
@@ -137,7 +144,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
-	cmgr, err := connmgr.NewConnManager(200, 400)
+	cmgr, err := connmgr.NewConnManager(2000, 3000)
 	if err != nil {
 		return nil, err
 	}
