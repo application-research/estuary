@@ -15,16 +15,16 @@ type Initializer struct {
 	trackingBstore *TrackingBlockstore
 }
 
-func (init Initializer) Config() *config.Config {
+func (init *Initializer) Config() *config.Config {
 	return init.cfg
 }
 
-func (init Initializer) BlockstoreWrap(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
+func (init *Initializer) BlockstoreWrap(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
 	init.trackingBstore = NewTrackingBlockstore(bs, init.db)
 	return init.trackingBstore, nil
 }
 
-func (init Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid, error) {
+func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid, error) {
 	log.Infof("running key provider func")
 	out := make(chan cid.Cid)
 	go func() {

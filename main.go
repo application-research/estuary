@@ -307,7 +307,7 @@ func main() {
 
 		init := Initializer{cfg, db, nil}
 
-		nd, err := node.Setup(context.Background(), init)
+		nd, err := node.Setup(context.Background(), &init)
 		if err != nil {
 			return err
 		}
