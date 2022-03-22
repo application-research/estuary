@@ -1068,9 +1068,10 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 		return datatransfer.ChannelID{}, ErrNoChannelID
 	}
 
-	chid := filclient.ChannelIDFromString(cd.DTChan)
-	if chid == nil {
-		return datatransfer.ChannelID{}, fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record")
+	chid, err := filclient.ChannelIDFromString(cd.DTChan)
+	if err != nil {
+		err = fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record: %w", err)
+		return datatransfer.ChannelID{}, err
 	}
 
 	return *chid, nil
