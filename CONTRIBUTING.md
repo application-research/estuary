@@ -19,8 +19,6 @@ Feel free to submit issues and enhancement requests.
 
 Please use [Estuary Support](https://docs.estuary.tech/feedback) to report specific bugs and errors.
 
-
-<<<<<<< HEAD
 ## Issues
 
 Feel free to submit issues and enhancement requests.
