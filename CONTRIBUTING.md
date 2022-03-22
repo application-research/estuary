@@ -20,6 +20,7 @@ Feel free to submit issues and enhancement requests.
 Please use [Estuary Support](https://docs.estuary.tech/feedback) to report specific bugs and errors.
 
 
+<<<<<<< HEAD
 ## Issues
 
 Feel free to submit issues and enhancement requests.
@@ -110,13 +111,13 @@ The above commands can be repeated to create more shuttle nodes.
 
 At this point you may begin adding files to estuary via the API described in the [documentation](https://docs.estuary.tech/api-content-add), or using the golang client [creek](https://github.com/iand/creek).
 
-
 ## Copyright and Licensing
 -----------------------
 
 Most Estuary open source projects are licensed under the [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0).
 
 To view the license, go [here](LICENSE.md)
+
 ## Building
 
 Estuary is an open source experimental IPFS node and is open for anyone to propose changes and modify. 
