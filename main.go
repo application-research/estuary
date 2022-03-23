@@ -124,27 +124,30 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	var lastTickTime time.Time
 	ticker := time.NewTicker(tickInterval)
 
+	defer ticker.Stop()
 	for {
+		lastTickTime = time.Now().UTC().Add(-tickInterval)
+
+		// Find all autoretrieve servers that are online (that sent heartbeat)
+		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
+		if err != nil {
+			log.Errorf("unable to query autoretrieve servers from database: %s", err)
+			return err
+		}
+		if len(autoretrieves) > 0 {
+			for _, ar := range autoretrieves {
+				fmt.Println("online: ", ar) // TODO: remove
+			}
+		} else {
+			log.Info("no autoretrieve servers online")
+		}
+
+		// wait for next tick, or quit
 		select {
 		case <-ticker.C:
-			lastTickTime = time.Now().UTC().Add(-tickInterval)
-
-			// Find all autoretrieve servers that are online (that sent heartbeat)
-			err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
-			if err != nil {
-				log.Errorf("unable to query autoretrieve servers from database: %s", err)
-				return err
-			}
-			if len(autoretrieves) > 0 {
-				for _, ar := range autoretrieves {
-					fmt.Println("online: ", ar) // TODO: remove
-				}
-			} else {
-				log.Info("no autoretrieve servers online")
-			}
+			continue
 		case <-quit:
-			ticker.Stop()
-			return nil
+			break
 		}
 	}
 }
