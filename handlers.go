@@ -43,7 +43,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	merkledag "github.com/ipfs/go-merkledag"
-	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
@@ -235,6 +234,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 	public.GET("/deals/failures", s.handleStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
+	public.GET("/miners", s.handlePublicGetMinerStats)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -304,6 +304,12 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	shuttle := admin.Group("/shuttle")
 	shuttle.POST("/init", s.handleShuttleInit)
 	shuttle.GET("/list", s.handleShuttleList)
+
+	autoretrieve := admin.Group("/autoretrieve")
+	autoretrieve.POST("/init", s.handleAutoretrieveInit)
+	autoretrieve.GET("/list", s.handleAutoretrieveList)
+
+	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat)
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
@@ -895,7 +901,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		return err
 	}
 
-	if err = cm.addObjectsToDatabase(ctx, cont, objects, "local"); err != nil {
+	if err = cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local"); err != nil {
 		return err
 	}
 
@@ -1792,6 +1798,15 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
+	_, stats, err := s.CM.sortedMinerList()
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, stats)
 }
 
 func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
@@ -3806,11 +3821,6 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	})
 }
 
-type initShuttleResponse struct {
-	Handle string `json:"handle"`
-	Token  string `json:"token"`
-}
-
 func (s *Server) handleShuttleInit(c echo.Context) error {
 	shuttle := &Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
@@ -3821,22 +3831,10 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &initShuttleResponse{
+	return c.JSON(200, &util.InitShuttleResponse{
 		Handle: shuttle.Handle,
 		Token:  shuttle.Token,
 	})
-}
-
-type shuttleListResponse struct {
-	Handle         string          `json:"handle"`
-	Token          string          `json:"token"`
-	Online         bool            `json:"online"`
-	LastConnection time.Time       `json:"lastConnection"`
-	AddrInfo       *peer.AddrInfo  `json:"addrInfo"`
-	Address        address.Address `json:"address"`
-	Hostname       string          `json:"hostname"`
-
-	StorageStats *shuttleStorageStats `json:"storageStats"`
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
@@ -3845,9 +3843,9 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 		return err
 	}
 
-	var out []shuttleListResponse
+	var out []util.ShuttleListResponse
 	for _, d := range shuttles {
-		out = append(out, shuttleListResponse{
+		out = append(out, util.ShuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
@@ -3925,6 +3923,63 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
+}
+
+func (s *Server) handleAutoretrieveInit(c echo.Context) error {
+	autoretrieve := &Autoretrieve{
+		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+		Token:          "SECRET" + uuid.New().String() + "SECRET",
+		LastConnection: time.Now(),
+	}
+	if err := s.DB.Create(autoretrieve).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(200, &util.InitAutoretrieveResponse{
+		Handle: autoretrieve.Handle,
+		Token:  autoretrieve.Token,
+	})
+}
+
+func (s *Server) handleAutoretrieveList(c echo.Context) error {
+	var autoretrieves []Autoretrieve
+	if err := s.DB.Find(&autoretrieves).Error; err != nil {
+		return err
+	}
+
+	var out []util.AutoretrieveListResponse
+	for _, a := range autoretrieves {
+		out = append(out, util.AutoretrieveListResponse{
+			Handle: a.Handle,
+			Token:  a.Token,
+		})
+	}
+
+	return c.JSON(200, out)
+}
+
+func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
+	auth, err := util.ExtractAuth(c)
+	if err != nil {
+		return err
+	}
+
+	var autoretrieve Autoretrieve
+	if err := s.DB.First(&autoretrieve, "token = ?", auth).Error; err != nil {
+		return err
+	}
+
+	autoretrieve.LastConnection = time.Now().UTC()
+	if err := s.DB.Save(&autoretrieve).Error; err != nil {
+		return err
+	}
+
+	out := util.HeartbeatAutoretrieveResponse{
+		Handle:         autoretrieve.Handle,
+		LastConnection: autoretrieve.LastConnection,
+	}
+
+	return c.JSON(200, out)
 }
 
 type allDealsQuery struct {
@@ -4375,17 +4430,8 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, candidates)
 }
 
-type shuttleCreateContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
-	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
-	DagSplitRoot uint     `json:"dagSplitRoot"`
-	User         uint     `json:"user"`
-}
-
 func (s *Server) handleShuttleCreateContent(c echo.Context) error {
-	var req shuttleCreateContentBody
+	var req util.ShuttleCreateContentBody
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
@@ -4514,6 +4560,7 @@ type collectionListQueryRes struct {
 	Cid    util.DbCID
 	Size   int64
 	Path   *string
+	Type   util.ContentType
 }
 
 type CidType string
@@ -4567,7 +4614,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, path, size").
+		Select("contents.id as cont_id, contents.cid as cid, path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
@@ -4586,13 +4633,9 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			return err
 		}
 
-		// Build a new local DAGService to query for the CID if our ref and see if it's a directory
-		bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
-		dserv := merkledag.NewDAGService(bserv)
-		ctx := c.Request().Context()
-		nd, err := dserv.Get(ctx, r.Cid.CID)
-		if err != nil {
-			return err
+		// trying to list a CID dir, not allowed
+		if relp == "." && r.Type == util.Directory {
+			return fmt.Errorf("listing CID directories is not allowed")
 		}
 
 		// if the relative path requires pathing up, its definitely not in this dir
@@ -4601,8 +4644,6 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 		}
 
 		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		// Need to transform node into a unixfs node to check if it's dir
-		fsNode, err := unixfs.ExtractFSNode(nd)
 		if err != nil { // Can't cast to unixfs node, set type as raw
 			out = append(out, collectionListResponse{
 				Name:   filepath.Base(relp),
@@ -4614,7 +4655,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 			continue
 		}
 
-		if fsNode.IsDir() { // if CID is a dir
+		if r.Type == util.Directory { // if CID is a dir
 			if !dirs[relp] {
 				dirs[relp] = true
 				out = append(out, collectionListResponse{
@@ -4629,9 +4670,14 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 		}
 
 		if !strings.Contains(relp, "/") {
+			var contentType CidType
+			contentType = File
+			if r.Type == util.Directory {
+				contentType = Dir
+			}
 			out = append(out, collectionListResponse{
 				Name:   filepath.Base(relp),
-				Type:   File,
+				Type:   contentType,
 				Size:   r.Size,
 				ContID: r.ContID,
 				Cid:    &util.DbCID{r.Cid.CID},

@@ -15,7 +15,7 @@ import (
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
-	"github.com/application-research/estuary/util"
+	util "github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
@@ -76,7 +76,7 @@ type ContentManager struct {
 	queueMgr *queueManager
 
 	retrLk               sync.Mutex
-	retrievalsInProgress map[uint]*retrievalProgress
+	retrievalsInProgress map[uint]*util.RetrievalProgress
 
 	contentLk sync.RWMutex
 
@@ -85,6 +85,7 @@ type ContentManager struct {
 	// Some fields for miner reputation management
 	minerLk      sync.Mutex
 	sortedMiners []address.Address
+	rawData      []*minerDealStats
 	lastComputed time.Time
 
 	// deal bucketing stuff
@@ -108,7 +109,7 @@ type ContentManager struct {
 	pinMgr *pinner.PinManager
 
 	shuttlesLk sync.Mutex
-	shuttles   map[string]*shuttleConnection
+	shuttles   map[string]*ShuttleConnection
 
 	remoteTransferStatus *lru.ARCCache
 
@@ -350,12 +351,12 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		NotifyBlockstore:     nbs,
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 100000),
-		retrievalsInProgress: make(map[uint]*retrievalProgress),
+		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		buckets:              zones,
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
 		pinMgr:               pinmgr,
 		remoteTransferStatus: cache,
-		shuttles:             make(map[string]*shuttleConnection),
+		shuttles:             make(map[string]*ShuttleConnection),
 		contentSizeLimit:     defaultContentSizeLimit,
 		hostname:             hostname,
 		inflightCids:         make(map[cid.Cid]uint),
@@ -878,7 +879,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont Content, n int, s
 		}
 	}
 
-	sortedminers, err := cm.sortedMinerList()
+	sortedminers, _, err := cm.sortedMinerList()
 	if err != nil {
 		return nil, err
 	}
@@ -2591,11 +2592,6 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 	})
 }
 
-type retrievalProgress struct {
-	wait   chan struct{}
-	endErr error
-}
-
 func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint) error {
 	ctx, span := cm.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contentToFetch)),
@@ -2605,8 +2601,8 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 	cm.retrLk.Lock()
 	prog, ok := cm.retrievalsInProgress[contentToFetch]
 	if !ok {
-		prog = &retrievalProgress{
-			wait: make(chan struct{}),
+		prog = &util.RetrievalProgress{
+			Wait: make(chan struct{}),
 		}
 		cm.retrievalsInProgress[contentToFetch] = prog
 	}
@@ -2614,8 +2610,8 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 
 	if ok {
 		select {
-		case <-prog.wait:
-			return prog.endErr
+		case <-prog.Wait:
+			return prog.EndErr
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -2626,11 +2622,11 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 		delete(cm.retrievalsInProgress, contentToFetch)
 		cm.retrLk.Unlock()
 
-		close(prog.wait)
+		close(prog.Wait)
 	}()
 
 	if err := cm.runRetrieval(ctx, contentToFetch); err != nil {
-		prog.endErr = err
+		prog.EndErr = err
 		return err
 	}
 
@@ -2790,7 +2786,10 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	return nil
 }
 
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, objects []*Object, loc string) error {
+// addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
+// These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
+// The link between the `objects` and `contents` tables is the `obj_refs` table
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*Object, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 

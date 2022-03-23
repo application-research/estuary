@@ -555,8 +555,11 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		}
 	}
 
+	if len(out) == 0 {
+		out = make([]*types.IpfsPinStatus, 0)
+	}
 	return e.JSON(200, map[string]interface{}{
-		"count":   len(contents),
+		"count":   len(out),
 		"results": out,
 	})
 }
@@ -896,7 +899,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		})
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, nil, cid.Cid{}, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 

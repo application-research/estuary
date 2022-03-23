@@ -36,7 +36,7 @@ type Shuttle struct {
 	Priority int
 }
 
-type shuttleConnection struct {
+type ShuttleConnection struct {
 	handle  string
 	cmds    chan *drpc.Command
 	closing chan struct{}
@@ -54,7 +54,7 @@ type shuttleConnection struct {
 	pinQueueLength int64
 }
 
-func (dc *shuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
+func (dc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
 	select {
 	case dc.cmds <- cmd:
 		return nil
@@ -89,7 +89,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		return nil, nil, err
 	}
 
-	d := &shuttleConnection{
+	d := &ShuttleConnection{
 		handle:   handle,
 		address:  hello.Address,
 		addrInfo: hello.AddrInfo,
@@ -266,14 +266,7 @@ func (cm *ContentManager) shuttleHostName(handle string) string {
 	return ""
 }
 
-type shuttleStorageStats struct {
-	BlockstoreSize uint64 `json:"blockstoreSize"`
-	BlockstoreFree uint64 `json:"blockstoreFree"`
-	PinCount       int64  `json:"pinCount"`
-	PinQueueLength int64  `json:"pinQueueLength"`
-}
-
-func (cm *ContentManager) shuttleStorageStats(handle string) *shuttleStorageStats {
+func (cm *ContentManager) shuttleStorageStats(handle string) *util.ShuttleStorageStats {
 	cm.shuttlesLk.Lock()
 	defer cm.shuttlesLk.Unlock()
 	d, ok := cm.shuttles[handle]
@@ -281,7 +274,7 @@ func (cm *ContentManager) shuttleStorageStats(handle string) *shuttleStorageStat
 		return nil
 	}
 
-	return &shuttleStorageStats{
+	return &util.ShuttleStorageStats{
 		BlockstoreSize: d.blockstoreSize,
 		BlockstoreFree: d.blockstoreFree,
 		PinCount:       d.pinCount,

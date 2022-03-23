@@ -9,23 +9,23 @@ import (
 
 const minerListTTL = time.Minute
 
-func (cm *ContentManager) sortedMinerList() ([]address.Address, error) {
+func (cm *ContentManager) sortedMinerList() ([]address.Address, []*minerDealStats, error) {
 	cm.minerLk.Lock()
 	defer cm.minerLk.Unlock()
 	if time.Since(cm.lastComputed) < minerListTTL {
-		return cm.sortedMiners, nil
+		return cm.sortedMiners, cm.rawData, nil
 	}
 
 	sml, err := cm.computeSortedMinerList()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	sortedAddrs := make([]address.Address, 0, len(sml))
 	for _, m := range sml {
 		sus, err := cm.minerIsSuspended(m.Miner)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		if !sus {
@@ -33,9 +33,10 @@ func (cm *ContentManager) sortedMinerList() ([]address.Address, error) {
 		}
 	}
 
+	cm.rawData = sml
 	cm.lastComputed = time.Now()
 	cm.sortedMiners = sortedAddrs
-	return sortedAddrs, nil
+	return sortedAddrs, sml, nil
 }
 
 func (cm *ContentManager) minerIsSuspended(m address.Address) (bool, error) {

@@ -65,14 +65,15 @@ type Content struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         util.DbCID `json:"cid"`
-	Name        string     `json:"name"`
-	UserID      uint       `json:"userId" gorm:"index"`
-	Description string     `json:"description"`
-	Size        int64      `json:"size"`
-	Active      bool       `json:"active"`
-	Offloaded   bool       `json:"offloaded"`
-	Replication int        `json:"replication"`
+	Cid         util.DbCID       `json:"cid"`
+	Name        string           `json:"name"`
+	UserID      uint             `json:"userId" gorm:"index"`
+	Description string           `json:"description"`
+	Size        int64            `json:"size"`
+	Type        util.ContentType `json:"type"`
+	Active      bool             `json:"active"`
+	Offloaded   bool             `json:"offloaded"`
+	Replication int              `json:"replication"`
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
@@ -486,6 +487,14 @@ func main() {
 	}
 }
 
+type Autoretrieve struct {
+	gorm.Model
+
+	Handle         string `gorm:"unique"`
+	Token          string `gorm:"unique"`
+	LastConnection time.Time
+}
+
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	dbval := cctx.String("database")
 
@@ -522,6 +531,8 @@ func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
 	db.AutoMigrate(&InviteCode{})
 
 	db.AutoMigrate(&Shuttle{})
+
+	db.AutoMigrate(&Autoretrieve{})
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {

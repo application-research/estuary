@@ -1196,6 +1196,7 @@ func (s *Shuttle) addrsForShuttle() []string {
 }
 
 func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
+
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root,
@@ -1238,22 +1239,13 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	return rbody.ID, nil
 }
 
-type shuttleCreateContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
-	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
-	DagSplitRoot uint     `json:"dagSplitRoot"`
-	User         uint     `json:"user"`
-}
-
 func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
 	}
 
-	data, err := json.Marshal(&shuttleCreateContentBody{
+	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		Root:         root,
 		Name:         fname,
 		Collections:  cols,
