@@ -59,6 +59,7 @@ require (
 	github.com/libp2p/go-libp2p-record v0.1.3
 	github.com/libp2p/go-libp2p-resource-manager v0.1.4
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
+	github.com/libp2p/go-libp2p-tls v0.3.1 // indirect
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.5.0
