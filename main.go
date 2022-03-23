@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"go.opencensus.io/stats/view"
@@ -113,6 +114,42 @@ type ObjRef struct {
 	Content   uint `gorm:"index:,option:CONCURRENTLY"`
 	Object    uint `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint
+}
+
+// updateAutoretrieveIndex ticks every tickInterval and checks for new information to add to autoretrieve
+// If so, it updates the filecoin index with the new CIDs, saying they are present on autoretrieve
+// With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
+func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
+	var autoretrieves []Autoretrieve
+	var lastTickTime time.Time
+	ticker := time.NewTicker(tickInterval)
+
+	defer ticker.Stop()
+	for {
+		lastTickTime = time.Now().UTC().Add(-tickInterval)
+
+		// Find all autoretrieve servers that are online (that sent heartbeat)
+		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
+		if err != nil {
+			log.Errorf("unable to query autoretrieve servers from database: %s", err)
+			return err
+		}
+		if len(autoretrieves) > 0 {
+			for _, ar := range autoretrieves {
+				fmt.Println("online: ", ar) // TODO: remove
+			}
+		} else {
+			log.Info("no autoretrieve servers online")
+		}
+
+		// wait for next tick, or quit
+		select {
+		case <-ticker.C:
+			continue
+		case <-quit:
+			break
+		}
+	}
 }
 
 func main() {
@@ -471,6 +508,20 @@ func main() {
 			}()
 		}
 
+		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
+
+		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
+		if !ok {
+			updateInterval = "720"
+		}
+		intervalMinutes, err := strconv.Atoi(updateInterval)
+		if err != nil {
+			return err
+		}
+
+		stopUpdateIndex := make(chan struct{})
+		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
+
 		go func() {
 			time.Sleep(time.Second * 10)
 
@@ -493,6 +544,8 @@ type Autoretrieve struct {
 	Handle         string `gorm:"unique"`
 	Token          string `gorm:"unique"`
 	LastConnection time.Time
+	PeerID         string `gorm:"unique"`
+	Addresses      string
 }
 
 func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
