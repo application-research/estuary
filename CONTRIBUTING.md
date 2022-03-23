@@ -19,9 +19,6 @@ Feel free to submit issues and enhancement requests.
 
 Please use [Estuary Support](https://docs.estuary.tech/feedback) to report specific bugs and errors.
 
-
-<<<<<<< HEAD
-=======
 ## Development
 
 ### Initialize & Start Estuary
@@ -106,18 +103,13 @@ The above commands can be repeated to create more shuttle nodes.
 
 At this point you may begin adding files to estuary via the API described in the [documentation](https://docs.estuary.tech/api-content-add), or using the golang client [creek](https://github.com/iand/creek).
 
-<<<<<<<< HEAD:CONTRIBUTING.md
-
->>>>>>> ab6f201a839786b6d638afadc84e6895522ee2ab
 ## Copyright and Licensing
 -----------------------
 
 Most Estuary open source projects are licensed under the [Apache 2.0 license](http://www.apache.org/licenses/LICENSE-2.0).
 
 To view the license, go [here](LICENSE.md)
-<<<<<<< HEAD
-=======
-========
+
 ## Building
 
 Estuary is an open source experimental IPFS node and is open for anyone to propose changes and modify. 
@@ -127,5 +119,3 @@ We use swagger to document all of our endpoints and we require developers to ann
 
 - [echo-swagger](https://github.com/swaggo/echo-swagger)
 - Add comments to your API source code, See [Declarative Comments Format](https://github.com/swaggo/swag#declarative-comments-format).
->>>>>>>> ab6f201a839786b6d638afadc84e6895522ee2ab:DEVELOPMENT.md
->>>>>>> ab6f201a839786b6d638afadc84e6895522ee2ab
