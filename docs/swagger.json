@@ -1,0 +1,1523 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "description": "This is the API for the Estuary application.",
+    "title": "Estuary API",
+    "termsOfService": "http://estuary.tech",
+    "contact": {
+      "name": "API Support",
+      "url": "https://docs.estuary.tech/feedback"
+    },
+    "license": {
+      "name": "Apache 2.0 Apache-2.0 OR MIT",
+      "url": "https://github.com/application-research/estuary/blob/master/LICENSE.md"
+    },
+    "version": "0.0.0"
+  },
+  "host": "api.estuary.tech",
+  "basePath": "/",
+  "paths": {
+    "/admin/users": {
+      "get": {
+        "description": "This endpoint is used to get all users.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get all users",
+        "responses": {}
+      }
+    },
+    "/collections/add-content": {
+      "post": {
+        "description": "When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.",
+        "consumes": [
+          "application/json"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Add contents to a collection",
+        "parameters": [
+          {
+            "description": "Contents to add to collection",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.addContentToCollectionParams"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/collections/content/{collection-id}": {
+      "get": {
+        "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Get contents in a collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "coluuid",
+            "name": "coluuid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "/collections/create": {
+      "post": {
+        "description": "This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Create a new collection",
+        "parameters": [
+          {
+            "description": "Collection name and description",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.createCollectionBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/main.Collection"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/collections/fs/add": {
+      "post": {
+        "description": "This endpoint adds a file to a collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Add a file to a collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Collection ID",
+            "name": "col",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Collection ID Long",
+            "name": "collection",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Content",
+            "name": "content",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Path to file",
+            "name": "path",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/collections/fs/list": {
+      "get": {
+        "description": "This endpoint creates a new collection",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Create a new collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Collection",
+            "name": "col",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Directory",
+            "name": "dir",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/collections/list": {
+      "get": {
+        "description": "This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "List all collections",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "User ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/main.Collection"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/content/add": {
+      "post": {
+        "description": "This endpoint is used to upload new content.",
+        "consumes": [
+          "multipart/form-data"
+        ],
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add new content",
+        "parameters": [
+          {
+            "type": "file",
+            "description": "File to upload",
+            "name": "file",
+            "in": "formData",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/add-car": {
+      "post": {
+        "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add Car object",
+        "parameters": [
+          {
+            "description": "Car",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "type": "string",
+            "description": "Filename",
+            "name": "filename",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Commp",
+            "name": "commp",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Size",
+            "name": "size",
+            "in": "query"
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/add-ipfs": {
+      "post": {
+        "description": "This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add IPFS object",
+        "parameters": [
+          {
+            "description": "IPFS Body",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/util.ContentAddIpfsBody"
+            }
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/aggregated/{content}": {
+      "get": {
+        "description": "This endpoint returns aggregated content stats",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get aggregated content stats",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Content ID",
+            "name": "content",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "/content/all-deals": {
+      "get": {
+        "description": "This endpoint is used to get all deals for a user",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get all deals for a user",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Begin",
+            "name": "begin",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Duration",
+            "name": "duration",
+            "in": "query",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "All",
+            "name": "all",
+            "in": "query",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/bw-usage/{content}": {
+      "get": {
+        "description": "This endpoint returns content bandwidth",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get content bandwidth",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Content ID",
+            "name": "content",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/create": {
+      "post": {
+        "description": "This endpoint adds a new content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Add a new content",
+        "parameters": [
+          {
+            "description": "Content",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/deals": {
+      "get": {
+        "description": "This endpoint lists all content with deals",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Content with deals",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "Limit",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "type": "integer",
+            "description": "Offset",
+            "name": "offset",
+            "in": "query"
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/ensure-replication/{datacid}": {
+      "get": {
+        "description": "This endpoint ensures that the content is replicated to the specified number of providers",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Ensure Replication",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Data CID",
+            "name": "datacid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/failures/{content}": {
+      "get": {
+        "description": "This endpoint returns all failures for a content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "List all failures for a content",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Content ID",
+            "name": "content",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "/content/importdeal": {
+      "post": {
+        "description": "This endpoint imports a deal into the shuttle.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Import a deal",
+        "parameters": [
+          {
+            "description": "Import a deal",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.importDealBody"
+            }
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/list": {
+      "get": {
+        "description": "This endpoint lists all content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "List all pinned content",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/content/read/{cont}": {
+      "get": {
+        "description": "This endpoint reads content from the blockstore",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Read content",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CID",
+            "name": "cont",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/staging-zones": {
+      "get": {
+        "description": "This endpoint is used to get staging zone for user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get staging zone for user",
+        "responses": {}
+      }
+    },
+    "/content/stats": {
+      "get": {
+        "description": "This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Get content statistics",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "limit",
+            "name": "limit",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/content/status/{id}": {
+      "get": {
+        "description": "This endpoint returns the status of a content",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Content Status",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "Content ID",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/estimate": {
+      "post": {
+        "description": "This endpoint estimates the cost of a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Estimate the cost of a deal",
+        "parameters": [
+          {
+            "description": "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.estimateDealBody"
+            }
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/info/{dealid}": {
+      "get": {
+        "description": "This endpoint returns the deal info for a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Info",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "Deal ID",
+            "name": "dealid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/make/{miner}": {
+      "post": {
+        "description": "This endpoint makes a deal for a given content and miner",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Make Deal",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Miner",
+            "name": "miner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Deal Request",
+            "name": "dealRequest",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/proposal/{propcid}": {
+      "get": {
+        "description": "This endpoint returns the proposal for a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Proposal",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Proposal CID",
+            "name": "propcid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/query/{miner}": {
+      "get": {
+        "description": "This endpoint returns the ask for a given CID",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Query Ask",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CID",
+            "name": "miner",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/status-by-proposal/{propcid}": {
+      "get": {
+        "description": "Get Deal Status by PropCid",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Status by PropCid",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "PropCid",
+            "name": "propcid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/status/{deal}": {
+      "get": {
+        "description": "This endpoint returns the status of a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get Deal Status",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "Deal ID",
+            "name": "deal",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/status/{miner}/{propcid}": {
+      "get": {
+        "description": "This endpoint returns the status of a deal",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Deal Status",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Miner",
+            "name": "miner",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Proposal CID",
+            "name": "propcid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/deal/transfer/in-progress": {
+      "get": {
+        "description": "This endpoint returns the in-progress transfers",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Transfer In Progress",
+        "responses": {}
+      }
+    },
+    "/deal/transfer/status": {
+      "post": {
+        "description": "This endpoint returns the status of a transfer",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Transfer Status",
+        "responses": {}
+      }
+    },
+    "/deals/failures": {
+      "get": {
+        "description": "This endpoint returns a list of storage failures",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Get storage failures",
+        "responses": {}
+      }
+    },
+    "/pinning/pins": {
+      "get": {
+        "description": "This endpoint lists all pinned objects",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "List all pinned objects",
+        "responses": {
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "This endpoint adds a pin to the IPFS daemon.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Add and pin object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "cid",
+            "name": "cid",
+            "in": "path",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "name",
+            "name": "name",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/pinning/pins/{id}": {
+      "post": {
+        "description": "This endpoint replaces a pinned object.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Replace a pinned object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "id",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/pinning/pins/{requestid}": {
+      "get": {
+        "description": "This endpoint returns a pinned object.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Get a pinned objects",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "cid",
+            "name": "requestid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      },
+      "delete": {
+        "description": "This endpoint deletes a pinned object.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Delete a pinned object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "requestid",
+            "name": "requestid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/by-cid/{cid}": {
+      "get": {
+        "description": "This endpoint returns the content associated with a CID",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public"
+        ],
+        "summary": "Get Content by Cid",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Cid",
+            "name": "cid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/info": {
+      "get": {
+        "description": "This endpoint returns information about the node",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public"
+        ],
+        "summary": "Get public node info",
+        "responses": {}
+      }
+    },
+    "/public/metrics/deals-on-chain": {
+      "get": {
+        "description": "This endpoint is used to get deal metrics",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "metrics"
+        ],
+        "summary": "Get deal metrics",
+        "responses": {}
+      }
+    },
+    "/public/miners": {
+      "get": {
+        "description": "This endpoint returns all miners",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Get all miners",
+        "responses": {}
+      }
+    },
+    "/public/miners/deals/{miner}": {
+      "get": {
+        "description": "This endpoint returns all miners deals",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "miner"
+        ],
+        "summary": "Get all miners deals",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter by miner",
+            "name": "miner",
+            "in": "path"
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/miners/failures/{miner}": {
+      "get": {
+        "description": "This endpoint returns all miners",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Get all miners",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter by miner",
+            "name": "miner",
+            "in": "query"
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/miners/stats/{miner}": {
+      "get": {
+        "description": "This endpoint returns miner stats",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "miner"
+        ],
+        "summary": "Get miner stats",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Filter by miner",
+            "name": "miner",
+            "in": "path"
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/public/net/addrs": {
+      "get": {
+        "description": "This endpoint is used to get net addrs",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Net Addrs",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/net/peers": {
+      "get": {
+        "description": "This endpoint is used to get net peers",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public",
+          "net"
+        ],
+        "summary": "Net Peers",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/stats": {
+      "get": {
+        "description": "This endpoint is used to get public stats.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "public"
+        ],
+        "summary": "Public stats",
+        "responses": {}
+      }
+    },
+    "/user/api-keys": {
+      "get": {
+        "description": "This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Get API keys for a user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/main.getApiKeysResp"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Create API keys for a user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/main.getApiKeysResp"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/user/api-keys/{key}": {
+      "delete": {
+        "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Revoke a User API Key.",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Key",
+            "name": "key",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      }
+    },
+    "/user/export": {
+      "get": {
+        "description": "This endpoint is used to get API keys for a user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Export user data",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "/user/stats": {
+      "get": {
+        "description": "This endpoint is used to create API keys for a user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Create API keys for a user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/main.userStatsResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "main.Collection": {
+      "type": "object",
+      "properties": {
+        "createdAt": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "userId": {
+          "type": "integer"
+        },
+        "uuid": {
+          "type": "string"
+        }
+      }
+    },
+    "main.addContentToCollectionParams": {
+      "type": "object",
+      "properties": {
+        "cids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "collection": {
+          "type": "string"
+        },
+        "contents": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "main.createCollectionBody": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "main.estimateDealBody": {
+      "type": "object",
+      "properties": {
+        "durationBlks": {
+          "type": "integer"
+        },
+        "replication": {
+          "type": "integer"
+        },
+        "size": {
+          "type": "integer"
+        },
+        "verified": {
+          "type": "boolean"
+        }
+      }
+    },
+    "main.getApiKeysResp": {
+      "type": "object",
+      "properties": {
+        "expiry": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      }
+    },
+    "main.importDealBody": {
+      "type": "object",
+      "properties": {
+        "collection": {
+          "type": "string"
+        },
+        "collectionPath": {
+          "type": "string"
+        },
+        "dealIDs": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "name": {
+          "type": "string"
+        }
+      }
+    },
+    "main.userStatsResponse": {
+      "type": "object",
+      "properties": {
+        "numPins": {
+          "type": "integer"
+        },
+        "totalSize": {
+          "type": "integer"
+        }
+      }
+    },
+    "util.ContentAddIpfsBody": {
+      "type": "object",
+      "properties": {
+        "collection": {
+          "type": "string"
+        },
+        "collectionPath": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "peers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "root": {
+          "type": "string"
+        }
+      }
+    },
+    "util.HttpError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "integer"
+        },
+        "details": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "bearerAuth": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header"
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

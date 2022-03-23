@@ -915,6 +915,12 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 	return c.JSON(200, map[string]interface{}{})
 }
 
+// handleAdd godoc
+// @Summary      Upload a file
+// @Description  This endpoint uploads a file.
+// @Tags         content
+// @Produce      json
+// @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1032,6 +1038,12 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
+// handleAddCar godoc
+// @Summary      Upload content via a car file
+// @Description  This endpoint uploads content via a car file
+// @Tags         content
+// @Produce      json
+// @Router       /content/add-car [post]
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1707,6 +1719,13 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 	return nil
 }
 
+// handleReadContent godoc
+// @Summary      Read content
+// @Description  This endpoint reads content from the blockstore
+// @Tags         content
+// @Produce      json
+// @Param        cont path string true "CID"
+// @Router       /content/read/{cont} [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("cont"))
 	if err != nil {
@@ -1940,6 +1959,13 @@ type importDealBody struct {
 	DealIDs []uint64 `json:"dealIDs"`
 }
 
+// handleImportDeal godoc
+// @Summary      Import a deal
+// @Description  This endpoint imports a deal into the shuttle.
+// @Tags         content
+// @Produce      json
+// @Param        body body main.importDealBody true "Import a deal"
+// @Router       /content/importdeal [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
 	defer span.End()

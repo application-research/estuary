@@ -1,0 +1,1023 @@
+basePath: /
+definitions:
+  main.Collection:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      name:
+        type: string
+      userId:
+        type: integer
+      uuid:
+        type: string
+    type: object
+  main.addContentToCollectionParams:
+    properties:
+      cids:
+        items:
+          type: string
+        type: array
+      collection:
+        type: string
+      contents:
+        items:
+          type: integer
+        type: array
+    type: object
+  main.createCollectionBody:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  main.estimateDealBody:
+    properties:
+      durationBlks:
+        type: integer
+      replication:
+        type: integer
+      size:
+        type: integer
+      verified:
+        type: boolean
+    type: object
+  main.getApiKeysResp:
+    properties:
+      expiry:
+        type: string
+      token:
+        type: string
+    type: object
+  main.importDealBody:
+    properties:
+      collection:
+        type: string
+      collectionPath:
+        type: string
+      dealIDs:
+        items:
+          type: integer
+        type: array
+      name:
+        type: string
+    type: object
+  main.userStatsResponse:
+    properties:
+      numPins:
+        type: integer
+      totalSize:
+        type: integer
+    type: object
+  util.ContentAddIpfsBody:
+    properties:
+      collection:
+        type: string
+      collectionPath:
+        type: string
+      name:
+        type: string
+      peers:
+        items:
+          type: string
+        type: array
+      root:
+        type: string
+    type: object
+  util.HttpError:
+    properties:
+      code:
+        type: integer
+      details:
+        type: string
+      message:
+        type: string
+    type: object
+host: api.estuary.tech
+info:
+  contact:
+    name: API Support
+    url: https://docs.estuary.tech/feedback
+  description: This is the API for the Estuary application.
+  license:
+    name: Apache 2.0 Apache-2.0 OR MIT
+    url: https://github.com/application-research/estuary/blob/master/LICENSE.md
+  termsOfService: http://estuary.tech
+  title: Estuary API
+  version: 0.0.0
+paths:
+  /admin/users:
+    get:
+      description: This endpoint is used to get all users.
+      produces:
+        - application/json
+      responses: {}
+      summary: Get all users
+      tags:
+        - admin
+  /collections/add-content:
+    post:
+      consumes:
+        - application/json
+      description: When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
+      parameters:
+        - description: Contents to add to collection
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.addContentToCollectionParams'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add contents to a collection
+      tags:
+        - collections
+  /collections/content/{collection-id}:
+    get:
+      description: This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
+      parameters:
+        - description: coluuid
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Get contents in a collection
+      tags:
+        - collections
+  /collections/create:
+    post:
+      description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
+      parameters:
+        - description: Collection name and description
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.createCollectionBody'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Collection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create a new collection
+      tags:
+        - collections
+  /collections/fs/add:
+    post:
+      description: This endpoint adds a file to a collection
+      parameters:
+        - description: Collection ID
+          in: query
+          name: col
+          required: true
+          type: string
+        - description: Collection ID Long
+          in: query
+          name: collection
+          required: true
+          type: string
+        - description: Content
+          in: query
+          name: content
+          required: true
+          type: string
+        - description: Path to file
+          in: query
+          name: path
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Add a file to a collection
+      tags:
+        - collections
+  /collections/fs/list:
+    get:
+      description: This endpoint creates a new collection
+      parameters:
+        - description: Collection
+          in: query
+          name: col
+          required: true
+          type: string
+        - description: Directory
+          in: query
+          name: dir
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Create a new collection
+      tags:
+        - collections
+  /collections/list:
+    get:
+      description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
+      parameters:
+        - description: User ID
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Collection'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: List all collections
+      tags:
+        - collections
+  /content/add:
+    post:
+      consumes:
+        - multipart/form-data
+      description: This endpoint is used to upload new content.
+      parameters:
+        - description: File to upload
+          in: formData
+          name: file
+          required: true
+          type: file
+      produces:
+        - application/json
+      responses: {}
+      summary: Add new content
+      tags:
+        - content
+  /content/add-car:
+    post:
+      description: This endpoint is used to add a car object to the network. The object can be a file or a directory.
+      parameters:
+        - description: Car
+          in: body
+          name: body
+          required: true
+          schema:
+            type: string
+        - description: Filename
+          in: query
+          name: filename
+          type: string
+        - description: Commp
+          in: query
+          name: commp
+          type: string
+        - description: Size
+          in: query
+          name: size
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Add Car object
+      tags:
+        - content
+  /content/add-ipfs:
+    post:
+      description: This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
+      parameters:
+        - description: IPFS Body
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/util.ContentAddIpfsBody'
+      produces:
+        - application/json
+      responses: {}
+      summary: Add IPFS object
+      tags:
+        - content
+  /content/aggregated/{content}:
+    get:
+      description: This endpoint returns aggregated content stats
+      parameters:
+        - description: Content ID
+          in: path
+          name: content
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Get aggregated content stats
+      tags:
+        - content
+  /content/all-deals:
+    get:
+      description: This endpoint is used to get all deals for a user
+      parameters:
+        - description: Begin
+          in: query
+          name: begin
+          required: true
+          type: string
+        - description: Duration
+          in: query
+          name: duration
+          required: true
+          type: string
+        - description: All
+          in: query
+          name: all
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get all deals for a user
+      tags:
+        - content
+  /content/bw-usage/{content}:
+    get:
+      description: This endpoint returns content bandwidth
+      parameters:
+        - description: Content ID
+          in: path
+          name: content
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get content bandwidth
+      tags:
+        - content
+  /content/create:
+    post:
+      description: This endpoint adds a new content
+      parameters:
+        - description: Content
+          in: body
+          name: body
+          required: true
+          schema:
+            type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Add a new content
+      tags:
+        - content
+  /content/deals:
+    get:
+      description: This endpoint lists all content with deals
+      parameters:
+        - description: Limit
+          in: query
+          name: limit
+          type: integer
+        - description: Offset
+          in: query
+          name: offset
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Content with deals
+      tags:
+        - content
+  /content/ensure-replication/{datacid}:
+    get:
+      description: This endpoint ensures that the content is replicated to the specified number of providers
+      parameters:
+        - description: Data CID
+          in: path
+          name: datacid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Ensure Replication
+      tags:
+        - content
+  /content/failures/{content}:
+    get:
+      description: This endpoint returns all failures for a content
+      parameters:
+        - description: Content ID
+          in: path
+          name: content
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: List all failures for a content
+      tags:
+        - content
+  /content/importdeal:
+    post:
+      description: This endpoint imports a deal into the shuttle.
+      parameters:
+        - description: Import a deal
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.importDealBody'
+      produces:
+        - application/json
+      responses: {}
+      summary: Import a deal
+      tags:
+        - content
+  /content/list:
+    get:
+      description: This endpoint lists all content
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      summary: List all pinned content
+      tags:
+        - content
+  /content/read/{cont}:
+    get:
+      description: This endpoint reads content from the blockstore
+      parameters:
+        - description: CID
+          in: path
+          name: cont
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Read content
+      tags:
+        - content
+  /content/staging-zones:
+    get:
+      description: This endpoint is used to get staging zone for user.
+      produces:
+        - application/json
+      responses: {}
+      summary: Get staging zone for user
+      tags:
+        - content
+  /content/stats:
+    get:
+      description: This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+      parameters:
+        - description: limit
+          in: path
+          name: limit
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get content statistics
+      tags:
+        - content
+  /content/status/{id}:
+    get:
+      description: This endpoint returns the status of a content
+      parameters:
+        - description: Content ID
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Content Status
+      tags:
+        - content
+  /deal/estimate:
+    post:
+      description: This endpoint estimates the cost of a deal
+      parameters:
+        - description: The size of the deal in bytes, the replication factor, and the duration of the deal in blocks
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.estimateDealBody'
+      produces:
+        - application/json
+      responses: {}
+      summary: Estimate the cost of a deal
+      tags:
+        - deals
+  /deal/info/{dealid}:
+    get:
+      description: This endpoint returns the deal info for a deal
+      parameters:
+        - description: Deal ID
+          in: path
+          name: dealid
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Deal Info
+      tags:
+        - deals
+  /deal/make/{miner}:
+    post:
+      description: This endpoint makes a deal for a given content and miner
+      parameters:
+        - description: Miner
+          in: path
+          name: miner
+          required: true
+          type: string
+        - description: Deal Request
+          in: body
+          name: dealRequest
+          required: true
+          schema:
+            type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Make Deal
+      tags:
+        - deals
+  /deal/proposal/{propcid}:
+    get:
+      description: This endpoint returns the proposal for a deal
+      parameters:
+        - description: Proposal CID
+          in: path
+          name: propcid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Proposal
+      tags:
+        - deals
+  /deal/query/{miner}:
+    get:
+      description: This endpoint returns the ask for a given CID
+      parameters:
+        - description: CID
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Query Ask
+      tags:
+        - deals
+  /deal/status-by-proposal/{propcid}:
+    get:
+      description: Get Deal Status by PropCid
+      parameters:
+        - description: PropCid
+          in: path
+          name: propcid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Deal Status by PropCid
+      tags:
+        - deals
+  /deal/status/{deal}:
+    get:
+      description: This endpoint returns the status of a deal
+      parameters:
+        - description: Deal ID
+          in: path
+          name: deal
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Deal Status
+      tags:
+        - deals
+  /deal/status/{miner}/{propcid}:
+    get:
+      description: This endpoint returns the status of a deal
+      parameters:
+        - description: Miner
+          in: path
+          name: miner
+          required: true
+          type: string
+        - description: Proposal CID
+          in: path
+          name: propcid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Deal Status
+      tags:
+        - deals
+  /deal/transfer/in-progress:
+    get:
+      description: This endpoint returns the in-progress transfers
+      produces:
+        - application/json
+      responses: {}
+      summary: Transfer In Progress
+      tags:
+        - deals
+  /deal/transfer/status:
+    post:
+      description: This endpoint returns the status of a transfer
+      produces:
+        - application/json
+      responses: {}
+      summary: Transfer Status
+      tags:
+        - deals
+  /deals/failures:
+    get:
+      description: This endpoint returns a list of storage failures
+      produces:
+        - application/json
+      responses: {}
+      summary: Get storage failures
+      tags:
+        - deals
+  /pinning/pins:
+    get:
+      description: This endpoint lists all pinned objects
+      produces:
+        - application/json
+      responses:
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: List all pinned objects
+      tags:
+        - pinning
+    post:
+      description: This endpoint adds a pin to the IPFS daemon.
+      parameters:
+        - description: cid
+          in: path
+          name: cid
+          required: true
+          type: string
+        - description: name
+          in: path
+          name: name
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Add and pin object
+      tags:
+        - pinning
+  /pinning/pins/{id}:
+    post:
+      description: This endpoint replaces a pinned object.
+      parameters:
+        - description: id
+          in: path
+          name: id
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Replace a pinned object
+      tags:
+        - pinning
+  /pinning/pins/{requestid}:
+    delete:
+      description: This endpoint deletes a pinned object.
+      parameters:
+        - description: requestid
+          in: path
+          name: requestid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Delete a pinned object
+      tags:
+        - pinning
+    get:
+      description: This endpoint returns a pinned object.
+      parameters:
+        - description: cid
+          in: path
+          name: requestid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get a pinned objects
+      tags:
+        - pinning
+  /public/by-cid/{cid}:
+    get:
+      description: This endpoint returns the content associated with a CID
+      parameters:
+        - description: Cid
+          in: path
+          name: cid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Content by Cid
+      tags:
+        - public
+  /public/info:
+    get:
+      description: This endpoint returns information about the node
+      produces:
+        - application/json
+      responses: {}
+      summary: Get public node info
+      tags:
+        - public
+  /public/metrics/deals-on-chain:
+    get:
+      description: This endpoint is used to get deal metrics
+      produces:
+        - application/json
+      responses: {}
+      summary: Get deal metrics
+      tags:
+        - public
+        - metrics
+  /public/miners:
+    get:
+      description: This endpoint returns all miners
+      produces:
+        - application/json
+      responses: {}
+      summary: Get all miners
+      tags:
+        - public
+        - net
+  /public/miners/deals/{miner}:
+    get:
+      description: This endpoint returns all miners deals
+      parameters:
+        - description: Filter by miner
+          in: path
+          name: miner
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get all miners deals
+      tags:
+        - public
+        - miner
+  /public/miners/failures/{miner}:
+    get:
+      description: This endpoint returns all miners
+      parameters:
+        - description: Filter by miner
+          in: query
+          name: miner
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get all miners
+      tags:
+        - public
+        - net
+  /public/miners/stats/{miner}:
+    get:
+      description: This endpoint returns miner stats
+      parameters:
+        - description: Filter by miner
+          in: path
+          name: miner
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Get miner stats
+      tags:
+        - public
+        - miner
+  /public/net/addrs:
+    get:
+      description: This endpoint is used to get net addrs
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      summary: Net Addrs
+      tags:
+        - public
+        - net
+  /public/net/peers:
+    get:
+      description: This endpoint is used to get net peers
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      summary: Net Peers
+      tags:
+        - public
+        - net
+  /public/stats:
+    get:
+      description: This endpoint is used to get public stats.
+      produces:
+        - application/json
+      responses: {}
+      summary: Public stats
+      tags:
+        - public
+  /user/api-keys:
+    get:
+      description: This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.getApiKeysResp'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get API keys for a user
+      tags:
+        - User
+    post:
+      description: This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.getApiKeysResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create API keys for a user
+      tags:
+        - User
+  /user/api-keys/{key}:
+    delete:
+      description: This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
+      parameters:
+        - description: Key
+          in: path
+          name: key
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Revoke a User API Key.
+      tags:
+        - User
+  /user/export:
+    get:
+      description: This endpoint is used to get API keys for a user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Export user data
+      tags:
+        - User
+  /user/stats:
+    get:
+      description: This endpoint is used to create API keys for a user.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.userStatsResponse'
+      summary: Create API keys for a user
+      tags:
+        - User
+swagger: "2.0"
+securityDefinitions:
+  bearerAuth:
+    type: apiKey
+    name: Authorization
+    in: header
+security:
+  - bearerAuth: []
