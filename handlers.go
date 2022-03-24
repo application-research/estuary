@@ -471,6 +471,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
+	filename := params.Name
+	if filename == "" {
+		filename = params.Root
+	}
+
 	var cols []*CollectionRef
 	if params.Collection != "" {
 		var srchCol Collection
@@ -479,19 +484,28 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 
 		// if collectionPath is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + params.Name
-		colp := &defaultPath
+		defaultPath := "/" + filename
+		colp := defaultPath
 		if params.CollectionPath != "" {
 			p, err := sanitizePath(params.CollectionPath)
 			if err != nil {
 				return err
 			}
-			colp = &p
+			colp = p
+		}
+
+		// default: colp ends in / (does not include filename e.g. /hello/)
+		pathWithFilename := colp + filename
+
+		// if path does not end in /, it includes the filename
+		if !strings.HasSuffix(colp, "/") {
+			pathWithFilename = colp
+			filename = filepath.Base(colp)
 		}
 
 		cols = []*CollectionRef{&CollectionRef{
 			Collection: srchCol.ID,
-			Path:       colp,
+			Path:       &pathWithFilename,
 		}}
 	}
 
@@ -518,11 +532,6 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		if count > 0 {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
-	}
-
-	filename := params.Name
-	if filename == "" {
-		filename = params.Root
 	}
 
 	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
@@ -4586,11 +4595,12 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 type collectionListQueryRes struct {
-	ContID uint
-	Cid    util.DbCID
-	Size   int64
-	Path   *string
-	Type   util.ContentType
+	ContID   uint
+	Cid      util.DbCID
+	Size     int64
+	Path     *string
+	Type     util.ContentType
+	Filename *string
 }
 
 type CidType string
@@ -4644,7 +4654,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, path, size, contents.type").
+		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
@@ -4652,7 +4662,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == nil {
+		if r.Path == nil || r.Filename == nil {
 			continue
 		}
 
@@ -4706,7 +4716,8 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 				contentType = Dir
 			}
 			out = append(out, collectionListResponse{
-				Name:   filepath.Base(relp),
+				// Name: filepath.Base(relp),
+				Name:   *r.Filename,
 				Type:   contentType,
 				Size:   r.Size,
 				ContID: r.ContID,
@@ -4735,12 +4746,19 @@ func sanitizePath(p string) (string, error) {
 	}
 
 	if p[0] != '/' {
-		return "", fmt.Errorf("all paths must be absolute")
+		return "", fmt.Errorf("paths must start with /")
 	}
 
 	// TODO: prevent use of special weird characters
 
-	return filepath.Clean(p), nil
+	cleanPath := filepath.Clean(p)
+
+	// if original path ends in /, append / to cleaned path
+	// needed for full path vs dir+filename magic to work in handleAddIpfs
+	if strings.HasSuffix(p, "/") {
+		cleanPath = cleanPath + "/"
+	}
+	return cleanPath, nil
 }
 
 // handleColfsAdd godoc
