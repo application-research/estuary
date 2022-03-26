@@ -2875,7 +2875,12 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	colid := c.Param("coluuid")
 
-	if err := s.DB.Delete(&Collection{}, "collection = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	var col Collection
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+		return c.JSON(404, err)
+	}
+
+	if err := s.DB.Delete(&col).Error; err != nil {
 		return err
 	}
 
