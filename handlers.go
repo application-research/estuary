@@ -2877,7 +2877,7 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
-		return c.JSON(404, err)
+		return c.JSON(404, {"error": "Collection not found"})
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
