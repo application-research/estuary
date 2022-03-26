@@ -192,7 +192,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
-	cols.DELETE("/content/:coluuid", withUser(s.handleDeleteCollection))
+	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	colfs := cols.Group("/fs")
 	colfs.GET("/list", withUser(s.handleColfsListDir))
 	colfs.POST("/add", withUser(s.handleColfsAdd))
@@ -2875,7 +2875,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	colid := c.Param("coluuid")
 
-	if err := s.DB.Delete(&Collection{}, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	if err := s.DB.Delete(&Collection{}, "uuid = ?", colid).Error; err != nil {
 		return err
 	}
 
