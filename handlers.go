@@ -211,6 +211,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
 	cols.GET("/list", withUser(s.handleListCollections))
+	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
@@ -3164,6 +3165,27 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, contents)
+}
+
+// handleDeleteCollection godoc
+// @Summary      Deletes a collection
+// @Description  This endpoint is used to delete an existing collection.
+// @Tags         collections
+// @Param        coluuid    collectionUUID    string    true    "Collection ID"
+// @Router       /collections/add-content [delete]
+func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
+	colid := c.Param("coluuid")
+
+	var col Collection
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+		return c.String(404, "Collection not found")
+	}
+
+	if err := s.DB.Delete(&col).Error; err != nil {
+		return err
+	}
+
+	return c.NoContent(200)
 }
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
