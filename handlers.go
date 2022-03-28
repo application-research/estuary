@@ -4449,7 +4449,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	// validate peerid and peer multi addresses
 	addresses := strings.Split(c.FormValue("addresses"), ",")
-	addrInfo, err := util.ValidatePeerInfo(c.FormValue("peerId"), addresses)
+	addrInfo, err := util.ValidatePeerInfo(c.FormValue("privateKey"), addresses)
 	if err != nil {
 		return err
 	}
@@ -4458,7 +4458,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
 		Token:          "SECRET" + uuid.New().String() + "SECRET",
 		LastConnection: time.Now(),
-		PeerID:         c.FormValue("peerId"),
+		PrivateKey:     c.FormValue("privateKey"),
 		Addresses:      c.FormValue("addresses"), // cant store []string in gorm
 	}
 	if err := s.DB.Create(autoretrieve).Error; err != nil {

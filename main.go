@@ -742,7 +742,7 @@ type Autoretrieve struct {
 	Handle         string `gorm:"unique"`
 	Token          string `gorm:"unique"`
 	LastConnection time.Time
-	PeerID         string `gorm:"unique"`
+	PrivateKey     string `gorm:"unique"`
 	Addresses      string
 }
 
