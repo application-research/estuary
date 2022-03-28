@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 	"gorm.io/gorm"
@@ -57,11 +58,15 @@ func validateAddresses(addresses []string) []string {
 	return invalidAddresses
 }
 
-func ValidatePeerInfo(peerID string, addresses []string) (*peer.AddrInfo, error) {
-	// check if peerid format is correct
-	_, err := peer.IDFromString(peerID)
+func ValidatePeerInfo(privKeyStr string, addresses []string) (*peer.AddrInfo, error) {
+	// check if peerid is correct
+	privateKey, err := stringToPrivKey(privKeyStr)
 	if err != nil {
-		return nil, fmt.Errorf("invalid peerID")
+		return nil, fmt.Errorf("invalid peer information: %s", err)
+	}
+	_, err = peer.IDFromPrivateKey(privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid peer information: %s", err)
 	}
 
 	if len(addresses) == 0 || addresses[0] == "" {
@@ -82,4 +87,20 @@ func ValidatePeerInfo(peerID string, addresses []string) (*peer.AddrInfo, error)
 	}
 
 	return addrInfo, nil
+}
+
+func stringToPrivKey(privKeyStr string) (crypto.PrivKey, error) {
+	privKeyBytes, err := crypto.ConfigDecodeKey(privKeyStr)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("test2")
+	privKey, err := crypto.UnmarshalPrivateKey(privKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("test3")
+
+	return privKey, nil
 }
