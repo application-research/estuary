@@ -189,7 +189,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
 	cols.GET("/list", withUser(s.handleListCollections))
-	cols.DELETE("/:coluuid", withUser(handleDeleteCollection))
+	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
