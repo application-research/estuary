@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/application-research/estuary/config"
+	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
 	migratebs "github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
@@ -81,6 +83,12 @@ type EstuaryBlockstore interface {
 	DeleteMany(context.Context, []cid.Cid) error
 }
 
+type NodeInitializer interface {
+	BlockstoreWrap(blockstore.Blockstore) (blockstore.Blockstore, error)
+	KeyProviderFunc(context.Context) (<-chan cid.Cid, error)
+	Config() *config.Config
+}
+
 type Node struct {
 	Dht      *dht.IpfsDHT
 	Provider *batched.BatchProvidingSystem
@@ -102,39 +110,12 @@ type Node struct {
 
 	Bwc *metrics.BandwidthCounter
 
-	Config *Config
+	Config *config.Config
 }
 
-type Config struct {
-	ListenAddrs   []string
-	AnnounceAddrs []string
+func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
-	Blockstore string
-
-	WriteLog          string
-	HardFlushWriteLog bool
-	WriteLogTruncate  bool
-	NoBlockstoreCache bool
-
-	Libp2pKeyFile string
-
-	Datastore string
-
-	WalletDir string
-
-	BitswapConfig BitswapConfig
-
-	BlockstoreWrap func(blockstore.Blockstore) (blockstore.Blockstore, error)
-
-	KeyProviderFunc func(context.Context) (<-chan cid.Cid, error)
-}
-
-type BitswapConfig struct {
-	MaxOutstandingBytesPerPeer int64
-	TargetMessageSize          int
-}
-
-func Setup(ctx context.Context, cfg *Config) (*Node, error) {
+	cfg := init.Config()
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
 	if err != nil {
@@ -146,16 +127,20 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		return nil, err
 	}
 
-	/*
-		lim := rcmgr.NewDefaultLimiter()
-		lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(16<<10, 32<<10, 32<<10).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
-		lim.TransientLimits = lim.TransientLimits.WithConnLimit(1024, 2048, 2048).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
-		rcm, err := rcmgr.NewResourceManager(lim)
+	var rcm network.ResourceManager
 
-		if err != nil {
-			return nil, err
-		}
-	*/
+	if cfg.NoLimiter {
+		rcm, err = network.NullResourceManager, nil
+	} else {
+		lim := rcmgr.NewDefaultLimiter()
+		lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(256, 256, 1024).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
+		lim.TransientLimits = lim.TransientLimits.WithConnLimit(256, 256, 512).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
+		rcm, err = rcmgr.NewResourceManager(lim)
+	}
+
+	if err != nil {
+		return nil, err
+	}
 
 	bwc := metrics.NewBandwidthCounter()
 
@@ -170,7 +155,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 		libp2p.Identity(peerkey),
 		libp2p.BandwidthReporter(bwc),
 		libp2p.DefaultTransports,
-		libp2p.ResourceManager(network.NullResourceManager),
+		libp2p.ResourceManager(rcm),
 	}
 
 	if len(cfg.AnnounceAddrs) > 0 {
@@ -230,13 +215,11 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	var blkst blockstore.Blockstore = mbs
-	if cfg.BlockstoreWrap != nil {
-		wrapper, err := cfg.BlockstoreWrap(blkst)
-		if err != nil {
-			return nil, err
-		}
-		blkst = wrapper
+	wrapper, err := init.BlockstoreWrap(blkst)
+	if err != nil {
+		return nil, err
 	}
+	blkst = wrapper
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 
@@ -269,7 +252,7 @@ func Setup(ctx context.Context, cfg *Config) (*Node, error) {
 	}
 
 	prov, err := batched.New(frt, provq,
-		batched.KeyProvider(cfg.KeyProviderFunc),
+		batched.KeyProvider(init.KeyProviderFunc),
 		batched.Datastore(ds),
 	)
 	if err != nil {

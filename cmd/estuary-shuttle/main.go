@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
@@ -219,7 +220,7 @@ func main() {
 			listens = append(listens, "/ip4/0.0.0.0/tcp/6747/ws")
 		}
 
-		cfg := &node.Config{
+		cfg := &config.Config{
 			ListenAddrs:       listens,
 			Blockstore:        bsdir,
 			WriteLog:          wlog,
@@ -230,13 +231,16 @@ func main() {
 			Datastore:         filepath.Join(ddir, "leveldb"),
 			WalletDir:         filepath.Join(ddir, "wallet"),
 			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
-			BitswapConfig: node.BitswapConfig{
+			BitswapConfig: config.BitswapConfig{
 				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
 				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
 			},
+			NoLimiter: true,
 		}
 
-		nd, err := node.Setup(context.TODO(), cfg)
+		init := Initializer{cfg}
+
+		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
 			return err
 		}
