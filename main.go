@@ -152,21 +152,249 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	}
 }
 
-func main() {
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("estuary", "debug")
-	logging.SetLogLevel("paych", "debug")
-	logging.SetLogLevel("filclient", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	//logging.SetLogLevel("graphsync_allocator", "debug")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("markets", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("rpc", "info")
-	logging.SetLogLevel("bs-wal", "info")
-	logging.SetLogLevel("provider.batched", "info")
-	logging.SetLogLevel("bs-migrate", "info")
+func setupEstuary(dbval string) (*AuthToken, error) {
+	db, err := setupDatabase(dbval)
+	if err != nil {
+		return nil, err
+	}
 
+	quietdb := db.Session(&gorm.Session{
+		Logger: logger.Discard,
+	})
+
+	username := "admin"
+	passHash := ""
+
+	if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
+		return nil, fmt.Errorf("an admin user already exists")
+	}
+
+	newUser := &User{
+		UUID:     uuid.New().String(),
+		Username: username,
+		PassHash: passHash,
+		Perm:     100,
+	}
+	if err := db.Create(newUser).Error; err != nil {
+		return nil, fmt.Errorf("admin user creation failed: %w", err)
+	}
+
+	authToken := &AuthToken{
+		Token:  "EST" + uuid.New().String() + "ARY",
+		User:   newUser.ID,
+		Expiry: time.Now().Add(time.Hour * 24 * 365),
+	}
+	if err := db.Create(authToken).Error; err != nil {
+		return nil, fmt.Errorf("admin token creation failed: %w", err)
+	}
+
+	return authToken, nil
+}
+
+ddir := cctx.String("datadir")
+bs := cctx.String("blockstore")
+logTruncate := cctx.Bool("write-log-truncate")
+wl := cctx.String("write-log")
+dbval := cctx.String("database")
+defaultReplication = cctx.Int("default-replication")
+func runEstuary(ddir, bs, wl, dbval string, logTruncate bool, defaultReplication int) {
+
+	bstore := filepath.Join(ddir, "estuary-blocks")
+	if bs != "" {
+		bstore = bs
+	}
+	cfg := &config.Config{
+		ListenAddrs: []string{
+			"/ip4/0.0.0.0/tcp/6744",
+		},
+		Blockstore:       bstore,
+		Libp2pKeyFile:    filepath.Join(ddir, "estuary-peer.key"),
+		Datastore:        filepath.Join(ddir, "estuary-leveldb"),
+		WalletDir:        filepath.Join(ddir, "estuary-wallet"),
+		WriteLogTruncate: logTruncate,
+		NoLimiter:        true,
+	}
+
+	if wl != "" {
+		if wl[0] == '/' {
+			cfg.WriteLog = wl
+		} else {
+			cfg.WriteLog = filepath.Join(ddir, wl)
+		}
+	}
+
+	db, err := setupDatabase(dbval)
+	if err != nil {
+		return err
+	}
+
+
+	init := Initializer{cfg, db, nil}
+
+	nd, err := node.Setup(context.Background(), &init)
+	if err != nil {
+		return err
+	}
+
+	if err = view.Register(
+		metrics.DefaultViews...,
+	); err != nil {
+		log.Fatalf("Cannot register the OpenCensus view: %v", err)
+		return err
+	}
+
+	addr, err := nd.Wallet.GetDefault()
+	if err != nil {
+		return err
+	}
+
+	sbmgr, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "stagingdata"))
+	if err != nil {
+		return err
+	}
+
+	api, closer, err := lcli.GetGatewayAPI(cctx)
+	// api, closer, err := lcli.GetFullNodeAPI(cctx)
+	if err != nil {
+		return err
+	}
+	defer closer()
+
+	// setup tracing to jaeger if enabled
+	if cctx.Bool("jaeger-tracing") {
+		tp, err := metrics.NewJaegerTraceProvider("estuary",
+			cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+		if err != nil {
+			return err
+		}
+		otel.SetTracerProvider(tp)
+	}
+
+	s := &Server{
+		Node:        nd,
+		Api:         api,
+		StagingMgr:  sbmgr,
+		tracer:      otel.Tracer("api"),
+		cacher:      memo.NewCacher(),
+		gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+	}
+
+	// TODO: this is an ugly self referential hack... should fix
+	pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
+		MaxActivePerUser: 20,
+	})
+
+	go pinmgr.Run(50)
+
+	rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+	var opts []func(*filclient.Config)
+	if cctx.Bool("lowmem") {
+		opts = append(opts, func(cfg *filclient.Config) {
+			cfg.GraphsyncOpts = []gsimpl.Option{
+				gsimpl.MaxInProgressIncomingRequests(100),
+				gsimpl.MaxInProgressOutgoingRequests(100),
+				gsimpl.MaxMemoryResponder(4 << 30),
+				gsimpl.MaxMemoryPerPeerResponder(16 << 20),
+				gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
+				gsimpl.MessageSendRetries(2),
+				gsimpl.SendMessageTimeout(2 * time.Minute),
+			}
+		})
+	}
+
+	fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
+	if err != nil {
+		return err
+	}
+
+	s.FilClient = fc
+
+	for _, a := range nd.Host.Addrs() {
+		fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
+	}
+
+	go func() {
+		for _, ai := range node.BootstrapPeers {
+			if err := nd.Host.Connect(context.TODO(), ai); err != nil {
+				fmt.Println("failed to connect to bootstrapper: ", err)
+				continue
+			}
+		}
+
+		if err := nd.Dht.Bootstrap(context.TODO()); err != nil {
+			fmt.Println("dht bootstrapping failed: ", err)
+		}
+	}()
+
+	s.DB = db
+
+	cm, err := NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
+	if err != nil {
+		return err
+	}
+
+	fc.SetPieceCommFunc(cm.getPieceCommitment)
+
+	cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+
+	cm.isDealMakingDisabled = cctx.Bool("disable-deal-making")
+	cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
+	cm.localContentAddingDisabled = cctx.Bool("disable-local-content-adding")
+
+	cm.tracer = otel.Tracer("replicator")
+
+	if cctx.Bool("enable-auto-retrive") {
+		init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
+	}
+
+	if !cctx.Bool("no-storage-cron") {
+		go cm.ContentWatcher()
+	}
+
+	s.CM = cm
+
+	if !cm.contentAddingDisabled {
+		go func() {
+			// wait for shuttles to reconnect
+			// This is a bit of a hack, and theres probably a better way to
+			// solve this. but its good enough for now
+			time.Sleep(time.Second * 10)
+
+			if err := cm.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
+		}()
+	}
+
+	// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
+
+	updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
+	if !ok {
+		updateInterval = "720"
+	}
+	intervalMinutes, err := strconv.Atoi(updateInterval)
+	if err != nil {
+		return err
+	}
+
+	stopUpdateIndex := make(chan struct{})
+	go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
+
+	go func() {
+		time.Sleep(time.Second * 10)
+
+		if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+			log.Errorf("failed to restart transfers: %s", err)
+		}
+	}()
+
+	return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
+}
+
+
+
+func GetApp() *cli.App {
 	app := cli.NewApp()
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -255,7 +483,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: "http://localhost:14268/api/traces",
+		Value: "http://localhost:14268/api/traces",
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
@@ -268,41 +496,11 @@ func main() {
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
-				db, err := setupDatabase(cctx)
+				dbval := cctx.String("database")
+				authToken, err := setupEstuary(dbval)
 				if err != nil {
 					return err
 				}
-
-				quietdb := db.Session(&gorm.Session{
-					Logger: logger.Discard,
-				})
-
-				username := "admin"
-				passHash := ""
-
-				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
-					return fmt.Errorf("an admin user already exists")
-				}
-
-				newUser := &User{
-					UUID:     uuid.New().String(),
-					Username: username,
-					PassHash: passHash,
-					Perm:     100,
-				}
-				if err := db.Create(newUser).Error; err != nil {
-					return fmt.Errorf("admin user creation failed: %w", err)
-				}
-
-				authToken := &AuthToken{
-					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   newUser.ID,
-					Expiry: time.Now().Add(time.Hour * 24 * 365),
-				}
-				if err := db.Create(authToken).Error; err != nil {
-					return fmt.Errorf("admin token creation failed: %w", err)
-				}
-
 				fmt.Printf("Auth Token: %v\n", authToken.Token)
 
 				return nil
@@ -310,201 +508,27 @@ func main() {
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
-		ddir := cctx.String("datadir")
 
-		bstore := filepath.Join(ddir, "estuary-blocks")
-		if bs := cctx.String("blockstore"); bs != "" {
-			bstore = bs
-		}
-		cfg := &config.Config{
-			ListenAddrs: []string{
-				"/ip4/0.0.0.0/tcp/6744",
-			},
-			Blockstore:       bstore,
-			Libp2pKeyFile:    filepath.Join(ddir, "estuary-peer.key"),
-			Datastore:        filepath.Join(ddir, "estuary-leveldb"),
-			WalletDir:        filepath.Join(ddir, "estuary-wallet"),
-			WriteLogTruncate: cctx.Bool("write-log-truncate"),
-			NoLimiter:        true,
-		}
+	return app
 
-		if wl := cctx.String("write-log"); wl != "" {
-			if wl[0] == '/' {
-				cfg.WriteLog = wl
-			} else {
-				cfg.WriteLog = filepath.Join(ddir, wl)
-			}
-		}
+}
 
-		db, err := setupDatabase(cctx)
-		if err != nil {
-			return err
-		}
+func main() {
+	logging.SetLogLevel("dt-impl", "debug")
+	logging.SetLogLevel("estuary", "debug")
+	logging.SetLogLevel("paych", "debug")
+	logging.SetLogLevel("filclient", "debug")
+	logging.SetLogLevel("dt_graphsync", "debug")
+	//logging.SetLogLevel("graphsync_allocator", "debug")
+	logging.SetLogLevel("dt-chanmon", "debug")
+	logging.SetLogLevel("markets", "debug")
+	logging.SetLogLevel("data_transfer_network", "debug")
+	logging.SetLogLevel("rpc", "info")
+	logging.SetLogLevel("bs-wal", "info")
+	logging.SetLogLevel("provider.batched", "info")
+	logging.SetLogLevel("bs-migrate", "info")
 
-		defaultReplication = cctx.Int("default-replication")
-
-		init := Initializer{cfg, db, nil}
-
-		nd, err := node.Setup(context.Background(), &init)
-		if err != nil {
-			return err
-		}
-
-		if err = view.Register(
-			metrics.DefaultViews...,
-		); err != nil {
-			log.Fatalf("Cannot register the OpenCensus view: %v", err)
-			return err
-		}
-
-		addr, err := nd.Wallet.GetDefault()
-		if err != nil {
-			return err
-		}
-
-		sbmgr, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "stagingdata"))
-		if err != nil {
-			return err
-		}
-
-		api, closer, err := lcli.GetGatewayAPI(cctx)
-		// api, closer, err := lcli.GetFullNodeAPI(cctx)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		// setup tracing to jaeger if enabled
-		if cctx.Bool("jaeger-tracing") {
-			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
-			if err != nil {
-				return err
-			}
-			otel.SetTracerProvider(tp)
-		}
-
-		s := &Server{
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-		}
-
-		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
-			MaxActivePerUser: 20,
-		})
-
-		go pinmgr.Run(50)
-
-		rhost := routed.Wrap(nd.Host, nd.FilDht)
-
-		var opts []func(*filclient.Config)
-		if cctx.Bool("lowmem") {
-			opts = append(opts, func(cfg *filclient.Config) {
-				cfg.GraphsyncOpts = []gsimpl.Option{
-					gsimpl.MaxInProgressIncomingRequests(100),
-					gsimpl.MaxInProgressOutgoingRequests(100),
-					gsimpl.MaxMemoryResponder(4 << 30),
-					gsimpl.MaxMemoryPerPeerResponder(16 << 20),
-					gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
-					gsimpl.MessageSendRetries(2),
-					gsimpl.SendMessageTimeout(2 * time.Minute),
-				}
-			})
-		}
-
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, ddir)
-		if err != nil {
-			return err
-		}
-
-		s.FilClient = fc
-
-		for _, a := range nd.Host.Addrs() {
-			fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
-		}
-
-		go func() {
-			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(context.TODO(), ai); err != nil {
-					fmt.Println("failed to connect to bootstrapper: ", err)
-					continue
-				}
-			}
-
-			if err := nd.Dht.Bootstrap(context.TODO()); err != nil {
-				fmt.Println("dht bootstrapping failed: ", err)
-			}
-		}()
-
-		s.DB = db
-
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cctx.String("hostname"))
-		if err != nil {
-			return err
-		}
-
-		fc.SetPieceCommFunc(cm.getPieceCommitment)
-
-		cm.FailDealOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
-
-		cm.isDealMakingDisabled = cctx.Bool("disable-deal-making")
-		cm.contentAddingDisabled = cctx.Bool("disable-content-adding")
-		cm.localContentAddingDisabled = cctx.Bool("disable-local-content-adding")
-
-		cm.tracer = otel.Tracer("replicator")
-
-		if cctx.Bool("enable-auto-retrive") {
-			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
-		}
-
-		if !cctx.Bool("no-storage-cron") {
-			go cm.ContentWatcher()
-		}
-
-		s.CM = cm
-
-		if !cm.contentAddingDisabled {
-			go func() {
-				// wait for shuttles to reconnect
-				// This is a bit of a hack, and theres probably a better way to
-				// solve this. but its good enough for now
-				time.Sleep(time.Second * 10)
-
-				if err := cm.refreshPinQueue(); err != nil {
-					log.Errorf("failed to refresh pin queue: %s", err)
-				}
-			}()
-		}
-
-		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
-
-		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
-		if !ok {
-			updateInterval = "720"
-		}
-		intervalMinutes, err := strconv.Atoi(updateInterval)
-		if err != nil {
-			return err
-		}
-
-		stopUpdateIndex := make(chan struct{})
-		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
-
-		go func() {
-			time.Sleep(time.Second * 10)
-
-			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
-				log.Errorf("failed to restart transfers: %s", err)
-			}
-		}()
-
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"), cctx.String("lightstep-token"), filepath.Join(ddir, "cache"))
-	}
+	app := GetApp()
 
 	if err := app.Run(os.Args); err != nil {
 		fmt.Println(err)
@@ -521,8 +545,7 @@ type Autoretrieve struct {
 	Addresses      string
 }
 
-func setupDatabase(cctx *cli.Context) (*gorm.DB, error) {
-	dbval := cctx.String("database")
+func setupDatabase(dbval string) (*gorm.DB, error) {
 
 	/* TODO: change this default
 	ddir := cctx.String("datadir")
