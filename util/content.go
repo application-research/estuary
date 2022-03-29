@@ -37,7 +37,7 @@ type ContentAddResponse struct {
 type ContentCreateBody struct {
 	ContentInCollection
 
-	Root     cid.Cid     `json:"root"`
+	Root     string      `json:"root"`
 	Name     string      `json:"name"`
 	Location string      `json:"location"`
 	Type     ContentType `json:"type"`

@@ -4125,6 +4125,10 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		return err
 	}
 
+	rootCID, err := cid.Decode(req.Root)
+	if err != nil {
+		return err
+	}
 	var col Collection
 	if req.Collection != "" {
 		if err := s.DB.First(&col, "uuid = ?", req.Collection).Error; err != nil {
@@ -4137,7 +4141,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	content := &Content{
-		Cid:         util.DbCID{req.Root},
+		Cid:         util.DbCID{CID: rootCID},
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,

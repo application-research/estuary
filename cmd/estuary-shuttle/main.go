@@ -1203,7 +1203,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
-		Root:                root,
+		Root:                root.String(),
 		Name:                fname,
 		Location:            s.shuttleHandle,
 	})
