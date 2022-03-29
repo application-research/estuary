@@ -238,7 +238,12 @@ func main() {
 			NoLimiter: true,
 		}
 
-		init := Initializer{cfg}
+		db, err := setupDatabase(cctx.String("database"))
+		if err != nil {
+			return err
+		}
+
+		init := Initializer{cfg, db}
 
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
@@ -260,11 +265,6 @@ func main() {
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
 
 		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
-		if err != nil {
-			return err
-		}
-
-		db, err := setupDatabase(cctx.String("database"))
 		if err != nil {
 			return err
 		}
