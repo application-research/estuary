@@ -117,7 +117,6 @@ type ObjRef struct {
 	Offloaded uint
 }
 
-<<<<<<< HEAD
 // updateAutoretrieveIndex ticks every tickInterval and checks for new information to add to autoretrieve
 // If so, it updates the filecoin index with the new CIDs, saying they are present on autoretrieve
 // With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
@@ -150,15 +149,24 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 			continue
 		case <-quit:
 			break
-=======
-func makeAbsolute(root string, path string) string {
-	if filepath.IsAbs(path) {
-		return path
-	} else {
-		return filepath.Join(root, path)
+		}
 	}
 }
 
+// Sets up a new Estuary configuration object with appropriate defaults.
+//
+// Final configuration is the result of taking the configuration defined here, loading values from the configuration
+// file, and then applying any command-line options that override configuration values.
+//
+// The command-line context is read twice, once here, and once again in overrideSetOptions. The reason for this
+// is that the need to preserve existing behavior with respect to default values. newDefaultConfig reads the command
+// line context and will retrieve whatever implicit or explicit default is set by app.Flags, which remains unchanged.
+// A configuration file will be read only of one exists. Then values from the configuration file will be overriden
+// only if an option is explicily set.
+//
+// The only departure from previous default behavior should be that we have replaced a potentially buggy check for
+// an absolute path the makeAbsolute function.
+//
 func newDefaultConfig(cctx *cli.Context) *config.Estuary {
 
 	ddir := cctx.String("datadir")
@@ -169,10 +177,10 @@ func newDefaultConfig(cctx *cli.Context) *config.Estuary {
 		StagingData:    filepath.Join(ddir, "stagingdata"),
 		Database:       cctx.String("database"),
 		ApiListen:      cctx.String("apilisten"),
-		LightstepToken: cctx.String("lightstep-token"),
+		LightstepToken: cctx.String("lightstep-token"), // has no explicit default
 		Hostname:       cctx.String("hostname"),
 		Replication:    cctx.Int("default-replication"),
-		LowMem:         cctx.Bool("lowmem"),
+		LowMem:         cctx.Bool("lowmem"), // has no explicit default
 
 		Deals: config.DealsConfig{
 			NoStorageCron:         cctx.Bool("no-storage-cron"),
@@ -199,20 +207,21 @@ func newDefaultConfig(cctx *cli.Context) *config.Estuary {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			Blockstore:       makeAbsolute(ddir, cctx.String("estuary-blocks")),
+			Blockstore:       config.MakeAbsoluteDefault(ddir, cctx.String("blockstore"), "estuary-blocks"),
 			Libp2pKeyFile:    filepath.Join(ddir, "estuary-peer.key"),
 			Datastore:        filepath.Join(ddir, "estuary-leveldb"),
 			WalletDir:        filepath.Join(ddir, "estuary-wallet"),
 			WriteLogTruncate: cctx.Bool("write-log-truncate"),
 			NoLimiter:        true,
-			WriteLog:         makeAbsolute(ddir, cctx.String("write-log")),
+			WriteLog:         config.MakeAbsoluteDefault(ddir, cctx.String("write-log"), ""),
 		},
 	}
 
 	return cfg
 }
 
-func overrideSetOptions(cctx *cli.Context, cfg *config.Estuary) {
+func overrideSetOptions(cctx *cli.Context, cfg *config.Estuary) error {
+	var err error
 
 	for _, flag := range cctx.FlagNames() {
 		if cctx.IsSet(flag) {
@@ -223,14 +232,14 @@ func overrideSetOptions(cctx *cli.Context, cfg *config.Estuary) {
 				cfg.Node.Libp2pKeyFile = filepath.Join(cfg.DataDir, "estuary-peer.key")
 				cfg.Node.Datastore = filepath.Join(cfg.DataDir, "estuary-leveldb")
 				cfg.Node.WalletDir = filepath.Join(cfg.DataDir, "estuary-wallet")
-				cfg.Node.Blockstore = filepath.Join(cfg.DataDir, "estuary-blocks")
-				cfg.Node.WriteLog = filepath.Join(cfg.DataDir, "write-log")
+				cfg.Node.Blockstore = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("blockstore"), "estuary-blocks")
+				cfg.Node.WriteLog = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("write-log"), "")
 			case "blockstore":
-				cfg.Node.Blockstore = makeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+				err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 			case "write-log-truncate":
 				cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
 			case "write-log":
-				cfg.Node.WriteLog = makeAbsolute(cfg.DataDir, cctx.String("write-log"))
+				err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 			case "database":
 				cfg.Database = cctx.String("database")
 			case "apilisten":
@@ -264,9 +273,9 @@ func overrideSetOptions(cctx *cli.Context, cfg *config.Estuary) {
 			default:
 				// Do nothing
 			}
->>>>>>> 3258ad0 (config file functionality for estuary)
 		}
 	}
+	return err
 }
 
 func main() {
@@ -476,7 +485,7 @@ func main() {
 			return err
 		}
 
-		sbmgr, err := stagingbs.NewStagingBSMgr(filepath.Join(cfg.StagingData))
+		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingData)
 		if err != nil {
 			return err
 		}

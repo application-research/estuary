@@ -9,6 +9,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -67,12 +68,148 @@ import (
 	"github.com/whyrusleeping/memo"
 )
 
+const defaultWebsocketAddr = "/ip4/0.0.0.0/tcp/6747/ws"
+
 var log = logging.Logger("shuttle")
 
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
 		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
 	}
+}
+
+func newDefaultConfig(cctx *cli.Context) *config.Shuttle {
+
+	ddir := cctx.String("datadir")
+
+	listens := []string{
+		"/ip4/0.0.0.0/tcp/6745",
+		"/ip4/0.0.0.0/udp/6746/quic",
+	}
+
+	if cctx.Bool("libp2p-websockets") {
+		listens = append(listens, defaultWebsocketAddr)
+	}
+
+	cfg := &config.Shuttle{
+
+		DataDir:          ddir,
+		StagingData:      filepath.Join(ddir, "staging"),
+		Database:         cctx.String("database"),
+		ApiListen:        cctx.String("apilisten"),
+		Hostname:         cctx.String("host"),
+		Private:          cctx.Bool("private"),
+		Dev:              cctx.Bool("dev"),
+		NoReloadPinQueue: cctx.Bool("no-reload-pin-queue"),
+
+		Content: config.ContentConfig{
+			Disable: cctx.Bool("disable-local-content-adding"),
+		},
+
+		Jaeger: config.JaegerConfig{
+			JaegerTracing:      cctx.Bool("jaeger-tracing"),
+			JaegerProviderUrl:  cctx.String("jaeger-provider-url"),
+			JaegerSamplerRatio: cctx.Float64("jaeger-sampler-ratio"),
+		},
+
+		Logging: config.LoggingConfig{
+			ApiEndpointLogging: cctx.Bool("logging"),
+		},
+
+		Node: config.Config{
+			ListenAddrs:       listens,
+			Blockstore:        config.MakeAbsoluteDefault(ddir, cctx.String("blockstore"), "blocks"),
+			WriteLog:          config.MakeAbsoluteDefault(ddir, cctx.String("write-log"), ""),
+			HardFlushWriteLog: cctx.Bool("write-log-flush"),
+			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
+			NoBlockstoreCache: cctx.Bool("no-blockstore-cache"),
+			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
+			Datastore:         filepath.Join(ddir, "leveldb"),
+			WalletDir:         filepath.Join(ddir, "wallet"),
+			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
+			BitswapConfig: config.BitswapConfig{
+				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
+				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
+			},
+			NoLimiter: true,
+		},
+
+		Estuary: config.EstuaryRemoteConfig{
+			Api:       cctx.String("estuary-api"),
+			Handle:    cctx.String("handle"),
+			AuthToken: cctx.String("auth-token"),
+		},
+	}
+
+	return cfg
+}
+
+func overrideSetOptions(cctx *cli.Context, cfg *config.Shuttle) error {
+	var err error
+
+	for _, flag := range cctx.FlagNames() {
+		if cctx.IsSet(flag) {
+			switch flag {
+			case "datadir":
+				cfg.DataDir = cctx.String("datadir")
+				cfg.StagingData = filepath.Join(cfg.DataDir, "staging")
+				cfg.Node.Libp2pKeyFile = filepath.Join(cfg.DataDir, "peer.key")
+				cfg.Node.Datastore = filepath.Join(cfg.DataDir, "leveldb")
+				cfg.Node.WalletDir = filepath.Join(cfg.DataDir, "wallet")
+				cfg.Node.Blockstore = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("blockstore"), "blocks")
+				cfg.Node.WriteLog = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("write-log"), "")
+			case "blockstore":
+				err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			case "no-blockstore-cache":
+				cfg.Node.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
+			case "write-log-truncate":
+				cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
+			case "write-log-flush":
+				cfg.Node.HardFlushWriteLog = cctx.Bool("write-log-flush")
+			case "write-log":
+				err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			case "database":
+				cfg.Database = cctx.String("database")
+			case "apilisten":
+				cfg.ApiListen = cctx.String("apilisten")
+			case "libp2p-websockets":
+				cfg.Node.AddListener(defaultWebsocketAddr)
+			case "announce-addr":
+				cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
+			case "host":
+				cfg.Hostname = cctx.String("host")
+			case "disable-local-content-adding":
+				cfg.Content.Disable = cctx.Bool("disable-local-content-adding")
+			case "jaeger-tracing":
+				cfg.Jaeger.JaegerTracing = cctx.Bool("jaeger-tracing")
+			case "jaeger-provider-url":
+				cfg.Jaeger.JaegerProviderUrl = cctx.String("jaeger-provider-url")
+			case "jaeger-sampler-ratio":
+				cfg.Jaeger.JaegerSamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			case "logging":
+				cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
+			case "bitswap-max-work-per-peer":
+				cfg.Node.BitswapConfig.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
+			case "bitswap-target-message-size":
+				cfg.Node.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+			case "estuary-api":
+				cfg.Estuary.Api = cctx.String("estuary-api")
+			case "handle":
+				cfg.Estuary.Handle = cctx.String("handle")
+			case "auth-token":
+				cfg.Estuary.AuthToken = cctx.String("auth-token")
+			case "private":
+				cfg.Private = cctx.Bool("private")
+			case "dev":
+				cfg.Dev = cctx.Bool("dev")
+			case "no-reload-pin-queue":
+				cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
+			default:
+				// Do nothing
+			}
+		}
+	}
+	return err
 }
 
 func main() {
@@ -91,10 +228,18 @@ func main() {
 	logging.SetLogLevel("rcmgr", "debug")
 
 	app := cli.NewApp()
+	usr, _ := user.Current()
+	cwd, _ := os.Getwd()
+
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
+		},
+		&cli.StringFlag{
+			Name:  "config",
+			Value: filepath.Join(usr.HomeDir, ".estuary-shuttle"),
+			Usage: "specify configuration file location",
 		},
 		&cli.StringFlag{
 			Name:    "database",
@@ -117,7 +262,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
-			Value:   ".",
+			Value:   cwd,
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATADIR"},
 		},
 		&cli.StringFlag{
@@ -126,14 +271,12 @@ func main() {
 			Value: "api.estuary.tech",
 		},
 		&cli.StringFlag{
-			Name:     "auth-token",
-			Usage:    "auth token for connecting to estuary",
-			Required: true,
+			Name:  "auth-token",
+			Usage: "auth token for connecting to estuary",
 		},
 		&cli.StringFlag{
-			Name:     "handle",
-			Usage:    "estuary shuttle handle to use",
-			Required: true,
+			Name:  "handle",
+			Usage: "estuary shuttle handle to use",
 		},
 		&cli.StringFlag{
 			Name:  "host",
@@ -196,49 +339,31 @@ func main() {
 		},
 	}
 
-	app.Action = func(cctx *cli.Context) error {
-		ddir := cctx.String("datadir")
-
-		bsdir := cctx.String("blockstore")
-		if bsdir == "" {
-			bsdir = filepath.Join(ddir, "blocks")
-		} else if bsdir[0] != '/' && bsdir[0] != ':' {
-			bsdir = filepath.Join(ddir, bsdir)
-		}
-
-		wlog := cctx.String("write-log")
-		if wlog != "" && wlog[0] != '/' {
-			wlog = filepath.Join(ddir, wlog)
-		}
-
-		listens := []string{
-			"/ip4/0.0.0.0/tcp/6745",
-			"/ip4/0.0.0.0/udp/6746/quic",
-		}
-
-		if cctx.Bool("libp2p-websockets") {
-			listens = append(listens, "/ip4/0.0.0.0/tcp/6747/ws")
-		}
-
-		cfg := &config.Config{
-			ListenAddrs:       listens,
-			Blockstore:        bsdir,
-			WriteLog:          wlog,
-			HardFlushWriteLog: cctx.Bool("write-log-flush"),
-			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
-			NoBlockstoreCache: cctx.Bool("no-blockstore-cache"),
-			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
-			Datastore:         filepath.Join(ddir, "leveldb"),
-			WalletDir:         filepath.Join(ddir, "wallet"),
-			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
-			BitswapConfig: config.BitswapConfig{
-				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
-				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
+	app.Commands = []*cli.Command{
+		{
+			Name:  "configure",
+			Usage: "Saves a configuration file to the location specified by the config parameter",
+			Action: func(cctx *cli.Context) error {
+				cfg := newDefaultConfig(cctx)
+				configuration := cctx.String("config")
+				cfg.Load(configuration) // Assume error means no configuration file exists
+				overrideSetOptions(cctx, cfg)
+				return cfg.Save(configuration)
 			},
-			NoLimiter: true,
+		},
+	}
+
+	app.Action = func(cctx *cli.Context) error {
+
+		cfg := newDefaultConfig(cctx)
+		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
+
+		err := cfg.Validate()
+		if err != nil {
+			return err
 		}
 
-		init := Initializer{cfg}
+		init := Initializer{&cfg.Node}
 
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
@@ -259,12 +384,12 @@ func main() {
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
 
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
 		if err != nil {
 			return err
 		}
 
-		db, err := setupDatabase(cctx.String("database"))
+		db, err := setupDatabase(cfg.Database)
 		if err != nil {
 			return err
 		}
@@ -298,7 +423,7 @@ func main() {
 		})
 		commpMemo.SetConcurrencyLimit(4)
 
-		sbm, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "staging"))
+		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingData)
 		if err != nil {
 			return err
 		}
@@ -309,9 +434,9 @@ func main() {
 			return err
 		}
 
-		if cctx.Bool("jaeger-tracing") {
+		if cfg.Jaeger.JaegerTracing {
 			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
-				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+				cfg.Jaeger.JaegerProviderUrl, cfg.Jaeger.JaegerSamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -324,10 +449,10 @@ func main() {
 			DB:          db,
 			Filc:        filc,
 			StagingMgr:  sbm,
-			Private:     cctx.Bool("private"),
+			Private:     cfg.Private,
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 
-			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
+			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
 
 			commpMemo: commpMemo,
 
@@ -338,12 +463,12 @@ func main() {
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
 
-			hostname:           cctx.String("host"),
-			estuaryHost:        cctx.String("estuary-api"),
-			shuttleHandle:      cctx.String("handle"),
-			shuttleToken:       cctx.String("auth-token"),
-			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
-			dev:                cctx.Bool("dev"),
+			hostname:           cfg.Hostname,
+			estuaryHost:        cfg.Estuary.Api,
+			shuttleHandle:      cfg.Estuary.Handle,
+			shuttleToken:       cfg.Estuary.AuthToken,
+			disableLocalAdding: cfg.Content.Disable,
+			dev:                cfg.Dev,
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -351,7 +476,7 @@ func main() {
 
 		go s.PinMgr.Run(100)
 
-		if !cctx.Bool("no-reload-pin-queue") {
+		if !cfg.NoReloadPinQueue {
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
@@ -513,7 +638,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
+		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging)
 	}
 
 	if err := app.Run(os.Args); err != nil {

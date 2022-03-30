@@ -39,6 +39,15 @@ type BitswapConfig struct {
 	TargetMessageSize          int
 }
 
+func (cfg *Config) AddListener(newAddr string) {
+	for _, addr := range cfg.ListenAddrs {
+		if addr == newAddr {
+			return
+		}
+	}
+	cfg.ListenAddrs = append(cfg.ListenAddrs, newAddr)
+}
+
 // encode configuration with JSON
 func encode(cfg interface{}, w io.Writer) error {
 	// need to prettyprint, hence MarshalIndent, instead of Encoder
@@ -79,4 +88,28 @@ func save(cfg interface{}, filename string) error {
 	defer f.Close()
 
 	return encode(cfg, f)
+}
+
+var ErrEmptyPath = errors.New("node not initialized, please run configure")
+
+func MakeAbsolute(root string, path string) (error, string) {
+	switch {
+	case path == "":
+		return ErrEmptyPath, ""
+	case filepath.IsAbs(path):
+		return nil, path
+	default:
+		return nil, filepath.Join(root, path)
+	}
+}
+
+func MakeAbsoluteDefault(root string, path string, dflt string) string {
+	switch {
+	case path == "":
+		_, result := MakeAbsolute(root, dflt)
+		return result // ignroe error; if dflt is empty, result is empty
+	default:
+		_, result := MakeAbsolute(root, path)
+		return result
+	}
 }
