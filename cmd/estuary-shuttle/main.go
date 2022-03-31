@@ -9,7 +9,6 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/mitchellh/go-homedir"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
@@ -158,7 +158,7 @@ func main() {
 	logging.SetLogLevel("rcmgr", "debug")
 
 	app := cli.NewApp()
-	usr, _ := user.Current()
+	home, _ := homedir.Dir()
 
 	cfg := config.NewShuttle()
 
@@ -169,7 +169,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "config",
-			Value: filepath.Join(usr.HomeDir, ".estuary-shuttle"),
+			Value: filepath.Join(home, ".estuary-shuttle"),
 			Usage: "specify configuration file location",
 		},
 		&cli.StringFlag{

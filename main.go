@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -27,6 +26,7 @@ import (
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
+	"github.com/mitchellh/go-homedir"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
@@ -224,7 +224,7 @@ func main() {
 	logging.SetLogLevel("bs-migrate", "info")
 
 	app := cli.NewApp()
-	usr, _ := user.Current()
+	home, _ := homedir.Dir()
 	cfg := config.NewEstuary()
 
 	app.Flags = []cli.Flag{
@@ -234,7 +234,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "config",
-			Value: filepath.Join(usr.HomeDir, ".estuary"),
+			Value: filepath.Join(home, ".estuary"),
 			Usage: "specify configuration file location",
 		},
 		&cli.StringFlag{
