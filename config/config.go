@@ -40,12 +40,18 @@ type BitswapConfig struct {
 }
 
 func (cfg *Config) AddListener(newAddr string) {
+	if !cfg.HasListener(newAddr) {
+		cfg.ListenAddrs = append(cfg.ListenAddrs, newAddr)
+	}
+}
+
+func (cfg *Config) HasListener(find string) bool {
 	for _, addr := range cfg.ListenAddrs {
-		if addr == newAddr {
-			return
+		if addr == find {
+			return true
 		}
 	}
-	cfg.ListenAddrs = append(cfg.ListenAddrs, newAddr)
+	return false
 }
 
 // encode configuration with JSON
@@ -112,4 +118,25 @@ func MakeAbsoluteDefault(root string, path string, dflt string) string {
 		_, result := MakeAbsolute(root, path)
 		return result
 	}
+}
+
+func updateRootDir(newRoot string, oldRoot string, dir string) string {
+	if dir == "" {
+		return dir
+	}
+	rel, err := filepath.Rel(oldRoot, dir)
+	if err == nil {
+		return filepath.Join(newRoot, rel)
+	} else {
+		return dir
+	}
+}
+
+// Sets the root of many paths
+func (cfg *Config) UpdateRoot(newRoot string, oldRoot string) {
+	cfg.Blockstore = updateRootDir(newRoot, oldRoot, cfg.Blockstore)
+	cfg.Libp2pKeyFile = updateRootDir(newRoot, oldRoot, cfg.Libp2pKeyFile)
+	cfg.Datastore = updateRootDir(newRoot, oldRoot, cfg.Datastore)
+	cfg.WalletDir = updateRootDir(newRoot, oldRoot, cfg.WalletDir)
+	cfg.WriteLog = updateRootDir(newRoot, oldRoot, cfg.WriteLog)
 }

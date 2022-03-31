@@ -153,126 +153,56 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	}
 }
 
-// Sets up a new Estuary configuration object with appropriate defaults.
-//
-// Final configuration is the result of taking the configuration defined here, loading values from the configuration
-// file, and then applying any command-line options that override configuration values.
-//
-// The command-line context is read twice, once here, and once again in overrideSetOptions. The reason for this
-// is that the need to preserve existing behavior with respect to default values. newDefaultConfig reads the command
-// line context and will retrieve whatever implicit or explicit default is set by app.Flags, which remains unchanged.
-// A configuration file will be read only of one exists. Then values from the configuration file will be overriden
-// only if an option is explicily set.
-//
-// The only departure from previous default behavior should be that we have replaced a potentially buggy check for
-// an absolute path the makeAbsolute function.
-//
-func newDefaultConfig(cctx *cli.Context) *config.Estuary {
-
-	ddir := cctx.String("datadir")
-
-	cfg := &config.Estuary{
-
-		DataDir:        ddir,
-		StagingData:    filepath.Join(ddir, "stagingdata"),
-		Database:       cctx.String("database"),
-		ApiListen:      cctx.String("apilisten"),
-		LightstepToken: cctx.String("lightstep-token"), // has no explicit default
-		Hostname:       cctx.String("hostname"),
-		Replication:    cctx.Int("default-replication"),
-		LowMem:         cctx.Bool("lowmem"), // has no explicit default
-
-		Deals: config.DealsConfig{
-			NoStorageCron:         cctx.Bool("no-storage-cron"),
-			Disable:               cctx.Bool("disable-deal-making"),
-			FailOnTransferFailure: cctx.Bool("fail-deals-on-transfer-failure"),
-		},
-
-		Content: config.ContentConfig{
-			Disable:       cctx.Bool("disable-local-content-adding"),
-			GlobalDisable: cctx.Bool("disable-content-adding"),
-		},
-
-		Jaeger: config.JaegerConfig{
-			JaegerTracing:      cctx.Bool("jaeger-tracing"),
-			JaegerProviderUrl:  cctx.String("jaeger-provider-url"),
-			JaegerSamplerRatio: cctx.Float64("jaeger-sampler-ratio"),
-		},
-
-		Logging: config.LoggingConfig{
-			ApiEndpointLogging: cctx.Bool("logging"),
-		},
-
-		Node: config.Config{
-			ListenAddrs: []string{
-				"/ip4/0.0.0.0/tcp/6744",
-			},
-			Blockstore:       config.MakeAbsoluteDefault(ddir, cctx.String("blockstore"), "estuary-blocks"),
-			Libp2pKeyFile:    filepath.Join(ddir, "estuary-peer.key"),
-			Datastore:        filepath.Join(ddir, "estuary-leveldb"),
-			WalletDir:        filepath.Join(ddir, "estuary-wallet"),
-			WriteLogTruncate: cctx.Bool("write-log-truncate"),
-			NoLimiter:        true,
-			WriteLog:         config.MakeAbsoluteDefault(ddir, cctx.String("write-log"), ""),
-		},
-	}
-
-	return cfg
-}
-
-func overrideSetOptions(cctx *cli.Context, cfg *config.Estuary) error {
+func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
 	var err error
-
-	for _, flag := range cctx.FlagNames() {
-		if cctx.IsSet(flag) {
-			switch flag {
-			case "datadir":
-				cfg.DataDir = cctx.String("datadir")
-				cfg.StagingData = filepath.Join(cfg.DataDir, "stagingdata")
-				cfg.Node.Libp2pKeyFile = filepath.Join(cfg.DataDir, "estuary-peer.key")
-				cfg.Node.Datastore = filepath.Join(cfg.DataDir, "estuary-leveldb")
-				cfg.Node.WalletDir = filepath.Join(cfg.DataDir, "estuary-wallet")
-				cfg.Node.Blockstore = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("blockstore"), "estuary-blocks")
-				cfg.Node.WriteLog = config.MakeAbsoluteDefault(cfg.DataDir, cctx.String("write-log"), "")
-			case "blockstore":
-				err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
-			case "write-log-truncate":
-				cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
-			case "write-log":
-				err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
-			case "database":
-				cfg.Database = cctx.String("database")
-			case "apilisten":
-				cfg.ApiListen = cctx.String("apilisten")
-			case "lightstep-token":
-				cfg.LightstepToken = cctx.String("lightstep-token")
-			case "hostname":
-				cfg.Hostname = cctx.String("hostname")
-			case "default-replication":
-				cfg.Replication = cctx.Int("default-replication")
-			case "lowmem":
-				cfg.LowMem = cctx.Bool("lowmem")
-			case "no-storage-cron":
-				cfg.Deals.NoStorageCron = cctx.Bool("no-storage-cron")
-			case "disable-deal-making":
-				cfg.Deals.Disable = cctx.Bool("disable-deal-making")
-			case "fail-deals-on-transfer-failure":
-				cfg.Deals.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
-			case "disable-local-content-adding":
-				cfg.Content.Disable = cctx.Bool("disable-local-content-adding")
-			case "disable-content-adding":
-				cfg.Content.GlobalDisable = cctx.Bool("disable-content-adding")
-			case "jaeger-tracing":
-				cfg.Jaeger.JaegerTracing = cctx.Bool("jaeger-tracing")
-			case "jaeger-provider-url":
-				cfg.Jaeger.JaegerProviderUrl = cctx.String("jaeger-provider-url")
-			case "jaeger-sampler-ratio":
-				cfg.Jaeger.JaegerSamplerRatio = cctx.Float64("jaeger-sampler-ratio")
-			case "logging":
-				cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
-			default:
-				// Do nothing
-			}
+	for _, flag := range flags {
+		name := flag.Names()[0]
+		if cctx.IsSet(name) {
+			log.Debugf("Flag %s is set to %s", name, cctx.String(name))
+		} else {
+			continue
+		}
+		switch name {
+		case "datadir":
+			cfg.SetDataDir(cctx.String("datadir"))
+		case "blockstore":
+			err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+		case "write-log-truncate":
+			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
+		case "write-log":
+			err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+		case "database":
+			cfg.Database = cctx.String("database")
+		case "apilisten":
+			cfg.ApiListen = cctx.String("apilisten")
+		case "lightstep-token":
+			cfg.LightstepToken = cctx.String("lightstep-token")
+		case "hostname":
+			cfg.Hostname = cctx.String("hostname")
+		case "default-replication":
+			cfg.Replication = cctx.Int("default-replication")
+		case "lowmem":
+			cfg.LowMem = cctx.Bool("lowmem")
+		case "no-storage-cron":
+			cfg.Deals.NoStorageCron = cctx.Bool("no-storage-cron")
+		case "disable-deal-making":
+			cfg.Deals.Disable = cctx.Bool("disable-deal-making")
+		case "fail-deals-on-transfer-failure":
+			cfg.Deals.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+		case "disable-local-content-adding":
+			cfg.Content.Disable = cctx.Bool("disable-local-content-adding")
+		case "disable-content-adding":
+			cfg.Content.GlobalDisable = cctx.Bool("disable-content-adding")
+		case "jaeger-tracing":
+			cfg.Jaeger.JaegerTracing = cctx.Bool("jaeger-tracing")
+		case "jaeger-provider-url":
+			cfg.Jaeger.JaegerProviderUrl = cctx.String("jaeger-provider-url")
+		case "jaeger-sampler-ratio":
+			cfg.Jaeger.JaegerSamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+		case "logging":
+			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
+		default:
+			// Do nothing
 		}
 	}
 	return err
@@ -295,7 +225,7 @@ func main() {
 
 	app := cli.NewApp()
 	usr, _ := user.Current()
-	cwd, _ := os.Getwd()
+	cfg := config.NewEstuary()
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -310,91 +240,103 @@ func main() {
 		&cli.StringFlag{
 			Name:    "database",
 			Usage:   "specify connection string for estuary database",
-			Value:   build.DefaultDatabaseValue,
+			Value:   cfg.Database,
 			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
 			Usage:   "address for the api server to listen on",
-			Value:   ":3004",
+			Value:   cfg.ApiListen,
 			EnvVars: []string{"ESTUARY_API_LISTEN"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
-			Value:   cwd,
+			Value:   cfg.DataDir,
 			EnvVars: []string{"ESTUARY_DATADIR"},
 		},
 		&cli.StringFlag{
 			Name:   "write-log",
 			Usage:  "enable write log blockstore in specified directory",
+			Value:  cfg.Node.WriteLog,
 			Hidden: true,
 		},
 		&cli.BoolFlag{
 			Name:  "no-storage-cron",
 			Usage: "run estuary without processing files into deals",
+			Value: cfg.Deals.NoStorageCron,
 		},
 		&cli.BoolFlag{
 			Name:  "logging",
 			Usage: "enable api endpoint logging",
+			Value: cfg.Logging.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
 			Name:   "enable-auto-retrieve",
 			Hidden: true,
+			Value:  cfg.AutoRetrieve,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
 			Usage:   "specify lightstep access token for enabling trace exports",
 			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
+			Value:   cfg.LightstepToken,
 		},
 		&cli.StringFlag{
 			Name:  "hostname",
 			Usage: "specify hostname this node will be reachable at",
-			Value: "http://localhost:3004",
+			Value: cfg.Hostname,
 		},
 		&cli.BoolFlag{
 			Name:  "fail-deals-on-transfer-failure",
 			Usage: "consider deals failed when the transfer to the miner fails",
+			Value: cfg.Deals.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
+			Value: cfg.Deals.Disable,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
 			Usage: "disallow new content ingestion globally",
+			Value: cfg.Content.GlobalDisable,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
+			Value: cfg.Content.Disable,
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
+			Value: cfg.Node.Blockstore,
 		},
 		&cli.BoolFlag{
-			Name: "write-log-truncate",
+			Name:  "write-log-truncate",
+			Value: cfg.Node.WriteLogTruncate,
 		},
 		&cli.IntFlag{
 			Name:  "default-replication",
-			Value: 6,
+			Value: cfg.Replication,
 		},
 		&cli.BoolFlag{
 			Name:  "lowmem",
 			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
+			Value: cfg.LowMem,
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
-			Value: false,
+			Value: cfg.Jaeger.JaegerTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: "http://localhost:14268/api/traces",
+			Value: cfg.Jaeger.JaegerProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: 1,
+			Value: cfg.Jaeger.JaegerSamplerRatio,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -402,9 +344,8 @@ func main() {
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
-				cfg := newDefaultConfig(cctx)
 				cfg.Load(cctx.String("config"))
-				overrideSetOptions(cctx, cfg)
+				overrideSetOptions(app.Flags, cctx, cfg)
 				db, err := setupDatabase(cfg)
 				if err != nil {
 					return err
@@ -448,18 +389,18 @@ func main() {
 			Name:  "configure",
 			Usage: "Saves a configuration file to the location specified by the config parameter",
 			Action: func(cctx *cli.Context) error {
-				cfg := newDefaultConfig(cctx)
 				configuration := cctx.String("config")
 				cfg.Load(configuration) // Assume error means no configuration file exists
-				overrideSetOptions(cctx, cfg)
+				log.Info("test")
+				overrideSetOptions(app.Flags, cctx, cfg)
 				return cfg.Save(configuration)
 			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
 
-		cfg := newDefaultConfig(cctx)
 		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
+		overrideSetOptions(app.Flags, cctx, cfg)
 
 		db, err := setupDatabase(cfg)
 		if err != nil {
