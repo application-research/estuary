@@ -138,6 +138,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		default:
 			// Do nothing
 		}
+		if (err) != nil {
+			return err
+		}
 	}
 	return err
 }

@@ -204,6 +204,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		default:
 			// Do nothing
 		}
+		if (err) != nil {
+			return err
+		}
+
 	}
 	return err
 }
