@@ -90,7 +90,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.Node.Blockstore, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 		case "no-blockstore-cache":
 			cfg.Node.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
@@ -98,7 +98,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "write-log-flush":
 			cfg.Node.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
-			err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			cfg.Node.WriteLog, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 		case "database":
 			cfg.Database = cctx.String("database")
 		case "apilisten":

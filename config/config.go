@@ -98,24 +98,24 @@ func save(cfg interface{}, filename string) error {
 
 var ErrEmptyPath = errors.New("node not initialized, please run configure")
 
-func MakeAbsolute(root string, path string) (error, string) {
+func MakeAbsolute(root string, path string) (string, error) {
 	switch {
 	case path == "":
-		return ErrEmptyPath, ""
+		return "", ErrEmptyPath
 	case filepath.IsAbs(path):
-		return nil, path
+		return path, nil
 	default:
-		return nil, filepath.Join(root, path)
+		return filepath.Join(root, path), nil
 	}
 }
 
 func MakeAbsoluteDefault(root string, path string, dflt string) string {
 	switch {
 	case path == "":
-		_, result := MakeAbsolute(root, dflt)
+		result, _ := MakeAbsolute(root, dflt)
 		return result // ignroe error; if dflt is empty, result is empty
 	default:
-		_, result := MakeAbsolute(root, path)
+		result, _ := MakeAbsolute(root, path)
 		return result
 	}
 }

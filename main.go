@@ -166,11 +166,11 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			err, cfg.Node.Blockstore = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.Node.Blockstore, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 		case "write-log-truncate":
 			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
 		case "write-log":
-			err, cfg.Node.WriteLog = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			cfg.Node.WriteLog, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 		case "database":
 			cfg.Database = cctx.String("database")
 		case "apilisten":
