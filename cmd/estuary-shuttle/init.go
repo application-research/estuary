@@ -9,10 +9,10 @@ import (
 )
 
 type Initializer struct {
-	cfg *config.NodeConfig
+	cfg *config.Node
 }
 
-func (init Initializer) Config() *config.NodeConfig {
+func (init Initializer) Config() *config.Node {
 	return init.cfg
 }
 

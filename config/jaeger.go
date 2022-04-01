@@ -1,6 +1,6 @@
 package config
 
-type JaegerConfig struct {
+type Jaeger struct {
 	EnableTracing bool
 	ProviderUrl   string
 	SamplerRatio  float64

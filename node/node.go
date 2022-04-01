@@ -86,7 +86,7 @@ type EstuaryBlockstore interface {
 type NodeInitializer interface {
 	BlockstoreWrap(blockstore.Blockstore) (blockstore.Blockstore, error)
 	KeyProviderFunc(context.Context) (<-chan cid.Cid, error)
-	Config() *config.NodeConfig
+	Config() *config.Node
 }
 
 type Node struct {
@@ -110,7 +110,7 @@ type Node struct {
 
 	Bwc *metrics.BandwidthCounter
 
-	Config *config.NodeConfig
+	Config *config.Node
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {

@@ -24,11 +24,11 @@ type Shuttle struct {
 	Private            bool
 	Dev                bool
 	NoReloadPinQueue   bool
-	Node               NodeConfig
-	Jaeger             JaegerConfig
-	Content            ContentConfig
-	Logging            LoggingConfig
-	Estuary            EstuaryRemoteConfig
+	NodeConfig         Node
+	JaegerConfig       Jaeger
+	ContentConfig      Content
+	LoggingConfig      Logging
+	EstuaryConfig      EstuaryRemoteConfig
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -41,11 +41,11 @@ func (cfg *Shuttle) Save(filename string) error {
 }
 
 func (cfg *Shuttle) Validate() error {
-	if cfg.Estuary.AuthToken == "" {
+	if cfg.EstuaryConfig.AuthToken == "" {
 		return errors.New("no auth-token configured or specified on command line")
 	}
 
-	if cfg.Estuary.Handle == "" {
+	if cfg.EstuaryConfig.Handle == "" {
 		return errors.New("no handle configured or specified on command line")
 	}
 	return nil
@@ -54,7 +54,7 @@ func (cfg *Shuttle) Validate() error {
 // Sets the root of many paths
 func (cfg *Shuttle) SetDataDir(ddir string) {
 	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
-	cfg.Node.UpdateRoot(ddir, cfg.DataDir)
+	cfg.NodeConfig.UpdateRoot(ddir, cfg.DataDir)
 	cfg.DataDir = ddir
 }
 
@@ -78,21 +78,21 @@ func NewShuttle() *Shuttle {
 		Dev:                false,
 		NoReloadPinQueue:   false,
 
-		Content: ContentConfig{
+		ContentConfig: Content{
 			DisableLocalAdding: false,
 		},
 
-		Jaeger: JaegerConfig{
+		JaegerConfig: Jaeger{
 			EnableTracing: false,
 			ProviderUrl:   "http://localhost:14268/api/traces",
 			SamplerRatio:  1,
 		},
 
-		Logging: LoggingConfig{
+		LoggingConfig: Logging{
 			ApiEndpointLogging: false,
 		},
 
-		Node: NodeConfig{
+		NodeConfig: Node{
 			ListenAddrs:       listens,
 			BlockstoreDir:     filepath.Join(pwd, "blocks"),
 			WriteLogDir:       "",
@@ -110,7 +110,7 @@ func NewShuttle() *Shuttle {
 			NoLimiter: true,
 		},
 
-		Estuary: EstuaryRemoteConfig{
+		EstuaryConfig: EstuaryRemoteConfig{
 			Api:       "api.estuary.tech",
 			Handle:    "",
 			AuthToken: "",

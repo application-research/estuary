@@ -1,6 +1,6 @@
 package config
 
-type DealConfig struct {
+type Deal struct {
 	FailOnTransferFailure bool `json:",omitempty"`
 	Disable               bool `json:",omitempty"`
 }

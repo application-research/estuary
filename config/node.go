@@ -1,6 +1,6 @@
 package config
 
-type NodeConfig struct {
+type Node struct {
 	ListenAddrs   []string `json:"Swarm"`
 	AnnounceAddrs []string `json:"Announce"`
 
@@ -26,13 +26,13 @@ type BitswapConfig struct {
 	TargetMessageSize          int
 }
 
-func (cfg *NodeConfig) AddListener(newAddr string) {
+func (cfg *Node) AddListener(newAddr string) {
 	if !cfg.HasListener(newAddr) {
 		cfg.ListenAddrs = append(cfg.ListenAddrs, newAddr)
 	}
 }
 
-func (cfg *NodeConfig) HasListener(find string) bool {
+func (cfg *Node) HasListener(find string) bool {
 	for _, addr := range cfg.ListenAddrs {
 		if addr == find {
 			return true
@@ -42,7 +42,7 @@ func (cfg *NodeConfig) HasListener(find string) bool {
 }
 
 // Sets the root of many paths
-func (cfg *NodeConfig) UpdateRoot(newRoot string, oldRoot string) {
+func (cfg *Node) UpdateRoot(newRoot string, oldRoot string) {
 	cfg.BlockstoreDir = updateRootDir(newRoot, oldRoot, cfg.BlockstoreDir)
 	cfg.Libp2pKeyFile = updateRootDir(newRoot, oldRoot, cfg.Libp2pKeyFile)
 	cfg.DatastoreDir = updateRootDir(newRoot, oldRoot, cfg.DatastoreDir)

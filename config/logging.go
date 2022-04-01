@@ -1,5 +1,5 @@
 package config
 
-type LoggingConfig struct {
+type Logging struct {
 	ApiEndpointLogging bool `json:",omitempty"`
 }

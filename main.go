@@ -166,11 +166,11 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			cfg.Node.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.NodeConfig.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 		case "write-log-truncate":
-			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
+			cfg.NodeConfig.WriteLogTruncate = cctx.Bool("write-log-truncate")
 		case "write-log":
-			cfg.Node.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			cfg.NodeConfig.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 		case "database":
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
@@ -186,21 +186,21 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "no-storage-cron":
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
-			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
+			cfg.DealConfig.Disable = cctx.Bool("disable-deal-making")
 		case "fail-deals-on-transfer-failure":
-			cfg.Deal.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+			cfg.DealConfig.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
-			cfg.Content.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
+			cfg.ContentConfig.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
 		case "disable-content-adding":
-			cfg.Content.DisableGlobalAdding = cctx.Bool("disable-content-adding")
+			cfg.ContentConfig.DisableGlobalAdding = cctx.Bool("disable-content-adding")
 		case "jaeger-tracing":
-			cfg.Jaeger.EnableTracing = cctx.Bool("jaeger-tracing")
+			cfg.JaegerConfig.EnableTracing = cctx.Bool("jaeger-tracing")
 		case "jaeger-provider-url":
-			cfg.Jaeger.ProviderUrl = cctx.String("jaeger-provider-url")
+			cfg.JaegerConfig.ProviderUrl = cctx.String("jaeger-provider-url")
 		case "jaeger-sampler-ratio":
-			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			cfg.JaegerConfig.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
-			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
+			cfg.LoggingConfig.ApiEndpointLogging = cctx.Bool("logging")
 		default:
 			// Do nothing
 		}
@@ -261,7 +261,7 @@ func main() {
 		&cli.StringFlag{
 			Name:   "write-log",
 			Usage:  "enable write log blockstore in specified directory",
-			Value:  cfg.Node.WriteLogDir,
+			Value:  cfg.NodeConfig.WriteLogDir,
 			Hidden: true,
 		},
 		&cli.BoolFlag{
@@ -272,7 +272,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "logging",
 			Usage: "enable api endpoint logging",
-			Value: cfg.Logging.ApiEndpointLogging,
+			Value: cfg.LoggingConfig.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
 			Name:   "enable-auto-retrieve",
@@ -293,31 +293,31 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "fail-deals-on-transfer-failure",
 			Usage: "consider deals failed when the transfer to the miner fails",
-			Value: cfg.Deal.FailOnTransferFailure,
+			Value: cfg.DealConfig.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
-			Value: cfg.Deal.Disable,
+			Value: cfg.DealConfig.Disable,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
 			Usage: "disallow new content ingestion globally",
-			Value: cfg.Content.DisableGlobalAdding,
+			Value: cfg.ContentConfig.DisableGlobalAdding,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
-			Value: cfg.Content.DisableLocalAdding,
+			Value: cfg.ContentConfig.DisableLocalAdding,
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
-			Value: cfg.Node.BlockstoreDir,
+			Value: cfg.NodeConfig.BlockstoreDir,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
-			Value: cfg.Node.WriteLogTruncate,
+			Value: cfg.NodeConfig.WriteLogTruncate,
 		},
 		&cli.IntFlag{
 			Name:  "default-replication",
@@ -330,16 +330,16 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
-			Value: cfg.Jaeger.EnableTracing,
+			Value: cfg.JaegerConfig.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: cfg.Jaeger.ProviderUrl,
+			Value: cfg.JaegerConfig.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.Jaeger.SamplerRatio,
+			Value: cfg.JaegerConfig.SamplerRatio,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -410,7 +410,7 @@ func main() {
 			return err
 		}
 
-		init := Initializer{&cfg.Node, db, nil}
+		init := Initializer{&cfg.NodeConfig, db, nil}
 
 		nd, err := node.Setup(context.Background(), &init)
 		if err != nil {
@@ -442,9 +442,9 @@ func main() {
 		defer closer()
 
 		// setup tracing to jaeger if enabled
-		if cfg.Jaeger.EnableTracing {
+		if cfg.JaegerConfig.EnableTracing {
 			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
+				cfg.JaegerConfig.ProviderUrl, cfg.JaegerConfig.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -517,11 +517,11 @@ func main() {
 
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
-		cm.FailDealOnTransferFailure = cfg.Deal.FailOnTransferFailure
+		cm.FailDealOnTransferFailure = cfg.DealConfig.FailOnTransferFailure
 
-		cm.isDealMakingDisabled = cfg.Deal.Disable
-		cm.contentAddingDisabled = cfg.Content.DisableGlobalAdding
-		cm.localContentAddingDisabled = cfg.Content.DisableLocalAdding
+		cm.isDealMakingDisabled = cfg.DealConfig.Disable
+		cm.contentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
+		cm.localContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
 
 		cm.tracer = otel.Tracer("replicator")
 
@@ -570,7 +570,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging, cfg.LightstepToken, filepath.Join(cfg.DataDir, "cache"))
+		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging, cfg.LightstepToken, filepath.Join(cfg.DataDir, "cache"))
 	}
 
 	if err := app.Run(os.Args); err != nil {

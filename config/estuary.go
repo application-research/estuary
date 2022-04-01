@@ -15,14 +15,14 @@ type Estuary struct {
 	AutoRetrieve           bool
 	LightstepToken         string
 	Hostname               string
-	Node                   NodeConfig
-	Jaeger                 JaegerConfig
-	Deal                   DealConfig
-	Content                ContentConfig
+	NodeConfig             Node
+	JaegerConfig           Jaeger
+	DealConfig             Deal
+	ContentConfig          Content
 	LowMem                 bool
 	DisableFilecoinStorage bool
 	Replication            int
-	Logging                LoggingConfig
+	LoggingConfig          Logging
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -37,7 +37,7 @@ func (cfg *Estuary) Save(filename string) error {
 // Sets the root of many paths
 func (cfg *Estuary) SetDataDir(ddir string) {
 	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
-	cfg.Node.UpdateRoot(ddir, cfg.DataDir)
+	cfg.NodeConfig.UpdateRoot(ddir, cfg.DataDir)
 	cfg.DataDir = ddir
 }
 
@@ -56,27 +56,27 @@ func NewEstuary() *Estuary {
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
 
-		Deal: DealConfig{
+		DealConfig: Deal{
 			Disable:               false,
 			FailOnTransferFailure: false,
 		},
 
-		Content: ContentConfig{
+		ContentConfig: Content{
 			DisableLocalAdding:  false,
 			DisableGlobalAdding: false,
 		},
 
-		Jaeger: JaegerConfig{
+		JaegerConfig: Jaeger{
 			EnableTracing: false,
 			ProviderUrl:   "http://localhost:14268/api/traces",
 			SamplerRatio:  1,
 		},
 
-		Logging: LoggingConfig{
+		LoggingConfig: Logging{
 			ApiEndpointLogging: false,
 		},
 
-		Node: NodeConfig{
+		NodeConfig: Node{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
