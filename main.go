@@ -184,7 +184,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
 		case "no-storage-cron":
-			cfg.Deal.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
+			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
 			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
 		case "fail-deals-on-transfer-failure":
@@ -267,7 +267,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "no-storage-cron",
 			Usage: "run estuary without processing files into deals",
-			Value: cfg.Deal.DisableFilecoinStorage,
+			Value: cfg.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
 			Name:  "logging",
@@ -529,7 +529,7 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		if !cfg.Deal.DisableFilecoinStorage {
+		if !cfg.DisableFilecoinStorage {
 			go cm.ContentWatcher()
 		}
 

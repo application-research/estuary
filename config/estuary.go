@@ -8,20 +8,21 @@ import (
 )
 
 type Estuary struct {
-	DatabaseConnString string
-	StagingDataDir     string
-	DataDir            string
-	ApiListen          string
-	AutoRetrieve       bool
-	LightstepToken     string
-	Hostname           string
-	Node               NodeConfig
-	Jaeger             JaegerConfig
-	Deal               DealConfig
-	Content            ContentConfig
-	LowMem             bool
-	Replication        int
-	Logging            LoggingConfig
+	DatabaseConnString     string
+	StagingDataDir         string
+	DataDir                string
+	ApiListen              string
+	AutoRetrieve           bool
+	LightstepToken         string
+	Hostname               string
+	Node                   NodeConfig
+	Jaeger                 JaegerConfig
+	Deal                   DealConfig
+	Content                ContentConfig
+	LowMem                 bool
+	DisableFilecoinStorage bool
+	Replication            int
+	Logging                LoggingConfig
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -45,19 +46,19 @@ func NewEstuary() *Estuary {
 	pwd, _ := os.Getwd()
 
 	cfg := Estuary{
-		DataDir:            pwd,
-		StagingDataDir:     filepath.Join(pwd, "stagingdata"),
-		DatabaseConnString: build.DefaultDatabaseValue,
-		ApiListen:          ":3004",
-		LightstepToken:     "",
-		Hostname:           "http://localhost:3004",
-		Replication:        6,
-		LowMem:             false,
+		DataDir:                pwd,
+		StagingDataDir:         filepath.Join(pwd, "stagingdata"),
+		DatabaseConnString:     build.DefaultDatabaseValue,
+		ApiListen:              ":3004",
+		LightstepToken:         "",
+		Hostname:               "http://localhost:3004",
+		Replication:            6,
+		LowMem:                 false,
+		DisableFilecoinStorage: false,
 
 		Deal: DealConfig{
-			DisableFilecoinStorage: false,
-			Disable:                false,
-			FailOnTransferFailure:  false,
+			Disable:               false,
+			FailOnTransferFailure: false,
 		},
 
 		Content: ContentConfig{
