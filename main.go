@@ -30,6 +30,8 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
@@ -40,8 +42,11 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/index-provider/engine"
+	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
+	"github.com/filecoin-project/storetheindex/api/v0/ingest/schema"
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
@@ -125,11 +130,110 @@ type ObjRef struct {
 	Offloaded uint
 }
 
-// updateAutoretrieveIndex ticks every tickInterval and checks for new information to add to autoretrieve
-// If so, it updates the filecoin index with the new CIDs, saying they are present on autoretrieve
+// TODO: move to util
+func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {
+	privKeyBytes, err := crypto.ConfigDecodeKey(privKeyStr)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("test2")
+	privKey, err := crypto.UnmarshalPrivateKey(privKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("test3")
+
+	return privKey, nil
+}
+
+// TODO: move to util
+func multiAddrsToString(addrs []multiaddr.Multiaddr) []string {
+	var rAddrs []string
+	for _, addr := range addrs {
+		rAddrs = append(rAddrs, addr.String())
+	}
+	return rAddrs
+}
+
+func stringToMultiAddrs(addrStr string) ([]multiaddr.Multiaddr, error) {
+	var mAddrs []multiaddr.Multiaddr
+	for _, addr := range strings.Split(addrStr, ",") {
+		ma, err := multiaddr.NewMultiaddr(addr)
+		if err != nil {
+			return nil, err
+		}
+		mAddrs = append(mAddrs, ma)
+	}
+	return mAddrs, nil
+}
+
+// announceNewCIDs publishes an announcement with the CIDs that were added
+// between now and lastTickTime (see updateAutoretrieveIndex)
+func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
+	if len(newContents) == 0 {
+		return fmt.Errorf("no new CIDs to announce")
+	}
+
+	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// create new host to pretend to be the autoretrieve server publishing the announcement
+	// port := 1234 //TODO: right port here
+	// addr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
+	addrs, err := stringToMultiAddrs(ar.Addresses)
+	if err != nil {
+		log.Fatal(err)
+	}
+	h, err := libp2p.New(libp2p.Identity(arPrivKey), libp2p.ListenAddrs(addrs...))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	e, err := engine.New(
+		engine.WithHost(h),
+		engine.WithPublisherKind(engine.DataTransferPublisher),
+		// engine.WithRetrievalAddrs(addrs...), TODO: do we need this if we have this info on host?
+	)
+	if err != nil {
+		return err
+	}
+
+	e.Start(context.Background())
+	defer e.Shutdown()
+	ctxID := []byte("main") // TODO: what should this be?
+
+	md := metadata.New(metadata.Bitswap{})
+	mdBytes, err := md.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	ad := schema.Advertisement{
+		Provider:  h.ID().String(),
+		Addresses: multiAddrsToString(h.Addrs()),
+		Entries:   schema.NoEntries, //TODO: this should have our CIDs
+		ContextID: ctxID,
+		Metadata:  mdBytes,
+	}
+
+	adCID, err := e.Publish(context.Background(), ad)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Published advertisement: %+v\n", adCID) // TODO: remove
+
+	return nil
+}
+
+// updateAutoretrieveIndex ticks every tickInterval and checks for new CIDs added
+// It updates storetheindex with the new CIDs, saying they are present on autoretrieve
 // With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
 func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
 	var autoretrieves []Autoretrieve
+	var newContents []Content
 	var lastTickTime time.Time
 	ticker := time.NewTicker(tickInterval)
 
@@ -144,7 +248,16 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 			return err
 		}
 		if len(autoretrieves) > 0 {
+			err := s.DB.Find(&newContents, "updated_at > ?", lastTickTime).Group("cid").Error
+			if err != nil {
+				log.Errorf("unable to query list of new CIDs: %s", err)
+				return err
+			}
+			log.Info("announcing new CIDs to autoretrieve servers")
 			for _, ar := range autoretrieves {
+				// send announcement with new CIDs for each autoretrieve server
+				s.announceNewCIDs(newContents, ar)
+				//TODO: remove old CIDs (do we even need that?)
 				fmt.Println("online: ", ar) // TODO: remove
 			}
 		} else {
