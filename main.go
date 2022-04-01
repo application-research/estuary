@@ -166,13 +166,13 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			cfg.Node.Blockstore, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.Node.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 		case "write-log-truncate":
 			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
 		case "write-log":
-			cfg.Node.WriteLog, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			cfg.Node.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 		case "database":
-			cfg.Database = cctx.String("database")
+			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "lightstep-token":
@@ -184,21 +184,21 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
 		case "no-storage-cron":
-			cfg.Deals.NoStorageCron = cctx.Bool("no-storage-cron")
+			cfg.Deal.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
-			cfg.Deals.Disable = cctx.Bool("disable-deal-making")
+			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
 		case "fail-deals-on-transfer-failure":
-			cfg.Deals.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+			cfg.Deal.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
-			cfg.Content.Disable = cctx.Bool("disable-local-content-adding")
+			cfg.Content.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
 		case "disable-content-adding":
-			cfg.Content.GlobalDisable = cctx.Bool("disable-content-adding")
+			cfg.Content.DisableGlobalAdding = cctx.Bool("disable-content-adding")
 		case "jaeger-tracing":
-			cfg.Jaeger.JaegerTracing = cctx.Bool("jaeger-tracing")
+			cfg.Jaeger.EnableTracing = cctx.Bool("jaeger-tracing")
 		case "jaeger-provider-url":
-			cfg.Jaeger.JaegerProviderUrl = cctx.String("jaeger-provider-url")
+			cfg.Jaeger.ProviderUrl = cctx.String("jaeger-provider-url")
 		case "jaeger-sampler-ratio":
-			cfg.Jaeger.JaegerSamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
 			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
 		default:
@@ -207,7 +207,6 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		if (err) != nil {
 			return err
 		}
-
 	}
 	return err
 }
@@ -244,7 +243,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "database",
 			Usage:   "specify connection string for estuary database",
-			Value:   cfg.Database,
+			Value:   cfg.DatabaseConnString,
 			EnvVars: []string{"ESTUARY_DATABASE"},
 		},
 		&cli.StringFlag{
@@ -262,13 +261,13 @@ func main() {
 		&cli.StringFlag{
 			Name:   "write-log",
 			Usage:  "enable write log blockstore in specified directory",
-			Value:  cfg.Node.WriteLog,
+			Value:  cfg.Node.WriteLogDir,
 			Hidden: true,
 		},
 		&cli.BoolFlag{
 			Name:  "no-storage-cron",
 			Usage: "run estuary without processing files into deals",
-			Value: cfg.Deals.NoStorageCron,
+			Value: cfg.Deal.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
 			Name:  "logging",
@@ -294,27 +293,27 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "fail-deals-on-transfer-failure",
 			Usage: "consider deals failed when the transfer to the miner fails",
-			Value: cfg.Deals.FailOnTransferFailure,
+			Value: cfg.Deal.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
-			Value: cfg.Deals.Disable,
+			Value: cfg.Deal.Disable,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
 			Usage: "disallow new content ingestion globally",
-			Value: cfg.Content.GlobalDisable,
+			Value: cfg.Content.DisableGlobalAdding,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
-			Value: cfg.Content.Disable,
+			Value: cfg.Content.DisableLocalAdding,
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
-			Value: cfg.Node.Blockstore,
+			Value: cfg.Node.BlockstoreDir,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
@@ -331,16 +330,16 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
-			Value: cfg.Jaeger.JaegerTracing,
+			Value: cfg.Jaeger.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: cfg.Jaeger.JaegerProviderUrl,
+			Value: cfg.Jaeger.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.Jaeger.JaegerSamplerRatio,
+			Value: cfg.Jaeger.SamplerRatio,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -430,7 +429,7 @@ func main() {
 			return err
 		}
 
-		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingData)
+		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
 		if err != nil {
 			return err
 		}
@@ -443,9 +442,9 @@ func main() {
 		defer closer()
 
 		// setup tracing to jaeger if enabled
-		if cfg.Jaeger.JaegerTracing {
+		if cfg.Jaeger.EnableTracing {
 			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cfg.Jaeger.JaegerProviderUrl, cfg.Jaeger.JaegerSamplerRatio)
+				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -518,11 +517,11 @@ func main() {
 
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 
-		cm.FailDealOnTransferFailure = cfg.Deals.FailOnTransferFailure
+		cm.FailDealOnTransferFailure = cfg.Deal.FailOnTransferFailure
 
-		cm.isDealMakingDisabled = cfg.Deals.Disable
-		cm.contentAddingDisabled = cfg.Content.GlobalDisable
-		cm.localContentAddingDisabled = cfg.Content.Disable
+		cm.isDealMakingDisabled = cfg.Deal.Disable
+		cm.contentAddingDisabled = cfg.Content.DisableGlobalAdding
+		cm.localContentAddingDisabled = cfg.Content.DisableLocalAdding
 
 		cm.tracer = otel.Tracer("replicator")
 
@@ -530,7 +529,7 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		if !cfg.Deals.NoStorageCron {
+		if !cfg.Deal.DisableFilecoinStorage {
 			go cm.ContentWatcher()
 		}
 
@@ -598,7 +597,7 @@ func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 	}
 	*/
 
-	db, err := util.SetupDatabase(cfg.Database)
+	db, err := util.SetupDatabase(cfg.DatabaseConnString)
 	if err != nil {
 		return nil, err
 	}

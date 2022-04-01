@@ -8,20 +8,20 @@ import (
 )
 
 type Estuary struct {
-	Database       string
-	StagingData    string
-	DataDir        string
-	ApiListen      string
-	AutoRetrieve   bool
-	LightstepToken string
-	Hostname       string
-	Node           Config
-	Jaeger         JaegerConfig
-	Deals          DealsConfig
-	Content        ContentConfig
-	LowMem         bool
-	Replication    int
-	Logging        LoggingConfig
+	DatabaseConnString string
+	StagingDataDir     string
+	DataDir            string
+	ApiListen          string
+	AutoRetrieve       bool
+	LightstepToken     string
+	Hostname           string
+	Node               NodeConfig
+	Jaeger             JaegerConfig
+	Deal               DealConfig
+	Content            ContentConfig
+	LowMem             bool
+	Replication        int
+	Logging            LoggingConfig
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -35,7 +35,7 @@ func (cfg *Estuary) Save(filename string) error {
 
 // Sets the root of many paths
 func (cfg *Estuary) SetDataDir(ddir string) {
-	cfg.StagingData = updateRootDir(ddir, cfg.DataDir, cfg.StagingData)
+	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
 	cfg.Node.UpdateRoot(ddir, cfg.DataDir)
 	cfg.DataDir = ddir
 }
@@ -45,45 +45,45 @@ func NewEstuary() *Estuary {
 	pwd, _ := os.Getwd()
 
 	cfg := Estuary{
-		DataDir:        pwd,
-		StagingData:    filepath.Join(pwd, "stagingdata"),
-		Database:       build.DefaultDatabaseValue,
-		ApiListen:      ":3004",
-		LightstepToken: "",
-		Hostname:       "http://localhost:3004",
-		Replication:    6,
-		LowMem:         false,
+		DataDir:            pwd,
+		StagingDataDir:     filepath.Join(pwd, "stagingdata"),
+		DatabaseConnString: build.DefaultDatabaseValue,
+		ApiListen:          ":3004",
+		LightstepToken:     "",
+		Hostname:           "http://localhost:3004",
+		Replication:        6,
+		LowMem:             false,
 
-		Deals: DealsConfig{
-			NoStorageCron:         false,
-			Disable:               false,
-			FailOnTransferFailure: false,
+		Deal: DealConfig{
+			DisableFilecoinStorage: false,
+			Disable:                false,
+			FailOnTransferFailure:  false,
 		},
 
 		Content: ContentConfig{
-			Disable:       false,
-			GlobalDisable: false,
+			DisableLocalAdding:  false,
+			DisableGlobalAdding: false,
 		},
 
 		Jaeger: JaegerConfig{
-			JaegerTracing:      false,
-			JaegerProviderUrl:  "http://localhost:14268/api/traces",
-			JaegerSamplerRatio: 1,
+			EnableTracing: false,
+			ProviderUrl:   "http://localhost:14268/api/traces",
+			SamplerRatio:  1,
 		},
 
 		Logging: LoggingConfig{
 			ApiEndpointLogging: false,
 		},
 
-		Node: Config{
+		Node: NodeConfig{
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			Blockstore:       filepath.Join(pwd, "estuary-blocks"),
+			BlockstoreDir:    filepath.Join(pwd, "estuary-blocks"),
 			Libp2pKeyFile:    filepath.Join(pwd, "estuary-peer.key"),
-			Datastore:        filepath.Join(pwd, "estuary-leveldb"),
+			DatastoreDir:     filepath.Join(pwd, "estuary-leveldb"),
 			WalletDir:        filepath.Join(pwd, "estuary-wallet"),
-			WriteLog:         "",
+			WriteLogDir:      "",
 			WriteLogTruncate: false,
 			NoLimiter:        true,
 		},

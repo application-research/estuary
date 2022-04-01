@@ -1,7 +1,7 @@
 package config
 
-type DealsConfig struct {
-	FailOnTransferFailure bool `json:",omitempty"`
-	Disable               bool `json:",omitempty"`
-	NoStorageCron         bool `json:",omitempty"`
+type DealConfig struct {
+	FailOnTransferFailure  bool `json:",omitempty"`
+	Disable                bool `json:",omitempty"`
+	DisableFilecoinStorage bool `json:",omitempty"`
 }

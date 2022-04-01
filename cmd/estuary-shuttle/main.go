@@ -90,7 +90,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			cfg.Node.Blockstore, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.Node.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
 		case "no-blockstore-cache":
 			cfg.Node.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
@@ -98,9 +98,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "write-log-flush":
 			cfg.Node.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
-			cfg.Node.WriteLog, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			cfg.Node.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
 		case "database":
-			cfg.Database = cctx.String("database")
+			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "libp2p-websockets":
@@ -110,13 +110,13 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "host":
 			cfg.Hostname = cctx.String("host")
 		case "disable-local-content-adding":
-			cfg.Content.Disable = cctx.Bool("disable-local-content-adding")
+			cfg.Content.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
 		case "jaeger-tracing":
-			cfg.Jaeger.JaegerTracing = cctx.Bool("jaeger-tracing")
+			cfg.Jaeger.EnableTracing = cctx.Bool("jaeger-tracing")
 		case "jaeger-provider-url":
-			cfg.Jaeger.JaegerProviderUrl = cctx.String("jaeger-provider-url")
+			cfg.Jaeger.ProviderUrl = cctx.String("jaeger-provider-url")
 		case "jaeger-sampler-ratio":
-			cfg.Jaeger.JaegerSamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
 			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
 		case "bitswap-max-work-per-peer":
@@ -177,17 +177,17 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:    "database",
-			Value:   cfg.Database,
+			Value:   cfg.DatabaseConnString,
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
-			Value: cfg.Node.Blockstore,
+			Value: cfg.Node.BlockstoreDir,
 		},
 		&cli.StringFlag{
 			Name:  "write-log",
 			Usage: "enable write log blockstore in specified directory",
-			Value: cfg.Node.WriteLog,
+			Value: cfg.Node.WriteLogDir,
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
@@ -244,7 +244,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node",
-			Value: cfg.Content.Disable,
+			Value: cfg.Content.DisableLocalAdding,
 		},
 		&cli.BoolFlag{
 			Name:  "no-reload-pin-queue",
@@ -262,16 +262,16 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
-			Value: cfg.Jaeger.JaegerTracing,
+			Value: cfg.Jaeger.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: cfg.Jaeger.JaegerProviderUrl,
+			Value: cfg.Jaeger.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.Jaeger.JaegerSamplerRatio,
+			Value: cfg.Jaeger.SamplerRatio,
 		},
 		&cli.BoolFlag{
 			Name:  "libp2p-websockets",
@@ -336,7 +336,7 @@ func main() {
 			return err
 		}
 
-		db, err := setupDatabase(cfg.Database)
+		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}
@@ -370,7 +370,7 @@ func main() {
 		})
 		commpMemo.SetConcurrencyLimit(4)
 
-		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingData)
+		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
 		if err != nil {
 			return err
 		}
@@ -381,9 +381,9 @@ func main() {
 			return err
 		}
 
-		if cfg.Jaeger.JaegerTracing {
+		if cfg.Jaeger.EnableTracing {
 			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
-				cfg.Jaeger.JaegerProviderUrl, cfg.Jaeger.JaegerSamplerRatio)
+				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -414,7 +414,7 @@ func main() {
 			estuaryHost:        cfg.Estuary.Api,
 			shuttleHandle:      cfg.Estuary.Handle,
 			shuttleToken:       cfg.Estuary.AuthToken,
-			disableLocalAdding: cfg.Content.Disable,
+			disableLocalAdding: cfg.Content.DisableLocalAdding,
 			dev:                cfg.Dev,
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{

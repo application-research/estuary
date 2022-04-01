@@ -15,20 +15,20 @@ type EstuaryRemoteConfig struct {
 }
 
 type Shuttle struct {
-	Database         string
-	StagingData      string
-	DataDir          string
-	ApiListen        string
-	AutoRetrieve     bool
-	Hostname         string
-	Private          bool
-	Dev              bool
-	NoReloadPinQueue bool
-	Node             Config
-	Jaeger           JaegerConfig
-	Content          ContentConfig
-	Logging          LoggingConfig
-	Estuary          EstuaryRemoteConfig
+	DatabaseConnString string
+	StagingDataDir     string
+	DataDir            string
+	ApiListen          string
+	AutoRetrieve       bool
+	Hostname           string
+	Private            bool
+	Dev                bool
+	NoReloadPinQueue   bool
+	Node               NodeConfig
+	Jaeger             JaegerConfig
+	Content            ContentConfig
+	Logging            LoggingConfig
+	Estuary            EstuaryRemoteConfig
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -53,7 +53,7 @@ func (cfg *Shuttle) Validate() error {
 
 // Sets the root of many paths
 func (cfg *Shuttle) SetDataDir(ddir string) {
-	cfg.StagingData = updateRootDir(ddir, cfg.DataDir, cfg.StagingData)
+	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
 	cfg.Node.UpdateRoot(ddir, cfg.DataDir)
 	cfg.DataDir = ddir
 }
@@ -69,38 +69,38 @@ func NewShuttle() *Shuttle {
 
 	cfg := Shuttle{
 
-		DataDir:          pwd,
-		StagingData:      filepath.Join(pwd, "staging"),
-		Database:         "sqlite=estuary-shuttle.db",
-		ApiListen:        ":3005",
-		Hostname:         "",
-		Private:          false,
-		Dev:              false,
-		NoReloadPinQueue: false,
+		DataDir:            pwd,
+		StagingDataDir:     filepath.Join(pwd, "staging"),
+		DatabaseConnString: "sqlite=estuary-shuttle.db",
+		ApiListen:          ":3005",
+		Hostname:           "",
+		Private:            false,
+		Dev:                false,
+		NoReloadPinQueue:   false,
 
 		Content: ContentConfig{
-			Disable: false,
+			DisableLocalAdding: false,
 		},
 
 		Jaeger: JaegerConfig{
-			JaegerTracing:      false,
-			JaegerProviderUrl:  "http://localhost:14268/api/traces",
-			JaegerSamplerRatio: 1,
+			EnableTracing: false,
+			ProviderUrl:   "http://localhost:14268/api/traces",
+			SamplerRatio:  1,
 		},
 
 		Logging: LoggingConfig{
 			ApiEndpointLogging: false,
 		},
 
-		Node: Config{
+		Node: NodeConfig{
 			ListenAddrs:       listens,
-			Blockstore:        filepath.Join(pwd, "blocks"),
-			WriteLog:          "",
+			BlockstoreDir:     filepath.Join(pwd, "blocks"),
+			WriteLogDir:       "",
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
 			Libp2pKeyFile:     filepath.Join(pwd, "peer.key"),
-			Datastore:         filepath.Join(pwd, "leveldb"),
+			DatastoreDir:      filepath.Join(pwd, "leveldb"),
 			WalletDir:         filepath.Join(pwd, "wallet"),
 			AnnounceAddrs:     []string{},
 			BitswapConfig: BitswapConfig{

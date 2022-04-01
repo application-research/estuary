@@ -1,6 +1,6 @@
 package config
 
 type ContentConfig struct {
-	Disable       bool `json:",omitempty"`
-	GlobalDisable bool `json:",omitempty"` // not valid for shuttle
+	DisableLocalAdding  bool `json:",omitempty"`
+	DisableGlobalAdding bool `json:",omitempty"` // not valid for shuttle
 }
