@@ -11,19 +11,25 @@ import (
 
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	ipld "github.com/ipfs/go-ipld-format"
+	mdagipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-path"
 	resolver "github.com/ipfs/go-path/resolver"
 	unixfs "github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
+	"github.com/ipfs/go-unixfsnode"
+	dagpb "github.com/ipld/go-codec-dagpb"
+	"github.com/ipld/go-ipld-prime"
+	ipldbasicnode "github.com/ipld/go-ipld-prime/node/basic"
+	"github.com/ipld/go-ipld-prime/schema"
 	"golang.org/x/xerrors"
 )
 
 type GatewayHandler struct {
 	bs       blockstore.Blockstore
-	dserv    ipld.DAGService
+	dserv    mdagipld.DAGService
 	resolver *resolver.Resolver
 }
 
@@ -33,11 +39,21 @@ type httpError struct {
 }
 
 func NewGatewayHandler(bs blockstore.Blockstore) *GatewayHandler {
-	dserv := merkledag.NewDAGService(blockservice.New(bs, nil))
+
+	bsvc := blockservice.New(bs, nil)
+	ipldFetcher := bsfetcher.NewFetcherConfig(bsvc)
+
+	ipldFetcher.PrototypeChooser = dagpb.AddSupportToChooser(func(lnk ipld.Link, lnkCtx ipld.LinkContext) (ipld.NodePrototype, error) {
+		if tlnkNd, ok := lnkCtx.LinkNode.(schema.TypedLinkNode); ok {
+			return tlnkNd.LinkTargetNodePrototype(), nil
+		}
+		return ipldbasicnode.Prototype.Any, nil
+	})
+
 	return &GatewayHandler{
 		bs:       bs,
-		dserv:    dserv,
-		resolver: resolver.NewBasicResolver(dserv),
+		dserv:    merkledag.NewDAGService(bsvc),
+		resolver: resolver.NewBasicResolver(ipldFetcher.WithReifier(unixfsnode.Reify)),
 	}
 }
 
@@ -96,7 +112,7 @@ func (gw *GatewayHandler) serveUnixfs(ctx context.Context, cc cid.Cid, w http.Re
 	return nil
 }
 
-func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w http.ResponseWriter, req *http.Request) error {
+func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n mdagipld.Node, w http.ResponseWriter, req *http.Request) error {
 	// TODO: something less ugly
 	dir, err := uio.NewDirectoryFromNode(gw.dserv, n)
 	if err != nil {
@@ -121,7 +137,7 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n ipld.Node, w htt
 
 	fmt.Fprintf(w, "<html><body><ul>")
 
-	if err := dir.ForEachLink(ctx, func(lnk *ipld.Link) error {
+	if err := dir.ForEachLink(ctx, func(lnk *mdagipld.Link) error {
 		fmt.Fprintf(w, "<li><a href=\"./%s\">%s</a></li>", lnk.Name, lnk.Name)
 		return nil
 	}); err != nil {
