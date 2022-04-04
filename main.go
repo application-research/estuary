@@ -137,12 +137,10 @@ func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {
 		return nil, err
 	}
 
-	fmt.Println("test2")
 	privKey, err := crypto.UnmarshalPrivateKey(privKeyBytes)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("test3")
 
 	return privKey, nil
 }
@@ -181,13 +179,12 @@ func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
 	}
 
 	// create new host to pretend to be the autoretrieve server publishing the announcement
-	// port := 1234 //TODO: right port here
-	// addr, _ := multiaddr.NewMultiaddr(fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port))
 	addrs, err := stringToMultiAddrs(ar.Addresses)
 	if err != nil {
 		log.Fatal(err)
 	}
-	h, err := libp2p.New(libp2p.Identity(arPrivKey), libp2p.ListenAddrs(addrs...))
+	// h, err := libp2p.New(libp2p.Identity(arPrivKey), libp2p.ListenAddrs(addrs...))
+	h, err := libp2p.New(libp2p.Identity(arPrivKey))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -195,7 +192,10 @@ func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
 	e, err := engine.New(
 		engine.WithHost(h),
 		engine.WithPublisherKind(engine.DataTransferPublisher),
-		// engine.WithRetrievalAddrs(addrs...), TODO: do we need this if we have this info on host?
+		// we need these addresses to be here instead
+		// of on the p2p host h because if we add them
+		// as ListenAddrs it'll try to start listening locally
+		engine.WithRetrievalAddrs(addrs...),
 	)
 	if err != nil {
 		return err
@@ -205,6 +205,7 @@ func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
 	defer e.Shutdown()
 	ctxID := []byte("main") // TODO: what should this be?
 
+	// TODO: maybe add metadata here? currently empty
 	md := metadata.New(metadata.Bitswap{})
 	mdBytes, err := md.MarshalBinary()
 	if err != nil {
@@ -223,7 +224,7 @@ func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Published advertisement: %+v\n", adCID) // TODO: remove
+	log.Info("Published advertisement: %+v\n", adCID)
 
 	return nil
 }
@@ -248,20 +249,24 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 			return err
 		}
 		if len(autoretrieves) > 0 {
-			err := s.DB.Find(&newContents, "updated_at > ?", lastTickTime).Group("cid").Error
+			// err := s.DB.Find(&newContents, "updated_at > ?", lastTickTime).Group("cid").Error TODO: FIX
+			err := s.DB.Find(&newContents).Error
 			if err != nil {
 				log.Errorf("unable to query list of new CIDs: %s", err)
 				return err
 			}
-			log.Info("announcing new CIDs to autoretrieve servers")
-			for _, ar := range autoretrieves {
-				// send announcement with new CIDs for each autoretrieve server
-				s.announceNewCIDs(newContents, ar)
-				//TODO: remove old CIDs (do we even need that?)
-				fmt.Println("online: ", ar) // TODO: remove
+			if len(newContents) > 0 {
+				log.Infof("announcing %d new CIDs to %d autoretrieve servers", len(newContents), len(autoretrieves))
+				for _, ar := range autoretrieves {
+					// send announcement with new CIDs for each autoretrieve server
+					s.announceNewCIDs(newContents, ar)
+					//TODO: remove old CIDs (do we even need that?)
+				}
+			} else {
+				log.Infof("no new CIDs to advertise")
 			}
 		} else {
-			log.Info("no autoretrieve servers online")
+			log.Infof("no autoretrieve servers online")
 		}
 
 		// wait for next tick, or quit
