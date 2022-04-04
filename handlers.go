@@ -650,7 +650,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	if commpcid.Defined() {
-		carSize, err := s.CM.calculateCarSize(header.Roots[0])
+		carSize, err := s.CM.calculateCarSize(ctx, header.Roots[0])
 		if err != nil {
 			return fmt.Errorf("failed to calculate CAR size: %w", err)
 		}

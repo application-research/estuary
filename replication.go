@@ -2097,10 +2097,10 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		var cleanupDealPrep func() error
 		var propPhase bool
 		isPushTransfer := proto == filclient.DealProtocolv110
-		switch {
-		case proto == filclient.DealProtocolv110:
+		switch proto {
+		case filclient.DealProtocolv110:
 			propPhase, err = cm.FilClient.SendProposalV110(ctx, *p, propnd.Cid())
-		case proto == filclient.DealProtocolv120:
+		case filclient.DealProtocolv120:
 			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *p, propnd.Cid(), dealUUID, cd.ID)
 		default:
 			err = fmt.Errorf("unrecognized deal protocol %s", proto)
@@ -2312,10 +2312,10 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	var cleanupDealPrep func() error
 	var propPhase bool
 	isPushTransfer := proto == filclient.DealProtocolv110
-	switch {
-	case proto == filclient.DealProtocolv110:
+	switch proto {
+	case filclient.DealProtocolv110:
 		propPhase, err = cm.FilClient.SendProposalV110(ctx, *prop, propnd.Cid())
-	case proto == filclient.DealProtocolv120:
+	case filclient.DealProtocolv120:
 		cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), dealUUID, deal.ID)
 	default:
 		err = fmt.Errorf("unrecognized deal protocol %s", proto)
@@ -2514,7 +2514,10 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 
 // calculateCarSize works out the CAR size using the cids and block sizes
 // for the content stored in the DB
-func (cm *ContentManager) calculateCarSize(data cid.Cid) (uint64, error) {
+func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (uint64, error) {
+	_, span := cm.tracer.Start(ctx, "calculateCarSize")
+	defer span.End()
+
 	var objects []Object
 	where := "id in (select object from obj_refs where content = (select id from contents where cid = ?))"
 	if err := cm.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
@@ -2576,7 +2579,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 
 		// The CAR size field was added later, so if it's not on the piece comm
 		// record, calculate it
-		carSize, err := cm.calculateCarSize(data)
+		carSize, err := cm.calculateCarSize(ctx, data)
 		if err != nil {
 			return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
 		}
