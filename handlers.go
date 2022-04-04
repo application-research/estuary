@@ -4480,7 +4480,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 // @Tags         autoretrieve
 // @Param        token header string true "Autoretrieve's auth token"
 // @Produce      json
-// @Router       /autoretrieve/list [post]
+// @Router       /autoretrieve/heartbeat [post]
 func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
 	if err != nil {
