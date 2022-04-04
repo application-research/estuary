@@ -54,7 +54,7 @@ var defaultReplication = 6
 // maxFilecoinContentSizeLimit = 31GiB512MiB
 const maxFilecoinContentSizeLimit = 33_822_867_456
 
-// minFilecoinContentSizeLimit = 0.24GiB (256 << 10)
+// minFilecoinContentSizeLimit = 256KiB (256 << 10)
 const minFilecoinContentSizeLimit = 262_144
 
 // Making default deal duration be three weeks less than the maximum to ensure
