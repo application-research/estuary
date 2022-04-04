@@ -1391,11 +1391,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
-		if cm.dealMakingDisabled() {
-			log.Warnf("deal making is disabled for now")
-			done(time.Minute * 60)
-			return nil
-		}
 		go func() {
 			// make some more deals!
 			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
@@ -1967,6 +1962,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	))
 	defer span.End()
 
+	if cm.dealMakingDisabled() {
+		log.Warnf("deal making is disabled for now")
+		return fmt.Errorf("deal making is disabled for now")
+	}
+
+	if content.Size > cm.contentSizeLimit {
+		return fmt.Errorf("content %d too large to make deal for. (size: %d), try to split content", content.ID, content.Size)
+	}
+
 	if content.Size < (256 << 10) {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
 	}
@@ -2152,8 +2156,21 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	))
 	defer span.End()
 
+	if cm.dealMakingDisabled() {
+		log.Warnf("deal making is disabled for now")
+		return 0, fmt.Errorf("deal making is disabled for now")
+	}
+
 	if content.Offloaded {
 		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
+
+	if content.Size < (256 << 10) {
+		return 0, fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
+	}
+
+	if content.Size > cm.contentSizeLimit {
+		return 0, fmt.Errorf("content %d too large to make deal for. (size: %d), try to split content", content.ID, content.Size)
 	}
 
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
@@ -2177,6 +2194,13 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	}
 
 	if cm.priceIsTooHigh(price, verified) {
+		log.Infow("miners price is too high", "miner", miner, "price", price)
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   "miner-search",
+			Message: fmt.Sprintf("miners price is too high: %s (verified = %v)", types.FIL(price), verified),
+			Content: content.ID,
+		})
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
