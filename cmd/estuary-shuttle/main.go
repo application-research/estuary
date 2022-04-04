@@ -20,6 +20,7 @@ import (
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/mitchellh/go-homedir"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
@@ -74,6 +75,75 @@ func init() {
 	}
 }
 
+func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
+	var err error
+
+	for _, flag := range flags {
+		name := flag.Names()[0]
+		if cctx.IsSet(name) {
+			log.Debugf("flag %s is set to %s", name, cctx.String(name))
+		} else {
+			continue
+		}
+		switch name {
+		case "datadir":
+			cfg.SetDataDir(cctx.String("datadir"))
+		case "blockstore":
+			cfg.NodeConfig.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+		case "no-blockstore-cache":
+			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
+		case "write-log-truncate":
+			cfg.NodeConfig.WriteLogTruncate = cctx.Bool("write-log-truncate")
+		case "write-log-flush":
+			cfg.NodeConfig.HardFlushWriteLog = cctx.Bool("write-log-flush")
+		case "write-log":
+			cfg.NodeConfig.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+		case "database":
+			cfg.DatabaseConnString = cctx.String("database")
+		case "apilisten":
+			cfg.ApiListen = cctx.String("apilisten")
+		case "libp2p-websockets":
+			cfg.NodeConfig.AddListener(config.DefaultWebsocketAddr)
+		case "announce-addr":
+			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
+		case "host":
+			cfg.Hostname = cctx.String("host")
+		case "disable-local-content-adding":
+			cfg.ContentConfig.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
+		case "jaeger-tracing":
+			cfg.JaegerConfig.EnableTracing = cctx.Bool("jaeger-tracing")
+		case "jaeger-provider-url":
+			cfg.JaegerConfig.ProviderUrl = cctx.String("jaeger-provider-url")
+		case "jaeger-sampler-ratio":
+			cfg.JaegerConfig.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+		case "logging":
+			cfg.LoggingConfig.ApiEndpointLogging = cctx.Bool("logging")
+		case "bitswap-max-work-per-peer":
+			cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
+		case "bitswap-target-message-size":
+			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+		case "estuary-api":
+			cfg.EstuaryConfig.Api = cctx.String("estuary-api")
+		case "handle":
+			cfg.EstuaryConfig.Handle = cctx.String("handle")
+		case "auth-token":
+			cfg.EstuaryConfig.AuthToken = cctx.String("auth-token")
+		case "private":
+			cfg.Private = cctx.Bool("private")
+		case "dev":
+			cfg.Dev = cctx.Bool("dev")
+		case "no-reload-pin-queue":
+			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
+		default:
+			// Do nothing
+		}
+		if (err) != nil {
+			return err
+		}
+	}
+	return err
+}
+
 func main() {
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("shuttle", "debug")
@@ -90,151 +160,153 @@ func main() {
 	logging.SetLogLevel("rcmgr", "debug")
 
 	app := cli.NewApp()
+	home, _ := homedir.Dir()
+
+	cfg := config.NewShuttle()
+
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
 		},
 		&cli.StringFlag{
+			Name:  "config",
+			Value: filepath.Join(home, ".estuary-shuttle"),
+			Usage: "specify configuration file location",
+		},
+		&cli.StringFlag{
 			Name:    "database",
-			Value:   "sqlite=estuary-shuttle.db",
+			Value:   cfg.DatabaseConnString,
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
 		},
 		&cli.StringFlag{
-			Name: "blockstore",
+			Name:  "blockstore",
+			Value: cfg.NodeConfig.BlockstoreDir,
 		},
 		&cli.StringFlag{
 			Name:  "write-log",
 			Usage: "enable write log blockstore in specified directory",
+			Value: cfg.NodeConfig.WriteLogDir,
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
 			Usage:   "address for the api server to listen on",
-			Value:   ":3005",
+			Value:   cfg.ApiListen,
 			EnvVars: []string{"ESTUARY_SHUTTLE_API_LISTEN"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
-			Value:   ".",
+			Value:   cfg.DataDir,
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATADIR"},
 		},
 		&cli.StringFlag{
 			Name:  "estuary-api",
 			Usage: "api endpoint for master estuary node",
-			Value: "api.estuary.tech",
+			Value: cfg.EstuaryConfig.Api,
 		},
 		&cli.StringFlag{
-			Name:     "auth-token",
-			Usage:    "auth token for connecting to estuary",
-			Required: true,
+			Name:  "auth-token",
+			Usage: "auth token for connecting to estuary",
+			Value: cfg.EstuaryConfig.AuthToken,
 		},
 		&cli.StringFlag{
-			Name:     "handle",
-			Usage:    "estuary shuttle handle to use",
-			Required: true,
+			Name:  "handle",
+			Usage: "estuary shuttle handle to use",
+			Value: cfg.EstuaryConfig.Handle,
 		},
 		&cli.StringFlag{
 			Name:  "host",
 			Usage: "url that this node is publicly dialable at",
+			Value: cfg.Hostname,
 		},
 		&cli.BoolFlag{
-			Name: "logging",
+			Name:  "logging",
+			Value: cfg.LoggingConfig.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
-			Name: "write-log-flush",
+			Name:  "write-log-flush",
+			Value: cfg.NodeConfig.HardFlushWriteLog,
 		},
 		&cli.BoolFlag{
-			Name: "write-log-truncate",
+			Name:  "write-log-truncate",
+			Value: cfg.NodeConfig.WriteLogTruncate,
 		},
 		&cli.BoolFlag{
-			Name: "no-blockstore-cache",
+			Name:  "no-blockstore-cache",
+			Value: cfg.NodeConfig.NoBlockstoreCache,
 		},
 		&cli.BoolFlag{
-			Name: "private",
+			Name:  "private",
+			Value: cfg.Private,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node",
+			Value: cfg.ContentConfig.DisableLocalAdding,
 		},
 		&cli.BoolFlag{
-			Name: "no-reload-pin-queue",
+			Name:  "no-reload-pin-queue",
+			Value: cfg.NoReloadPinQueue,
 		},
 		&cli.BoolFlag{
 			Name:  "dev",
 			Usage: "use http:// and ws:// when connecting to estuary in a development environment",
+			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
 			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to on",
+			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
-			Value: false,
+			Value: cfg.JaegerConfig.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
-			Value: "http://localhost:14268/api/traces",
+			Value: cfg.JaegerConfig.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: 1,
+			Value: cfg.JaegerConfig.SamplerRatio,
 		},
 		&cli.BoolFlag{
 			Name:  "libp2p-websockets",
-			Value: false,
+			Value: cfg.NodeConfig.HasListener(config.DefaultWebsocketAddr),
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
-			Value: 5 << 20,
+			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
-			Value: 16 << 10,
+			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+		},
+	}
+
+	app.Commands = []*cli.Command{
+		{
+			Name:  "configure",
+			Usage: "Saves a configuration file to the location specified by the config parameter",
+			Action: func(cctx *cli.Context) error {
+				configuration := cctx.String("config")
+				cfg.Load(configuration) // Assume error means no configuration file exists
+				overrideSetOptions(app.Flags, cctx, cfg)
+				return cfg.Save(configuration)
+			},
 		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
-		ddir := cctx.String("datadir")
 
-		bsdir := cctx.String("blockstore")
-		if bsdir == "" {
-			bsdir = filepath.Join(ddir, "blocks")
-		} else if bsdir[0] != '/' && bsdir[0] != ':' {
-			bsdir = filepath.Join(ddir, bsdir)
-		}
+		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
+		overrideSetOptions(app.Flags, cctx, cfg)
 
-		wlog := cctx.String("write-log")
-		if wlog != "" && wlog[0] != '/' {
-			wlog = filepath.Join(ddir, wlog)
-		}
-
-		listens := []string{
-			"/ip4/0.0.0.0/tcp/6745",
-			"/ip4/0.0.0.0/udp/6746/quic",
-		}
-
-		if cctx.Bool("libp2p-websockets") {
-			listens = append(listens, "/ip4/0.0.0.0/tcp/6747/ws")
-		}
-
-		cfg := &config.Config{
-			ListenAddrs:       listens,
-			Blockstore:        bsdir,
-			WriteLog:          wlog,
-			HardFlushWriteLog: cctx.Bool("write-log-flush"),
-			WriteLogTruncate:  cctx.Bool("write-log-truncate"),
-			NoBlockstoreCache: cctx.Bool("no-blockstore-cache"),
-			Libp2pKeyFile:     filepath.Join(ddir, "peer.key"),
-			Datastore:         filepath.Join(ddir, "leveldb"),
-			WalletDir:         filepath.Join(ddir, "wallet"),
-			AnnounceAddrs:     cctx.StringSlice("announce-addr"),
-			BitswapConfig: config.BitswapConfig{
-				MaxOutstandingBytesPerPeer: cctx.Int64("bitswap-max-work-per-peer"),
-				TargetMessageSize:          cctx.Int("bitswap-target-message-size"),
-			},
-			NoLimiter: true,
+		err := cfg.Validate()
+		if err != nil {
+			return err
 		}
 
 		db, err := setupDatabase(cctx.String("database"))
@@ -242,7 +314,7 @@ func main() {
 			return err
 		}
 
-		init := Initializer{cfg, db}
+		init := Initializer{&cfg.NodeConfig, db}
 
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
@@ -263,7 +335,7 @@ func main() {
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
 
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, ddir)
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
 		if err != nil {
 			return err
 		}
@@ -297,7 +369,7 @@ func main() {
 		})
 		commpMemo.SetConcurrencyLimit(4)
 
-		sbm, err := stagingbs.NewStagingBSMgr(filepath.Join(ddir, "staging"))
+		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
 		if err != nil {
 			return err
 		}
@@ -308,9 +380,9 @@ func main() {
 			return err
 		}
 
-		if cctx.Bool("jaeger-tracing") {
+		if cfg.JaegerConfig.EnableTracing {
 			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
-				cctx.String("jaeger-provider-url"), cctx.Float64("jaeger-sampler-ratio"))
+				cfg.JaegerConfig.ProviderUrl, cfg.JaegerConfig.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -323,10 +395,10 @@ func main() {
 			DB:          db,
 			Filc:        filc,
 			StagingMgr:  sbm,
-			Private:     cctx.Bool("private"),
+			Private:     cfg.Private,
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 
-			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cctx.String("host"))),
+			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
 
 			commpMemo: commpMemo,
 
@@ -337,12 +409,12 @@ func main() {
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
 
-			hostname:           cctx.String("host"),
-			estuaryHost:        cctx.String("estuary-api"),
-			shuttleHandle:      cctx.String("handle"),
-			shuttleToken:       cctx.String("auth-token"),
-			disableLocalAdding: cctx.Bool("disable-local-content-adding"),
-			dev:                cctx.Bool("dev"),
+			hostname:           cfg.Hostname,
+			estuaryHost:        cfg.EstuaryConfig.Api,
+			shuttleHandle:      cfg.EstuaryConfig.Handle,
+			shuttleToken:       cfg.EstuaryConfig.AuthToken,
+			disableLocalAdding: cfg.ContentConfig.DisableLocalAdding,
+			dev:                cfg.Dev,
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -350,7 +422,7 @@ func main() {
 
 		go s.PinMgr.Run(100)
 
-		if !cctx.Bool("no-reload-pin-queue") {
+		if !cfg.NoReloadPinQueue {
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
@@ -512,7 +584,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cctx.String("apilisten"), cctx.Bool("logging"))
+		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging)
 	}
 
 	if err := app.Run(os.Args); err != nil {

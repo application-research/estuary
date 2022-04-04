@@ -86,7 +86,7 @@ type EstuaryBlockstore interface {
 type NodeInitializer interface {
 	BlockstoreWrap(blockstore.Blockstore) (blockstore.Blockstore, error)
 	KeyProviderFunc(context.Context) (<-chan cid.Cid, error)
-	Config() *config.Config
+	Config() *config.Node
 }
 
 type Node struct {
@@ -110,7 +110,7 @@ type Node struct {
 
 	Bwc *metrics.BandwidthCounter
 
-	Config *config.Config
+	Config *config.Node
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
@@ -122,7 +122,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	ds, err := levelds.NewDatastore(cfg.Datastore, nil)
+	ds, err := levelds.NewDatastore(cfg.DatastoreDir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +209,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLog, cfg.HardFlushWriteLog, cfg.WriteLogTruncate, cfg.NoBlockstoreCache)
+	mbs, stordir, err := loadBlockstore(cfg.BlockstoreDir, cfg.WriteLogDir, cfg.HardFlushWriteLog, cfg.WriteLogTruncate, cfg.NoBlockstoreCache)
 	if err != nil {
 		return nil, err
 	}

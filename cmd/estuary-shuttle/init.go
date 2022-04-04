@@ -10,11 +10,11 @@ import (
 )
 
 type Initializer struct {
-	cfg *config.Config
+	cfg *config.Node
 	db  *gorm.DB
 }
 
-func (init Initializer) Config() *config.Config {
+func (init Initializer) Config() *config.Node {
 	return init.cfg
 }
 
