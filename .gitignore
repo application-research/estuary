@@ -7,16 +7,22 @@
 /estuary-shuttle
 
 estuary-blocks/*
+blocks/*
 estuary-leveldb/*
 estuary-maddr
 estuary-peer.key
 estuary-wallet/*
 estuary-write-log/*
 estuary.db
+estuary-shuttle.db
 estuary_calibnet.db
+leveldb/
+peer.key
+wallet/
 
 cidlistsdir/*
 
 build/.*
 
 .vscode
+.envrc

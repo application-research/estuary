@@ -64,7 +64,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
-	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/whyrusleeping/memo"
 )
 
@@ -310,7 +309,10 @@ func main() {
 			return err
 		}
 
-		init := Initializer{&cfg.NodeConfig}
+		db, err := setupDatabase(cctx.String("database"))
+		if err != nil {
+			return err
+		}
 
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
@@ -332,11 +334,6 @@ func main() {
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
 
 		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
-		if err != nil {
-			return err
-		}
-
-		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}
@@ -452,7 +449,7 @@ func main() {
 		})
 
 		go func() {
-			http.Handle("/debug/metrics/prometheus", promhttp.Handler())
+			http.Handle("/debug/metrics", estumetrics.Exporter())
 			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
 				if err := writeAllGoroutineStacks(w); err != nil {
 					log.Error(err)
