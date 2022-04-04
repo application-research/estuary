@@ -51,7 +51,8 @@ import (
 
 var defaultReplication = 6
 
-const defaultContentSizeLimit = 34_000_000_000
+// defaultContentSizeLimit = 31GiB512MiB
+const defaultContentSizeLimit = 33_822_867_456
 
 // Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early dont run into issues
