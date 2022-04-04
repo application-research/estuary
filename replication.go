@@ -51,8 +51,11 @@ import (
 
 var defaultReplication = 6
 
-// defaultContentSizeLimit = 31GiB512MiB
-const defaultContentSizeLimit = 33_822_867_456
+// maxFilecoinContentSizeLimit = 31GiB512MiB
+const maxFilecoinContentSizeLimit = 33_822_867_456
+
+// minFilecoinContentSizeLimit = 0.24GiB (256 << 10)
+const minFilecoinContentSizeLimit = 262_144
 
 // Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early dont run into issues
@@ -358,7 +361,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		pinMgr:               pinmgr,
 		remoteTransferStatus: cache,
 		shuttles:             make(map[string]*ShuttleConnection),
-		contentSizeLimit:     defaultContentSizeLimit,
+		contentSizeLimit:     maxFilecoinContentSizeLimit,
 		hostname:             hostname,
 		inflightCids:         make(map[cid.Cid]uint),
 	}
@@ -1967,11 +1970,11 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return fmt.Errorf("deal making is disabled for now")
 	}
 
-	if content.Size > cm.contentSizeLimit {
+	if content.Size > maxFilecoinContentSizeLimit {
 		return fmt.Errorf("content %d too large to make deal for. (size: %d), try to split content", content.ID, content.Size)
 	}
 
-	if content.Size < (256 << 10) {
+	if content.Size < minFilecoinContentSizeLimit {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
 	}
 
@@ -2165,11 +2168,11 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}
 
-	if content.Size < (256 << 10) {
+	if content.Size < minFilecoinContentSizeLimit {
 		return 0, fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
 	}
 
-	if content.Size > cm.contentSizeLimit {
+	if content.Size > maxFilecoinContentSizeLimit {
 		return 0, fmt.Errorf("content %d too large to make deal for. (size: %d), try to split content", content.ID, content.Size)
 	}
 
