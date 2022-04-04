@@ -314,6 +314,8 @@ func main() {
 			return err
 		}
 
+		init := Initializer{&cfg.NodeConfig, db}
+
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
 			return err

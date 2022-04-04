@@ -10,7 +10,7 @@ import (
 )
 
 type Initializer struct {
-	cfg *config.Config
+	cfg *config.Node
 	db  *gorm.DB
 }
 
