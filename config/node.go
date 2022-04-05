@@ -20,8 +20,9 @@ type Node struct {
 
 	WalletDir string
 
-	BitswapConfig BitswapConfig
-	LimitsConfig  Limits
+	BitswapConfig           BitswapConfig
+	LimitsConfig            Limits
+	ConnectionManagerConfig ConnectionManager
 }
 
 type BitswapConfig struct {

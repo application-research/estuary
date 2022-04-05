@@ -116,6 +116,10 @@ func NewEstuary() *Estuary {
 					FD: 1024,
 				},
 			},
+			ConnectionManagerConfig: ConnectionManager{
+				LowWater:  2000,
+				HighWater: 3000,
+			},
 		},
 	}
 

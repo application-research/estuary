@@ -142,7 +142,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
-	cmgr, err := connmgr.NewConnManager(2000, 3000)
+	cmgr, err := connmgr.NewConnManager(cfg.ConnectionManagerConfig.LowWater, cfg.ConnectionManagerConfig.HighWater)
 	if err != nil {
 		return nil, err
 	}
