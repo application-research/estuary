@@ -240,7 +240,7 @@ func loadClient(cctx *cli.Context) (*EstClient, error) {
 	}
 
 	shuttle, ok := viper.Get("estuary.primaryShuttle").(string)
-	if !ok || host == "" {
+	if !ok || shuttle == "" {
 		return nil, fmt.Errorf("no primaryShuttle set in barge config")
 	}
 
