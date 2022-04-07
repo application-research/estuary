@@ -1187,12 +1187,12 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 	if err != nil {
 		return err
 	}
-	cm.buckets[content.UserID] = append(blist, b)
 
 	_, err = cm.tryAddContent(b, content)
 	if err != nil {
 		return err
 	}
+	cm.buckets[content.UserID] = append(blist, b)
 
 	return nil
 }
