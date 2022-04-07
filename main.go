@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,11 +31,13 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p-core/peer"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multihash"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
@@ -42,11 +45,11 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/engine"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
-	"github.com/filecoin-project/storetheindex/api/v0/ingest/schema"
 	cli "github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
@@ -179,48 +182,34 @@ func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
 	}
 
 	// create new host to pretend to be the autoretrieve server publishing the announcement
-	addrs, err := stringToMultiAddrs(ar.Addresses)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// h, err := libp2p.New(libp2p.Identity(arPrivKey), libp2p.ListenAddrs(addrs...))
-	h, err := libp2p.New(libp2p.Identity(arPrivKey))
-	if err != nil {
-		log.Fatal(err)
-	}
+	// h, err := createFakeAutoretrieveHost(ar)
+	// if err != nil {
+	// 	return err
+	// }
 
-	e, err := engine.New(
-		engine.WithHost(h),
-		engine.WithPublisherKind(engine.DataTransferPublisher),
-		// we need these addresses to be here instead
-		// of on the p2p host h because if we add them
-		// as ListenAddrs it'll try to start listening locally
-		engine.WithRetrievalAddrs(addrs...),
-	)
-	if err != nil {
-		return err
-	}
+	// addrs, err := stringToMultiAddrs(ar.Addresses)
+	// if err != nil {
+	// 	return err
+	// }
 
-	e.Start(context.Background())
-	defer e.Shutdown()
-	ctxID := []byte("main") // TODO: what should this be?
+	s.Node.IndexProvider.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
+		var multiHashes []multihash.Multihash
+		for _, content := range newContents {
+			multiHashes = append(multiHashes, content.Cid.CID.Hash())
+		}
 
-	// TODO: maybe add metadata here? currently empty
-	md := metadata.New(metadata.Bitswap{})
-	mdBytes, err := md.MarshalBinary()
-	if err != nil {
-		return err
-	}
+		return &estuaryMhIterator{
+			offset: 0,
+			mh:     multiHashes,
+		}, nil
+	})
 
-	ad := schema.Advertisement{
-		Provider:  h.ID().String(),
-		Addresses: multiAddrsToString(h.Addrs()),
-		Entries:   schema.NoEntries, //TODO: this should have our CIDs
-		ContextID: ctxID,
-		Metadata:  mdBytes,
-	}
+	// build contextID for advertisement (format: EstuaryAd-1, EstuaryAd-2, ...)
+	s.IdxCtxID = rand.Intn(1000000)
+	strAdIdx := strconv.Itoa(s.IdxCtxID)
+	contextID := []byte("EstuaryAd-" + strAdIdx)
 
-	adCID, err := e.Publish(context.Background(), ad)
+	adCid, err := s.Node.IndexProvider.NotifyPut(context.Background(), []byte(contextID), metadata.New(metadata.Bitswap{}))
 	if err != nil {
 		return err
 	}
@@ -834,6 +823,39 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		// Create index-provider engine (s.Node.IndexProvider) to send announcements to
+		// this needs to keep running continuously because storetheindex
+		// will come to fetch for advertisements "when it feels like it"
+		topic := "testingTopic"
+		indexerMultiaddr, _ := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003")
+		indexerAddrinfo, _ := peer.AddrInfosFromP2pAddrs(indexerMultiaddr)
+		pubG, _ := pubsub.NewGossipSub(context.Background(), s.Node.Host,
+			pubsub.WithDirectConnectTicks(1),
+			pubsub.WithDirectPeers(indexerAddrinfo),
+		)
+		pubT, err := pubG.Join(topic)
+		if err != nil {
+			return err
+		}
+
+		s.Node.IndexProvider, err = engine.New(
+			engine.WithTopic(pubT),      // TODO: remove, testing
+			engine.WithTopicName(topic), // TODO: remove, testing
+			// engine.WithHost(h),
+			engine.WithHost(s.Node.Host), // need to be localhost/estuary
+			engine.WithPublisherKind(engine.DataTransferPublisher),
+			// we need these addresses to be here instead
+			// of on the p2p host h because if we add them
+			// as ListenAddrs it'll try to start listening locally
+			// engine.WithRetrievalAddrs(addrs...),
+		)
+		if err != nil {
+			return err
+		}
+
+		s.Node.IndexProvider.Start(context.Background())
+		defer s.Node.IndexProvider.Shutdown()
 
 		stopUpdateIndex := make(chan struct{})
 		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)

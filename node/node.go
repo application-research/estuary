@@ -18,6 +18,7 @@ import (
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
+	"github.com/filecoin-project/index-provider/engine"
 	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -152,11 +153,12 @@ type NodeInitializer interface {
 }
 
 type Node struct {
-	Dht      *dht.IpfsDHT
-	Provider *batched.BatchProvidingSystem
-	FullRT   *fullrt.FullRT
-	FilDht   *dht.IpfsDHT
-	Host     host.Host
+	Dht           *dht.IpfsDHT
+	Provider      *batched.BatchProvidingSystem
+	FullRT        *fullrt.FullRT
+	FilDht        *dht.IpfsDHT
+	Host          host.Host
+	IndexProvider *engine.Engine
 
 	// Set for gathering disk usage
 
