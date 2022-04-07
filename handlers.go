@@ -578,9 +578,17 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		// if someone wants this feature, let me know
 		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
 	}
+	rootCID := header.Roots[0]
+
+	if c.QueryParam("ignore-dupes") == "true" {
+		isDup, err := s.isDupCIDContent(c, rootCID, u)
+		if err != nil || isDup {
+			return err
+		}
+	}
 
 	// TODO: how to specify filename?
-	filename := header.Roots[0].String()
+	filename := rootCID.String()
 	if qpname := c.QueryParam("filename"); qpname != "" {
 		filename = qpname
 	}
@@ -623,7 +631,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, header.Roots[0], filename, defaultReplication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, defaultReplication)
 	if err != nil {
 		return err
 	}
@@ -634,8 +642,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if commpcid.Defined() {
 		opcr := PieceCommRecord{
-			Data:  util.DbCID{header.Roots[0]},
-			Piece: util.DbCID{commpcid},
+			Data:  util.DbCID{CID: rootCID},
+			Piece: util.DbCID{CID: commpcid},
 			Size:  commpSize,
 		}
 
@@ -656,7 +664,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}()
 
 	go func() {
-		if err := s.Node.Provider.Provide(header.Roots[0]); err != nil {
+		if err := s.Node.Provider.Provide(rootCID); err != nil {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
@@ -767,6 +775,13 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
+	}
+
+	if c.QueryParam("ignore-dupes") == "true" {
+		isDup, err := s.isDupCIDContent(c, nd.Cid(), u)
+		if err != nil || isDup {
+			return err
+		}
 	}
 
 	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
@@ -4129,6 +4144,14 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
+
+	if c.QueryParam("ignore-dupes") == "true" {
+		isDup, err := s.isDupCIDContent(c, rootCID, u)
+		if err != nil || isDup {
+			return err
+		}
+	}
+
 	var col Collection
 	if req.Collection != "" {
 		if err := s.DB.First(&col, "uuid = ?", req.Collection).Error; err != nil {
@@ -4913,4 +4936,15 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	}
 
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
+}
+
+func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *User) (bool, error) {
+	var count int64
+	if err := s.DB.Model(Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
+		return false, err
+	}
+	if count > 0 {
+		return true, c.JSON(409, map[string]string{"message": fmt.Sprintf("this content is already preserved under cid:%s", rootCID.String())})
+	}
+	return false, nil
 }
