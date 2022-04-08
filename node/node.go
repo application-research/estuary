@@ -159,7 +159,6 @@ type Node struct {
 	FilDht        *dht.IpfsDHT
 	Host          host.Host
 	IndexProvider *engine.Engine
-
 	// Set for gathering disk usage
 
 	StorageDir string
