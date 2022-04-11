@@ -16,12 +16,14 @@ localhost='api.estuary.tech'
 host=$1
 
 # Swag
-linuxSwag=https://github.com/swaggo/swag/releases/download/v1.7.9-p1/swag_1.7.9-p1_Linux_x86_64.tar.gz
-darwinSwag=https://github.com/swaggo/swag/releases/download/v1.7.9-p1/swag_1.7.9-p1_Darwin_x86_64.tar.gz
+swagVersion=$(curl -s https://api.github.com/repos/swaggo/swag/releases/latest | jq -r .tag_name)
+linuxSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Linux_x86_64.tar.gz
+darwinSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Darwin_x86_64.tar.gz
 
 # YQ
-linuxYq=https://github.com/mikefarah/yq/releases/download/v4.20.1/yq_linux_386.tar.gz
-darwinYq=https://github.com/mikefarah/yq/releases/download/v4.20.1/yq_darwin_amd64.tar.gz
+yqVersion=$(curl -s https://api.github.com/repos/mikefarah/yq/releases/latest | jq -r .tag_name)
+linuxYq=https://github.com/mikefarah/yq/releases/download/${yqVersion}/yq_linux_386.tar.gz
+darwinYq=https://github.com/mikefarah/yq/releases/download/${yqVersion}/yq_darwin_amd64.tar.gz
 yqfileName=yq
 
 ## Download Swag and put it here
