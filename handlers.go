@@ -25,6 +25,7 @@ import (
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
 
+	"github.com/application-research/estuary/autoretrieve"
 	drpc "github.com/application-research/estuary/drpc"
 	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
@@ -298,9 +299,9 @@ func (s *Server) ServeAPI() error {
 	shuttle.POST("/init", s.handleShuttleInit)
 	shuttle.GET("/list", s.handleShuttleList)
 
-	autoretrieve := admin.Group("/autoretrieve")
-	autoretrieve.POST("/init", s.handleAutoretrieveInit)
-	autoretrieve.GET("/list", s.handleAutoretrieveList)
+	ar := admin.Group("/autoretrieve")
+	ar.POST("/init", s.handleAutoretrieveInit)
+	ar.GET("/list", s.handleAutoretrieveList)
 
 	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat)
 
@@ -4454,21 +4455,21 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 		return err
 	}
 
-	autoretrieve := &Autoretrieve{
+	ar := &autoretrieve.Autoretrieve{
 		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
 		Token:          "SECRET" + uuid.New().String() + "SECRET",
 		LastConnection: time.Now(),
 		PrivateKey:     c.FormValue("privateKey"),
 		Addresses:      c.FormValue("addresses"), // cant store []string in gorm
 	}
-	if err := s.DB.Create(autoretrieve).Error; err != nil {
+	if err := s.DB.Create(ar).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, &util.AutoretrieveInitResponse{
-		Handle:         autoretrieve.Handle,
-		Token:          autoretrieve.Token,
-		LastConnection: autoretrieve.LastConnection,
+	return c.JSON(200, &util.AutoretrieveInitResponse{
+		Handle:         ar.Handle,
+		Token:          ar.Token,
+		LastConnection: ar.LastConnection,
 		AddrInfo:       addrInfo,
 	})
 }
@@ -4480,7 +4481,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 // @Produce      json
 // @Router       /admin/autoretrieve/list [get]
 func (s *Server) handleAutoretrieveList(c echo.Context) error {
-	var autoretrieves []Autoretrieve
+	var autoretrieves []autoretrieve.Autoretrieve
 	if err := s.DB.Find(&autoretrieves).Error; err != nil {
 		return err
 	}
@@ -4519,27 +4520,27 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	var autoretrieve Autoretrieve
-	if err := s.DB.First(&autoretrieve, "token = ?", auth).Error; err != nil {
+	var ar autoretrieve.Autoretrieve
+	if err := s.DB.First(&ar, "token = ?", auth).Error; err != nil {
 		return err
 	}
 
-	autoretrieve.LastConnection = time.Now()
-	if err := s.DB.Save(&autoretrieve).Error; err != nil {
+	ar.LastConnection = time.Now().UTC()
+	if err := s.DB.Save(&ar).Error; err != nil {
 		return err
 	}
 
 	// any of the multiaddresses of the peer should work to get addrInfo
 	// we get the first one
-	addresses := strings.Split(autoretrieve.Addresses, ",")
+	addresses := strings.Split(ar.Addresses, ",")
 	addrInfo, err := peer.AddrInfoFromString(addresses[0])
 	if err != nil {
 		return err
 	}
 
 	out := util.HeartbeatAutoretrieveResponse{
-		Handle:         autoretrieve.Handle,
-		LastConnection: autoretrieve.LastConnection,
+		Handle:         ar.Handle,
+		LastConnection: ar.LastConnection,
 		AddrInfo:       addrInfo,
 	}
 

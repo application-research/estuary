@@ -6,8 +6,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"math/rand"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,9 +13,11 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/multiformats/go-multiaddr"
 
 	"go.opencensus.io/stats/view"
 
+	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
@@ -28,20 +28,12 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
-	provider "github.com/filecoin-project/index-provider"
-	"github.com/filecoin-project/storetheindex/api/v0/ingest/schema"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/ipld/go-car/v2/index"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/peer"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
-	"github.com/multiformats/go-multiaddr"
-	"github.com/multiformats/go-multihash"
 	"github.com/whyrusleeping/memo"
 	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/otel"
@@ -50,9 +42,6 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	provider "github.com/filecoin-project/index-provider"
-	"github.com/filecoin-project/index-provider/engine"
-	"github.com/filecoin-project/index-provider/engine/chunker"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -139,240 +128,11 @@ type ObjRef struct {
 	Offloaded uint
 }
 
-// TODO: move to util
-func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {
-	privKeyBytes, err := crypto.ConfigDecodeKey(privKeyStr)
-	if err != nil {
-		return nil, err
-	}
-
-	privKey, err := crypto.UnmarshalPrivateKey(privKeyBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return privKey, nil
-}
-
-// TODO: move to util
-func multiAddrsToString(addrs []multiaddr.Multiaddr) []string {
-	var rAddrs []string
-	for _, addr := range addrs {
-		rAddrs = append(rAddrs, addr.String())
-	}
-	return rAddrs
-}
-
-func stringToMultiAddrs(addrStr string) ([]multiaddr.Multiaddr, error) {
-	var mAddrs []multiaddr.Multiaddr
-	for _, addr := range strings.Split(addrStr, ",") {
-		ma, err := multiaddr.NewMultiaddr(addr)
-		if err != nil {
-			return nil, err
-		}
-		mAddrs = append(mAddrs, ma)
-	}
-	return mAddrs, nil
-}
-
-type estuaryMhIterator struct {
-	offset int
-	mh     []multihash.Multihash
-}
-
-func (m *estuaryMhIterator) Next() (multihash.Multihash, error) {
-	if m.offset < len(m.mh) {
-		hash := m.mh[m.offset]
-		m.offset++
-		return hash, nil
-	}
-	return nil, io.EOF
-}
-
-func buildAdvertisement(h host.Host, mhIterator provider.MultihashIterator, ar Autoretrieve) (schema.Advertisement, error) {
-	// build contextID for advertisement
-	// format: "EstuaryAd-" + ID of autoretrieve server
-	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
-	if err != nil {
-		return schema.Advertisement{}, err
-	}
-
-	arID, err := peer.IDFromPrivateKey(arPrivKey)
-	if err != nil {
-		return schema.Advertisement{}, err
-	}
-	strArID := arID.String()
-	contextID := []byte("EstuaryAd-" + strArID)
-
-	md := metadata.New(metadata.Bitswap{})
-	mdBytes, err := md.MarshalBinary()
-	if err != nil {
-		return schema.Advertisement{}, err
-	}
-
-	//TODO: these values are completely arbitrary
-	chunkSize := 1000
-	capacity := 1000
-	entriesChuncker, err := chunker.NewCachedEntriesChunker(context.Background(), datastore.NewMapDatastore(), chunkSize, capacity)
-	if err != nil {
-		return schema.Advertisement{}, err
-	}
-
-	entries, err := entriesChuncker.Chunk(context.Background(), mhIterator)
-	if err != nil {
-		return schema.Advertisement{}, err
-	}
-
-	splitAddresses := strings.Split(ar.Addresses, ",")
-	ad := schema.Advertisement{
-		Provider: h.ID().String(), // provider is the estuary p2p host
-		// Addresses: multiAddrsToString(h.Addrs()),
-		Addresses: splitAddresses, // addresses are the autoretrieve ones
-		Entries:   entries,
-		ContextID: contextID,
-		Metadata:  mdBytes,
-	}
-
-	// Sign the advertisement using autoretrieve's private key
-	estuaryPrivKey := h.Peerstore().PrivKey(h.ID())
-	if err := ad.Sign(estuaryPrivKey); err != nil {
-		return schema.Advertisement{}, err
-	}
-
-	return ad, nil
-}
-
-// announceNewCIDs publishes an announcement with the CIDs that were added
-// between now and lastTickTime (see updateAutoretrieveIndex)
-func (s *Server) announceNewCIDs(newContents []Content, ar Autoretrieve) error {
-	if len(newContents) == 0 {
-		return fmt.Errorf("no new CIDs to announce")
-	}
-
-	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// create new host to pretend to be the autoretrieve server publishing the announcement
-	// h, err := createFakeAutoretrieveHost(ar)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// addrs, err := stringToMultiAddrs(ar.Addresses)
-	// if err != nil {
-	// 	return err
-	// }
-
-	s.Node.IndexProvider.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-		var multiHashes []multihash.Multihash
-		for _, content := range newContents {
-			multiHashes = append(multiHashes, content.Cid.CID.Hash())
-		}
-
-		return &estuaryMhIterator{
-			offset: 0,
-			mh:     multiHashes,
-		}, nil
-	})
-
-	// build contextID for advertisement
-	// format: "EstuaryAd-" + ID of autoretrieve server
-	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
-	if err != nil {
-		return err
-	var multiHashes []multihash.Multihash
-	for _, content := range newContents {
-		multiHashes = append(multiHashes, content.Cid.CID.Hash())
-	}
-	mhIterator := &estuaryMhIterator{
-		offset: 0,
-		mh:     multiHashes,
-	}
-
-	// get provider engine responsible for this autoretrieve server (each has its own)
-	e := s.Node.IndexProvider
-	e.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-		return mhIterator, nil
-	})
-	ad, err := buildAdvertisement(s.Node.Host, mhIterator, ar)
-	if err != nil {
-		return err
-	}
-
-	adCID, err := e.Publish(context.Background(), ad)
-	if err != nil {
-		return err
-	}
-	log.Info("Published advertisement: %+v\n", adCID)
-
-	return nil
-}
-
-type estuaryMhIterator struct {
-	offset int
-	mh     []multihash.Multihash
-}
-
-func (m *estuaryMhIterator) Next() (multihash.Multihash, error) {
-	if m.offset < len(m.mh) {
-		hash := m.mh[m.offset]
-		m.offset++
-		return hash, nil
-	}
-	return nil, io.EOF
-}
-
-// newIndexProvider creates a new index-provider engine to send announcements to storetheindex
-// this needs to keep running continuously because storetheindex
-// will come to fetch advertisements "when it feels like it"
-func newIndexProvider(host host.Host) (*engine.Engine, error) {
-	// TODO: remove s *Server, remove topic, indexerMultiaddr, etc.
-	topic := "/indexer/ingest/mainnet"
-	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWCD4L8AEXAcPJg6PwosKU9ZWfC2ZisrrsYBvBgrwSBNXw")
-	if err != nil {
-		return nil, err
-	}
-	indexerAddrinfo, err := peer.AddrInfosFromP2pAddrs(indexerMultiaddr)
-	if err != nil {
-		return nil, err
-	}
-	pubG, err := pubsub.NewGossipSub(context.Background(), host,
-		pubsub.WithDirectConnectTicks(1),
-		pubsub.WithDirectPeers(indexerAddrinfo),
-	)
-	if err != nil {
-		return nil, err
-	}
-	pubT, err := pubG.Join(topic)
-	if err != nil {
-		return nil, err
-	}
-
-	newEngine, err := engine.New(
-		engine.WithTopic(pubT),      // TODO: remove, testing
-		engine.WithTopicName(topic), // TODO: remove, testing
-		// engine.WithHost(h),
-		engine.WithHost(host), // need to be localhost/estuary
-		engine.WithPublisherKind(engine.DataTransferPublisher),
-		// we need these addresses to be here instead
-		// of on the p2p host h because if we add them
-		// as ListenAddrs it'll try to start listening locally
-		// engine.WithRetrievalAddrs(addrs...),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return newEngine, nil
-}
-
 // updateAutoretrieveIndex ticks every tickInterval and checks for new CIDs added
 // It updates storetheindex with the new CIDs, saying they are present on autoretrieve
 // With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
 func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
-	var autoretrieves []Autoretrieve
+	var autoretrieves []autoretrieve.Autoretrieve
 	var newContents []Content
 	var lastTickTime time.Time
 	ticker := time.NewTicker(tickInterval)
@@ -395,13 +155,29 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 				return err
 			}
 			if len(newContents) > 0 {
+				newCids := make([]cid.Cid, len(newContents))
+				for _, content := range newContents {
+					newCids = append(newCids, content.Cid.CID)
+				}
+				err = s.Node.ArMhIterator.RegisterNewCIDs(newCids)
+				if err != nil {
+					log.Errorf("could not register new CIDs: %s", err)
+				}
+
 				log.Infof("announcing %d new CIDs to %d autoretrieve servers", len(newContents), len(autoretrieves))
 				for _, ar := range autoretrieves {
 					// send announcement with new CIDs for each autoretrieve server
-					err = s.announceNewCIDs(newContents, ar)
+					contextID, err := autoretrieve.GetAutoretrieveContextID(ar)
 					if err != nil {
-						log.Errorf("could not announce new contents: %s", err)
+						log.Errorf("could not announce new CIDs: %s", err)
+						continue
 					}
+					adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), contextID, metadata.New(metadata.Bitswap{}))
+					if err != nil {
+						log.Errorf("could not announce new CIDs: %s", err)
+						continue
+					}
+					log.Infof("announced new CIDs: %s", adCid)
 					//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
 				}
 			} else {
@@ -980,12 +756,17 @@ func main() {
 		// Create index-provider engine (s.Node.IndexProvider) to send announcements to
 		// this needs to keep running continuously because storetheindex
 		// will come to fetch for advertisements "when it feels like it"
-		s.Node.IndexProvider, err = newIndexProvider(s.Node.Host)
-		s.Node.IndexProvider.Start(context.Background())
-		defer s.Node.IndexProvider.Shutdown()
+		s.Node.ArMhIterator = &autoretrieve.SimpleEstuaryMhIterator{}
 		if err != nil {
 			return err
 		}
+
+		s.Node.ArEngine, err = autoretrieve.NewTestAutoretrieveEngine(s.Node.Host, s.Node.ArMhIterator)
+		if err != nil {
+			return err
+		}
+		s.Node.ArEngine.Start(context.Background())
+		// defer s.Node.ArEngine.Shutdown()
 
 		stopUpdateIndex := make(chan struct{})
 		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
@@ -1004,16 +785,6 @@ func main() {
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("could not run estuary app: %+v", err)
 	}
-}
-
-type Autoretrieve struct {
-	gorm.Model
-
-	Handle         string `gorm:"unique"`
-	Token          string `gorm:"unique"`
-	LastConnection time.Time
-	PrivateKey     string `gorm:"unique"`
-	Addresses      string
 }
 
 func setupDatabase(dbConnStr string) (*gorm.DB, error) {

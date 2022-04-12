@@ -11,6 +11,7 @@ import (
 
 	peering "github.com/application-research/estuary/node/modules/peering"
 
+	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
@@ -18,7 +19,6 @@ import (
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
-	"github.com/filecoin-project/index-provider/engine"
 	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
@@ -153,12 +153,11 @@ type NodeInitializer interface {
 }
 
 type Node struct {
-	Dht           *dht.IpfsDHT
-	Provider      *batched.BatchProvidingSystem
-	FullRT        *fullrt.FullRT
-	FilDht        *dht.IpfsDHT
-	Host          host.Host
-	IndexProvider *engine.Engine
+	Dht      *dht.IpfsDHT
+	Provider *batched.BatchProvidingSystem
+	FullRT   *fullrt.FullRT
+	FilDht   *dht.IpfsDHT
+	Host     host.Host
 	// Set for gathering disk usage
 
 	StorageDir string
@@ -171,9 +170,11 @@ type Node struct {
 
 	Wallet *wallet.LocalWallet
 
-	Bwc     *metrics.BandwidthCounter
-	Peering *peering.EstuaryPeeringService
-	Config  *config.Node
+	Bwc          *metrics.BandwidthCounter
+	Peering      *peering.EstuaryPeeringService
+	Config       *config.Node
+	ArEngine     *autoretrieve.AutoretrieveEngine
+	ArMhIterator *autoretrieve.SimpleEstuaryMhIterator
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
