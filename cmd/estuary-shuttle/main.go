@@ -429,6 +429,7 @@ func main() {
 			}
 		}
 
+		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
 			chid := st.ChannelID().String()
 			s.tcLk.Lock()
@@ -451,6 +452,7 @@ func main() {
 			}
 		})
 
+		// Subscribe to data transfer events from Boost
 		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
 			if st.Status == datatransfer.Requested {
 				go func() {
@@ -2003,6 +2005,11 @@ func writeAllGoroutineStacks(w io.Writer) error {
 
 func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 	ctx := e.Request().Context()
+
+	// Get transfers for deals make with the v1.1.0 deal protocol.
+	// Note that we dont need to restart deals made with the v1.2.0 deal
+	// protocol because these are restarted by the Storage Provider (not by
+	// Estuary).
 	transfers, err := s.Filc.V110TransfersInProgress(ctx)
 	if err != nil {
 		return err
