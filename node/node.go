@@ -170,11 +170,10 @@ type Node struct {
 
 	Wallet *wallet.LocalWallet
 
-	Bwc          *metrics.BandwidthCounter
-	Peering      *peering.EstuaryPeeringService
-	Config       *config.Node
-	ArEngine     *autoretrieve.AutoretrieveEngine
-	ArMhIterator *autoretrieve.SimpleEstuaryMhIterator
+	Bwc      *metrics.BandwidthCounter
+	Peering  *peering.EstuaryPeeringService
+	Config   *config.Node
+	ArEngine *autoretrieve.AutoretrieveEngine
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {

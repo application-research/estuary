@@ -6,6 +6,6 @@
 
 while [ true ]
 do
-    curl -X POST -H "Authorization: Bearer SECRET03ec5760-6cfe-4e93-b6b8-5fb323f6891aSECRET" "localhost:3004/autoretrieve/heartbeat"| jq
+    curl -X POST -H "Authorization: Bearer SECRET367ef629-bb84-495e-b26c-bb8fed9bb6e8SECRET" "localhost:3004/autoretrieve/heartbeat"| jq
     sleep $1;
 done
