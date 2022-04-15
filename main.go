@@ -767,7 +767,7 @@ func main() {
 		}
 
 		stopUpdateIndex := make(chan struct{})
-		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
+		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Second, stopUpdateIndex)
 
 		go func() {
 			time.Sleep(time.Second * 10)
