@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -28,22 +26,6 @@ type Autoretrieve struct {
 	Addresses      string
 }
 
-type EstuaryMhIterator struct {
-	contextIDToAr map[string]int // contextIDToAr[contextID] = AR offset for iterator
-	contextID     string
-	mh            []multihash.Multihash
-}
-
-func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
-	offset := m.contextIDToAr[m.contextID]
-	if offset < len(m.mh) {
-		hash := m.mh[offset]
-		m.contextIDToAr[m.contextID]++
-		return hash, nil
-	}
-	return nil, io.EOF
-}
-
 type SimpleEstuaryMhIterator struct {
 	offset int
 	Mh     []multihash.Multihash
@@ -58,13 +40,6 @@ func (m *SimpleEstuaryMhIterator) Next() (multihash.Multihash, error) {
 		return hash, nil
 	}
 	return nil, io.EOF
-}
-
-func NewEstuaryMhIterator() (*EstuaryMhIterator, error) {
-	return &EstuaryMhIterator{
-		contextIDToAr: make(map[string]int, 0),
-		mh:            make([]multihash.Multihash, 0),
-	}, nil
 }
 
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
@@ -137,138 +112,6 @@ func GenContextID(startTime, endTime time.Time) ([]byte, error) {
 	return []byte("AR-" + startTimeStr + "-" + endTimeStr), nil
 }
 
-// announceNewCIDs publishes an announcement with the CIDs that were added
-// between now and lastTickTime (see updateAutoretrieveIndex)
-// func (indexProvider *AutoretrieveIndexProvider) AnnounceNewCIDs(ar Autoretrieve) error {
-
-// 	ad, err := indexProvider.buildAdvertisement(ar)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	_, latestAd, err := indexProvider.ProviderEngine.GetLatestAdv(context.Background())
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if latestAd != nil && ad.Entries == latestAd.Entries {
-// 		return fmt.Errorf("advertisement already announced")
-// 	}
-
-// 	_, err = indexProvider.ProviderEngine.Publish(context.Background(), ad)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return nil
-// }
-
-func (iter *SimpleEstuaryMhIterator) RegisterNewCIDs(newCids []cid.Cid) error {
-	if len(newCids) == 0 {
-		return fmt.Errorf("No new CIDs to register")
-	}
-
-	// add new contents to mhIterator
-	for _, c := range newCids {
-		// indexProvider.MhIterator.mh = append(indexProvider.MhIterator.mh, content.Cid.CID.Hash())
-		iter.Mh = append(iter.Mh, c.Hash())
-	}
-
-	return nil
-}
-
-func (iter *EstuaryMhIterator) RegisterNewCIDs(newCids []cid.Cid) error {
-	if len(newCids) == 0 {
-		return fmt.Errorf("No new CIDs to register")
-	}
-
-	// add new contents to mhIterator
-	for _, c := range newCids {
-		// indexProvider.MhIterator.mh = append(indexProvider.MhIterator.mh, content.Cid.CID.Hash())
-		iter.mh = append(iter.mh, c.Hash())
-	}
-
-	return nil
-}
-
-// buildAdvertisement constructs a schema.Advertisement{} struct
-// containing the information from Autoretrieve as well as Estuary
-//func (indexProvider *AutoretrieveIndexProvider) buildAdvertisement(ar Autoretrieve) (schema.Advertisement, error) {
-//	// build contextID for advertisement
-//	// format: "EstuaryAd-" + ID of autoretrieve server
-//	contextID, err := getAutoretrieveContextID(ar)
-//	if err != nil {
-//		return schema.Advertisement{}, err
-//	}
-
-//	md := metadata.New(metadata.Bitswap{})
-//	mdBytes, err := md.MarshalBinary()
-//	if err != nil {
-//		return schema.Advertisement{}, err
-//	}
-
-//	//chunkSize and capacity are the default values the engine uses: 1024
-//	chunkSize := 1024
-//	capacity := 1024
-//	entriesChuncker, err := chunker.NewCachedEntriesChunker(context.Background(), indexProvider.Datastore, chunkSize, capacity)
-//	if err != nil {
-//		return schema.Advertisement{}, err
-//	}
-
-//	entries, err := entriesChuncker.Chunk(context.Background(), indexProvider.MhIterator)
-//	if err != nil {
-//		return schema.Advertisement{}, err
-//	}
-
-//	// Add the cid/contextID to datastore
-//	// this is done by NotifyPut but we're not using it so we have to
-//	// manually add it here
-//	keyToCidMapPrefix := "map/keyCid/"
-//	cidToKeyMapPrefix := "map/cidKey/"
-//	if entries == nil {
-//		return schema.Advertisement{}, fmt.Errorf("failed to write context id to entries cid mapping: dsEntry is nil")
-//	}
-
-//	dsEntry := entries.(cidlink.Link)
-//	if dsEntry.Cid.Bytes() == nil {
-//		return schema.Advertisement{}, fmt.Errorf("failed to write context id to entries cid mapping: dsEntry.Cid is empty")
-//	}
-
-//	err = indexProvider.Datastore.Put(context.Background(), datastore.NewKey(keyToCidMapPrefix+string(contextID)), dsEntry.Cid.Bytes())
-//	if err != nil {
-//		return schema.Advertisement{}, err
-//	}
-//	// And the other way around when graphsync ios making a request,
-//	// so the lister in the linksystem knows to what contextID we are referring.
-//	err = indexProvider.Datastore.Put(context.Background(), datastore.NewKey(cidToKeyMapPrefix+dsEntry.Cid.String()), contextID)
-//	if err != nil {
-//		return schema.Advertisement{}, fmt.Errorf("failed to write context id to entries cid mapping: %s", err)
-//	}
-
-//	// h, err := createFakeAutoretrieveHost(ar)
-//	// if err != nil {
-//	// 	return schema.Advertisement{}, err
-//	// }
-
-//	// splitAutoretrieveAddresses := strings.Split(ar.Addresses, ",")
-//	ad := schema.Advertisement{
-//		Provider:  indexProvider.Host.ID().String(), // provider is the estuary p2p host
-//		Addresses: multiAddrsToString(indexProvider.Host.Addrs()),
-//		// Addresses: splitAutoretrieveAddresses, // addresses are the autoretrieve ones
-//		Entries:   entries,
-//		ContextID: contextID,
-//		Metadata:  mdBytes,
-//	}
-
-//	// Sign the advertisement using the provider's private key
-//	hostPrivkey := indexProvider.Host.Peerstore().PrivKey(indexProvider.Host.ID())
-//	if err := ad.Sign(hostPrivkey); err != nil {
-//		return schema.Advertisement{}, err
-//	}
-
-//	return ad, nil
-//}
-
 // getAutoretrieveContextID builds the contextID for a give autoretrieve server
 // format: "EstuaryAd-" + ID of autoretrieve server
 func GetAutoretrieveContextID(ar Autoretrieve) ([]byte, error) {
@@ -285,25 +128,6 @@ func GetAutoretrieveContextID(ar Autoretrieve) ([]byte, error) {
 	contextID := []byte("EstuaryAd-" + strArID)
 
 	return contextID, nil
-}
-
-// createFakeAutoretrieveHost builds a libp2p host object with the
-// private key of the autoretrieve server so we can send advertisements
-// on behalf of those servers (as if we were them)
-// Note: this is a hack, we should create tokens that give partial
-// permissions to other players
-func createFakeAutoretrieveHost(ar Autoretrieve) (host.Host, error) {
-	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	h, err := libp2p.New(libp2p.Identity(arPrivKey))
-	if err != nil {
-		return nil, err
-	}
-
-	return h, nil
 }
 
 func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {
