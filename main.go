@@ -32,6 +32,7 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p-core/peer"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multihash"
@@ -207,10 +208,29 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 			log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 			// send announcement with new CIDs for each autoretrieve server
 			for _, ar := range autoretrieves {
-				// TODO: actually spoof autoretrieve server on announcement
 				log.Infof("sending announcement to %s", ar.Handle)
-				// rand.Read(contextID)
-				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, strings.Split(ar.Addresses, ","), metadata.New(metadata.Bitswap{}))
+
+				retrievalAddresses := []string{}
+				providerID := ""
+				for _, fullAddr := range strings.Split(ar.Addresses, ",") {
+					arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
+					if err != nil {
+						log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
+						continue
+					}
+					providerID = arAddrInfo.ID.String()
+					retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
+				}
+				if providerID == "" {
+					log.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
+					continue
+				}
+				if len(retrievalAddresses) == 0 {
+					log.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+					continue
+				}
+
+				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
 				if err != nil {
 					log.Errorf("could not announce new CIDs: %s", err)
 					continue

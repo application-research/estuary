@@ -251,10 +251,10 @@ func (e *AutoretrieveEngine) RegisterMultihashLister(mhl provider.MultihashListe
 // Note that prior to calling this function a provider.MultihashLister must be registered.
 //
 // See: AutoretrieveEngine.RegisterMultihashLister, AutoretrieveEngine.Publish.
-func (e *AutoretrieveEngine) NotifyPut(ctx context.Context, contextID []byte, addresses []string, md metadata.Metadata) (cid.Cid, error) {
+func (e *AutoretrieveEngine) NotifyPut(ctx context.Context, contextID []byte, providerID string, addresses []string, md metadata.Metadata) (cid.Cid, error) {
 	// The multihash lister must have been registered for the linkSystem to know how to
 	// go from contextID to list of CIDs.
-	return e.publishAdvForIndex(ctx, contextID, addresses, md, false)
+	return e.publishAdvForIndex(ctx, contextID, providerID, addresses, md, false)
 }
 
 // NotifyRemove publishes an advertisement that signals the list of multihashes associated to the given
@@ -264,7 +264,7 @@ func (e *AutoretrieveEngine) NotifyPut(ctx context.Context, contextID []byte, ad
 //
 // See: AutoretrieveEngine.RegisterMultihashLister, AutoretrieveEngine.Publish.
 func (e *AutoretrieveEngine) NotifyRemove(ctx context.Context, contextID []byte) (cid.Cid, error) {
-	return e.publishAdvForIndex(ctx, contextID, nil, metadata.Metadata{}, true)
+	return e.publishAdvForIndex(ctx, contextID, "", nil, metadata.Metadata{}, true)
 }
 
 // Shutdown shuts down the engine and discards all resources opened by the engine.
@@ -316,7 +316,7 @@ func (e *AutoretrieveEngine) GetLatestAdv(ctx context.Context) (cid.Cid, *schema
 	return latestAdCid, ad, nil
 }
 
-func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID []byte, addresses []string, md metadata.Metadata, isRm bool) (cid.Cid, error) {
+func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID []byte, providerID string, addresses []string, md metadata.Metadata, isRm bool) (cid.Cid, error) {
 	var err error
 	var cidsLnk cidlink.Link
 
@@ -421,7 +421,7 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 	}
 
 	adv := schema.Advertisement{
-		Provider:  e.options.provider.ID.String(),
+		Provider:  providerID,
 		Addresses: addresses,
 		Entries:   cidsLnk,
 		ContextID: contextID,
