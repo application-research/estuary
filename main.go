@@ -210,7 +210,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 				// TODO: actually spoof autoretrieve server on announcement
 				log.Infof("sending announcement to %s", ar.Handle)
 				// rand.Read(contextID)
-				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, metadata.New(metadata.Bitswap{}))
+				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, strings.Split(ar.Addresses, ","), metadata.New(metadata.Bitswap{}))
 				if err != nil {
 					log.Errorf("could not announce new CIDs: %s", err)
 					continue
