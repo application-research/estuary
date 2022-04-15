@@ -32,6 +32,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
+	"github.com/multiformats/go-multihash"
 	"github.com/whyrusleeping/memo"
 	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/otel"
@@ -40,6 +41,7 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -131,55 +133,88 @@ type ObjRef struct {
 // With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
 func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
 	var autoretrieves []autoretrieve.Autoretrieve
-	var newContents []Content
 	var lastTickTime time.Time
+	var curTime time.Time
+	var newContextID []byte
+	var err error
+
+	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
+	// this needs to keep running continuously because storetheindex
+	// will come to fetch for advertisements "when it feels like it"
+	s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(s.Node.Host)
+	if err != nil {
+		return err
+	}
+
+	s.Node.ArEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
+		var newContents []Content
+
+		// extract datetime from contextID
+		// contextID is like "AR-startTime-endTime"
+		// startTime, endTime, err := autoretrieve.ParseContextID(contextID)
+		// if err != nil {
+		// 	return nil, err
+		// }
+
+		// find new multihashes
+		// TODO: Fix db query
+		// err = s.DB.Find(&newContents, "updated_at > ?", startTime, "updated_at < ?", endTime).Group("cid").Error
+		err = s.DB.Find(&newContents, "active = true").Error
+		if err != nil {
+			return nil, err
+		}
+
+		if len(newContents) == 0 {
+			return nil, fmt.Errorf("no new CIDs to announce")
+		}
+
+		multihashes := []multihash.Multihash{}
+		for _, content := range newContents {
+			multihashes = append(multihashes, content.Cid.CID.Hash())
+		}
+
+		return &autoretrieve.SimpleEstuaryMhIterator{
+			Mh: multihashes,
+		}, nil
+	})
+
+	// start engine
+	s.Node.ArEngine.Start(context.Background())
+	defer s.Node.ArEngine.Shutdown()
+
+	// start ticker
 	ticker := time.NewTicker(tickInterval)
-
 	defer ticker.Stop()
-	for {
-		lastTickTime = time.Now().Add(-tickInterval)
 
+	for {
+		curTime = time.Now().UTC()
+		lastTickTime = curTime.Add(-tickInterval)
 		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
+		err = s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
 		if err != nil {
 			log.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return err
 		}
 		if len(autoretrieves) > 0 {
-			// err := s.DB.Find(&newContents, "updated_at > ?", lastTickTime).Group("cid").Error TODO: FIX filtering/grouping
-			err := s.DB.Find(&newContents).Error
+			newContextID, err = autoretrieve.GenContextID(lastTickTime, curTime)
 			if err != nil {
-				log.Errorf("unable to query list of new CIDs: %s", err)
+				log.Errorf("unable to generate context ID: %s", err)
 				return err
 			}
-			if len(newContents) > 0 {
-				newCids := make([]cid.Cid, len(newContents))
-				for _, content := range newContents {
-					newCids = append(newCids, content.Cid.CID)
-				}
-				err = s.Node.ArMhIterator.RegisterNewCIDs(newCids)
-				if err != nil {
-					log.Errorf("could not register new CIDs: %s", err)
-				}
 
-				log.Infof("announcing %d new CIDs to %d autoretrieve servers", len(newContents), len(autoretrieves))
-				for _, ar := range autoretrieves {
-					// send announcement with new CIDs for each autoretrieve server
-					contextID, err := autoretrieve.GetAutoretrieveContextID(ar)
-					if err != nil {
-						log.Errorf("could not announce new CIDs: %s", err)
-						continue
-					}
-					adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), contextID, metadata.New(metadata.Bitswap{}))
-					if err != nil {
-						log.Errorf("could not announce new CIDs: %s", err)
-						continue
-					}
-					log.Infof("announced new CIDs: %s", adCid)
-					//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
+			log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
+			// send announcement with new CIDs for each autoretrieve server
+			for _, ar := range autoretrieves {
+				// TODO: actually spoof autoretrieve server on announcement
+				log.Infof("sending announcement to %s", ar.Handle)
+				// rand.Read(contextID)
+				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, metadata.New(metadata.Bitswap{}))
+				if err != nil {
+					log.Errorf("could not announce new CIDs: %s", err)
+					continue
 				}
-			} else {
-				log.Infof("no new CIDs to advertise")
+				log.Infof("announced new CIDs: %s", adCid)
+				//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
 			}
 		} else {
 			log.Infof("no autoretrieve servers online")
@@ -307,6 +342,8 @@ func main() {
 	logging.SetLogLevel("bs-wal", "info")
 	logging.SetLogLevel("provider.batched", "info")
 	logging.SetLogLevel("bs-migrate", "info")
+	logging.SetLogLevel("provider/engine", "debug")
+	logging.SetLogLevel("chunker/cached-entries-chunker", "debug")
 
 	hDir, err := homedir.Dir()
 	if err != nil {
@@ -707,21 +744,6 @@ func main() {
 		if err != nil {
 			return err
 		}
-
-		// Create index-provider engine (s.Node.IndexProvider) to send announcements to
-		// this needs to keep running continuously because storetheindex
-		// will come to fetch for advertisements "when it feels like it"
-		s.Node.ArMhIterator = &autoretrieve.SimpleEstuaryMhIterator{}
-		if err != nil {
-			return err
-		}
-
-		s.Node.ArEngine, err = autoretrieve.NewTestAutoretrieveEngine(s.Node.Host, s.Node.ArMhIterator)
-		if err != nil {
-			return err
-		}
-		s.Node.ArEngine.Start(context.Background())
-		// defer s.Node.ArEngine.Shutdown()
 
 		stopUpdateIndex := make(chan struct{})
 		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)

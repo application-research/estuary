@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	provider "github.com/filecoin-project/index-provider"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
@@ -47,12 +46,14 @@ func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
 
 type SimpleEstuaryMhIterator struct {
 	offset int
-	mh     []multihash.Multihash
+	Mh     []multihash.Multihash
 }
 
 func (m *SimpleEstuaryMhIterator) Next() (multihash.Multihash, error) {
-	if m.offset < len(m.mh) {
-		hash := m.mh[m.offset]
+	fmt.Println("i am next whohoooo")
+	if m.offset < len(m.Mh) {
+		hash := m.Mh[m.offset]
+		fmt.Println("returning ", hash)
 		m.offset++
 		return hash, nil
 	}
@@ -69,10 +70,10 @@ func NewEstuaryMhIterator() (*EstuaryMhIterator, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewTestAutoretrieveEngine(host host.Host, mhIterator *SimpleEstuaryMhIterator) (*AutoretrieveEngine, error) {
+func NewAutoretrieveEngine(host host.Host) (*AutoretrieveEngine, error) {
 	// TODO: remove s *Server, remove topic, indexerMultiaddr, etc.
 	topic := "/indexer/ingest/mainnet"
-	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWRF5NwHcX2FMdPZ6JDmYB4VCTdC22VZiHngP5VJDkyvY8") //TODO: need to adjust p2p addr
+	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWChQyVH7a3iR3o8kmdYwXiHf2v3tXQWhSCS9j8NbLVQ9o") //TODO: need to adjust p2p addr
 	if err != nil {
 		return nil, err
 	}
@@ -105,12 +106,35 @@ func NewTestAutoretrieveEngine(host host.Host, mhIterator *SimpleEstuaryMhIterat
 	if err != nil {
 		return nil, err
 	}
-
-	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-		return mhIterator, nil
-	})
-
 	return newEngine, nil
+}
+
+func ParseContextID(contextID []byte) (time.Time, time.Time, error) {
+	layout := "2006/01/02T15:04:05.000Z"
+	splitContextID := strings.Split(string(contextID), "-")
+	if len(splitContextID) != 3 {
+		return time.Time{}, time.Time{}, fmt.Errorf("wrong contextID format, expected 'AR-start_date-end_date', got %s", string(contextID))
+	}
+	startTimeStr := splitContextID[1]
+	endTimeStr := splitContextID[2]
+
+	startTime, err := time.Parse(layout, startTimeStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("could not parse contextID: %s", err)
+	}
+
+	endTime, err := time.Parse(layout, endTimeStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("could not parse contextID: %s", err)
+	}
+	return startTime, endTime, nil
+}
+
+func GenContextID(startTime, endTime time.Time) ([]byte, error) {
+	layout := "2006/01/02T15:04:05.000Z"
+	startTimeStr := startTime.Format(layout)
+	endTimeStr := endTime.Format(layout)
+	return []byte("AR-" + startTimeStr + "-" + endTimeStr), nil
 }
 
 // announceNewCIDs publishes an announcement with the CIDs that were added
@@ -147,7 +171,7 @@ func (iter *SimpleEstuaryMhIterator) RegisterNewCIDs(newCids []cid.Cid) error {
 	// add new contents to mhIterator
 	for _, c := range newCids {
 		// indexProvider.MhIterator.mh = append(indexProvider.MhIterator.mh, content.Cid.CID.Hash())
-		iter.mh = append(iter.mh, c.Hash())
+		iter.Mh = append(iter.Mh, c.Hash())
 	}
 
 	return nil
