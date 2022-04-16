@@ -47,11 +47,13 @@ Run `make install-estuary-service` on the machine you wish to run estuary on.
 
 Make sure to follow the instructions output by the `make` command as configuration is required before the service can run succesfully.
 
+## Running estuary using docker
+
+- View the guidelines on how to run estuary using docker [here](https://github.com/application-research/estuary-docker).
+
 ## Contributing
 See `CONTRIBUTING.md` for contributing and development instructions.
 
-## Contributing
-See `CONTRIBUTING.md` for contributing instructions.
 ## Troubleshooting
 Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
 
