@@ -190,48 +190,51 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 			log.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return err
 		}
-		if len(autoretrieves) > 0 {
-			newContextID, err = autoretrieve.GenContextID(lastTickTime, curTime)
-			if err != nil {
-				log.Errorf("unable to generate context ID: %s", err)
-				return err
-			}
-
-			log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
-			// send announcement with new CIDs for each autoretrieve server
-			for _, ar := range autoretrieves {
-				log.Infof("sending announcement to %s", ar.Handle)
-
-				retrievalAddresses := []string{}
-				providerID := ""
-				for _, fullAddr := range strings.Split(ar.Addresses, ",") {
-					arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
-					if err != nil {
-						log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
-						continue
-					}
-					providerID = arAddrInfo.ID.String()
-					retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
-				}
-				if providerID == "" {
-					log.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
-					continue
-				}
-				if len(retrievalAddresses) == 0 {
-					log.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
-					continue
-				}
-
-				adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
-				if err != nil {
-					log.Errorf("could not announce new CIDs: %s", err)
-					continue
-				}
-				log.Infof("announced new CIDs: %s", adCid)
-				//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
-			}
-		} else {
+		if len(autoretrieves) == 0 {
 			log.Infof("no autoretrieve servers online")
+			// wait for next tick, or quit
+			select {
+			case <-ticker.C:
+				continue
+			case <-quit:
+				break
+			}
+		}
+
+		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
+		// send announcement with new CIDs for each autoretrieve server
+		for _, ar := range autoretrieves {
+			log.Infof("sending announcement to %s", ar.Handle)
+
+			newContextID = []byte("AR-" + ar.Handle)
+
+			retrievalAddresses := []string{}
+			providerID := ""
+			for _, fullAddr := range strings.Split(ar.Addresses, ",") {
+				arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
+				if err != nil {
+					log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
+					continue
+				}
+				providerID = arAddrInfo.ID.String()
+				retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
+			}
+			if providerID == "" {
+				log.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
+				continue
+			}
+			if len(retrievalAddresses) == 0 {
+				log.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+				continue
+			}
+
+			adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
+			if err != nil {
+				log.Errorf("could not announce new CIDs: %s", err)
+				continue
+			}
+			log.Infof("announced new CIDs: %s", adCid)
+			//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
 		}
 
 		// wait for next tick, or quit
