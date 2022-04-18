@@ -52,7 +52,7 @@ func NewAutoretrieveEngine() (*AutoretrieveEngine, error) {
 		return nil, err
 	}
 	topic := "/indexer/ingest/mainnet"
-	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWChQyVH7a3iR3o8kmdYwXiHf2v3tXQWhSCS9j8NbLVQ9o") //TODO: need to adjust p2p addr
+	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWCD4L8AEXAcPJg6PwosKU9ZWfC2ZisrrsYBvBgrwSBNXw") //TODO: need to adjust p2p addr
 	if err != nil {
 		return nil, err
 	}
@@ -82,34 +82,6 @@ func NewAutoretrieveEngine() (*AutoretrieveEngine, error) {
 		return nil, err
 	}
 	return newEngine, nil
-}
-
-func ParseContextID(contextID []byte) (time.Time, time.Time, error) {
-	layout := "2006/01/02T15:04:05.000Z"
-	splitContextID := strings.Split(string(contextID), "-")
-	if len(splitContextID) != 3 {
-		return time.Time{}, time.Time{}, fmt.Errorf("wrong contextID format, expected 'AR-start_date-end_date', got %s", string(contextID))
-	}
-	startTimeStr := splitContextID[1]
-	endTimeStr := splitContextID[2]
-
-	startTime, err := time.Parse(layout, startTimeStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("could not parse contextID: %s", err)
-	}
-
-	endTime, err := time.Parse(layout, endTimeStr)
-	if err != nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("could not parse contextID: %s", err)
-	}
-	return startTime, endTime, nil
-}
-
-func GenContextID(startTime, endTime time.Time) ([]byte, error) {
-	layout := "2006/01/02T15:04:05.000Z"
-	startTimeStr := startTime.Format(layout)
-	endTimeStr := endTime.Format(layout)
-	return []byte("AR-" + startTimeStr + "-" + endTimeStr), nil
 }
 
 func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {
