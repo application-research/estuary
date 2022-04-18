@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/multiformats/go-multiaddr"
@@ -45,8 +45,12 @@ func (m *SimpleEstuaryMhIterator) Next() (multihash.Multihash, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(host host.Host) (*AutoretrieveEngine, error) {
+func NewAutoretrieveEngine() (*AutoretrieveEngine, error) {
 	// TODO: remove s *Server, remove topic, indexerMultiaddr, etc.
+	host, err := libp2p.New()
+	if err != nil {
+		return nil, err
+	}
 	topic := "/indexer/ingest/mainnet"
 	indexerMultiaddr, err := multiaddr.NewMultiaddr("/ip4/127.0.0.1/tcp/3003/p2p/12D3KooWChQyVH7a3iR3o8kmdYwXiHf2v3tXQWhSCS9j8NbLVQ9o") //TODO: need to adjust p2p addr
 	if err != nil {
@@ -73,10 +77,6 @@ func NewAutoretrieveEngine(host host.Host) (*AutoretrieveEngine, error) {
 		WithTopicName(topic), // TODO: remove, testing
 		WithHost(host),       // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
-		// we need these addresses to be here instead
-		// of on the p2p host h because if we add them
-		// as ListenAddrs it'll try to start listening locally
-		// engine.WithRetrievalAddrs(addrs...),
 	)
 	if err != nil {
 		return nil, err
@@ -110,24 +110,6 @@ func GenContextID(startTime, endTime time.Time) ([]byte, error) {
 	startTimeStr := startTime.Format(layout)
 	endTimeStr := endTime.Format(layout)
 	return []byte("AR-" + startTimeStr + "-" + endTimeStr), nil
-}
-
-// getAutoretrieveContextID builds the contextID for a give autoretrieve server
-// format: "EstuaryAd-" + ID of autoretrieve server
-func GetAutoretrieveContextID(ar Autoretrieve) ([]byte, error) {
-	arPrivKey, err := stringToPrivkey(ar.PrivateKey)
-	if err != nil {
-		return nil, err
-	}
-
-	arID, err := peer.IDFromPrivateKey(arPrivKey)
-	if err != nil {
-		return nil, err
-	}
-	strArID := arID.String()
-	contextID := []byte("EstuaryAd-" + strArID)
-
-	return contextID, nil
 }
 
 func stringToPrivkey(privKeyStr string) (crypto.PrivKey, error) {

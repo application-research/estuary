@@ -144,7 +144,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
 	// this needs to keep running continuously because storetheindex
 	// will come to fetch for advertisements "when it feels like it"
-	s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(s.Node.Host)
+	s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine()
 	if err != nil {
 		return err
 	}
@@ -152,16 +152,9 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	s.Node.ArEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
 		var newContents []Content
 
-		// extract datetime from contextID
-		// contextID is like "AR-startTime-endTime"
-		// startTime, endTime, err := autoretrieve.ParseContextID(contextID)
-		// if err != nil {
-		// 	return nil, err
-		// }
-
 		// find new multihashes
 		// TODO: Fix db query
-		// err = s.DB.Find(&newContents, "updated_at > ?", startTime, "updated_at < ?", endTime).Group("cid").Error
+		// err = s.DB.Find(&newContents, "active = true", "updated_at > ?", startTime, "updated_at < ?", endTime).Group("cid").Error
 		err = s.DB.Find(&newContents, "active = true").Error
 		if err != nil {
 			return nil, err
