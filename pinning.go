@@ -703,6 +703,8 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
+	
+	status.Pin.Meta = pin.Meta
 
 	return e.JSON(202, status)
 }
