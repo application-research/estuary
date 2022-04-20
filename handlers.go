@@ -4411,30 +4411,31 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Summary      Register autoretrieve server
 // @Description  This endpoint registers a new autoretrieve server
 // @Tags         autoretrieve
-// @Param        addresses body []string true "Autoretrieve's address list"
+// @Param        addresses body string true "Autoretrieve's comma-separated list of addresses"
 // @Param        privateKey body string true "Autoretrieve's private key"
 // @Produce      json
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	// validate peerid and peer multi addresses
 	addresses := strings.Split(c.FormValue("addresses"), ",")
-	addrInfo, err := util.ValidatePeerInfo(c.FormValue("privateKey"), addresses)
+	addrInfo, err := autoretrieve.ValidatePeerInfo(c.FormValue("privateKey"), addresses)
 	if err != nil {
 		return err
 	}
 
 	ar := &autoretrieve.Autoretrieve{
-		Handle:         "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
-		Token:          "SECRET" + uuid.New().String() + "SECRET",
-		LastConnection: time.Now(),
-		PrivateKey:     c.FormValue("privateKey"),
-		Addresses:      c.FormValue("addresses"), // cant store []string in gorm
+		Handle:            "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+		Token:             "SECRET" + uuid.New().String() + "SECRET",
+		LastConnection:    time.Now(),
+		LastAdvertisement: time.Time{},
+		PrivateKey:        c.FormValue("privateKey"),
+		Addresses:         c.FormValue("addresses"), // cant store []string in gorm
 	}
 	if err := s.DB.Create(ar).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, &util.AutoretrieveInitResponse{
+	return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
 		Handle:         ar.Handle,
 		Token:          ar.Token,
 		LastConnection: ar.LastConnection,
@@ -4454,7 +4455,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 		return err
 	}
 
-	var out []util.AutoretrieveListResponse
+	var out []autoretrieve.AutoretrieveListResponse
 
 	for _, ar := range autoretrieves {
 		// any of the multiaddresses of the peer should work to get addrInfo
@@ -4465,10 +4466,11 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 			return err
 		}
 
-		out = append(out, util.AutoretrieveListResponse{
-			Handle:         ar.Handle,
-			LastConnection: ar.LastConnection,
-			AddrInfo:       addrInfo,
+		out = append(out, autoretrieve.AutoretrieveListResponse{
+			Handle:            ar.Handle,
+			LastConnection:    ar.LastConnection,
+			LastAdvertisement: ar.LastAdvertisement,
+			AddrInfo:          addrInfo,
 		})
 	}
 
@@ -4493,7 +4495,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	ar.LastConnection = time.Now().UTC()
+	ar.LastConnection = time.Now()
 	if err := s.DB.Save(&ar).Error; err != nil {
 		return err
 	}
@@ -4506,10 +4508,11 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	out := util.HeartbeatAutoretrieveResponse{
-		Handle:         ar.Handle,
-		LastConnection: ar.LastConnection,
-		AddrInfo:       addrInfo,
+	out := autoretrieve.HeartbeatAutoretrieveResponse{
+		Handle:            ar.Handle,
+		LastConnection:    ar.LastConnection,
+		LastAdvertisement: ar.LastAdvertisement,
+		AddrInfo:          addrInfo,
 	}
 
 	return c.JSON(http.StatusOK, out)

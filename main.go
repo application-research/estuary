@@ -149,18 +149,24 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	}
 
 	s.Node.ArEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-		var newContents []Content
 
-		// find new multihashes
-		// TODO: Fix db query
-		// err = s.DB.Find(&newContents, "active = true", "updated_at > ?", startTime, "updated_at < ?", endTime).Group("cid").Error
-		err = s.DB.Find(&newContents, "active = true").Error
+		arHandle, err := autoretrieve.ParseContextID(contextID)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(newContents) == 0 {
-			return nil, fmt.Errorf("no new CIDs to announce")
+		var ar autoretrieve.Autoretrieve
+		// get the autoretrieve entry from the database
+		err = s.DB.Find(&ar, "handle = ?", arHandle).Error
+		if err != nil {
+			return nil, err
+		}
+
+		var newContents []Content
+		// find all new multihashes since the last time we advertised for this autoretrieve server
+		err = s.DB.Find(&newContents, "active = true and created_at >= ?", ar.LastAdvertisement).Error
+		if err != nil {
+			return nil, err
 		}
 
 		multihashes := []multihash.Multihash{}
@@ -182,7 +188,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	defer ticker.Stop()
 
 	for {
-		curTime = time.Now().UTC()
+		curTime = time.Now()
 		lastTickTime = curTime.Add(-tickInterval)
 		// Find all autoretrieve servers that are online (that sent heartbeat)
 		err = s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
@@ -204,9 +210,8 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 		// send announcement with new CIDs for each autoretrieve server
 		for _, ar := range autoretrieves {
-			log.Infof("sending announcement to %s", ar.Handle)
 
-			newContextID = []byte("AR-" + ar.Handle)
+			newContextID = []byte("AR_" + ar.Handle)
 
 			retrievalAddresses := []string{}
 			providerID := ""
@@ -228,13 +233,31 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 				continue
 			}
 
+			var newContentsCount int64
+			err = s.DB.Model(&Content{}).Where("active = true and created_at >= ?", ar.LastAdvertisement).Count(&newContentsCount).Error
+			if err != nil {
+				log.Errorf("unable to query new CIDs from database: %s", err)
+				continue
+			}
+			if newContentsCount == 0 {
+				log.Debugf("no new CIDs to announce, skipping")
+				continue
+			}
+			log.Debugf("found %d new CIDs, announcing", newContentsCount)
+
+			log.Infof("sending announcement to %s", ar.Handle)
 			adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
 			if err != nil {
 				log.Errorf("could not announce new CIDs: %s", err)
 				continue
 			}
+
+			ar.LastAdvertisement = time.Now()
+			if err := s.DB.Save(&ar).Error; err != nil {
+				return err
+			}
+
 			log.Infof("announced new CIDs: %s", adCid)
-			//TODO: remove old CIDs (do we even need that?) - dont think so, estuary still can find offloaded cids
 		}
 
 		// wait for next tick, or quit
