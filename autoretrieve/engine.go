@@ -206,28 +206,6 @@ func (e *AutoretrieveEngine) Publish(ctx context.Context, adv schema.Advertiseme
 	return c, nil
 }
 
-// PublishLatest re-publishes the latest existing advertisement to pubsub.
-func (e *AutoretrieveEngine) PublishLatest(ctx context.Context) error {
-	// Skip announcing the latest advertisement CID if there is no publisher.
-	if e.publisher == nil {
-		log.Infow("Skipped announcing the latest: remote announcements are disabled.")
-		return nil
-	}
-
-	adCid, err := e.getLatestAdCid(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get latest advertisement cid: %w", err)
-	}
-
-	if adCid == cid.Undef {
-		log.Info("Skipped announcing the latest: no previously published advertisements.")
-		return nil
-	}
-	log.Infow("Republishing latest advertisement", "cid", adCid)
-
-	return e.publisher.UpdateRoot(ctx, adCid)
-}
-
 // RegisterMultihashLister registers a provider.MultihashLister that is used to look up the
 // list of multihashes associated to a context ID. At least one such registration
 // must be registered before calls to AutoretrieveEngine.NotifyPut and AutoretrieveEngine.NotifyRemove.

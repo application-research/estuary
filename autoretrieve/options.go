@@ -181,7 +181,7 @@ func WithHttpPublisherListenAddr(addr string) Option {
 	}
 }
 
-// WithTopicName sets toe topic name on which pubsub announcements are published.
+// WithTopicName sets the topic name on which pubsub announcements are published.
 // To override the default pubsub configuration, use WithTopic.
 //
 // Note that this option only takes effect if the PublisherKind is set to DataTransferPublisher.
