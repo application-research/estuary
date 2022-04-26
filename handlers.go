@@ -568,6 +568,14 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		return err
 	}
 
+	defer func() {
+		go func() {
+			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+				log.Errorf("failed to clean up staging blockstore: %s", err)
+			}
+		}()
+	}()
+
 	defer c.Request().Body.Close()
 	header, err := s.loadCar(ctx, sbs, c.Request().Body)
 	if err != nil {
@@ -651,12 +659,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			return fmt.Errorf("failed to insert piece commitment record: %w", err)
 		}
 	}
-
-	go func() {
-		if err := s.StagingMgr.CleanUp(bsid); err != nil {
-			log.Errorf("failed to clean up staging blockstore: %s", err)
-		}
-	}()
 
 	go func() {
 		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
@@ -769,6 +771,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
+	defer func() {
+		go func() {
+			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+				log.Errorf("failed to clean up staging blockstore: %s", err)
+			}
+		}()
+	}()
+
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -803,12 +813,6 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
-
-	go func() {
-		if err := s.StagingMgr.CleanUp(bsid); err != nil {
-			log.Errorf("failed to clean up staging blockstore: %s", err)
-		}
-	}()
 
 	go func() {
 		s.CM.ToCheck <- content.ID
