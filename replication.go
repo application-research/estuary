@@ -1404,7 +1404,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 
 		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
 			// how do we notify admin to top up datacap?
-			done(time.Minute * 60) // retry an hour later - hopefully datacap has been topped up
 			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
 		}
 
