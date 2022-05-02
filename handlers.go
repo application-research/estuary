@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	httpprof "net/http/pprof"
 	"os"
@@ -694,19 +695,18 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	defer span.End()
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		var details string
 		if s.CM.localContentAddingDisabled {
 			uep, err := s.getPreferredUploadEndpoints(u)
 			if err != nil {
 				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else {
-				details = fmt.Sprintf("this estuary instance has disabled adding new content, please redirect your request to one of the following endpoints: %v", uep)
+			} else if len(uep) > 0 {
+				// details := fmt.Sprintf("this estuary instance has disabled adding new content, please redirect your request to one of the following endpoints: %v", uep)
+				return c.Redirect(http.StatusPermanentRedirect, uep[rand.Intn(len(uep))]) // redirect to a random preferred endpoint
 			}
 		}
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
-			Details: details,
 		}
 	}
 
