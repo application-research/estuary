@@ -404,7 +404,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		}
 	}
 
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and active", u.ID).Error; err != nil {
 		return err
 	}
@@ -423,7 +423,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 				TotalReads int64
 			}
 
-			if err := s.DB.Model(ObjRef{}).
+			if err := s.DB.Model(util.ObjRef{}).
 				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
 				Where("obj_refs.content = ?", c.ID).
 				Joins("left join objects on obj_refs.object = objects.id").
@@ -436,7 +436,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		}
 
 		if c.Aggregate {
-			if err := s.DB.Model(Content{}).Where("aggregated_in = ?", c.ID).Count(&st.AggregatedFiles).Error; err != nil {
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", c.ID).Count(&st.AggregatedFiles).Error; err != nil {
 				return err
 			}
 		}
@@ -682,7 +682,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 	if c.QueryParam("ignore-dupes") == "true" {
 		var count int64
-		if err := s.DB.Model(Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
+		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
 			return err
 		}
 		if count > 0 {
@@ -1016,7 +1016,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	}()
 
 	var objlk sync.Mutex
-	var objects []*Object
+	var objects []*util.Object
 	cset := cid.NewSet()
 
 	defer func() {
@@ -1055,7 +1055,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 		}
 
 		objlk.Lock()
-		objects = append(objects, &Object{
+		objects = append(objects, &util.Object{
 			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
@@ -1074,11 +1074,11 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local")
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
-	content := &Content{
+	content := &util.Content{
 		Cid:         util.DbCID{CID: root},
 		Name:        filename,
 		Active:      false,
@@ -1148,7 +1148,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.Find(&content, "cid = ?", data.Bytes()).Error; err != nil {
 		return err
 	}
@@ -1167,7 +1167,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Success 	200 {array} string
 // @Router       /content/list [get]
 func (s *Server) handleListContent(c echo.Context, u *User) error {
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
@@ -1176,7 +1176,7 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 }
 
 type expandedContent struct {
-	Content
+	util.Content
 	AggregatedFiles int64 `json:"aggregatedFiles"`
 }
 
@@ -1208,7 +1208,7 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 		offset = o
 	}
 
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
 		return err
 	}
@@ -1220,7 +1220,7 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 				Content: cont,
 			}
 			if cont.Aggregate {
-				if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
 					return err
 				}
 
@@ -1258,7 +1258,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
@@ -1386,7 +1386,7 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 		return nil, err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
 		return nil, err
 	}
@@ -1418,8 +1418,8 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 }
 
 type getContentResponse struct {
-	Content      *Content       `json:"content"`
-	AggregatedIn *Content       `json:"aggregatedIn,omitempty"`
+	Content      *util.Content  `json:"content"`
+	AggregatedIn *util.Content  `json:"aggregatedIn,omitempty"`
 	Selector     string         `json:"selector,omitempty"`
 	Deals        []*contentDeal `json:"deals"`
 }
@@ -1461,7 +1461,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	v0 := cid.NewCidV0(obj.Hash())
 	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
 		return err
 	}
@@ -1475,7 +1475,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		id := cont.ID
 
 		if cont.AggregatedIn > 0 {
-			var aggr Content
+			var aggr util.Content
 			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
 				return err
 			}
@@ -1561,7 +1561,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	var cont Content
+	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
 		return err
 	}
@@ -1676,7 +1676,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	var cont Content
+	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
 		return err
 	}
@@ -1921,7 +1921,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numFiles int64
-	if err := s.DB.Model(&Content{}).Where("active").Count(&numFiles).Error; err != nil {
+	if err := s.DB.Model(&util.Content{}).Where("active").Count(&numFiles).Error; err != nil {
 		return err
 	}
 
@@ -2542,7 +2542,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, contID).Error; err != nil {
 		return err
 	}
@@ -2557,7 +2557,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 
 	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
 	var bw int64
-	if err := s.DB.Model(ObjRef{}).
+	if err := s.DB.Model(util.ObjRef{}).
 		Select("SUM(size * reads)").
 		Where("obj_refs.content = ?", content.ID).
 		Joins("left join objects on obj_refs.object = objects.id").
@@ -2584,7 +2584,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
@@ -2597,7 +2597,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 		}
 	}
 
-	var sub []Content
+	var sub []util.Content
 	if err := s.DB.Find(&sub, "aggregated_in = ?", contID).Error; err != nil {
 		return err
 	}
@@ -2690,7 +2690,7 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 		return err
 	}
 
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "id in ?", body.Contents).Error; err != nil {
 		return err
 	}
@@ -2730,7 +2730,7 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
 		return err
 	}
@@ -3336,7 +3336,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
 
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "id in ? and user_id = ?", params.Contents, u.ID).Error; err != nil {
 		return err
 	}
@@ -3347,7 +3347,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 			return fmt.Errorf("cid in params was improperly formatted: %w", err)
 		}
 
-		var cont Content
+		var cont util.Content
 		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{CID: cc}, u.ID).Error; err != nil {
 			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
 		}
@@ -3390,7 +3390,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	contents := []ContentWithPath{}
+	contents := []util.ContentWithPath{}
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
@@ -3477,7 +3477,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	}
 
 	// TODO: optimize this a good deal
-	var refs []ContentWithPath
+	var refs []util.ContentWithPath
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
@@ -3670,7 +3670,7 @@ type adminUserResponse struct {
 // @Router       /admin/users [get]
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
-	if err := s.DB.Model(Content{}).
+	if err := s.DB.Model(util.Content{}).
 		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&User{}).Select("username").Where("id = user_id")).
 		Group("user_id").Scan(&resp).Error; err != nil {
 		return err
@@ -3720,11 +3720,11 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 
 func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 	var stats publicStatsResponse
-	if err := s.DB.Model(Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage").Scan(&stats).Error; err != nil {
+	if err := s.DB.Model(util.Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage").Scan(&stats).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
+	if err := s.DB.Model(util.Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
 		return nil, err
 	}
 
@@ -4020,8 +4020,8 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 	for cont, deals := range contmap {
 		var dp dealPairs
 		if deals[0].Aggregate {
-			var conts []Content
-			if err := s.DB.Model(Content{}).Where("aggregated_in = ?", cont).Select("cid").Scan(&conts).Error; err != nil {
+			var conts []util.Content
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont).Select("cid").Scan(&conts).Error; err != nil {
 				return err
 			}
 
@@ -4062,7 +4062,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var cont Content
+	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
 		return err
 	}
@@ -4081,7 +4081,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	if cont.Aggregate && cont.Size == 0 {
 		// if this is an aggregate and its size is zero, then that means we
 		// failed at some point while updating the aggregate, we can fix that
-		var children []Content
+		var children []util.Content
 		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
 			return err
 		}
@@ -4102,7 +4102,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 
 		// now, update size and cid
-		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := s.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"cid":  util.DbCID{nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
@@ -4127,7 +4127,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	if cont.Aggregate && rootFetchErr != nil {
 		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
-		var children []Content
+		var children []util.Content
 		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
 			return err
 		}
@@ -4150,7 +4150,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	var fixedAggregateLocation bool
 	if c.QueryParam("check-locations") != "" && cont.Aggregate {
 		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
-		var aggr []Content
+		var aggr []util.Content
 		if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
 			return err
 		}
@@ -4239,12 +4239,12 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		return err
 	}
 
-	var roots []Content
+	var roots []util.Content
 	if err := s.DB.Find(&roots, "cid = ?", cc.Bytes()).Error; err != nil {
 		return err
 	}
 
-	var obj Object
+	var obj util.Object
 	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
 		return c.JSON(404, map[string]interface{}{
 			"error":                "object not found in database",
@@ -4253,8 +4253,8 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		})
 	}
 
-	var contents []Content
-	if err := s.DB.Model(ObjRef{}).Joins("left join contents on obj_refs.content = contents.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
+	var contents []util.Content
+	if err := s.DB.Model(util.ObjRef{}).Joins("left join contents on obj_refs.content = contents.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
 		log.Errorf("failed to find contents for cid: %s", err)
 	}
 
@@ -4648,7 +4648,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
-	content := &Content{
+	content := &util.Content{
 		Cid:         util.DbCID{CID: rootCID},
 		Name:        req.Name,
 		Active:      false,
@@ -4834,16 +4834,16 @@ type contCheck struct {
 
 func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	var out progressResponse
-	if err := s.DB.Model(Content{}).Where("not aggregated_in > 0 AND (pinning OR active) AND not failed").Count(&out.TotalTopLevel).Error; err != nil {
+	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 AND (pinning OR active) AND not failed").Count(&out.TotalTopLevel).Error; err != nil {
 		return err
 	}
 
-	if err := s.DB.Model(Content{}).Where("pinning and not failed").Count(&out.TotalPinning).Error; err != nil {
+	if err := s.DB.Model(util.Content{}).Where("pinning and not failed").Count(&out.TotalPinning).Error; err != nil {
 		return err
 	}
 
 	var conts []contCheck
-	if err := s.DB.Model(Content{}).Where("not aggregated_in > 0 and active").
+	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 and active").
 		Select("id, (?) as num_deals",
 			s.DB.Model(contentDeal{}).
 				Where("content = contents.id and deal_id > 0 and not failed").
@@ -4872,7 +4872,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return err
 	}
 
-	var cont Content
+	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
 		return err
 	}
@@ -4881,7 +4881,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return fmt.Errorf("content %d is not an aggregate", aggr)
 	}
 
-	var children []Content
+	var children []util.Content
 	if err := s.DB.Find(&children, "aggregated_in = ?", aggr).Error; err != nil {
 		return err
 	}
@@ -4921,13 +4921,13 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		})
 	}
 
-	if err := s.DB.Model(Content{}).Where("aggregated_in = ?", aggr).UpdateColumns(map[string]interface{}{
+	if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", aggr).UpdateColumns(map[string]interface{}{
 		"aggregated_in": 0,
 	}).Error; err != nil {
 		return err
 	}
 
-	if err := s.DB.Model(Content{}).Where("id = ?", aggr).UpdateColumns(map[string]interface{}{
+	if err := s.DB.Model(util.Content{}).Where("id = ?", aggr).UpdateColumns(map[string]interface{}{
 		"active": false,
 	}).Error; err != nil {
 		return err
@@ -5021,7 +5021,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		})
 	}
 
-	content := &Content{
+	content := &util.Content{
 		Cid:         util.DbCID{CID: root},
 		Name:        req.Name,
 		Active:      false,
@@ -5068,14 +5068,14 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 	handle := c.Param("shuttle")
 
-	rows, err := s.DB.Model(Content{}).Where("location = ? and not offloaded", handle).Rows()
+	rows, err := s.DB.Model(util.Content{}).Where("location = ? and not offloaded", handle).Rows()
 	if err != nil {
 		return err
 	}
 
 	defer rows.Close()
 	for rows.Next() {
-		var cont Content
+		var cont util.Content
 		if err := s.DB.ScanRows(rows, &cont); err != nil {
 			return err
 		}
@@ -5199,7 +5199,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
 		return err
 	}
@@ -5265,7 +5265,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
-	var cont Content
+	var cont util.Content
 	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
@@ -5291,7 +5291,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 
 func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *User) (bool, error) {
 	var count int64
-	if err := s.DB.Model(Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
+	if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
 		return false, err
 	}
 	if count > 0 {

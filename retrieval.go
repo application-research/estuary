@@ -21,7 +21,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 	))
 	defer span.End()
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
 		return nil, err
 	}

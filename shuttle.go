@@ -387,7 +387,7 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle string, param *drpc.GarbageCheck) error {
 	var tounpin []uint
 	for _, c := range param.Contents {
-		var cont Content
+		var cont util.Content
 		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 			if xerrors.Is(err, gorm.ErrRecordNotFound) {
 				tounpin = append(tounpin, c)
@@ -411,13 +411,13 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 
 	// TODO: do some sanity checks that the sub pieces were all made successfully...
 
-	if err := cm.DB.Model(Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to update content for split complete: %w", err)
 	}
 
-	if err := cm.DB.Delete(&ObjRef{}, "content = ?", param.ID).Error; err != nil {
+	if err := cm.DB.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
 		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 	}
 

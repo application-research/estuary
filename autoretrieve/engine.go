@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/filecoin-project/go-legs"
 	"github.com/filecoin-project/go-legs/dtsync"
@@ -20,6 +21,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -45,8 +47,11 @@ type AutoretrieveEngine struct {
 
 	publisher legs.Publisher
 
-	mhLister provider.MultihashLister
-	cblk     sync.Mutex
+	mhLister     provider.MultihashLister
+	cblk         sync.Mutex
+	stopCh       chan struct{}
+	tickInterval time.Duration
+	db           *gorm.DB
 }
 
 // var _ provider.Interface = (*AutoretrieveEngine)(nil)

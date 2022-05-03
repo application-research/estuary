@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
@@ -31,20 +30,15 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/peer"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
-	"github.com/multiformats/go-multihash"
 	"github.com/whyrusleeping/memo"
-	"go.opencensus.io/stats/view"
 	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	provider "github.com/filecoin-project/index-provider"
-	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
@@ -65,209 +59,6 @@ type storageMiner struct {
 	Version         string
 	Location        string
 	Owner           uint
-}
-
-type Content struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"-"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Cid         util.DbCID       `json:"cid"`
-	Name        string           `json:"name"`
-	UserID      uint             `json:"userId" gorm:"index"`
-	Description string           `json:"description"`
-	Size        int64            `json:"size"`
-	Type        util.ContentType `json:"type"`
-	Active      bool             `json:"active"`
-	Offloaded   bool             `json:"offloaded"`
-	Replication int              `json:"replication"`
-
-	// TODO: shift most of the 'state' booleans in here into a single state
-	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
-
-	Pinning bool   `json:"pinning"`
-	PinMeta string `json:"pinMeta"`
-	Replace bool   `json:"replace" gorm:"default:0"`
-	Origins string `json:"origins"`
-
-	Failed bool `json:"failed"`
-
-	Location string `json:"location"`
-	// TODO: shift location tracking to just use the ID of the shuttle
-	// Also move towards recording content movement intentions in the database,
-	// making that process more resilient to failures
-	// LocID     uint   `json:"locID"`
-	// LocIntent uint   `json:"locIntent"`
-
-	// If set, this content is part of a split dag.
-	// In such a case, the 'root' content should be advertised on the dht, but
-	// not have deals made for it, and the children should have deals made for
-	// them (unlike with aggregates)
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
-}
-
-type ContentWithPath struct {
-	Content
-	Path string `json:"path"`
-}
-
-type Object struct {
-	ID         uint       `gorm:"primarykey"`
-	Cid        util.DbCID `gorm:"index"`
-	Size       int
-	Reads      int
-	LastAccess time.Time
-}
-
-type ObjRef struct {
-	ID        uint `gorm:"primarykey"`
-	Content   uint `gorm:"index:,option:CONCURRENTLY"`
-	Object    uint `gorm:"index:,option:CONCURRENTLY"`
-	Offloaded uint
-}
-
-// updateAutoretrieveIndex ticks every tickInterval and checks for new CIDs added
-// It updates storetheindex with the new CIDs, saying they are present on autoretrieve
-// With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
-func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
-	var autoretrieves []autoretrieve.Autoretrieve
-	var lastTickTime time.Time
-	var curTime time.Time
-	var newContextID []byte
-	var err error
-
-	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
-	// this needs to keep running continuously because storetheindex
-	// will come to fetch for advertisements "when it feels like it"
-	s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine()
-	if err != nil {
-		return err
-	}
-
-	s.Node.ArEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-
-		arHandle, err := autoretrieve.ParseContextID(contextID)
-		if err != nil {
-			return nil, err
-		}
-
-		var ar autoretrieve.Autoretrieve
-		// get the autoretrieve entry from the database
-		err = s.DB.Find(&ar, "handle = ?", arHandle).Error
-		if err != nil {
-			return nil, err
-		}
-
-		var newContents []Content
-		// find all new multihashes since the last time we advertised for this autoretrieve server
-		err = s.DB.Find(&newContents, "active = true and created_at >= ?", ar.LastAdvertisement).Error
-		if err != nil {
-			return nil, err
-		}
-
-		multihashes := []multihash.Multihash{}
-		for _, content := range newContents {
-			multihashes = append(multihashes, content.Cid.CID.Hash())
-		}
-
-		return &autoretrieve.SimpleEstuaryMhIterator{
-			Mh: multihashes,
-		}, nil
-	})
-
-	// start engine
-	s.Node.ArEngine.Start(context.Background())
-	defer s.Node.ArEngine.Shutdown()
-
-	// start ticker
-	ticker := time.NewTicker(tickInterval)
-	defer ticker.Stop()
-
-	for {
-		curTime = time.Now()
-		lastTickTime = curTime.Add(-tickInterval)
-		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err = s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
-		if err != nil {
-			log.Errorf("unable to query autoretrieve servers from database: %s", err)
-			return err
-		}
-		if len(autoretrieves) == 0 {
-			log.Infof("no autoretrieve servers online")
-			// wait for next tick, or quit
-			select {
-			case <-ticker.C:
-				continue
-			case <-quit:
-				break
-			}
-		}
-
-		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
-		// send announcement with new CIDs for each autoretrieve server
-		for _, ar := range autoretrieves {
-
-			newContextID = []byte("AR_" + ar.Handle)
-
-			retrievalAddresses := []string{}
-			providerID := ""
-			for _, fullAddr := range strings.Split(ar.Addresses, ",") {
-				arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
-				if err != nil {
-					log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
-					continue
-				}
-				providerID = arAddrInfo.ID.String()
-				retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
-			}
-			if providerID == "" {
-				log.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
-				continue
-			}
-			if len(retrievalAddresses) == 0 {
-				log.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
-				continue
-			}
-
-			var newContentsCount int64
-			err = s.DB.Model(&Content{}).Where("active = true and created_at >= ?", ar.LastAdvertisement).Count(&newContentsCount).Error
-			if err != nil {
-				log.Errorf("unable to query new CIDs from database: %s", err)
-				continue
-			}
-			if newContentsCount == 0 {
-				log.Debugf("no new CIDs to announce, skipping")
-				continue
-			}
-			log.Debugf("found %d new CIDs, announcing", newContentsCount)
-
-			log.Infof("sending announcement to %s", ar.Handle)
-			adCid, err := s.Node.ArEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
-			if err != nil {
-				log.Errorf("could not announce new CIDs: %s", err)
-				continue
-			}
-
-			ar.LastAdvertisement = time.Now()
-			if err := s.DB.Save(&ar).Error; err != nil {
-				return err
-			}
-
-			log.Infof("announced new CIDs: %s", adCid)
-		}
-
-		// wait for next tick, or quit
-		select {
-		case <-ticker.C:
-			continue
-		case <-quit:
-			break
-		}
-	}
 }
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
@@ -785,8 +576,14 @@ func main() {
 			return err
 		}
 
-		stopUpdateIndex := make(chan struct{})
-		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Second, stopUpdateIndex)
+		stopArEngineCh := make(chan struct{})
+		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(stopArEngineCh, time.Duration(intervalMinutes)*time.Minute, s.DB, s.Node.Host)
+		if err != nil {
+			return err
+		}
+
+		go s.Node.ArEngine.Run()
+		defer s.Node.ArEngine.Shutdown()
 
 		go func() {
 			time.Sleep(time.Second * 10)
@@ -810,9 +607,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
+	db.AutoMigrate(&util.Content{})
+	db.AutoMigrate(&util.Object{})
+	db.AutoMigrate(&util.ObjRef{})
 	db.AutoMigrate(&Collection{})
 	db.AutoMigrate(&CollectionRef{})
 
@@ -898,7 +695,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := s.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
