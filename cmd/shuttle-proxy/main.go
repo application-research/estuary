@@ -138,6 +138,10 @@ func (p *Proxy) handleContentAdd(c echo.Context) error {
 	req.Header = c.Request().Header.Clone()
 	req.Header.Set("Shuttle-Proxy", "true")
 
+	// propagate any query params
+	rq := c.Request().URL.Query()
+	req.URL.RawQuery = rq.Encode()
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
