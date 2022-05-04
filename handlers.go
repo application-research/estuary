@@ -200,6 +200,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	deals.GET("/query/:miner", s.handleQueryAsk)
 	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
+	deals.GET("/transfer/status/:id", s.handleTransferStatusByID)
 	deals.POST("/transfer/status", s.handleTransferStatus)
 	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
 	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
@@ -649,10 +650,16 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	if commpcid.Defined() {
+		carSize, err := s.CM.calculateCarSize(ctx, header.Roots[0])
+		if err != nil {
+			return fmt.Errorf("failed to calculate CAR size: %w", err)
+		}
+
 		opcr := PieceCommRecord{
-			Data:  util.DbCID{CID: rootCID},
-			Piece: util.DbCID{CID: commpcid},
-			Size:  commpSize,
+			Data:    util.DbCID{rootCID},
+			Piece:   util.DbCID{commpcid},
+			Size:    commpSize,
+			CarSize: carSize,
 		}
 
 		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
@@ -1458,6 +1465,15 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 	return c.JSON(200, status)
 }
 
+func (s *Server) handleTransferStatusByID(c echo.Context) error {
+	status, err := s.FilClient.TransferStatusByID(context.TODO(), c.Param("id"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, status)
+}
+
 // handleTransferInProgress godoc
 // @Summary      Transfer In Progress
 // @Description  This endpoint returns the in-progress transfers
@@ -1472,12 +1488,7 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 		return err
 	}
 
-	out := make(map[string]*filclient.ChannelState)
-	for chanid, state := range transfers {
-		out[chanid.String()] = filclient.ChannelStateConv(state)
-	}
-
-	return c.JSON(200, out)
+	return c.JSON(200, transfers)
 }
 
 func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
@@ -1608,7 +1619,22 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.FilClient.DealStatus(ctx, addr, propCid)
+	var d contentDeal
+	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		return err
+	}
+
+	// Get deal UUID, if there is one for the deal.
+	// (There should be a UUID for deals made with deal protocol v1.2.0)
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+		}
+		dealUUID = &parsed
+	}
+	status, err := s.FilClient.DealStatus(ctx, addr, propCid, dealUUID)
 	if err != nil {
 		return xerrors.Errorf("getting deal status: %w", err)
 	}
@@ -2000,9 +2026,23 @@ func (s *Server) handleDealStats(c echo.Context) error {
 			return err
 		}
 
-		st, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID)
+		// Get deal UUID, if there is one for the deal.
+		// (There should be a UUID for deals made with deal protocol v1.2.0)
+		var dealUUID *uuid.UUID
+		if d.DealUUID != "" {
+			parsed, err := uuid.Parse(d.DealUUID)
+			if err != nil {
+				return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+			}
+			dealUUID = &parsed
+		}
+		st, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 		if err != nil {
 			log.Errorf("checking deal status failed (%s): %s", maddr, err)
+			continue
+		}
+		if st.Proposal == nil {
+			log.Errorf("deal status proposal is empty (%s): %s", maddr, d.PropCid.CID)
 			continue
 		}
 

@@ -32,16 +32,18 @@ func (c *Command) HasTraceCarrier() bool {
 }
 
 type CmdParams struct {
-	AddPin           *AddPin           `json:",omitempty"`
-	ComputeCommP     *ComputeCommP     `json:",omitempty"`
-	TakeContent      *TakeContent      `json:",omitempty"`
-	AggregateContent *AggregateContent `json:",omitempty"`
-	StartTransfer    *StartTransfer    `json:",omitempty"`
-	ReqTxStatus      *ReqTxStatus      `json:",omitempty"`
-	SplitContent     *SplitContent     `json:",omitempty"`
-	RetrieveContent  *RetrieveContent  `json:",omitempty"`
-	UnpinContent     *UnpinContent     `json:",omitempty"`
-	RestartTransfer  *RestartTransfer  `json:",omitempty"`
+	AddPin                 *AddPin                 `json:",omitempty"`
+	ComputeCommP           *ComputeCommP           `json:",omitempty"`
+	TakeContent            *TakeContent            `json:",omitempty"`
+	AggregateContent       *AggregateContent       `json:",omitempty"`
+	StartTransfer          *StartTransfer          `json:",omitempty"`
+	PrepareForDataRequest  *PrepareForDataRequest  `json:",omitempty"`
+	CleanupPreparedRequest *CleanupPreparedRequest `json:",omitempty"`
+	ReqTxStatus            *ReqTxStatus            `json:",omitempty"`
+	SplitContent           *SplitContent           `json:",omitempty"`
+	RetrieveContent        *RetrieveContent        `json:",omitempty"`
+	UnpinContent           *UnpinContent           `json:",omitempty"`
+	RestartTransfer        *RestartTransfer        `json:",omitempty"`
 }
 
 const CMD_ComputeCommP = "ComputeCommP"
@@ -86,11 +88,28 @@ type StartTransfer struct {
 	DataCid   cid.Cid
 }
 
+const CMD_PrepareForDataRequest = "PrepareForDataRequest"
+
+type PrepareForDataRequest struct {
+	DealDBID    uint
+	AuthToken   string
+	ProposalCid cid.Cid
+	PayloadCid  cid.Cid
+	Size        uint64
+}
+
+const CMD_CleanupPreparedRequest = "CleanupPreparedRequest"
+
+type CleanupPreparedRequest struct {
+	DealDBID  uint
+	AuthToken string
+}
+
 const CMD_ReqTxStatus = "ReqTxStatus"
 
 type ReqTxStatus struct {
 	DealDBID uint
-	ChanID   datatransfer.ChannelID
+	ChanID   string
 }
 
 const CMD_SplitContent = "SplitContent"
@@ -177,9 +196,10 @@ type PinComplete struct {
 const OP_CommPComplete = "CommPComplete"
 
 type CommPComplete struct {
-	Data  cid.Cid
-	CommP cid.Cid
-	Size  abi.UnpaddedPieceSize
+	Data    cid.Cid
+	CommP   cid.Cid
+	CarSize uint64
+	Size    abi.UnpaddedPieceSize
 }
 
 const OP_TransferStarted = "TransferStarted"

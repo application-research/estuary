@@ -27,6 +27,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
@@ -175,6 +176,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
+		case "announce":
+			_, err := multiaddr.NewMultiaddr(cctx.String("announce"))
+			if err != nil {
+				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
+			}
+			cfg.NodeConfig.AnnounceAddrs = []string{cctx.String("announce")}
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -251,6 +258,11 @@ func main() {
 			Usage:   "address for the api server to listen on",
 			Value:   cfg.ApiListen,
 			EnvVars: []string{"ESTUARY_API_LISTEN"},
+		},
+		&cli.StringFlag{
+			Name:    "announce",
+			Usage:   "announce address for the libp2p server to listen on",
+			EnvVars: []string{"ESTUARY_ANNOUNCE"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
@@ -435,7 +447,6 @@ func main() {
 		}
 
 		api, closer, err := lcli.GetGatewayAPI(cctx)
-		// api, closer, err := lcli.GetFullNodeAPI(cctx)
 		if err != nil {
 			return err
 		}
@@ -716,7 +727,9 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 	for _, d := range deals {
 		chid, err := d.ChannelID()
 		if err != nil {
-			log.Errorf("failed to get channel id from deal %d: %s", d.ID, err)
+			// Only legacy (push) transfers need to be restarted by Estuary.
+			// Newer (pull) transfers are restarted by the Storage Provider.
+			// So if it's not a legacy channel ID, ignore it.
 			continue
 		}
 
