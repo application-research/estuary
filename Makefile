@@ -17,7 +17,6 @@ GOFLAGS:=
 all: build
 
 ## FFI
-
 FFI_PATH:=extern/filecoin-ffi/
 FFI_DEPS:=.install-filcrypto
 FFI_DEPS:=$(addprefix $(FFI_PATH),$(FFI_DEPS))
@@ -42,6 +41,9 @@ $(MODULES): build/.update-modules ;
 # dummy file that marks the last time modules were updated
 build/.update-modules:
 	git submodule update --init --recursive
+ifneq ($(FFI_COMMIT_HASH),"")
+	git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q $(FFI_COMMIT_HASH)
+endif
 	touch $@
 
 CLEAN+=build/.update-modules

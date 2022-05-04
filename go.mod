@@ -10,7 +10,7 @@ require (
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/dustin/go-humanize v1.0.0
-	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5 // indirect
+	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5
 	github.com/filecoin-project/go-address v0.0.6
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
@@ -20,7 +20,7 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.1.5
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.1.3
-	github.com/filecoin-project/lotus v1.15.1-rc5
+	github.com/filecoin-project/lotus v1.15.1
 	github.com/filecoin-project/specs-actors/v6 v6.0.1
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
@@ -86,6 +86,8 @@ require (
 	gorm.io/driver/sqlite v1.1.5
 	gorm.io/gorm v1.21.15
 )
+
+require github.com/pkg/errors v0.9.1
 
 require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
@@ -307,7 +309,6 @@ require (
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pelletier/go-toml v1.9.4 // indirect
 	github.com/petar/GoLLRB v0.0.0-20210522233825-ae3b015fd3e9 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/polydawn/refmt v0.0.0-20201211092308-30ac6d18308e // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
