@@ -1671,7 +1671,7 @@ type getInvitesResp struct {
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
-	if err := s.DB.Debug().Model(&InviteCode{}).
+	if err := s.DB.Model(&InviteCode{}).
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
@@ -3174,8 +3174,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	}
 
 	contents := []Content{}
-	if err := s.DB.Debug().
-		Model(CollectionRef{}).
+	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*").
