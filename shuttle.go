@@ -287,9 +287,10 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	defer span.End()
 
 	opcr := PieceCommRecord{
-		Data:  util.DbCID{resp.Data},
-		Piece: util.DbCID{resp.CommP},
-		Size:  resp.Size,
+		Data:    util.DbCID{resp.Data},
+		Piece:   util.DbCID{resp.CommP},
+		Size:    resp.Size,
+		CarSize: resp.CarSize,
 	}
 
 	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
@@ -321,7 +322,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return err
 		}
 	} else if param.State != nil {
-		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.ChannelID.String()).Error; err != nil {
+		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.TransferID).Error; err != nil {
 			return err
 		}
 	} else {

@@ -353,7 +353,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
+			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}
@@ -361,8 +361,9 @@ func main() {
 			log.Infof("commp generation over %d bytes took: %s", size, time.Since(start))
 
 			res := &commpResult{
-				CommP: commpcid,
-				Size:  size,
+				CommP:   commpcid,
+				Size:    size,
+				CarSize: carSize,
 			}
 
 			return res, nil
@@ -428,6 +429,7 @@ func main() {
 			}
 		}
 
+		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
 			chid := st.ChannelID().String()
 			s.tcLk.Lock()
@@ -449,6 +451,34 @@ func main() {
 				})
 			}
 		})
+
+		// Subscribe to data transfer events from Boost
+		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
+			if st.Status == datatransfer.Requested {
+				go func() {
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op: drpc.OP_TransferStarted,
+						Params: drpc.MsgParams{
+							TransferStarted: &drpc.TransferStarted{
+								DealDBID: dbid,
+								Chanid:   st.TransferID,
+							},
+						},
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
+					}
+				}()
+			}
+
+			go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+				Chanid:   st.TransferID,
+				DealDBID: dbid,
+				State:    &st,
+			})
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
 
 		go func() {
 			http.Handle("/debug/metrics", estumetrics.Exporter())
@@ -548,9 +578,9 @@ func main() {
 				var received uint64
 
 				for _, xfer := range txs {
-					byState[xfer.Status()]++
-					sent += xfer.Sent()
-					received += xfer.Received()
+					byState[xfer.Status]++
+					sent += xfer.Sent
+					received += xfer.Received
 				}
 
 				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
@@ -1233,13 +1263,19 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	if commpcid.Defined() {
+		carSize, err := s.calculateCarSize(root)
+		if err != nil {
+			return xerrors.Errorf("failed to calculate CAR size: %w", err)
+		}
+
 		if err := s.sendRpcMessage(ctx, &drpc.Message{
 			Op: drpc.OP_CommPComplete,
 			Params: drpc.MsgParams{
 				CommPComplete: &drpc.CommPComplete{
-					Data:  root,
-					CommP: commpcid,
-					Size:  commpSize,
+					Data:    root,
+					CommP:   commpcid,
+					Size:    commpSize,
+					CarSize: carSize,
 				},
 			},
 		}); err != nil {
@@ -1253,6 +1289,27 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
+}
+
+// calculateCarSize works out the CAR size using the cids and block sizes
+// for the content stored in the DB
+func (s *Shuttle) calculateCarSize(data cid.Cid) (uint64, error) {
+	var objects []Object
+	where := "id in (select object from objref where content = (select id from content where cid = ?))"
+	if err := s.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
+		return 0, err
+	}
+
+	if len(objects) == 0 {
+		return 0, fmt.Errorf("not found")
+	}
+
+	os := make([]util.Object, len(objects))
+	for i, o := range objects {
+		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
+	}
+
+	return util.CalculateCarSize(data, os)
 }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -1948,7 +2005,12 @@ func writeAllGoroutineStacks(w io.Writer) error {
 
 func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 	ctx := e.Request().Context()
-	transfers, err := s.Filc.TransfersInProgress(ctx)
+
+	// Get transfers for deals make with the v1.1.0 deal protocol.
+	// Note that we dont need to restart deals made with the v1.2.0 deal
+	// protocol because these are restarted by the Storage Provider (not by
+	// Estuary).
+	transfers, err := s.Filc.V110TransfersInProgress(ctx)
 	if err != nil {
 		return err
 	}

@@ -5,10 +5,9 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"math/rand"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	util "github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	"github.com/application-research/filclient"
+	"github.com/filecoin-project/boost/transport/httptransport"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -42,6 +42,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -1042,6 +1043,7 @@ type contentDeal struct {
 	gorm.Model
 	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
+	DealUUID         string     `json:"dealUuid"`
 	Miner            string     `json:"miner"`
 	DealID           int64      `json:"dealId"`
 	Failed           bool       `json:"failed"`
@@ -1066,31 +1068,13 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 		return datatransfer.ChannelID{}, ErrNoChannelID
 	}
 
-	parts := strings.Split(cd.DTChan, "-")
-	if len(parts) != 3 {
-		return datatransfer.ChannelID{}, fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record")
-	}
-
-	initiator, err := peer.Decode(parts[0])
+	chid, err := filclient.ChannelIDFromString(cd.DTChan)
 	if err != nil {
+		err = fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record: %w", err)
 		return datatransfer.ChannelID{}, err
 	}
 
-	responder, err := peer.Decode(parts[1])
-	if err != nil {
-		return datatransfer.ChannelID{}, err
-	}
-
-	id, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return datatransfer.ChannelID{}, err
-	}
-
-	return datatransfer.ChannelID{
-		Initiator: initiator,
-		Responder: responder,
-		ID:        datatransfer.TransferID(id),
-	}, nil
+	return *chid, nil
 }
 
 func (cm *ContentManager) contentInStagingZone(ctx context.Context, content Content) bool {
@@ -1367,7 +1351,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		if pc == nil {
 			// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
 			go func() {
-				_, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
+				_, _, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 				if err != nil {
 					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 					done(time.Minute * 5)
@@ -1529,12 +1513,30 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	// case where deal isnt yet on chain...
 
-	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID)
+	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
-	provds, err := cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID)
+
+	// Get deal UUID, if there is one for the deal.
+	// (There should be a UUID for deals made with deal protocol v1.2.0)
+	statusCheckID := d.PropCid.CID.String()
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		statusCheckID = d.DealUUID
+		parsed, parseErr := uuid.Parse(d.DealUUID)
+		if parseErr == nil {
+			dealUUID = &parsed
+		} else {
+			err = fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, parseErr)
+		}
+	}
+
+	var provds *storagemarket.ProviderDealState
+	if err == nil {
+		provds, err = cm.FilClient.DealStatus(subctx, maddr, d.PropCid.CID, dealUUID)
+	}
 	if err != nil {
-		log.Warnf("failed to check deal status with miner %s: %s", maddr, err)
+		log.Warnf("failed to check deal status for deal %s with miner %s: %s", statusCheckID, maddr, err)
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
 		expired, err := cm.dealHasExpired(ctx, d)
@@ -1557,7 +1559,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	if provds.State == storagemarket.StorageDealError {
-		log.Errorf("deal state from miner is error: %s", provds.Message)
+		log.Errorf("deal state for deal %s from miner %s is error: %s",
+			statusCheckID, maddr.String(), provds.Message)
 	}
 
 	content, err := cm.getContent(d.Content)
@@ -1620,7 +1623,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	if provds.Proposal == nil {
-		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID)
+		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 		if time.Since(d.CreatedAt) > time.Hour*24*14 {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
@@ -1631,7 +1634,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			return DEAL_CHECK_UNKNOWN, nil
 
 		}
-		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner for deal status check")
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner %s for deal %s deal status check: %s",
+			statusCheckID, maddr.String(), provds.Message)
 	}
 
 	if provds.Proposal.StartEpoch < head.Height() {
@@ -1678,11 +1682,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			// No channel ID yet, shouldnt be able to get here actually
 			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
 		} else {
-			chid, err := d.ChannelID()
-			if err != nil {
-				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: %w", d.ID, err)
+			if d.DTChan == "" {
+				return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to parse dtchan in deal %d: empty dtchan", d.ID)
 			}
-			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, chid); err != nil {
+			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, d.DTChan); err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 
@@ -1827,32 +1830,24 @@ func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *content
 		return nil, err
 	}
 
-	chanid, err := d.ChannelID()
-	switch err {
-	case nil:
-		chanst, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
-			return nil, err
-		}
-		return chanst, nil
-	case ErrNoChannelID:
-		chanst, err := cm.FilClient.TransferStatusForContent(ctx, ccid, miner)
-		if err != nil && err != filclient.ErrNoTransferFound {
-			return nil, err
-		}
+	if d.DTChan != "" {
+		return cm.FilClient.TransferStatusByID(ctx, d.DTChan)
+	}
 
-		if chanst != nil {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-				"dt_chan": chanst.ChannelID.String(),
-			}).Error; err != nil {
-				return nil, err
-			}
-		}
-
-		return chanst, nil
-	default:
+	chanst, err := cm.FilClient.TransferStatusForContent(ctx, ccid, miner)
+	if err != nil && err != filclient.ErrNoTransferFound {
 		return nil, err
 	}
+
+	if chanst != nil {
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+			"dt_chan": chanst.TransferID,
+		}).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	return chanst, nil
 }
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
@@ -1986,7 +1981,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}
 
-	_, size, err := cm.getPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
+	_, _, size, err := cm.getPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
 	if err != nil {
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
@@ -2063,13 +2058,13 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	}
 
 	deals := make([]*contentDeal, len(ms))
-	responses := make([]*network.SignedResponse, len(ms))
+	responses := make([]*bool, len(ms))
 	for i, p := range proposals {
 		if p == nil {
 			continue
 		}
 
-		dealresp, err := cm.FilClient.SendProposal(ctx, p)
+		proto, err := cm.FilClient.DealProtocolForMiner(ctx, ms[i])
 		if err != nil {
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   ms[i],
@@ -2080,57 +2075,79 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		// TODO: verify signature!
-		switch dealresp.Response.State {
-		case storagemarket.StorageDealError:
-			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "propose",
-				Message: dealresp.Response.Message,
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		case storagemarket.StorageDealProposalRejected:
-			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "propose",
-				Message: dealresp.Response.Message,
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		default:
-			if err := cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "propose",
-				Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
-				Content: content.ID,
-			}); err != nil {
-				return err
-			}
-		case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-			responses[i] = dealresp
-
-			cd := &contentDeal{
-				Content:  content.ID,
-				PropCid:  util.DbCID{dealresp.Response.Proposal},
-				Miner:    ms[i].String(),
-				Verified: verified,
-			}
-
-			if err := cm.DB.Create(cd).Error; err != nil {
-				return xerrors.Errorf("failed to create database entry for deal: %w", err)
-			}
-
-			deals[i] = cd
+		propnd, err := cborutil.AsIpld(p.DealProposal)
+		if err != nil {
+			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 		}
+
+		dealUUID := uuid.New()
+		cd := &contentDeal{
+			Content:  content.ID,
+			PropCid:  util.DbCID{propnd.Cid()},
+			DealUUID: dealUUID.String(),
+			Miner:    ms[i].String(),
+			Verified: verified,
+		}
+
+		if err := cm.DB.Create(cd).Error; err != nil {
+			return xerrors.Errorf("failed to create database entry for deal: %w", err)
+		}
+
+		// Send the deal proposal to the storage provider
+		var cleanupDealPrep func() error
+		var propPhase bool
+		isPushTransfer := proto == filclient.DealProtocolv110
+		switch proto {
+		case filclient.DealProtocolv110:
+			propPhase, err = cm.FilClient.SendProposalV110(ctx, *p, propnd.Cid())
+		case filclient.DealProtocolv120:
+			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *p, propnd.Cid(), dealUUID, cd.ID)
+		default:
+			err = fmt.Errorf("unrecognized deal protocol %s", proto)
+		}
+
+		if err != nil {
+			// Clean up the database entry
+			if err := cm.DB.Delete(&contentDeal{}, cd).Error; err != nil {
+				return fmt.Errorf("failed to delete content deal from db: %w", err)
+			}
+
+			if cleanupDealPrep != nil {
+				// Clean up the preparation for deal request
+				if err := cleanupDealPrep(); err != nil {
+					log.Errorw("cleaning up deal prepared request", "error", err)
+				}
+			}
+
+			// Record a deal failure
+			phase := "send-proposal"
+			if propPhase {
+				phase = "propose"
+			}
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   ms[i],
+				Phase:   phase,
+				Message: err.Error(),
+				Content: content.ID,
+			})
+			continue
+		}
+
+		responses[i] = &isPushTransfer
+		deals[i] = cd
 	}
 
 	// Now start up some data transfers!
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
-	for i, resp := range responses {
-		if resp == nil {
+	for i, isPushTransfer := range responses {
+		if isPushTransfer == nil {
+			continue
+		}
+
+		// If the data transfer is a pull transfer, we don't need to explicitly
+		// start the transfer (the Storage Provider will start pulling data as
+		// soon as it accepts the proposal)
+		if !(*isPushTransfer) {
 			continue
 		}
 
@@ -2138,11 +2155,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		if cd == nil {
 			log.Warnf("have no contentDeal for response we are about to start transfer on")
 			continue
-		}
-
-		// im so paranoid
-		if cd.PropCid.CID != resp.Response.Proposal {
-			log.Errorf("proposal in saved deal did not match response (%s != %s)", cd.PropCid.CID, resp.Response.Proposal)
 		}
 
 		err := cm.StartDataTransfer(ctx, cd)
@@ -2154,6 +2166,73 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 	}
 
 	return nil
+}
+
+func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc string, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func() error, bool, error) {
+	// In deal protocol v120 the transfer will be initiated by the
+	// storage provider (a pull transfer) so we need to prepare for
+	// the data request
+
+	// Create an auth token to be used in the request
+	authToken, err := httptransport.GenerateAuthToken()
+	if err != nil {
+		return nil, false, xerrors.Errorf("generating auth token for deal: %w", err)
+	}
+
+	rootCid := netprop.Piece.Root
+	size := netprop.Piece.RawBlockSize
+	var announceAddr multiaddr.Multiaddr
+	if contentLoc == "local" {
+		if len(cm.Node.Config.AnnounceAddrs) == 0 {
+			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured")
+		}
+
+		addrstr := cm.Node.Config.AnnounceAddrs[0] + "/p2p/" + cm.Node.Host.ID().String()
+		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
+		if err != nil {
+			return nil, false, xerrors.Errorf("cannot parse announce address '%s': %w", addrstr, err)
+		}
+
+		// Add an auth token for the data to the auth DB
+		err := cm.FilClient.Libp2pTransferMgr.PrepareForDataRequest(ctx, dbid, authToken, propCid, rootCid, size)
+		if err != nil {
+			return nil, false, xerrors.Errorf("preparing for data request: %w", err)
+		}
+	} else {
+		addrInfo := cm.shuttleAddrInfo(contentLoc)
+		// TODO: This is the address that the shuttle reports to the Estuary
+		// primary node, but is it ok if it's also the address reported
+		// as where to download files publically? If it's a public IP does
+		// that mean that messages from Estuary primary node would go through
+		// public internet to get to shuttle?
+		if addrInfo == nil || len(addrInfo.Addrs) == 0 {
+			return nil, false, xerrors.Errorf("no announce address found for shuttle: %s", contentLoc)
+		}
+		addrstr := addrInfo.Addrs[0].String() + "/p2p/" + addrInfo.ID.String()
+		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
+		if err != nil {
+			return nil, false, xerrors.Errorf("cannot parse announce address '%s': %w", addrstr, err)
+		}
+
+		// If the content is not on the primary estuary node (it's on a shuttle)
+		// The Storage Provider will pull the data from the shuttle,
+		// so add an auth token for the data to the shuttle's auth DB
+		err := cm.sendPrepareForDataRequestCommand(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		if err != nil {
+			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
+		}
+	}
+
+	cleanup := func() error {
+		if contentLoc == "local" {
+			return cm.FilClient.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken)
+		}
+		return cm.sendCleanupPreparedRequestCommand(ctx, contentLoc, dbid, authToken)
+	}
+
+	// Send the deal proposal to the storage provider
+	propPhase, err := cm.FilClient.SendProposalV120(ctx, dbid, netprop, dealUUID, announceAddr, authToken)
+	return cleanup, propPhase, err
 }
 
 func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content, miner address.Address, verified bool) (uint, error) {
@@ -2200,8 +2279,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 		return 0, err
 	}
 
-	var deal *contentDeal
-	dealresp, err := cm.FilClient.SendProposal(ctx, prop)
+	proto, err := cm.FilClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
 		cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
@@ -2209,55 +2287,75 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 			Message: err.Error(),
 			Content: content.ID,
 		})
-		return 0, fmt.Errorf("failed to send proposal to miner: %w", err)
+		return 0, err
 	}
 
-	// TODO: verify signature!
-	switch dealresp.Response.State {
-	case storagemarket.StorageDealError:
-		if err := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "propose",
-			Message: dealresp.Response.Message,
-			Content: content.ID,
-		}); err != nil {
-			return 0, err
-		}
-		return 0, fmt.Errorf("deal errored: %s", dealresp.Response.Message)
-	case storagemarket.StorageDealProposalRejected:
-		if err := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "propose",
-			Message: dealresp.Response.Message,
-			Content: content.ID,
-		}); err != nil {
-			return 0, err
-		}
-		return 0, fmt.Errorf("deal rejected: %s", dealresp.Response.Message)
+	propnd, err := cborutil.AsIpld(prop.DealProposal)
+	if err != nil {
+		return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
+	}
+
+	dealUUID := uuid.New()
+	deal := &contentDeal{
+		Content:  content.ID,
+		PropCid:  util.DbCID{propnd.Cid()},
+		DealUUID: dealUUID.String(),
+		Miner:    miner.String(),
+		Verified: verified,
+	}
+
+	if err := cm.DB.Create(deal).Error; err != nil {
+		return 0, xerrors.Errorf("failed to create database entry for deal: %w", err)
+	}
+
+	// Send the deal proposal to the storage provider
+	var cleanupDealPrep func() error
+	var propPhase bool
+	isPushTransfer := proto == filclient.DealProtocolv110
+	switch proto {
+	case filclient.DealProtocolv110:
+		propPhase, err = cm.FilClient.SendProposalV110(ctx, *prop, propnd.Cid())
+	case filclient.DealProtocolv120:
+		cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), dealUUID, deal.ID)
 	default:
-		if err := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "propose",
-			Message: fmt.Sprintf("unrecognized response state %d: %s", dealresp.Response.State, dealresp.Response.Message),
-			Content: content.ID,
-		}); err != nil {
-			return 0, err
-		}
-		return 0, fmt.Errorf("unrecognized proposal response state %d: %s", dealresp.Response.State, dealresp.Response.Message)
-	case storagemarket.StorageDealWaitingForData, storagemarket.StorageDealProposalAccepted:
-
-		deal = &contentDeal{
-			Content:  content.ID,
-			PropCid:  util.DbCID{dealresp.Response.Proposal},
-			Miner:    miner.String(),
-			Verified: verified,
-		}
-
-		if err := cm.DB.Create(deal).Error; err != nil {
-			return 0, xerrors.Errorf("failed to create database entry for deal: %w", err)
-		}
+		err = fmt.Errorf("unrecognized deal protocol %s", proto)
 	}
 
+	if err != nil {
+		// Clean up the database entry
+		if err := cm.DB.Delete(&contentDeal{}, deal).Error; err != nil {
+			return 0, fmt.Errorf("failed to delete content deal from db: %w", err)
+		}
+
+		if cleanupDealPrep != nil {
+			// Clean up the preparation for deal request
+			if err := cleanupDealPrep(); err != nil {
+				log.Errorw("cleaning up deal prepared request", "error", err)
+			}
+		}
+
+		// Record a deal failure
+		phase := "send-proposal"
+		if propPhase {
+			phase = "propose"
+		}
+		cm.recordDealFailure(&DealFailureError{
+			Miner:   miner,
+			Phase:   phase,
+			Message: err.Error(),
+			Content: content.ID,
+		})
+		return 0, err
+	}
+
+	// If the data transfer is a pull transfer, we don't need to explicitly
+	// start the transfer (the Storage Provider will start pulling data as
+	// soon as it accepts the proposal)
+	if !isPushTransfer {
+		return deal.ID, nil
+	}
+
+	// It's a push transfer, so start the data transfer
 	if err := cm.StartDataTransfer(ctx, deal); err != nil {
 		return 0, fmt.Errorf("failed to start data transfer: %w", err)
 	}
@@ -2390,9 +2488,10 @@ func averageAskPrice(asks []*network.AskResponse) types.FIL {
 }
 
 type PieceCommRecord struct {
-	Data  util.DbCID `gorm:"unique"`
-	Piece util.DbCID
-	Size  abi.UnpaddedPieceSize
+	Data    util.DbCID `gorm:"unique"`
+	Piece   util.DbCID
+	CarSize uint64
+	Size    abi.UnpaddedPieceSize
 }
 
 func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord, error) {
@@ -2413,12 +2512,36 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 	return &pcr, nil
 }
 
+// calculateCarSize works out the CAR size using the cids and block sizes
+// for the content stored in the DB
+func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (uint64, error) {
+	_, span := cm.tracer.Start(ctx, "calculateCarSize")
+	defer span.End()
+
+	var objects []Object
+	where := "id in (select object from obj_refs where content = (select id from contents where cid = ?))"
+	if err := cm.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
+		return 0, err
+	}
+
+	if len(objects) == 0 {
+		return 0, fmt.Errorf("not found")
+	}
+
+	os := make([]util.Object, len(objects))
+	for i, o := range objects {
+		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
+	}
+
+	return util.CalculateCarSize(data, os)
+}
+
 var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
 
-func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	var cont Content
 	if err := cm.DB.First(&cont, "cid = ?", data.Bytes()).Error; err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
 	if cont.Location != "local" {
@@ -2430,44 +2553,65 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 				},
 			},
 		}); err != nil {
-			return cid.Undef, 0, err
+			return cid.Undef, 0, 0, err
 		}
 
-		return cid.Undef, 0, ErrWaitForRemoteCompute
+		return cid.Undef, 0, 0, ErrWaitForRemoteCompute
 	}
 
 	log.Infow("computing piece commitment", "data", cont.Cid.CID)
 	return filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
 }
 
-func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, abi.UnpaddedPieceSize, error) {
+func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	_, span := cm.tracer.Start(ctx, "getPieceComm")
 	defer span.End()
 
+	// Get the piece comm record from the DB
 	pcr, err := cm.lookupPieceCommRecord(data)
 	if err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 	if pcr != nil {
-		return pcr.Piece.CID, pcr.Size, nil
+		if pcr.CarSize > 0 {
+			return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
+		}
+
+		// The CAR size field was added later, so if it's not on the piece comm
+		// record, calculate it
+		carSize, err := cm.calculateCarSize(ctx, data)
+		if err != nil {
+			return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
+		}
+
+		pcr.CarSize = carSize
+
+		// Save updated car size to DB
+		cm.DB.Model(PieceCommRecord{}).Where("piece = ?", pcr.Piece).UpdateColumns(map[string]interface{}{
+			"car_size": carSize,
+		}) //nolint:errcheck
+
+		return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
 	}
 
-	pc, size, err := cm.runPieceCommCompute(ctx, data, bs)
+	// The piece comm record isn't in the DB so calculate it
+	pc, carSize, size, err := cm.runPieceCommCompute(ctx, data, bs)
 	if err != nil {
-		return cid.Undef, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
+		return cid.Undef, 0, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
 	}
 
 	opcr := PieceCommRecord{
-		Data:  util.DbCID{data},
-		Piece: util.DbCID{pc},
-		Size:  size,
+		Data:    util.DbCID{data},
+		Piece:   util.DbCID{pc},
+		CarSize: carSize,
+		Size:    size,
 	}
 
 	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
-		return cid.Undef, 0, err
+		return cid.Undef, 0, 0, err
 	}
 
-	return pc, size, nil
+	return pc, carSize, size, nil
 }
 
 func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error) {
@@ -2762,7 +2906,19 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
 			defer cancel()
 
-			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID)
+			// Get deal UUID, if there is one for the deal.
+			// (There should be a UUID for deals made with deal protocol v1.2.0)
+			var dealUUID *uuid.UUID
+			if d.DealUUID != "" {
+				parsed, parseErr := uuid.Parse(d.DealUUID)
+				if parseErr != nil {
+					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+						d.DealUUID, d.ID, miner, parseErr)
+					return
+				}
+				dealUUID = &parsed
+			}
+			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return
@@ -2925,6 +3081,33 @@ func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, err
 	return &conn.addrInfo, nil
 }
 
+func (cm *ContentManager) sendPrepareForDataRequestCommand(ctx context.Context, loc string, dbid uint, authToken string, propCid cid.Cid, payloadCid cid.Cid, size uint64) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_PrepareForDataRequest,
+		Params: drpc.CmdParams{
+			PrepareForDataRequest: &drpc.PrepareForDataRequest{
+				DealDBID:    dbid,
+				AuthToken:   authToken,
+				ProposalCid: propCid,
+				PayloadCid:  payloadCid,
+				Size:        size,
+			},
+		},
+	})
+}
+
+func (cm *ContentManager) sendCleanupPreparedRequestCommand(ctx context.Context, loc string, dbid uint, authToken string) error {
+	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_CleanupPreparedRequest,
+		Params: drpc.CmdParams{
+			CleanupPreparedRequest: &drpc.CleanupPreparedRequest{
+				DealDBID:  dbid,
+				AuthToken: authToken,
+			},
+		},
+	})
+}
+
 func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *contentDeal, datacid cid.Cid) error {
 	miner, err := cd.MinerAddr()
 	if err != nil {
@@ -2959,7 +3142,7 @@ func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont
 	})
 }
 
-func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid datatransfer.ChannelID) error {
+func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_ReqTxStatus,
 		Params: drpc.CmdParams{
