@@ -15,21 +15,20 @@ type EstuaryRemoteConfig struct {
 }
 
 type Shuttle struct {
-	DatabaseConnString      string
-	StagingDataDir          string
-	DataDir                 string
-	ApiListen               string
-	AutoRetrieve            bool
-	Hostname                string
-	Private                 bool
-	Dev                     bool
-	NoReloadPinQueue        bool
-	NodeConfig              Node
-	JaegerConfig            Jaeger
-	ContentConfig           Content
-	LoggingConfig           Logging
-	ConnectionManagerConfig ConnectionManager
-	EstuaryConfig           EstuaryRemoteConfig
+	DatabaseConnString string
+	StagingDataDir     string
+	DataDir            string
+	ApiListen          string
+	AutoRetrieve       bool
+	Hostname           string
+	Private            bool
+	Dev                bool
+	NoReloadPinQueue   bool
+	NodeConfig         Node
+	JaegerConfig       Jaeger
+	ContentConfig      Content
+	LoggingConfig      Logging
+	EstuaryConfig      EstuaryRemoteConfig
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -137,11 +136,12 @@ func NewShuttle() *Shuttle {
 					FD: 1024,
 				},
 			},
+			ConnectionManagerConfig: ConnectionManager{
+				LowWater:  2000,
+				HighWater: 3000,
+			},
 		},
-		ConnectionManagerConfig: ConnectionManager{
-			LowWater:  2000,
-			HighWater: 3000,
-		},
+
 		EstuaryConfig: EstuaryRemoteConfig{
 			Api:       "api.estuary.tech",
 			Handle:    "",
