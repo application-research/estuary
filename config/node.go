@@ -1,5 +1,7 @@
 package config
 
+import rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+
 type Node struct {
 	ListenAddrs   []string `json:"Swarm"`
 	AnnounceAddrs []string `json:"Announce"`
@@ -18,7 +20,9 @@ type Node struct {
 
 	WalletDir string
 
-	BitswapConfig BitswapConfig
+	BitswapConfig           BitswapConfig
+	LimitsConfig            Limits
+	ConnectionManagerConfig ConnectionManager
 }
 
 type BitswapConfig struct {
@@ -39,6 +43,12 @@ func (cfg *Node) HasListener(find string) bool {
 		}
 	}
 	return false
+}
+
+func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {
+	lim := rcmgr.NewDefaultLimiter()
+	cfg.LimitsConfig.apply(lim)
+	return lim
 }
 
 // Sets the root of many paths

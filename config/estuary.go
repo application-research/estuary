@@ -87,6 +87,39 @@ func NewEstuary() *Estuary {
 			WriteLogDir:      "",
 			WriteLogTruncate: false,
 			NoLimiter:        true,
+
+			LimitsConfig: Limits{
+				SystemLimitConfig: SystemLimit{
+					MinMemory:      1 << 30,
+					MaxMemory:      10 << 30,
+					MemoryFraction: .2,
+
+					StreamsInbound:  64 << 10,
+					StreamsOutbound: 128 << 10,
+					Streams:         256 << 10,
+
+					ConnsInbound:  256,
+					ConnsOutbound: 256,
+					Conns:         1024,
+
+					FD: 8192,
+				},
+				TransientLimitConfig: TransientLimit{
+					StreamsInbound:  2 << 10,
+					StreamsOutbound: 4 << 10,
+					Streams:         4 << 10,
+
+					ConnsInbound:  256,
+					ConnsOutbound: 256,
+					Conns:         512,
+
+					FD: 1024,
+				},
+			},
+			ConnectionManagerConfig: ConnectionManager{
+				LowWater:  2000,
+				HighWater: 3000,
+			},
 		},
 	}
 

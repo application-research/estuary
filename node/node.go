@@ -132,9 +132,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	if cfg.NoLimiter {
 		rcm, err = network.NullResourceManager, nil
 	} else {
-		lim := rcmgr.NewDefaultLimiter()
-		lim.SystemLimits = lim.SystemLimits.WithFDLimit(8192).WithConnLimit(256, 256, 1024).WithStreamLimit(64<<10, 128<<10, 256<<10).WithMemoryLimit(0.2, 1<<30, 10<<30)
-		lim.TransientLimits = lim.TransientLimits.WithConnLimit(256, 256, 512).WithFDLimit(1024).WithStreamLimit(2<<10, 4<<10, 4<<10)
+		lim := cfg.GetLimiter()
 		rcm, err = rcmgr.NewResourceManager(lim)
 	}
 
@@ -144,7 +142,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
-	cmgr, err := connmgr.NewConnManager(2000, 3000)
+	cmgr, err := connmgr.NewConnManager(cfg.ConnectionManagerConfig.LowWater, cfg.ConnectionManagerConfig.HighWater)
 	if err != nil {
 		return nil, err
 	}
