@@ -121,7 +121,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 	}
 
 	// TODO: copied from the offloading method, need to refactor this into something better
-	q := cm.DB.Debug().Model(&ObjRef{}).
+	q := cm.DB.Model(&ObjRef{}).
 		Select("cid").
 		Joins("left join objects on obj_refs.object = objects.id").
 		Group("cid").
