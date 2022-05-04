@@ -42,6 +42,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -1395,6 +1396,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			done(time.Minute * 60)
 			return nil
 		}
+
+		bl, err := cm.FilClient.Balance(ctx)
+		if err != nil {
+			return errors.Wrap(err, "could not retrieve dataCap from client balance")
+		}
+
+		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
+			// how do we notify admin to top up datacap?
+			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+		}
+
 		go func() {
 			// make some more deals!
 			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
