@@ -124,6 +124,10 @@ github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239/go.mod h1:2FmKhYU
 github.com/antihax/optional v1.0.0/go.mod h1:uupD/76wgC+ih3iEmQUL+0Ugr19nfwCT1kdvxnR2qWY=
 github.com/apache/thrift v0.12.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
 github.com/apache/thrift v0.13.0/go.mod h1:cp2SuWMxlEZw2r+iP2GNCdIi4C1qmUzdZFSVb+bacwQ=
+github.com/application-research/filclient v0.0.0-20220402115018-19d824498dff h1:t3wPbOOgSadxSR2JNLYhDiny4m2/cYbQAt+ScZUvvAo=
+github.com/application-research/filclient v0.0.0-20220402115018-19d824498dff/go.mod h1:PN59aCl3CAEkFZhVYaWDjnLFZDlp+uBafHdrqjj3skk=
+github.com/application-research/filclient v0.0.0-20220504204501-ca86574e3ee5 h1:GrN7CNX0LJeQvAU84qywOvR8MciySWAZNm76VBdPgOE=
+github.com/application-research/filclient v0.0.0-20220504204501-ca86574e3ee5/go.mod h1:QSOQ2dcnSvucj23jOg535mvTMezoNV0bdJbIySoDaOg=
 github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402 h1:8l0IQrh8vwqihv5jNhKCYB+YGH5hGGFL7od/2ETWrZw=
 github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402/go.mod h1:86iZMWoyMLfLpYyd0aMPyECUpFwf8oZRjS5jJ9quZ7I=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
@@ -286,8 +290,6 @@ github.com/dgrijalva/jwt-go v3.2.0+incompatible/go.mod h1:E3ru+11k8xSBh+hMPgOLZm
 github.com/dgryski/go-farm v0.0.0-20190104051053-3adb47b1fb0f/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2 h1:tdlZCpZ/P9DhczCTSixgIKmwPv6+wP5DGjqLYw5SUiA=
 github.com/dgryski/go-farm v0.0.0-20190423205320-6a90982ecee2/go.mod h1:SqUrOPUnsFjfmXRMNPybcSiG0BgUW2AuFH8PAnS2iTw=
-github.com/dirkmc/filclient v0.0.0-20220322083823-8275b2372941 h1:gRL0bhugw0JZddks0R0xIG55NGiJ/8H1I+wZXAbIdxE=
-github.com/dirkmc/filclient v0.0.0-20220322083823-8275b2372941/go.mod h1:jtMpJp/I/R+dqfL85I7mYUsPHcI3SgZczas3JxhP/dY=
 github.com/docker/go-units v0.4.0 h1:3uh0PgVws3nIA0Q+MwDC8yjEPf9zjRfZZWXZYDct3Tw=
 github.com/docker/go-units v0.4.0/go.mod h1:fgPhTUdO+D/Jk86RDLlptpiXQzgHJF7gydDDbaIK4Dk=
 github.com/drand/bls12-381 v0.3.2/go.mod h1:dtcLgPtYT38L3NO6mPDYH0nbpc5tjPassDqiniuAt4Y=
@@ -426,6 +428,8 @@ github.com/filecoin-project/index-provider v0.5.0/go.mod h1:KHVrP2vU3YuScb+fawOb
 github.com/filecoin-project/lotus v1.14.3-0.20220303143723-acbfc879aaad/go.mod h1:fM29PcyMhHeE6sjppSVnErlJTv6MfhJ+La1L0zaietw=
 github.com/filecoin-project/lotus v1.15.1-rc5 h1:1phU8B5abrjcd/4CzN5/wivvapnjZAesc/RbB6rjbKk=
 github.com/filecoin-project/lotus v1.15.1-rc5/go.mod h1:S/8iC5pQwAM9PEG92anrRSPxKNFJvHtvXUVCZPxJEMY=
+github.com/filecoin-project/lotus v1.15.1 h1:/IRmRlmc2zs+tXMbz0XyAYAPpeLQSIxnyFltuYSErYY=
+github.com/filecoin-project/lotus v1.15.1/go.mod h1:S/8iC5pQwAM9PEG92anrRSPxKNFJvHtvXUVCZPxJEMY=
 github.com/filecoin-project/specs-actors v0.9.13/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=
 github.com/filecoin-project/specs-actors v0.9.14 h1:68PVstg2UB3ZsMLF+DKFTAs/YKsqhKWynkr0IqmVRQY=
 github.com/filecoin-project/specs-actors v0.9.14/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=
