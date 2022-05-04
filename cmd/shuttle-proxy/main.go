@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/labstack/echo/v4"
@@ -104,25 +105,42 @@ func (p *Proxy) getEndpoints(c echo.Context) ([]string, error) {
 		return nil, c.String(code, err.Error())
 	}
 
-	if len(view.Settings.UploadEndpoints) == 0 {
-		return nil, fmt.Errorf("all upload endpoints are unavailable")
+	var endps []string
+	for _, endp := range view.Settings.UploadEndpoints {
+		u, err := url.Parse(endp)
+		if err != nil {
+			return nil, err
+		}
+		u.Path = ""
+		u.RawQuery = ""
+		u.Fragment = ""
+		endps = append(endps, u.String())
 	}
 
-	return view.Settings.UploadEndpoints, nil
+	if len(endps) == 0 {
+		return nil, fmt.Errorf("all upload endpoints are unavailable")
+	}
+	return endps, nil
 }
+
 func (p *Proxy) handleContentAdd(c echo.Context) error {
 	eps, err := p.getEndpoints(c)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", eps[0], c.Request().Body)
+	ep := eps[0]
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", ep), c.Request().Body)
 	if err != nil {
 		return err
 	}
 
 	req.Header = c.Request().Header.Clone()
 	req.Header.Set("Shuttle-Proxy", "true")
+
+	// propagate any query params
+	rq := c.Request().URL.Query()
+	req.URL.RawQuery = rq.Encode()
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -140,32 +158,23 @@ func (p *Proxy) handleContentAdd(c echo.Context) error {
 }
 
 func (p *Proxy) handleAddCar(c echo.Context) error {
-	auth, err := util.ExtractAuth(c)
+	eps, err := p.getEndpoints(c)
 	if err != nil {
 		return err
 	}
 
-	view, code, err := p.getViewer(auth)
-	if err != nil {
-		// TODO: match error format of shuttles
-		return c.String(code, err.Error())
-	}
-
-	if len(view.Settings.UploadEndpoints) == 0 {
-		log.Errorf("no upload endpoints")
-		return c.JSON(500, map[string]string{
-			"error": "all upload endpoints are unavailable",
-		})
-	}
-
-	ep := view.Settings.UploadEndpoints[0]
-	req, err := http.NewRequest("POST", ep, c.Request().Body)
+	ep := eps[0]
+	req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add-car", ep), c.Request().Body)
 	if err != nil {
 		return err
 	}
 
 	req.Header = c.Request().Header.Clone()
 	req.Header.Set("Shuttle-Proxy", "true")
+
+	// propagate any query params
+	rq := c.Request().URL.Query()
+	req.URL.RawQuery = rq.Encode()
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
