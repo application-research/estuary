@@ -2632,14 +2632,17 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			ctx, span := s.tracer.Start(c.Request().Context(), "authCheck")
-			defer span.End()
-			c.SetRequest(c.Request().WithContext(ctx))
 
+			//	Check first if the Token is available. We should not continue if the
+			//	token isn't even available.
 			auth, err := util.ExtractAuth(c)
 			if err != nil {
 				return err
 			}
+
+			ctx, span := s.tracer.Start(c.Request().Context(), "authCheck")
+			defer span.End()
+			c.SetRequest(c.Request().WithContext(ctx))
 
 			u, err := s.checkTokenAuth(auth)
 			if err != nil {
