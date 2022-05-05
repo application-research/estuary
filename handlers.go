@@ -537,8 +537,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
 	}
-
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
+	makeDeal := true
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -3215,8 +3215,9 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	}
 
 	ctx := c.Request().Context()
+	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}

@@ -89,6 +89,8 @@ type PinningOperation struct {
 	SkipLimiter bool
 
 	lk sync.Mutex
+
+	MakeDeal bool
 }
 
 func (po *PinningOperation) fail(err error) {
