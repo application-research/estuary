@@ -98,10 +98,23 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
+	connectedToAtLeastOne := false
 	for _, pi := range op.Peers {
 		if err := s.Node.Host.Connect(ctx, pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+		} else {
+			//	Check if it's trying to connect to it's own since we only want to check if the
+			//	the connection is between the host and the external/other peers.
+			if s.Node.Host.ID() != pi.ID {
+				connectedToAtLeastOne = true
+			}
 		}
+	}
+
+	//	If it can't connect to any legitimate provider peers, then we fail the entire operation.
+	if !connectedToAtLeastOne {
+		log.Errorf("unable to connect to any of the provider peers for pinning operation")
+		return nil
 	}
 
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
@@ -703,7 +716,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-	
+
 	status.Pin.Meta = pin.Meta
 
 	return e.JSON(202, status)
