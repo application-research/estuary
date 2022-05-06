@@ -131,6 +131,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	if cfg.NoLimiter {
 		rcm, err = network.NullResourceManager, nil
+		log.Warnf("starting node with no resource limits")
 	} else {
 		lim := cfg.GetLimiter()
 		rcm, err = rcmgr.NewResourceManager(lim)
