@@ -1,6 +1,7 @@
 package util
 
 import (
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,10 +49,20 @@ const (
 
 func ExtractAuth(c echo.Context) (string, error) {
 	auth := c.Request().Header.Get("Authorization")
-	if auth == "" {
+	//	undefined will be the auth value if ESTUARY_TOKEN cookie is removed.
+	if auth == "" || auth == "undefined" {
 		return "", &HttpError{
 			Code:    403,
 			Message: ERR_AUTH_MISSING,
+		}
+	}
+
+	//	if auth is not missing, check format first before extracting
+	match, _ := regexp.MatchString("EST(.*)ARY", auth)
+	if match == false {
+		return "", &HttpError{
+			Code:    403,
+			Message: ERR_INVALID_AUTH,
 		}
 	}
 
