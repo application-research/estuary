@@ -16,16 +16,16 @@ const (
 )
 
 type ContentInCollection struct {
-	Collection     string `json:"collection"`
+	CollectionID   string `json:"coluuid"`
 	CollectionPath string `json:"collectionPath"`
 }
 
 type ContentAddIpfsBody struct {
 	ContentInCollection
 
-	Root  string   `json:"root"`
-	Name  string   `json:"name"`
-	Peers []string `json:"peers"`
+	Root     string   `json:"root"`
+	Filename string   `json:"filename"`
+	Peers    []string `json:"peers"`
 }
 
 type ContentAddResponse struct {

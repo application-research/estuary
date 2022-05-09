@@ -354,7 +354,7 @@ func serveProfile(c echo.Context) error {
 type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
-	File            string  `json:"file"`
+	Filename        string  `json:"filename"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -417,9 +417,9 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
-			ID:   c.ID,
-			Cid:  c.Cid.CID,
-			File: c.Name,
+			ID:       c.ID,
+			Cid:      c.Cid.CID,
+			Filename: c.Name,
 		}
 
 		if false {
@@ -474,15 +474,15 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
-	filename := params.Name
+	filename := params.Filename
 	if filename == "" {
 		filename = params.Root
 	}
 
 	var cols []*CollectionRef
-	if params.Collection != "" {
+	if params.CollectionID != "" {
 		var srchCol Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
 			return err
 		}
 
@@ -498,17 +498,17 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 
 		// default: colp ends in / (does not include filename e.g. /hello/)
-		pathWithFilename := colp + filename
+		path := colp + filename
 
 		// if path does not end in /, it includes the filename
 		if !strings.HasSuffix(colp, "/") {
-			pathWithFilename = colp
+			path = colp
 			filename = filepath.Base(colp)
 		}
 
 		cols = []*CollectionRef{&CollectionRef{
 			Collection: srchCol.ID,
-			Path:       &pathWithFilename,
+			Path:       &path,
 		}}
 	}
 
@@ -729,9 +729,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	fname := mpf.Filename
-	if fvname := c.FormValue("name"); fvname != "" {
-		fname = fvname
+	filename := mpf.Filename
+	if fvname := c.FormValue("filename"); fvname != "" {
+		filename = fvname
 	}
 
 	fi, err := mpf.Open()
@@ -752,25 +752,25 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	collection := c.FormValue("collection")
+	coluuid := c.FormValue("coluuid")
 	var col *Collection
-	if collection != "" {
+	if coluuid != "" {
 		var srchCol Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", collection, u.ID).Error; err != nil {
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 			return err
 		}
 
 		col = &srchCol
 	}
 
-	var colpath *string
+	var path *string
 	if cp := c.FormValue("collectionPath"); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
 		}
 
-		colpath = &sp
+		path = &sp
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -801,7 +801,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), fname, replication)
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -811,7 +811,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
-			Path:       colpath,
+			Path:       path,
 		}).Error; err != nil {
 			log.Errorf("failed to add content to requested collection: %s", err)
 		}
@@ -944,13 +944,13 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	return nil
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, filename string, replication int) (*Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	content := &Content{
 		Cid:         util.DbCID{root},
-		Name:        fname,
+		Name:        filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
@@ -3129,9 +3129,9 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 }
 
 type addContentToCollectionParams struct {
-	Contents   []uint   `json:"contents"`
-	Collection string   `json:"collection"`
-	Cids       []string `json:"cids"`
+	Contents     []uint   `json:"contents"`
+	CollectionID string   `json:"coluuid"`
+	Cids         []string `json:"cids"`
 }
 
 // handleAddContentsToCollection godoc
@@ -3158,7 +3158,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	}
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", params.Collection, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
 		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
 
@@ -3207,12 +3207,12 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Router       /collections/content/{collection-id} [get]
+// @Router       /collections/content/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	colid := c.Param("coluuid")
+	coluuid := c.Param("coluuid")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return err
 	}
 
@@ -3232,13 +3232,13 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 // @Summary      Deletes a collection
 // @Description  This endpoint is used to delete an existing collection.
 // @Tags         collections
-// @Param        coluuid    collectionUUID    string    true    "Collection ID"
+// @Param        coluuid path string true "Collection ID"
 // @Router       /collections/add-content [delete]
 func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
-	colid := c.Param("coluuid")
+	coluuid := c.Param("coluuid")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return c.String(404, "Collection not found")
 	}
 
@@ -4199,8 +4199,8 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	var col Collection
-	if req.Collection != "" {
-		if err := s.DB.First(&col, "uuid = ?", req.Collection).Error; err != nil {
+	if req.CollectionID != "" {
+		if err := s.DB.First(&col, "uuid = ?", req.CollectionID).Error; err != nil {
 			return err
 		}
 
@@ -4223,7 +4223,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	if req.Collection != "" {
+	if req.CollectionID != "" {
 		var path *string
 		if req.CollectionPath != "" {
 			sp, err := sanitizePath(req.CollectionPath)
@@ -4719,15 +4719,15 @@ type collectionListResponse struct {
 // @Description  This endpoint creates a new collection
 // @Tags         collections
 // @Produce      json
-// @Param        col query string true "Collection"
-// @Param        dir query string true "Directory"
+// @Param        coluuid query string true "Collection ID"
+// @Param        collectionPath query string true "Directory"
 // @Router       /collections/fs/list [get]
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
-	colid := c.QueryParam("col")
-	dir := c.QueryParam("dir")
+	coluuid := c.QueryParam("coluuid")
+	dir := c.QueryParam("collectionPath")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
 		return err
 	}
 
@@ -4860,23 +4860,18 @@ func sanitizePath(p string) (string, error) {
 // @Summary      Add a file to a collection
 // @Description  This endpoint adds a file to a collection
 // @Tags         collections
-// @Param        col query string true "Collection ID"
-// @Param        collection query string true "Collection ID Long"
+// @Param        coluuid query string true "Collection ID"
 // @Param        content query string true "Content"
 // @Param        path query string true "Path to file"
 // @Produce      json
 // @Router       /collections/fs/add [post]
 func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
-	colid := c.QueryParam("col")
-	colidlong := c.QueryParam("collection")
-	if colid == "" {
-		colid = colidlong
-	}
+	coluuid := c.QueryParam("coluuid")
 	contid := c.QueryParam("content")
 	npath := c.QueryParam("path")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
 		return err
 	}
 

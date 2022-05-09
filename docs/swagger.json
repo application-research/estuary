@@ -65,9 +65,26 @@
             }
           }
         }
+      },
+      "delete": {
+        "description": "This endpoint is used to delete an existing collection.",
+        "tags": [
+          "collections"
+        ],
+        "summary": "Deletes a collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Collection ID",
+            "name": "coluuid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
       }
     },
-    "/collections/content/{collection-id}": {
+    "/collections/content/{coluuid}": {
       "get": {
         "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
         "produces": [
@@ -159,14 +176,7 @@
           {
             "type": "string",
             "description": "Collection ID",
-            "name": "col",
-            "in": "query",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "Collection ID Long",
-            "name": "collection",
+            "name": "coluuid",
             "in": "query",
             "required": true
           },
@@ -201,15 +211,15 @@
         "parameters": [
           {
             "type": "string",
-            "description": "Collection",
-            "name": "col",
+            "description": "Collection ID",
+            "name": "coluuid",
             "in": "query",
             "required": true
           },
           {
             "type": "string",
             "description": "Directory",
-            "name": "dir",
+            "name": "collectionPath",
             "in": "query",
             "required": true
           }
@@ -1389,7 +1399,7 @@
             "type": "string"
           }
         },
-        "collection": {
+        "coluuid": {
           "type": "string"
         },
         "contents": {
@@ -1442,10 +1452,10 @@
     "main.importDealBody": {
       "type": "object",
       "properties": {
-        "collection": {
+        "collectionPath": {
           "type": "string"
         },
-        "collectionPath": {
+        "coluuid": {
           "type": "string"
         },
         "dealIDs": {
@@ -1473,13 +1483,13 @@
     "util.ContentAddIpfsBody": {
       "type": "object",
       "properties": {
-        "collection": {
-          "type": "string"
-        },
         "collectionPath": {
           "type": "string"
         },
-        "name": {
+        "coluuid": {
+          "type": "string"
+        },
+        "filename": {
           "type": "string"
         },
         "peers": {

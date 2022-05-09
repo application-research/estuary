@@ -4,7 +4,7 @@ package docs
 
 import "github.com/swaggo/swag"
 
-const docTemplate_swagger = `{
+const docTemplate = `{
     "schemes": {{ marshal .Schemes }},
     "swagger": "2.0",
     "info": {
@@ -72,9 +72,26 @@ const docTemplate_swagger = `{
                         }
                     }
                 }
+            },
+            "delete": {
+                "description": "This endpoint is used to delete an existing collection.",
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Deletes a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
             }
         },
-        "/collections/content/{collection-id}": {
+        "/collections/content/{coluuid}": {
             "get": {
                 "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
                 "produces": [
@@ -166,14 +183,7 @@ const docTemplate_swagger = `{
                     {
                         "type": "string",
                         "description": "Collection ID",
-                        "name": "col",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Collection ID Long",
-                        "name": "collection",
+                        "name": "coluuid",
                         "in": "query",
                         "required": true
                     },
@@ -208,15 +218,15 @@ const docTemplate_swagger = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection",
-                        "name": "col",
+                        "description": "Collection ID",
+                        "name": "coluuid",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
                         "description": "Directory",
-                        "name": "dir",
+                        "name": "collectionPath",
                         "in": "query",
                         "required": true
                     }
@@ -1396,7 +1406,7 @@ const docTemplate_swagger = `{
                         "type": "string"
                     }
                 },
-                "collection": {
+                "coluuid": {
                     "type": "string"
                 },
                 "contents": {
@@ -1449,10 +1459,10 @@ const docTemplate_swagger = `{
         "main.importDealBody": {
             "type": "object",
             "properties": {
-                "collection": {
+                "collectionPath": {
                     "type": "string"
                 },
-                "collectionPath": {
+                "coluuid": {
                     "type": "string"
                 },
                 "dealIDs": {
@@ -1480,13 +1490,13 @@ const docTemplate_swagger = `{
         "util.ContentAddIpfsBody": {
             "type": "object",
             "properties": {
-                "collection": {
-                    "type": "string"
-                },
                 "collectionPath": {
                     "type": "string"
                 },
-                "name": {
+                "coluuid": {
+                    "type": "string"
+                },
+                "filename": {
                     "type": "string"
                 },
                 "peers": {
@@ -1526,7 +1536,7 @@ var SwaggerInfo = &swag.Spec{
 	Title:            "Estuary API",
 	Description:      "This is the API for the Estuary application.",
 	InfoInstanceName: "swagger",
-	SwaggerTemplate:  docTemplate_swagger,
+	SwaggerTemplate:  docTemplate,
 }
 
 func init() {

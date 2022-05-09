@@ -1056,7 +1056,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		Collection:     c.FormValue("collection"),
+		CollectionID:   c.FormValue("coluuid"),
 		CollectionPath: c.FormValue("collectionPath"),
 	}
 
@@ -1230,7 +1230,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	root := header.Roots[0]
 
 	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
-		Collection:     c.QueryParam("collection"),
+		CollectionID:   c.QueryParam("coluuid"),
 		CollectionPath: c.QueryParam("collectionPath"),
 	})
 	if err != nil {
