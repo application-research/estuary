@@ -293,7 +293,7 @@ func main() {
 			Action: func(cctx *cli.Context) error {
 				configuration := cctx.String("config")
 				err := cfg.Load(configuration)
-				if err != config.ErrNotInitialized { // still want to report parsing errors
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
 				}
 				overrideSetOptions(app.Flags, cctx, cfg)
@@ -305,9 +305,11 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 
 		err := cfg.Load(cctx.String("config"))
-		if err != config.ErrNotInitialized { // still want to report parsing errors
+		if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+			log.Error(err)
 			return err
 		}
+
 		overrideSetOptions(app.Flags, cctx, cfg)
 
 		err = cfg.Validate()
@@ -315,7 +317,7 @@ func main() {
 			return err
 		}
 
-		db, err := setupDatabase(cctx.String("database"))
+		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}

@@ -360,7 +360,7 @@ func main() {
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
 				err := cfg.Load(cctx.String("config"))
-				if err != config.ErrNotInitialized { // still want to report parsing errors
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
 				}
 				overrideSetOptions(app.Flags, cctx, cfg)
@@ -409,7 +409,7 @@ func main() {
 			Action: func(cctx *cli.Context) error {
 				configuration := cctx.String("config")
 				err := cfg.Load(configuration)
-				if err != config.ErrNotInitialized { // still want to report parsing errors
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
 				}
 				overrideSetOptions(app.Flags, cctx, cfg)
@@ -420,7 +420,7 @@ func main() {
 	app.Action = func(cctx *cli.Context) error {
 
 		err := cfg.Load(cctx.String("config"))
-		if err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
+		if err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
 			return err
 		}
 
