@@ -100,7 +100,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 
 	connectedToAtLeastOne := false
 	for _, pi := range op.Peers {
-		if err := s.Node.Host.Connect(ctx, pi); err != nil {
+		if err := s.Node.Host.Connect(ctx, pi); err != nil && s.Node.Host.ID() != pi.ID {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		} else {
 			//	Check if it's trying to connect to itself since we only want to check if the
