@@ -149,11 +149,12 @@ func (cm *ContentManager) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
+	makeDeal := true
 	for _, c := range toPin {
 		if c.Location == "local" {
-			cm.addPinToQueue(c, nil, 0, true)
+			cm.addPinToQueue(c, nil, 0, makeDeal)
 		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location, true); err != nil {
+			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location, makeDeal); err != nil {
 				log.Errorf("failed to send pin message to shuttle: %s", err)
 				time.Sleep(time.Millisecond * 100)
 			}

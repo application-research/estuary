@@ -3186,7 +3186,6 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// create DAG respecting directory structure
 	collectionNode := unixfs.EmptyDirNode()
-	dserv.Add(context.Background(), collectionNode)
 	for _, c := range contents {
 		dirs, err := util.DirsFromPath(c.Path, c.Name)
 		if err != nil {
@@ -3202,6 +3201,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 			Cid:  c.Cid.CID,
 		})
 	}
+	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
