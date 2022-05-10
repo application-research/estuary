@@ -121,16 +121,19 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		}
 	}
 
-	// this provide call goes out immediately
-	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		log.Infof("provider broadcast failed: %s", err)
-	}
+	go func() {
+		// this provide call goes out immediately
+		if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
+			log.Infof("provider broadcast failed: %s", err)
+		}
+	}()
 
-	// this one adds to a queue
-	if err := s.Node.Provider.Provide(op.Obj); err != nil {
-		log.Infof("providing failed: %s", err)
-	}
-
+	go func() {
+		// this one adds to a queue
+		if err := s.Node.Provider.Provide(op.Obj); err != nil {
+			log.Infof("providing failed: %s", err)
+		}
+	}()
 	return nil
 }
 
@@ -703,7 +706,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-	
+
 	status.Pin.Meta = pin.Meta
 
 	return e.JSON(202, status)

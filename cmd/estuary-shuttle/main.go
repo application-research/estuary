@@ -21,6 +21,7 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/mitchellh/go-homedir"
+	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
@@ -1124,18 +1125,19 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 
 	if s.Node.FullRT.Ready() {
 		if err := s.Node.FullRT.Provide(subCtx, c, true); err != nil {
-			return fmt.Errorf("failed to provide newly added content: %w", err)
+			return errors.Wrap(err, "failed to provide newly added content")
 		}
 	} else {
 		log.Warnf("fullrt not in ready state, falling back to standard dht provide")
 		if err := s.Node.Dht.Provide(subCtx, c, true); err != nil {
-			return fmt.Errorf("fallback provide failed: %w", err)
+			return errors.Wrap(err, "fallback provide failed")
 		}
 	}
 
 	go func() {
 		if err := s.Node.Provider.Provide(c); err != nil {
 			log.Warnf("providing failed: ", err)
+			return
 		}
 		log.Infof("providing complete")
 	}()
@@ -1446,7 +1448,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 		*/
 
-		return err
+		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
 
 	/*
@@ -1458,9 +1460,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		log.Warn(err)
+		return errors.Wrapf(err, "failed to Provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
-
 	return nil
 }
 
@@ -1473,7 +1474,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 	var dbpin Pin
 	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
-		return err
+		return errors.Wrap(err, "failed to retrieve content")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1525,7 +1526,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to Get CID node")
 		}
 
 		cb(int64(len(node.RawData())))
@@ -1551,7 +1552,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to Walk DAG")
 	}
 
 	span.SetAttributes(
@@ -1560,7 +1561,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	)
 
 	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
+		return errors.Wrap(err, "failed to create objects in db")
 	}
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
@@ -1568,7 +1569,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		"size":    totalSize,
 		"pinning": false,
 	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
+		return errors.Wrap(err, "failed to update content in database")
 	}
 
 	refs := make([]ObjRef, len(objects))
@@ -1578,7 +1579,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	}
 
 	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+		return errors.Wrap(err, "failed to create refs")
 	}
 
 	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
