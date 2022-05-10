@@ -124,14 +124,14 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	go func() {
 		// this provide call goes out immediately
 		if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-			log.Infof("provider broadcast failed: %s", err)
+			log.Warnf("provider broadcast failed: %s", err)
 		}
 	}()
 
 	go func() {
 		// this one adds to a queue
 		if err := s.Node.Provider.Provide(op.Obj); err != nil {
-			log.Infof("providing failed: %s", err)
+			log.Warnf("providing failed: %s", err)
 		}
 	}()
 	return nil
