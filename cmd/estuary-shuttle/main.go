@@ -1109,7 +1109,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
-		log.Warn(err)
+		log.Warnf("failed to provide: %+v", err)
 	}
 
 	return c.JSON(200, &util.ContentAddResponse{
@@ -1136,7 +1136,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 
 	go func() {
 		if err := s.Node.Provider.Provide(c); err != nil {
-			log.Warnf("providing failed: ", err)
+			log.Warnf("providing failed: %s", err)
 			return
 		}
 		log.Infof("providing complete")
