@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -569,7 +570,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	if len(out) == 0 {
 		out = make([]*types.IpfsPinStatus, 0)
 	}
-	return e.JSON(200, map[string]interface{}{
+	return e.JSON(http.StatusOK, map[string]interface{}{
 		"count":   len(out),
 		"results": out,
 	})
@@ -661,7 +662,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -717,7 +718,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 	status.Pin.Meta = pin.Meta
 
-	return e.JSON(202, status)
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
@@ -743,7 +744,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	return e.JSON(200, st)
+	return e.JSON(http.StatusOK, st)
 }
 
 // handleReplacePin godoc
@@ -756,7 +757,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -778,7 +779,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	}
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
@@ -803,7 +804,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	return e.JSON(200, status)
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleDeletePin godoc
@@ -837,7 +838,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	return nil
+	return e.NoContent(http.StatusAccepted)
 }
 
 func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status string) {
