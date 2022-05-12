@@ -49,7 +49,7 @@ type AutoretrieveEngine struct {
 
 	mhLister     provider.MultihashLister
 	cblk         sync.Mutex
-	stopCh       chan struct{}
+	context      context.Context
 	tickInterval time.Duration
 	db           *gorm.DB
 }

@@ -67,7 +67,7 @@ func (m *SimpleEstuaryMhIterator) Next() (multihash.Multihash, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(stopCh chan struct{}, tickInterval time.Duration, db *gorm.DB, libp2pHost host.Host) (*AutoretrieveEngine, error) {
+func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *gorm.DB, libp2pHost host.Host) (*AutoretrieveEngine, error) {
 	newEngine, err := New(
 		WithHost(libp2pHost), // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
@@ -110,12 +110,12 @@ func NewAutoretrieveEngine(stopCh chan struct{}, tickInterval time.Duration, db 
 		}, nil
 	})
 
-	newEngine.stopCh = stopCh
+	newEngine.context = ctx
 	newEngine.tickInterval = tickInterval
 	newEngine.db = db
 
 	// start engine
-	newEngine.Start(context.Background())
+	newEngine.Start(newEngine.context)
 
 	return newEngine, nil
 }
@@ -145,7 +145,7 @@ func (arEng *AutoretrieveEngine) Run() {
 			select {
 			case <-ticker.C:
 				continue
-			case <-arEng.stopCh:
+			case <-arEng.context.Done():
 				break
 			}
 		}
@@ -208,7 +208,7 @@ func (arEng *AutoretrieveEngine) Run() {
 		select {
 		case <-ticker.C:
 			continue
-		case <-arEng.stopCh:
+		case <-arEng.context.Done():
 			break
 		}
 	}

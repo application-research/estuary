@@ -576,8 +576,7 @@ func main() {
 			return err
 		}
 
-		stopArEngineCh := make(chan struct{})
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(stopArEngineCh, time.Duration(intervalMinutes)*time.Minute, s.DB, s.Node.Host)
+		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), time.Duration(intervalMinutes)*time.Minute, s.DB, s.Node.Host)
 		if err != nil {
 			return err
 		}
