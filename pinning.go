@@ -95,7 +95,7 @@ func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
 	}
 }
 
-func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
+func (s *Server) DoPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 

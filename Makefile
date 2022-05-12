@@ -11,7 +11,7 @@ unexport GOFLAGS
 CLEAN:=
 BINS:=
 
-GOFLAGS:=
+GOFLAGS:=-gcflags="-e"
 
 .PHONY: all
 all: build

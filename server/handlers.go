@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"bytes"
@@ -859,119 +859,6 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
-	defer span.End()
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	gotData := make(chan struct{}, 1)
-	go func() {
-		nodata := time.NewTimer(noDataTimeout)
-		defer nodata.Stop()
-
-		for {
-			select {
-			case <-nodata.C:
-				cancel()
-			case <-gotData:
-				nodata.Reset(noDataTimeout)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	var objlk sync.Mutex
-	var objects []*Object
-	cset := cid.NewSet()
-
-	defer func() {
-		cm.inflightCidsLk.Lock()
-		_ = cset.ForEach(func(c cid.Cid) error {
-			v, ok := cm.inflightCids[c]
-			if !ok || v <= 0 {
-				log.Errorf("cid should be inflight but isn't: %s", c)
-			}
-
-			cm.inflightCids[c]--
-			if cm.inflightCids[c] == 0 {
-				delete(cm.inflightCids, c)
-			}
-			return nil
-		})
-		cm.inflightCidsLk.Unlock()
-	}()
-
-	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		// cset.Visit gets called first, so if we reach here we should immediately track the CID
-		cm.inflightCidsLk.Lock()
-		cm.inflightCids[c]++
-		cm.inflightCidsLk.Unlock()
-
-		node, err := dserv.Get(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		cb(int64(len(node.RawData())))
-
-		select {
-		case gotData <- struct{}{}:
-		case <-ctx.Done():
-		}
-
-		objlk.Lock()
-		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
-			Size: len(node.RawData()),
-		})
-		objlk.Unlock()
-
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
-		return node.Links(), nil
-	}, root, cset.Visit, merkledag.Concurrent())
-
-	if err != nil {
-		return err
-	}
-
-	if err = cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*Content, error) {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
-	defer span.End()
-
-	content := &Content{
-		Cid:         util.DbCID{root},
-		Name:        fname,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: replication,
-		Location:    "local",
-	}
-
-	if err := cm.DB.Create(content).Error; err != nil {
-		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root, func(int64) {}); err != nil {
-		return nil, err
-	}
-
-	return content, nil
-}
-
 func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
 	ctx, span := s.tracer.Start(ctx, "blockstoreCopy")
 	defer span.End()
@@ -1764,6 +1651,87 @@ type adminStatsResponse struct {
 	NumStorageFailures int64 `json:"numStorageFailures"`
 
 	PinQueueSize int `json:"pinQueueSize"`
+}
+
+func (s *Server) handleFixupDeals(c echo.Context) error {
+	ctx := context.Background()
+	var deals []ContentDeal
+	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
+		return err
+	}
+
+	gentime, err := time.Parse("2006-01-02 15:04:05", "2020-08-24 15:00:00")
+	if err != nil {
+		return err
+	}
+
+	head, err := s.Api.ChainHead(ctx)
+	if err != nil {
+		return err
+	}
+
+	sem := make(chan struct{}, 50)
+	for _, dll := range deals {
+		sem <- struct{}{}
+		go func(d ContentDeal) {
+			defer func() {
+				<-sem
+			}()
+			miner, err := d.MinerAddr()
+			if err != nil {
+				log.Error(err)
+				return
+			}
+
+			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+
+			// Get deal UUID, if there is one for the deal.
+			// (There should be a UUID for deals made with deal protocol v1.2.0)
+			var dealUUID *uuid.UUID
+			if d.DealUUID != "" {
+				parsed, parseErr := uuid.Parse(d.DealUUID)
+				if parseErr != nil {
+					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+						d.DealUUID, d.ID, miner, parseErr)
+					return
+				}
+				dealUUID = &parsed
+			}
+			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID, dealUUID)
+			if err != nil {
+				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+				return
+			}
+
+			if provds.PublishCid == nil {
+				log.Errorf("no publish cid for deal: %d", d.DealID)
+				return
+			}
+
+			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
+			defer cancel2()
+			wait, err := s.Api.StateSearchMsg(subctx2, head.Key(), *provds.PublishCid, 100000, true)
+			if err != nil {
+				log.Errorf("failed to search message: %s", err)
+				return
+			}
+
+			if wait == nil {
+				log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+				return
+			}
+
+			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
+			log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			if err := s.DB.Model(ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+				log.Error(err)
+				return
+			}
+		}(dll)
+	}
+
+	return nil
 }
 
 func (s *Server) handleAdminStats(c echo.Context) error {

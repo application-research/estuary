@@ -13,16 +13,15 @@ import (
 
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
-	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/server"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/google/uuid"
-	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
@@ -31,11 +30,6 @@ import (
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
-	"go.opentelemetry.io/otel/trace"
-	"golang.org/x/xerrors"
-
-	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/lotus/api"
 	lcli "github.com/filecoin-project/lotus/cli"
 	cli "github.com/urfave/cli/v2"
 
@@ -50,110 +44,6 @@ func init() {
 }
 
 var log = logging.Logger("estuary")
-
-type storageMiner struct {
-	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
-}
-
-type Content struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"-"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Cid         util.DbCID       `json:"cid"`
-	Name        string           `json:"name"`
-	UserID      uint             `json:"userId" gorm:"index"`
-	Description string           `json:"description"`
-	Size        int64            `json:"size"`
-	Type        util.ContentType `json:"type"`
-	Path        string           `json:"path"`
-	Active      bool             `json:"active"`
-	Offloaded   bool             `json:"offloaded"`
-	Replication int              `json:"replication"`
-
-	// TODO: shift most of the 'state' booleans in here into a single state
-	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
-
-	Pinning bool   `json:"pinning"`
-	PinMeta string `json:"pinMeta"`
-
-	Failed bool `json:"failed"`
-
-	Location string `json:"location"`
-	// TODO: shift location tracking to just use the ID of the shuttle
-	// Also move towards recording content movement intentions in the database,
-	// making that process more resilient to failures
-	// LocID     uint   `json:"locID"`
-	// LocIntent uint   `json:"locIntent"`
-
-	// If set, this content is part of a split dag.
-	// In such a case, the 'root' content should be advertised on the dht, but
-	// not have deals made for it, and the children should have deals made for
-	// them (unlike with aggregates)
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
-}
-
-type Object struct {
-	ID         uint       `gorm:"primarykey"`
-	Cid        util.DbCID `gorm:"index"`
-	Size       int
-	Reads      int
-	LastAccess time.Time
-}
-
-type ObjRef struct {
-	ID        uint `gorm:"primarykey"`
-	Content   uint `gorm:"index:,option:CONCURRENTLY"`
-	Object    uint `gorm:"index:,option:CONCURRENTLY"`
-	Offloaded uint
-}
-
-// updateAutoretrieveIndex ticks every tickInterval and checks for new information to add to autoretrieve
-// If so, it updates the filecoin index with the new CIDs, saying they are present on autoretrieve
-// With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
-func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
-	var autoretrieves []Autoretrieve
-	var lastTickTime time.Time
-	ticker := time.NewTicker(tickInterval)
-
-	defer ticker.Stop()
-	for {
-		lastTickTime = time.Now().UTC().Add(-tickInterval)
-
-		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
-		if err != nil {
-			log.Errorf("unable to query autoretrieve servers from database: %s", err)
-			return err
-		}
-		if len(autoretrieves) > 0 {
-			for _, ar := range autoretrieves {
-				fmt.Println("online: ", ar) // TODO: remove
-			}
-		} else {
-			log.Info("no autoretrieve servers online")
-		}
-
-		// wait for next tick, or quit
-		select {
-		case <-ticker.C:
-			continue
-		case <-quit:
-			break
-		}
-	}
-}
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
 	var err error
@@ -479,17 +369,17 @@ func main() {
 			otel.SetTracerProvider(tp)
 		}
 
-		s := &Server{
+		s := &server.Server{
 			Node:        nd,
 			Api:         api,
 			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+			Tracer:      otel.Tracer("api"),
+			Cacher:      memo.NewCacher(),
+			GwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewPinManager(s.DoPinning, nil, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 		})
 
@@ -676,115 +566,7 @@ func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 	return db, nil
 }
 
-type Server struct {
-	tracer     trace.Tracer
-	Node       *node.Node
-	DB         *gorm.DB
-	FilClient  *filclient.FilClient
-	Api        api.Gateway
-	CM         *ContentManager
-	StagingMgr *stagingbs.StagingBSMgr
-
-	gwayHandler *gateway.GatewayHandler
-
-	cacher *memo.Cacher
-}
-
-func (s *Server) GarbageCollect(ctx context.Context) error {
-	// since we're reference counting all the content, garbage collection becomes easy
-	// its even easier if we don't care that its 'perfect'
-
-	// We can probably even just remove stuff when its references are removed from the database
-	keych, err := s.Node.Blockstore.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	for c := range keych {
-		keep, err := s.trackingObject(c)
-		if err != nil {
-			return err
-		}
-
-		if !keep {
-			// can batch these deletes and execute them at the datastore layer for more perfs
-			if err := s.Node.Blockstore.DeleteBlock(ctx, c); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) trackingObject(c cid.Cid) (bool, error) {
-	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return count > 0, nil
-}
-
 func jsondump(o interface{}) {
 	data, _ := json.MarshalIndent(o, "", "  ")
 	fmt.Println(string(data))
-}
-
-func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []contentDeal
-	if err := s.DB.Model(contentDeal{}).
-		Joins("left join contents on contents.id = content_deals.content").
-		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
-		Scan(&deals).Error; err != nil {
-		return err
-	}
-
-	for _, d := range deals {
-		chid, err := d.ChannelID()
-		if err != nil {
-			// Only legacy (push) transfers need to be restarted by Estuary.
-			// Newer (pull) transfers are restarted by the Storage Provider.
-			// So if it's not a legacy channel ID, ignore it.
-			continue
-		}
-
-		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
-			log.Errorf("failed to restart transfer: %s", err)
-			continue
-		}
-	}
-
-	return nil
-}
-
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
-	if loc == "local" {
-		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
-			return err
-		}
-
-		if util.TransferTerminated(st) {
-			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
-		}
-
-		return cm.FilClient.RestartTransfer(ctx, &chanid)
-	}
-
-	return cm.sendRestartTransferCmd(ctx, loc, chanid)
-}
-
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_RestartTransfer,
-		Params: drpc.CmdParams{
-			RestartTransfer: &drpc.RestartTransfer{
-				ChanID: chanid,
-			},
-		},
-	})
 }

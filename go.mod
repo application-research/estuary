@@ -89,7 +89,11 @@ require (
 	gorm.io/gorm v1.21.15
 )
 
-require github.com/pkg/errors v0.9.1
+require (
+	github.com/filecoin-project/specs-actors v0.9.14
+	github.com/pkg/errors v0.9.1
+	google.golang.org/appengine v1.6.7
+)
 
 require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
@@ -152,7 +156,6 @@ require (
 	github.com/filecoin-project/go-paramfetch v0.0.4 // indirect
 	github.com/filecoin-project/go-statemachine v1.0.2 // indirect
 	github.com/filecoin-project/go-statestore v0.2.0 // indirect
-	github.com/filecoin-project/specs-actors v0.9.14 // indirect
 	github.com/filecoin-project/specs-actors/v2 v2.3.6 // indirect
 	github.com/filecoin-project/specs-actors/v3 v3.1.1 // indirect
 	github.com/filecoin-project/specs-actors/v4 v4.0.1 // indirect

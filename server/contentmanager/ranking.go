@@ -1,13 +1,26 @@
-package main
+package server
 
 import (
 	"sort"
 	"time"
 
+	"github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
+	"gorm.io/gorm"
 )
 
 const minerListTTL = time.Minute
+
+type storageMiner struct {
+	gorm.Model
+	Address         util.DbAddr `gorm:"unique"`
+	Suspended       bool
+	SuspendedReason string
+	Name            string
+	Version         string
+	Location        string
+	Owner           uint
+}
 
 func (cm *ContentManager) sortedMinerList() ([]address.Address, []*minerDealStats, error) {
 	cm.minerLk.Lock()

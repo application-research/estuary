@@ -1,6 +1,8 @@
-package main
+package server
 
-import "time"
+import (
+	"time"
+)
 
 type DataExport struct {
 	Version string
@@ -11,7 +13,7 @@ type DataExport struct {
 
 type ExportVersion1 struct {
 	Contents []Content
-	Deals    []contentDeal
+	Deals    []ContentDeal
 }
 
 func (s *Server) exportUserData(uid uint) (*DataExport, error) {
@@ -25,7 +27,7 @@ func (s *Server) exportUserData(uid uint) (*DataExport, error) {
 		conts = append(conts, c.ID)
 	}
 
-	var deals []contentDeal
+	var deals []ContentDeal
 	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
 		return nil, err
 	}
