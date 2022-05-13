@@ -120,11 +120,57 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	return newEngine, nil
 }
 
+func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
+	newContextID := []byte(ar.Handle)
+
+	retrievalAddresses := []string{}
+	providerID := ""
+	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
+		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
+		if err != nil {
+			log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
+			continue
+		}
+		providerID = arAddrInfo.ID.String()
+		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
+	}
+	if providerID == "" {
+		return fmt.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
+	}
+	if len(retrievalAddresses) == 0 {
+		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+	}
+
+	var newContentsCount int64
+	err := arEng.db.Model(&util.Content{}).Where("active = true and created_at >= ?", ar.LastAdvertisement).Count(&newContentsCount).Error
+	if err != nil {
+		return fmt.Errorf("unable to query new CIDs from database: %s", err)
+	}
+	if newContentsCount == 0 {
+		log.Debugf("no new CIDs to announce, skipping")
+		return nil
+	}
+	log.Debugf("found %d new CIDs, announcing", newContentsCount)
+
+	log.Infof("sending announcement to %s", ar.Handle)
+	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
+	if err != nil {
+		return fmt.Errorf("could not announce new CIDs: %s", err)
+	}
+
+	// update lastAdvertisement time on database
+	if err := arEng.db.Model(Autoretrieve{}).UpdateColumn("lastAdvertisement", time.Now()).Error; err != nil {
+		return fmt.Errorf("unable to update advertisement time on database: %s", err)
+	}
+
+	log.Infof("announced new CIDs: %s", adCid)
+	return nil
+}
+
 func (arEng *AutoretrieveEngine) Run() {
 	var autoretrieves []Autoretrieve
 	var lastTickTime time.Time
 	var curTime time.Time
-	var newContextID []byte
 
 	// start ticker
 	ticker := time.NewTicker(arEng.tickInterval)
@@ -153,55 +199,9 @@ func (arEng *AutoretrieveEngine) Run() {
 		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 		// send announcement with new CIDs for each autoretrieve server
 		for _, ar := range autoretrieves {
-
-			newContextID = []byte(ar.Handle)
-
-			retrievalAddresses := []string{}
-			providerID := ""
-			for _, fullAddr := range strings.Split(ar.Addresses, ",") {
-				arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
-				if err != nil {
-					log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
-					continue
-				}
-				providerID = arAddrInfo.ID.String()
-				retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
+			if err = arEng.announceForAR(ar); err != nil {
+				log.Error(err)
 			}
-			if providerID == "" {
-				log.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
-				continue
-			}
-			if len(retrievalAddresses) == 0 {
-				log.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
-				continue
-			}
-
-			var newContentsCount int64
-			err = arEng.db.Model(&util.Content{}).Where("active = true and created_at >= ?", ar.LastAdvertisement).Count(&newContentsCount).Error
-			if err != nil {
-				log.Errorf("unable to query new CIDs from database: %s", err)
-				continue
-			}
-			if newContentsCount == 0 {
-				log.Debugf("no new CIDs to announce, skipping")
-				continue
-			}
-			log.Debugf("found %d new CIDs, announcing", newContentsCount)
-
-			log.Infof("sending announcement to %s", ar.Handle)
-			adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
-			if err != nil {
-				log.Errorf("could not announce new CIDs: %s", err)
-				continue
-			}
-
-			// update lastAdvertisement time on database
-			if err := arEng.db.Model(Autoretrieve{}).UpdateColumn("lastAdvertisement", time.Now()).Error; err != nil {
-				log.Errorf("unable to update advertisement time on database: %s", err)
-				return
-			}
-
-			log.Infof("announced new CIDs: %s", adCid)
 		}
 
 		// wait for next tick, or quit
