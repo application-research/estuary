@@ -4412,13 +4412,13 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Description  This endpoint registers a new autoretrieve server
 // @Tags         autoretrieve
 // @Param        addresses body string true "Autoretrieve's comma-separated list of addresses"
-// @Param        privateKey body string true "Autoretrieve's private key"
+// @Param        pubKey body string true "Autoretrieve's public key"
 // @Produce      json
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	// validate peerid and peer multi addresses
 	addresses := strings.Split(c.FormValue("addresses"), ",")
-	addrInfo, err := autoretrieve.ValidatePeerInfo(c.FormValue("privateKey"), addresses)
+	addrInfo, err := autoretrieve.ValidatePeerInfo(c.FormValue("pubKey"), addresses)
 	if err != nil {
 		return err
 	}
@@ -4428,7 +4428,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 		Token:             "SECRET" + uuid.New().String() + "SECRET",
 		LastConnection:    time.Now(),
 		LastAdvertisement: time.Time{},
-		PrivateKey:        c.FormValue("privateKey"),
+		PubKey:            c.FormValue("pubKey"),
 		Addresses:         c.FormValue("addresses"), // cant store []string in gorm
 	}
 	if err := s.DB.Create(ar).Error; err != nil {
