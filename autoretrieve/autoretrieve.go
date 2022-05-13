@@ -25,7 +25,7 @@ type Autoretrieve struct {
 	Token             string `gorm:"unique"`
 	LastConnection    time.Time
 	LastAdvertisement time.Time
-	PrivateKey        string `gorm:"unique"`
+	PubKey            string `gorm:"unique"`
 	Addresses         string
 }
 
@@ -228,13 +228,13 @@ func validateAddresses(addresses []string) []string {
 	return invalidAddresses
 }
 
-func ValidatePeerInfo(privKeyStr string, addresses []string) (*peer.AddrInfo, error) {
+func ValidatePeerInfo(pubKeyStr string, addresses []string) (*peer.AddrInfo, error) {
 	// check if peerid is correct
-	privateKey, err := stringToPrivKey(privKeyStr)
+	pubKey, err := stringToPubKey(pubKeyStr)
 	if err != nil {
-		return nil, fmt.Errorf("unable to decode private key: %s", err)
+		return nil, fmt.Errorf("unable to decode public key: %s", err)
 	}
-	_, err = peer.IDFromPrivateKey(privateKey)
+	_, err = peer.IDFromPublicKey(pubKey)
 	if err != nil {
 		return nil, fmt.Errorf("invalid peer information: %s", err)
 	}
@@ -259,18 +259,18 @@ func ValidatePeerInfo(privKeyStr string, addresses []string) (*peer.AddrInfo, er
 	return addrInfo, nil
 }
 
-func stringToPrivKey(privKeyStr string) (crypto.PrivKey, error) {
-	privKeyBytes, err := crypto.ConfigDecodeKey(privKeyStr)
+func stringToPubKey(pubKeyStr string) (crypto.PubKey, error) {
+	pubKeyBytes, err := crypto.ConfigDecodeKey(pubKeyStr)
 	if err != nil {
 		return nil, err
 	}
 
-	privKey, err := crypto.UnmarshalPrivateKey(privKeyBytes)
+	pubKey, err := crypto.UnmarshalPublicKey(pubKeyBytes)
 	if err != nil {
 		return nil, err
 	}
 
-	return privKey, nil
+	return pubKey, nil
 }
 
 func multiAddrsToString(addrs []multiaddr.Multiaddr) []string {
