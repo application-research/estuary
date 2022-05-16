@@ -58,8 +58,9 @@ func ExtractAuth(c echo.Context) (string, error) {
 	}
 
 	//	if auth is not missing, check format first before extracting
-	match, _ := regexp.MatchString("EST(.*)ARY", auth)
-	if match == false {
+	matchEst, _ := regexp.MatchString("EST(.+)ARY", auth)
+	matchSecret, _ := regexp.MatchString("SECRET(.+)SECRET", auth)
+	if !matchEst && !matchSecret {
 		return "", &HttpError{
 			Code:    403,
 			Message: ERR_INVALID_AUTH,
