@@ -2,6 +2,7 @@ package autoretrieve
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"io"
 	"strings"
@@ -51,16 +52,18 @@ type AutoretrieveInitResponse struct {
 	AddrInfo       *peer.AddrInfo `json:"addrInfo"`
 }
 
-type SimpleEstuaryMhIterator struct {
-	offset int
-	Mh     []multihash.Multihash
+// EstuaryMhIterator contains objects to query the database
+// incrementally, to avoid having all CIDs in memory at once
+type EstuaryMhIterator struct {
+	Cursor *sql.Rows
+	Db     *gorm.DB
 }
 
-func (m *SimpleEstuaryMhIterator) Next() (multihash.Multihash, error) {
-	if m.offset < len(m.Mh) {
-		hash := m.Mh[m.offset]
-		m.offset++
-		return hash, nil
+func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
+	var nextCid cid.Cid
+	if m.Cursor.Next() {
+		m.Db.ScanRows(m.Cursor, &nextCid)
+		return nextCid.Hash(), nil
 	}
 	return nil, io.EOF
 }
@@ -94,24 +97,23 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 			return nil, err
 		}
 
-		var newCids []cid.Cid
 		// find all new multihashes since the last time we advertised for this autoretrieve server
-		if err = db.Model(util.Content{}).
+		// joins three tables (contents, obj_refs and objects) to query all CIDs (from objects)
+		// that are active (from contents)
+		// TODO: figure out where to close the Rows object. Maybe do an autoretrieve close function and call `defer ArEngine.Close()` in main
+		rows, err := db.Model(&util.Content{}).
 			Joins("LEFT JOIN (select * from obj_refs left join objects on obj_refs.object = objects.id) all_objs ON contents.id = all_objs.content").
 			Where("contents.active = true AND all_objs.cid IS NOT NULL").
+			Where("contents.created_at >= ?", ar.LastAdvertisement).
 			Select("all_objs.cid AS cid").
-			Scan(&newCids).
-			Error; err != nil {
+			Rows()
+		if err != nil {
 			return nil, err
 		}
 
-		multihashes := []multihash.Multihash{}
-		for _, c := range newCids {
-			multihashes = append(multihashes, c.Hash())
-		}
-
-		return &SimpleEstuaryMhIterator{
-			Mh: multihashes,
+		return &EstuaryMhIterator{
+			Cursor: rows,
+			Db:     db,
 		}, nil
 	})
 
@@ -146,8 +148,15 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
 	}
 
+	// see if we need to make a new announcement for this AR server (if there were new CIDs since last advertisement)
 	var newContentsCount int64
-	err := arEng.db.Model(&util.Content{}).Where("active = true and created_at >= ?", ar.LastAdvertisement).Count(&newContentsCount).Error
+	err := arEng.db.Model(&util.Content{}).
+		Joins("LEFT JOIN (select * from obj_refs left join objects on obj_refs.object = objects.id) all_objs ON contents.id = all_objs.content").
+		Where("contents.active = true AND all_objs.cid IS NOT NULL").
+		Where("contents.created_at >= ?", ar.LastAdvertisement).
+		Select("all_objs.cid").
+		Count(&newContentsCount).
+		Error
 	if err != nil {
 		return fmt.Errorf("unable to query new CIDs from database: %s", err)
 	}
@@ -155,6 +164,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		log.Debugf("no new CIDs to announce, skipping")
 		return nil
 	}
+
 	log.Debugf("found %d new CIDs, announcing", newContentsCount)
 
 	log.Infof("sending announcement to %s", ar.Handle)
@@ -164,7 +174,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	}
 
 	// update lastAdvertisement time on database
-	if err := arEng.db.Model(Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("lastAdvertisement", time.Now()).Error; err != nil {
+	if err := arEng.db.Model(&Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
 		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
