@@ -10,6 +10,7 @@ import (
 	"github.com/application-research/estuary/util"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
+	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -93,16 +94,20 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 			return nil, err
 		}
 
-		var newContents []util.Content
+		var newCids []cid.Cid
 		// find all new multihashes since the last time we advertised for this autoretrieve server
-		err = db.Find(&newContents, "active = true and created_at >= ?", ar.LastAdvertisement).Error
-		if err != nil {
+		if err = db.Model(util.Content{}).
+			Joins("LEFT JOIN (select * from obj_refs left join objects on obj_refs.object = objects.id) all_objs ON contents.id = all_objs.content").
+			Where("contents.active = true AND all_objs.cid IS NOT NULL").
+			Select("all_objs.cid AS cid").
+			Scan(&newCids).
+			Error; err != nil {
 			return nil, err
 		}
 
 		multihashes := []multihash.Multihash{}
-		for _, content := range newContents {
-			multihashes = append(multihashes, content.Cid.CID.Hash())
+		for _, c := range newCids {
+			multihashes = append(multihashes, c.Hash())
 		}
 
 		return &SimpleEstuaryMhIterator{
@@ -159,7 +164,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	}
 
 	// update lastAdvertisement time on database
-	if err := arEng.db.Model(Autoretrieve{}).UpdateColumn("lastAdvertisement", time.Now()).Error; err != nil {
+	if err := arEng.db.Model(Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("lastAdvertisement", time.Now()).Error; err != nil {
 		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
