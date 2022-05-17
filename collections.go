@@ -11,6 +11,7 @@ type Collection struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	UserID      uint   `json:"userId"`
+	CID         string `json:"cid"`
 }
 
 type CollectionRef struct {

@@ -74,6 +74,7 @@ type Content struct {
 	Description string           `json:"description"`
 	Size        int64            `json:"size"`
 	Type        util.ContentType `json:"type"`
+	Path        string           `json:"path"`
 	Active      bool             `json:"active"`
 	Offloaded   bool             `json:"offloaded"`
 	Replication int              `json:"replication"`

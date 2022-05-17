@@ -125,7 +125,9 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		return err
 	}
 
-	s.CM.ToCheck <- op.ContId
+	if op.MakeDeal {
+		s.CM.ToCheck <- op.ContId
+	}
 
 	if op.Replace > 0 {
 		if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
@@ -159,11 +161,12 @@ func (cm *ContentManager) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
+	makeDeal := true
 	for _, c := range toPin {
 		if c.Location == "local" {
-			cm.addPinToQueue(c, nil, 0)
+			cm.addPinToQueue(c, nil, 0, makeDeal)
 		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location); err != nil {
+			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location, makeDeal); err != nil {
 				log.Errorf("failed to send pin message to shuttle: %s", err)
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -173,7 +176,7 @@ func (cm *ContentManager) refreshPinQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatus, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -225,9 +228,9 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	}
 
 	if loc == "local" {
-		cm.addPinToQueue(cont, peers, replace)
+		cm.addPinToQueue(cont, peers, replace, makeDeal)
 	} else {
-		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc); err != nil {
+		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc, makeDeal); err != nil {
 			return nil, err
 		}
 	}
@@ -235,7 +238,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	return cm.pinStatus(cont)
 }
 
-func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
+func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint, makeDeal bool) {
 	if cont.Location != "local" {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
@@ -250,6 +253,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 		Status:   "queued",
 		Replace:  replace,
 		Location: cont.Location,
+		MakeDeal: makeDeal,
 	}
 
 	cm.pinLk.Lock()
@@ -260,7 +264,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 	cm.pinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
 		attribute.String("CID", cont.Cid.CID.String()),
@@ -291,6 +295,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 		Status:   "queued",
 		Replace:  replace,
 		Location: handle,
+		MakeDeal: makeDeal,
 	}
 
 	cm.pinLk.Lock()
@@ -711,7 +716,8 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta)
+	makeDeal := true
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -799,7 +805,8 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
+	makeDeal := true
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}

@@ -44,6 +44,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	merkledag "github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
@@ -217,6 +218,8 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
 	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
+	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
+
 	colfs := cols.Group("/fs")
 	colfs.GET("/list", withUser(s.handleColfsListDir))
 	colfs.POST("/add", withUser(s.handleColfsAdd))
@@ -536,8 +539,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
 	}
-
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil)
+	makeDeal := true
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -3198,6 +3201,89 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, map[string]string{})
+}
+
+// handleCommitCollection godoc
+// @Summary      Produce a CID of the collection contents
+// @Description  This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
+// @Param        coluuid     path     string  true     "coluuid"
+// @Tags         collections
+// @Produce      json
+// @Success      200  {object}  string
+// @Router       /collections/{coluuid}/commit [post]
+func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
+	colid := c.Param("coluuid")
+
+	var col Collection
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+		return err
+	}
+
+	contents := []Content{}
+	if err := s.DB.Model(CollectionRef{}).
+		Where("collection = ?", col.ID).
+		Joins("left join contents on contents.id = collection_refs.content").
+		Select("contents.*, collection_refs.path").
+		Scan(&contents).Error; err != nil {
+		return err
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, nil)
+	dserv := merkledag.NewDAGService(bserv)
+
+	// create DAG respecting directory structure
+	collectionNode := unixfs.EmptyDirNode()
+	for _, c := range contents {
+		dirs, err := util.DirsFromPath(c.Path, c.Name)
+		if err != nil {
+			return err
+		}
+
+		lastDirNode, err := util.EnsurePathIsLinked(dirs, collectionNode, dserv)
+		if err != nil {
+			return err
+		}
+		lastDirNode.AddRawLink(c.Name, &ipld.Link{
+			Size: uint64(c.Size),
+			Cid:  c.Cid.CID,
+		})
+	}
+	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
+
+	// update DB with new collection CID
+	col.CID = collectionNode.Cid().String()
+	err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error
+	if err != nil {
+		return err
+	}
+
+	// transform listen addresses (/ip/1.2.3.4/tcp/80) in full p2p multiaddresses
+	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
+	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
+	for _, listenAddr := range s.Node.Host.Addrs() {
+		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
+		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
+		if err != nil {
+			return err
+		}
+		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
+	}
+
+	// transform multiaddresses into AddrInfo objects
+	peers, err := peer.AddrInfosFromP2pAddrs(fullP2pMultiAddrs...)
+	if err != nil {
+		return err
+	}
+
+	ctx := c.Request().Context()
+	makeDeal := false
+
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil, makeDeal)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(200, pinstatus)
 }
 
 // handleGetCollectionContents godoc
