@@ -1359,7 +1359,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		var respErr util.HttpError
 		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
 			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
