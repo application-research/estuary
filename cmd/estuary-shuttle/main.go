@@ -1552,7 +1552,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return errors.Wrap(err, "failed to Walk DAG")
+		return errors.Wrap(err, "failed to walk DAG")
 	}
 
 	span.SetAttributes(
