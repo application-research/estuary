@@ -59,6 +59,7 @@ func NewEstuary() *Estuary {
 		DealConfig: Deal{
 			Disable:               false,
 			FailOnTransferFailure: false,
+			Verified:              true,
 		},
 
 		ContentConfig: Content{

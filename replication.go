@@ -117,6 +117,8 @@ type ContentManager struct {
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
+
+	VerifiedDeal bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -1212,7 +1214,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	))
 	defer span.End()
 
-	verified := true
+	verified := cm.VerifiedDeal
 
 	if content.AggregatedIn > 0 {
 		// This content is aggregated inside another piece of content, nothing to do here
@@ -1381,14 +1383,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
-		bl, err := cm.FilClient.Balance(ctx)
-		if err != nil {
-			return errors.Wrap(err, "could not retrieve dataCap from client balance")
-		}
+		// only verified deals need datacap checks
+		if verified {
+			bl, err := cm.FilClient.Balance(ctx)
+			if err != nil {
+				return errors.Wrap(err, "could not retrieve dataCap from client balance")
+			}
 
-		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
-			// how do we notify admin to top up datacap?
-			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+			if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
+				// how do we notify admin to top up datacap?
+				return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+			}
 		}
 
 		go func() {
