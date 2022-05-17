@@ -1364,20 +1364,22 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to Do createContent")
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var respErr util.HttpError
+		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
+			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		}
+		return 0, errors.Wrap(respErr, "failed to request createContent ")
+	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to decode resp body")
 	}
-
-	if rbody.ID == 0 {
-		return 0, fmt.Errorf("create content request failed, got back content ID zero")
-	}
-
 	return rbody.ID, nil
 }
 
@@ -1414,20 +1416,22 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to do shuttle content create request")
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var respErr util.HttpError
+		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
+			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		}
+		return 0, errors.Wrap(respErr, "request to create shuttle content failed")
+	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to decode resp body")
 	}
-
-	if rbody.ID == 0 {
-		return 0, fmt.Errorf("create content request failed, got back content ID zero")
-	}
-
 	return rbody.ID, nil
 }
 
