@@ -367,7 +367,10 @@ func main() {
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
-				cfg.Load(cctx.String("config"))
+				err := cfg.Load(cctx.String("config"))
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
 				overrideSetOptions(app.Flags, cctx, cfg)
 				db, err := setupDatabase(cfg)
 				if err != nil {
@@ -413,8 +416,10 @@ func main() {
 			Usage: "Saves a configuration file to the location specified by the config parameter",
 			Action: func(cctx *cli.Context) error {
 				configuration := cctx.String("config")
-				cfg.Load(configuration) // Assume error means no configuration file exists
-				log.Info("test")
+				err := cfg.Load(configuration)
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
 				overrideSetOptions(app.Flags, cctx, cfg)
 				return cfg.Save(configuration)
 			},
@@ -422,7 +427,11 @@ func main() {
 	}
 	app.Action = func(cctx *cli.Context) error {
 
-		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
+		err := cfg.Load(cctx.String("config"))
+		if err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
+			return err
+		}
+
 		overrideSetOptions(app.Flags, cctx, cfg)
 
 		db, err := setupDatabase(cfg)

@@ -292,7 +292,10 @@ func main() {
 			Usage: "Saves a configuration file to the location specified by the config parameter",
 			Action: func(cctx *cli.Context) error {
 				configuration := cctx.String("config")
-				cfg.Load(configuration) // Assume error means no configuration file exists
+				err := cfg.Load(configuration)
+				if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
 				overrideSetOptions(app.Flags, cctx, cfg)
 				return cfg.Save(configuration)
 			},
@@ -301,15 +304,20 @@ func main() {
 
 	app.Action = func(cctx *cli.Context) error {
 
-		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
+		err := cfg.Load(cctx.String("config"))
+		if err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+			log.Error(err)
+			return err
+		}
+
 		overrideSetOptions(app.Flags, cctx, cfg)
 
-		err := cfg.Validate()
+		err = cfg.Validate()
 		if err != nil {
 			return err
 		}
 
-		db, err := setupDatabase(cctx.String("database"))
+		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}
