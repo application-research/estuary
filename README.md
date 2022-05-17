@@ -39,6 +39,12 @@ Then run:
 ./estuary --datadir=/path/to/storage --database=IF-YOU-NEED-THIS --logging
 ```
 
+NOTE: Estuary makes only verified deals by default and this requires the wallet address to have datacap(see https://verify.glif.io/). To make deals without datacap, it will require the wallet to have FIL, and the run command will need the `--verified-deal` option set to `false`.
+
+```sh
+./estuary --datadir=/path/to/storage --database=IF-YOU-NEED-THIS --logging --verified-deal=false
+```
+
 ## Running as daemon with Systemd
 
 The Makefile has a target that will install a generic but workable systemd service for estuary.
