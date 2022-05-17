@@ -1460,7 +1460,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		return errors.Wrapf(err, "failed to Provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
 	return nil
 }
