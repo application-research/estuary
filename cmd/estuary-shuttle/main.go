@@ -1355,7 +1355,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, errors.Wrap(err, "failed to Do content create request")
+		return 0, errors.Wrap(err, "failed to Do createContent")
 	}
 	defer resp.Body.Close()
 
@@ -1364,7 +1364,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
 			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
 		}
-		return 0, errors.Wrap(respErr, "request to create content failed")
+		return 0, errors.Wrap(respErr, "failed to request createContent ")
 	}
 
 	var rbody util.ContentCreateResponse
