@@ -194,6 +194,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
 			cfg.DealConfig.Disable = cctx.Bool("disable-deal-making")
+		case "verified-deal":
+			cfg.DealConfig.Verified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
 			cfg.DealConfig.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
@@ -311,6 +313,11 @@ func main() {
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
 			Value: cfg.DealConfig.Disable,
+		},
+		&cli.BoolFlag{
+			Name:  "verified-deal",
+			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
+			Value: cfg.DealConfig.Verified,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
@@ -531,6 +538,7 @@ func main() {
 		cm.FailDealOnTransferFailure = cfg.DealConfig.FailOnTransferFailure
 
 		cm.isDealMakingDisabled = cfg.DealConfig.Disable
+		cm.VerifiedDeal = cfg.DealConfig.Verified
 		cm.contentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
 		cm.localContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
 
