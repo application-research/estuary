@@ -10,6 +10,7 @@ import (
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/pkg/errors"
 )
 
 var log = logging.Logger("pinner")
@@ -176,7 +177,7 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 	}); err != nil {
 		op.fail(err)
 		pm.StatusChangeFunc(op.ContId, "failed")
-		return err
+		return errors.Wrap(err, "shuttle RunPinFunc failed")
 	}
 	op.complete()
 	pm.StatusChangeFunc(op.ContId, "pinned")
@@ -283,7 +284,7 @@ func (pm *PinManager) Run(workers int) {
 func (pm *PinManager) pinWorker() {
 	for op := range pm.pinQueueOut {
 		if err := pm.doPinning(op); err != nil {
-			log.Errorf("pinning queue error: %s", err)
+			log.Errorf("pinning queue error: %+v", err)
 		}
 		pm.pinComplete <- op
 	}
