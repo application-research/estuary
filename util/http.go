@@ -17,7 +17,6 @@ const (
 	ERR_INVALID_TOKEN           = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED           = "ERR_TOKEN_EXPIRED"
 	ERR_AUTH_MISSING            = "ERR_AUTH_MISSING"
-	ERR_WRONG_AUTH_FORMAT       = "ERR_WRONG_AUTH_FORMAT"
 	ERR_INVALID_AUTH            = "ERR_INVALID_AUTH"
 	ERR_AUTH_MISSING_BEARER     = "ERR_AUTH_MISSING_BEARER"
 	ERR_NOT_AUTHORIZED          = "ERR_NOT_AUTHORIZED"
@@ -59,12 +58,11 @@ func ExtractAuth(c echo.Context) (string, error) {
 	}
 
 	//	if auth is not missing, check format first before extracting
-	matchEst, _ := regexp.MatchString("EST(.+)ARY", auth)
-	matchSecret, _ := regexp.MatchString("SECRET(.+)SECRET", auth)
-	if !matchEst && !matchSecret {
+	match, _ := regexp.MatchString("EST(.*)ARY", auth)
+	if match == false {
 		return "", &HttpError{
 			Code:    403,
-			Message: ERR_WRONG_AUTH_FORMAT,
+			Message: ERR_INVALID_AUTH,
 		}
 	}
 
