@@ -1,9 +1,8 @@
-package server
+package util
 
 import (
 	"time"
 
-	"github.com/application-research/estuary/util"
 	"gorm.io/gorm"
 )
 
@@ -16,7 +15,7 @@ type User struct {
 
 	UserEmail string
 
-	Address   util.DbAddr
+	Address   DbAddr
 	authToken AuthToken
 	Perm      int
 	Flags     int
