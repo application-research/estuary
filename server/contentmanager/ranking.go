@@ -11,7 +11,7 @@ import (
 
 const minerListTTL = time.Minute
 
-type storageMiner struct {
+type StorageMiner struct {
 	gorm.Model
 	Address         util.DbAddr `gorm:"unique"`
 	Suspended       bool
@@ -22,14 +22,14 @@ type storageMiner struct {
 	Owner           uint
 }
 
-func (cm *ContentManager) sortedMinerList() ([]address.Address, []*minerDealStats, error) {
+func (cm *ContentManager) SortedMinerList() ([]address.Address, []*minerDealStats, error) {
 	cm.minerLk.Lock()
 	defer cm.minerLk.Unlock()
 	if time.Since(cm.lastComputed) < minerListTTL {
 		return cm.sortedMiners, cm.rawData, nil
 	}
 
-	sml, err := cm.computeSortedMinerList()
+	sml, err := cm.ComputeSortedMinerList()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -53,7 +53,7 @@ func (cm *ContentManager) sortedMinerList() ([]address.Address, []*minerDealStat
 }
 
 func (cm *ContentManager) minerIsSuspended(m address.Address) (bool, error) {
-	var miner storageMiner
+	var miner StorageMiner
 	if err := cm.DB.Find(&miner, "address = ?", m.String()).Error; err != nil {
 		return false, err
 	}
@@ -79,7 +79,7 @@ func (mds *minerDealStats) Better(o *minerDealStats) bool {
 	return mds.SuccessRatio() > o.SuccessRatio()
 }
 
-func (cm *ContentManager) computeSortedMinerList() ([]*minerDealStats, error) {
+func (cm *ContentManager) ComputeSortedMinerList() ([]*minerDealStats, error) {
 	var deals []ContentDeal
 	if err := cm.DB.Find(&deals).Error; err != nil {
 		return nil, err

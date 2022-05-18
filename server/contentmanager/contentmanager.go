@@ -91,29 +91,29 @@ type ContentManager struct {
 	lastComputed time.Time
 
 	// deal bucketing stuff
-	bucketLk sync.Mutex
-	buckets  map[uint][]*replication.ContentStagingZone
+	BucketLk sync.Mutex
+	Buckets  map[uint][]*replication.ContentStagingZone
 
 	// some behavior flags
 	FailDealOnTransferFailure bool
 
 	dealDisabledLk       sync.Mutex
-	isDealMakingDisabled bool
+	IsDealMakingDisabled bool
 
 	ContentAddingDisabled      bool
 	LocalContentAddingDisabled bool
 
 	Replication int
 
-	hostname string
+	Hostname string
 
 	pinJobs map[uint]*pinner.PinningOperation
 	pinLk   sync.Mutex
 
-	pinMgr *pinner.PinManager
+	PinMgr *pinner.PinManager
 
-	shuttlesLk sync.Mutex
-	shuttles   map[string]*ShuttleConnection
+	ShuttlesLk sync.Mutex
+	Shuttles   map[string]*ShuttleConnection
 
 	remoteTransferStatus *lru.ARCCache
 
@@ -157,7 +157,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 }
 
 func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{
 			RestartTransfer: &drpc.RestartTransfer{
@@ -292,13 +292,13 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:              tbs,
 		ToCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
-		buckets:              zones,
+		Buckets:              zones,
 		pinJobs:              make(map[uint]*pinner.PinningOperation),
-		pinMgr:               pinmgr,
+		PinMgr:               pinmgr,
 		remoteTransferStatus: cache,
-		shuttles:             make(map[string]*ShuttleConnection),
+		Shuttles:             make(map[string]*ShuttleConnection),
 		contentSizeLimit:     constants.DefaultContentSizeLimit,
-		hostname:             hostname,
+		Hostname:             hostname,
 		inflightCids:         make(map[cid.Cid]uint),
 	}
 	qm := newQueueManager(func(c uint) {
@@ -527,7 +527,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *repli
 	if primary == "local" {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
-		return cm.sendConsolidateContentCmd(ctx, primary, toMove)
+		return cm.SendConsolidateContentCmd(ctx, primary, toMove)
 	}
 }
 
@@ -542,10 +542,10 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *replication.C
 
 	if len(cbl) > 1 {
 		// Need to migrate content all to the same shuttle
-		cm.bucketLk.Lock()
+		cm.BucketLk.Lock()
 		// put the staging zone back in the list
-		cm.buckets[b.User] = append(cm.buckets[b.User], b)
-		cm.bucketLk.Unlock()
+		cm.Buckets[b.User] = append(cm.Buckets[b.User], b)
+		cm.BucketLk.Unlock()
 
 		go func() {
 			if err := cm.consolidateStagedContent(ctx, b); err != nil {
@@ -561,7 +561,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *replication.C
 		loc = k
 	}
 
-	dir, err := cm.createAggregate(ctx, b.Contents)
+	dir, err := cm.CreateAggregate(ctx, b.Contents)
 	if err != nil {
 		return xerrors.Errorf("failed to create aggregate: %w", err)
 	}
@@ -625,11 +625,11 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *replication.C
 		for _, c := range b.Contents {
 			ids = append(ids, c.ID)
 		}
-		return cm.sendAggregateCmd(ctx, loc, content, ids, dir.RawData())
+		return cm.SendAggregateCmd(ctx, loc, content, ids, dir.RawData())
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
+func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
 	sort.Slice(conts, func(i, j int) bool {
 		return conts[i].ID < conts[j].ID
 	})
@@ -678,8 +678,8 @@ type estimateResponse struct {
 	Asks  []*MinerStorageAsk
 }
 
-func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
-	ctx, span := cm.Tracer.Start(ctx, "estimatePrice", trace.WithAttributes(
+func (cm *ContentManager) EstimatePrice(ctx context.Context, repl int, size abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
+	ctx, span := cm.Tracer.Start(ctx, "EstimatePrice", trace.WithAttributes(
 		attribute.Int("replication", repl),
 	))
 	defer span.End()
@@ -819,7 +819,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont util.Content, n i
 		}
 	}
 
-	sortedminers, _, err := cm.sortedMinerList()
+	sortedminers, _, err := cm.SortedMinerList()
 	if err != nil {
 		return nil, err
 	}
@@ -856,7 +856,7 @@ func (cm *ContentManager) pickMiners(ctx context.Context, cont util.Content, n i
 }
 
 func (cm *ContentManager) randomMinerList() ([]address.Address, error) {
-	var dbminers []storageMiner
+	var dbminers []StorageMiner
 	if err := cm.DB.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
 	}
@@ -907,11 +907,11 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 		return nil, err
 	}
 
-	if err := cm.updateMinerVersion(ctx, m); err != nil {
+	if err := cm.UpdateMinerVersion(ctx, m); err != nil {
 		log.Warnf("failed to update miner version: %s", err)
 	}
 
-	nmsa := toDBAsk(netask)
+	nmsa := ToDBAsk(netask)
 
 	nmsa.UpdatedAt = time.Now()
 
@@ -928,13 +928,13 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 	return nmsa, nil
 }
 
-func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Address) error {
+func (cm *ContentManager) UpdateMinerVersion(ctx context.Context, m address.Address) error {
 	vers, err := cm.FilClient.GetMinerVersion(ctx, m)
 	if err != nil {
 		return err
 	}
 
-	var sm storageMiner
+	var sm StorageMiner
 	if err := cm.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
@@ -946,7 +946,7 @@ func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Addr
 		return nil
 	}
 
-	if err := cm.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
+	if err := cm.DB.Model(StorageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
 		return err
 	}
 
@@ -967,7 +967,7 @@ func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bo
 	return false
 }
 
-func toDBAsk(netask *network.AskResponse) *MinerStorageAsk {
+func ToDBAsk(netask *network.AskResponse) *MinerStorageAsk {
 	return &MinerStorageAsk{
 		Miner:         netask.Ask.Ask.Miner.String(),
 		Price:         netask.Ask.Ask.Price.String(),
@@ -978,10 +978,10 @@ func toDBAsk(netask *network.AskResponse) *MinerStorageAsk {
 }
 
 func (cm *ContentManager) ContentInStagingZone(ctx context.Context, content util.Content) bool {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
 
-	bucks, ok := cm.buckets[content.UserID]
+	bucks, ok := cm.Buckets[content.UserID]
 	if !ok {
 		return false
 	}
@@ -995,11 +995,11 @@ func (cm *ContentManager) ContentInStagingZone(ctx context.Context, content util
 	return false
 }
 
-func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint) []*replication.ContentStagingZone {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*replication.ContentStagingZone {
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
 
-	blist, ok := cm.buckets[user]
+	blist, ok := cm.Buckets[user]
 	if !ok {
 		return []*replication.ContentStagingZone{}
 	}
@@ -1012,12 +1012,12 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 	return out
 }
 
-func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][]*replication.ContentStagingZone {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*replication.ContentStagingZone {
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
 
 	out := make(map[uint][]*replication.ContentStagingZone)
-	for u, blist := range cm.buckets {
+	for u, blist := range cm.Buckets {
 		var copylist []*replication.ContentStagingZone
 
 		for _, b := range blist {
@@ -1038,10 +1038,10 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	}
 
 	log.Infof("adding content to staging zone: %d", content.ID)
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
 
-	blist, ok := cm.buckets[content.UserID]
+	blist, ok := cm.Buckets[content.UserID]
 	if !ok {
 		b, err := cm.newContentStagingZone(content.UserID, content.Location)
 		if err != nil {
@@ -1053,7 +1053,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 			return fmt.Errorf("failed to add content to staging zone: %w", err)
 		}
 
-		cm.buckets[content.UserID] = []*replication.ContentStagingZone{b}
+		cm.Buckets[content.UserID] = []*replication.ContentStagingZone{b}
 		return nil
 	}
 
@@ -1072,7 +1072,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	if err != nil {
 		return err
 	}
-	cm.buckets[content.UserID] = append(blist, b)
+	cm.Buckets[content.UserID] = append(blist, b)
 
 	_, err = cm.tryAddContent(b, content)
 	if err != nil {
@@ -1083,11 +1083,11 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 }
 
 func (cm *ContentManager) popReadyStagingZone() []*replication.ContentStagingZone {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
 
 	var out []*replication.ContentStagingZone
-	for uid, blist := range cm.buckets {
+	for uid, blist := range cm.Buckets {
 		var keep []*replication.ContentStagingZone
 		for _, b := range blist {
 			if b.IsReady() {
@@ -1096,7 +1096,7 @@ func (cm *ContentManager) popReadyStagingZone() []*replication.ContentStagingZon
 				keep = append(keep, b)
 			}
 		}
-		cm.buckets[uid] = keep
+		cm.Buckets[uid] = keep
 	}
 
 	return out
@@ -1251,7 +1251,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		if pc == nil {
 			// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
 			go func() {
-				_, _, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
+				_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 				if err != nil {
 					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 					done(time.Minute * 5)
@@ -1275,7 +1275,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			return nil
 		}
 
-		if cm.dealMakingDisabled() {
+		if cm.DealMakingDisabled() {
 			log.Warnf("deal making is disabled for now")
 			done(time.Minute * 60)
 			return nil
@@ -1343,7 +1343,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 	}
 }
 
-func (cm *ContentManager) getContent(id uint) (*util.Content, error) {
+func (cm *ContentManager) GetContent(id uint) (*util.Content, error) {
 	var content util.Content
 	if err := cm.DB.First(&content, "id = ?", id).Error; err != nil {
 		return nil, err
@@ -1466,7 +1466,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *ContentDeal) (int, e
 			statusCheckID, maddr.String(), provds.Message)
 	}
 
-	content, err := cm.getContent(d.Content)
+	content, err := cm.GetContent(d.Content)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
 	}
@@ -1864,7 +1864,7 @@ func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) b
 	return false
 }
 
-type proposalRecord struct {
+type ProposalRecord struct {
 	PropCid util.DbCID `gorm:"index"`
 	Data    []byte
 }
@@ -1884,7 +1884,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}
 
-	_, _, size, err := cm.getPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
+	_, _, size, err := cm.GetPieceCommitment(ctx, content.Cid.CID, cm.Blockstore)
 	if err != nil {
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
@@ -2102,7 +2102,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 			return nil, false, xerrors.Errorf("preparing for data request: %w", err)
 		}
 	} else {
-		addrInfo := cm.shuttleAddrInfo(contentLoc)
+		addrInfo := cm.ShuttleAddrInfo(contentLoc)
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -2138,8 +2138,8 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	return cleanup, propPhase, err
 }
 
-func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Content, miner address.Address, verified bool) (uint, error) {
-	ctx, span := cm.Tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
+func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Content, miner address.Address, verified bool) (uint, error) {
+	ctx, span := cm.Tracer.Start(ctx, "MakeDealWithMiner", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Stringer("miner", miner),
 	))
@@ -2315,7 +2315,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	}
 	// fmt.Println("proposal cid: ", nd.Cid())
 
-	if err := cm.DB.Create(&proposalRecord{
+	if err := cm.DB.Create(&ProposalRecord{
 		PropCid: util.DbCID{nd.Cid()},
 		Data:    nd.RawData(),
 	}).Error; err != nil {
@@ -2326,7 +2326,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 }
 
 func (cm *ContentManager) getProposalRecord(propCid cid.Cid) (*market.ClientDealProposal, error) {
-	var proprec proposalRecord
+	var proprec ProposalRecord
 	if err := cm.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		return nil, err
 	}
@@ -2343,7 +2343,7 @@ func (cm *ContentManager) recordDealFailure(dfe *DealFailureError) error {
 	log.Infow("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
 	rec := dfe.Record()
 	if dfe.Miner != address.Undef {
-		var m storageMiner
+		var m StorageMiner
 		if err := cm.DB.First(&m, "address = ?", dfe.Miner.String()).Error; err != nil {
 			log.Errorf("failed to look up miner while recording deal failure: %s", err)
 		}
@@ -2359,7 +2359,7 @@ type DealFailureError struct {
 	Content uint
 }
 
-type dfeRecord struct {
+type DfeRecord struct {
 	gorm.Model
 	Miner        string `json:"miner"`
 	Phase        string `json:"phase"`
@@ -2368,8 +2368,8 @@ type dfeRecord struct {
 	MinerVersion string `json:"minerVersion"`
 }
 
-func (dfe *DealFailureError) Record() *dfeRecord {
-	return &dfeRecord{
+func (dfe *DealFailureError) Record() *DfeRecord {
+	return &DfeRecord{
 		Miner:   dfe.Miner.String(),
 		Phase:   dfe.Phase,
 		Message: dfe.Message,
@@ -2417,7 +2417,7 @@ func (cm *ContentManager) lookupPieceCommRecord(data cid.Cid) (*PieceCommRecord,
 
 // calculateCarSize works out the CAR size using the cids and block sizes
 // for the content stored in the DB
-func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (uint64, error) {
+func (cm *ContentManager) CalculateCarSize(ctx context.Context, data cid.Cid) (uint64, error) {
 	_, span := cm.Tracer.Start(ctx, "calculateCarSize")
 	defer span.End()
 
@@ -2448,7 +2448,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	if cont.Location != "local" {
-		if err := cm.sendShuttleCommand(ctx, cont.Location, &drpc.Command{
+		if err := cm.SendShuttleCommand(ctx, cont.Location, &drpc.Command{
 			Op: drpc.CMD_ComputeCommP,
 			Params: drpc.CmdParams{
 				ComputeCommP: &drpc.ComputeCommP{
@@ -2466,8 +2466,8 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	return filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
 }
 
-func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
-	_, span := cm.Tracer.Start(ctx, "getPieceComm")
+func (cm *ContentManager) GetPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
+	_, span := cm.Tracer.Start(ctx, "GetPieceComm")
 	defer span.End()
 
 	// Get the piece comm record from the DB
@@ -2482,7 +2482,7 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 
 		// The CAR size field was added later, so if it's not on the piece comm
 		// record, calculate it
-		carSize, err := cm.calculateCarSize(ctx, data)
+		carSize, err := cm.CalculateCarSize(ctx, data)
 		if err != nil {
 			return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
 		}
@@ -2639,7 +2639,7 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 		})
 	}
 
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RetrieveContent,
 		Params: drpc.CmdParams{
 			RetrieveContent: &drpc.RetrieveContent{
@@ -2893,9 +2893,9 @@ func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, err
 		}, nil
 	}
 
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	conn, ok := cm.shuttles[handle]
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	conn, ok := cm.Shuttles[handle]
 	if !ok {
 		return nil, nil
 	}
@@ -2904,7 +2904,7 @@ func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, err
 }
 
 func (cm *ContentManager) sendPrepareForDataRequestCommand(ctx context.Context, loc string, dbid uint, authToken string, propCid cid.Cid, payloadCid cid.Cid, size uint64) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_PrepareForDataRequest,
 		Params: drpc.CmdParams{
 			PrepareForDataRequest: &drpc.PrepareForDataRequest{
@@ -2919,7 +2919,7 @@ func (cm *ContentManager) sendPrepareForDataRequestCommand(ctx context.Context, 
 }
 
 func (cm *ContentManager) sendCleanupPreparedRequestCommand(ctx context.Context, loc string, dbid uint, authToken string) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_CleanupPreparedRequest,
 		Params: drpc.CmdParams{
 			CleanupPreparedRequest: &drpc.CleanupPreparedRequest{
@@ -2935,7 +2935,7 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	if err != nil {
 		return err
 	}
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_StartTransfer,
 		Params: drpc.CmdParams{
 			StartTransfer: &drpc.StartTransfer{
@@ -2949,8 +2949,8 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	})
 }
 
-func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []uint, blob []byte) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []uint, blob []byte) error {
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_AggregateContent,
 		Params: drpc.CmdParams{
 			AggregateContent: &drpc.AggregateContent{
@@ -2965,7 +2965,7 @@ func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont
 }
 
 func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_ReqTxStatus,
 		Params: drpc.CmdParams{
 			ReqTxStatus: &drpc.ReqTxStatus{
@@ -2977,7 +2977,7 @@ func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc 
 }
 
 func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, cont uint, size int64) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_SplitContent,
 		Params: drpc.CmdParams{
 			SplitContent: &drpc.SplitContent{
@@ -2988,7 +2988,7 @@ func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, c
 	})
 }
 
-func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
+func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
 	fromLocs := make(map[string]struct{})
 
 	tc := &drpc.TakeContent{}
@@ -3016,7 +3016,7 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 		tc.Sources = append(tc.Sources, *ai)
 	}
 
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_TakeContent,
 		Params: drpc.CmdParams{
 			TakeContent: tc,
@@ -3025,7 +3025,7 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 }
 
 func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_UnpinContent,
 		Params: drpc.CmdParams{
 			UnpinContent: &drpc.UnpinContent{
@@ -3035,16 +3035,16 @@ func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []
 	})
 }
 
-func (cm *ContentManager) dealMakingDisabled() bool {
+func (cm *ContentManager) DealMakingDisabled() bool {
 	cm.dealDisabledLk.Lock()
 	defer cm.dealDisabledLk.Unlock()
-	return cm.isDealMakingDisabled
+	return cm.IsDealMakingDisabled
 }
 
-func (cm *ContentManager) setDealMakingEnabled(enable bool) {
+func (cm *ContentManager) SetDealMakingEnabled(enable bool) {
 	cm.dealDisabledLk.Lock()
 	defer cm.dealDisabledLk.Unlock()
-	cm.isDealMakingDisabled = !enable
+	cm.IsDealMakingDisabled = !enable
 }
 
 func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
@@ -3097,10 +3097,10 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 	return nil
 }
 
-func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	_, ok := cm.shuttles[handle]
+func (cm *ContentManager) RegisterShuttleConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	_, ok := cm.Shuttles[handle]
 	if ok {
 		log.Warn("registering shuttle but found existing connection")
 		return nil, nil, fmt.Errorf("shuttle already connected")
@@ -3125,31 +3125,31 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		handle:   handle,
 		address:  hello.Address,
 		addrInfo: hello.AddrInfo,
-		hostname: hello.Host,
+		Hostname: hello.Host,
 		cmds:     make(chan *drpc.Command, 32),
 		closing:  make(chan struct{}),
 		private:  hello.Private,
 	}
 
-	cm.shuttles[handle] = d
+	cm.Shuttles[handle] = d
 
 	return d.cmds, func() {
 		close(d.closing)
-		cm.shuttlesLk.Lock()
-		outd, ok := cm.shuttles[handle]
+		cm.ShuttlesLk.Lock()
+		outd, ok := cm.Shuttles[handle]
 		if ok {
 			if outd == d {
-				delete(cm.shuttles, handle)
+				delete(cm.Shuttles, handle)
 			}
 		}
-		cm.shuttlesLk.Unlock()
+		cm.ShuttlesLk.Unlock()
 
 	}, nil
 }
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
-func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message) error {
+func (cm *ContentManager) ProcessShuttleMessage(handle string, msg *drpc.Message) error {
 	ctx := context.TODO()
 
 	// if the message contains a trace continue it here.
@@ -3247,14 +3247,14 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 
 var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
-func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
+func (cm *ContentManager) SendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
 	if handle == "" {
 		return fmt.Errorf("attempted to send command to empty shuttle handle")
 	}
 
-	cm.shuttlesLk.Lock()
-	d, ok := cm.shuttles[handle]
-	cm.shuttlesLk.Unlock()
+	cm.ShuttlesLk.Lock()
+	d, ok := cm.Shuttles[handle]
+	cm.ShuttlesLk.Unlock()
 	if ok {
 		return d.sendMessage(ctx, cmd)
 	}
@@ -3262,10 +3262,10 @@ func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string,
 	return ErrNoShuttleConnection
 }
 
-func (cm *ContentManager) shuttleIsOnline(handle string) bool {
-	cm.shuttlesLk.Lock()
-	d, ok := cm.shuttles[handle]
-	cm.shuttlesLk.Unlock()
+func (cm *ContentManager) ShuttleIsOnline(handle string) bool {
+	cm.ShuttlesLk.Lock()
+	d, ok := cm.Shuttles[handle]
+	cm.ShuttlesLk.Unlock()
 	if !ok {
 		return false
 	}
@@ -3278,30 +3278,30 @@ func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	}
 }
 
-func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleAddrInfo(handle string) *peer.AddrInfo {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if ok {
 		return &d.addrInfo
 	}
 	return nil
 }
 
-func (cm *ContentManager) shuttleHostName(handle string) string {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleHostName(handle string) string {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if ok {
-		return d.hostname
+		return d.Hostname
 	}
 	return ""
 }
 
-func (cm *ContentManager) shuttleStorageStats(handle string) *util.ShuttleStorageStats {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleStorageStats(handle string) *util.ShuttleStorageStats {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if !ok {
 		return nil
 	}
@@ -3387,9 +3387,9 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 }
 
 func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *drpc.ShuttleUpdate) error {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if !ok {
 		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
 	}
@@ -3531,7 +3531,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 	return nil
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*util.Content, error) {
+func (cm *ContentManager) AddDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, fname string, replication int) (*util.Content, error) {
 	ctx, span := cm.Tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
@@ -3568,8 +3568,8 @@ func (cm *ContentManager) SelectLocationForContent(ctx context.Context, obj cid.
 	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
-	cm.shuttlesLk.Lock()
-	for d, sh := range cm.shuttles {
+	cm.ShuttlesLk.Lock()
+	for d, sh := range cm.Shuttles {
 		if !sh.private {
 			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
@@ -3577,7 +3577,7 @@ func (cm *ContentManager) SelectLocationForContent(ctx context.Context, obj cid.
 			allShuttlesLowSpace = false
 		}
 	}
-	cm.shuttlesLk.Unlock()
+	cm.ShuttlesLk.Unlock()
 
 	var shuttles []Shuttle
 	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
@@ -3636,13 +3636,13 @@ func (cm *ContentManager) SelectLocationForRetrieval(ctx context.Context, cont u
 	defer span.End()
 
 	var activeShuttles []string
-	cm.shuttlesLk.Lock()
-	for d, sh := range cm.shuttles {
+	cm.ShuttlesLk.Lock()
+	for d, sh := range cm.Shuttles {
 		if !sh.private {
 			activeShuttles = append(activeShuttles, d)
 		}
 	}
-	cm.shuttlesLk.Unlock()
+	cm.ShuttlesLk.Unlock()
 
 	var shuttles []Shuttle
 	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
@@ -3669,9 +3669,9 @@ func (cm *ContentManager) SelectLocationForRetrieval(ctx context.Context, cont u
 }
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) (string, error) {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
-	zones, ok := cm.buckets[uid]
+	cm.BucketLk.Lock()
+	defer cm.BucketLk.Unlock()
+	zones, ok := cm.Buckets[uid]
 	if !ok {
 		return "", nil
 	}

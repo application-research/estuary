@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 const cacheThreshold = 0.50
 
 type offloadCandidate struct {
-	Content
+	util.Content
 	LastAccess time.Time
 }
 
@@ -29,13 +29,13 @@ type collectionResult struct {
 }
 
 func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error) {
-	ctx, span := cm.tracer.Start(ctx, "clearUnused")
+	ctx, span := cm.Tracer.Start(ctx, "clearUnused")
 	defer span.End()
 	// first, gather candidates for removal
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx, false, loc, users)
+	candidates, err := cm.GetRemovalCandidates(ctx, false, loc, users)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
@@ -86,7 +86,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	return result, nil
 }
 func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []removalCandidateInfo) ([]offloadCandidate, error) {
-	ctx, span := cm.tracer.Start(ctx, "getLastAccesses")
+	ctx, span := cm.Tracer.Start(ctx, "getLastAccesses")
 	defer span.End()
 
 	var offs []offloadCandidate
@@ -113,8 +113,8 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 
 // TODO: this is only looking at the root, maybe we could find an efficient way to check more of the objects?
 // additionally, for aggregates, we should check each aggregated item under the root
-func (cm *ContentManager) getLastAccessForContent(cont Content) (time.Time, error) {
-	var obj Object
+func (cm *ContentManager) getLastAccessForContent(cont util.Content) (time.Time, error) {
+	var obj util.Object
 	if err := cm.DB.First(&obj, "cid = ?", cont.Cid).Error; err != nil {
 		return time.Time{}, err
 	}
@@ -127,7 +127,7 @@ type refResult struct {
 }
 
 func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (int, error) {
-	ctx, span := cm.tracer.Start(ctx, "OffloadContents")
+	ctx, span := cm.Tracer.Start(ctx, "OffloadContents")
 	defer span.End()
 
 	var local []uint
@@ -137,7 +137,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 	for _, c := range conts {
-		var cont Content
+		var cont util.Content
 		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 			return 0, err
 		}
@@ -152,29 +152,29 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			return 0, fmt.Errorf("cannot offload aggregated content")
 		}
 
-		if err := cm.DB.Model(&Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
+		if err := cm.DB.Model(&util.Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
 			return 0, err
 		}
 
-		if err := cm.DB.Model(&ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
+		if err := cm.DB.Model(&util.ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
 			return 0, err
 		}
 
 		if cont.Aggregate {
-			if err := cm.DB.Model(&Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
+			if err := cm.DB.Model(&util.Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
 				return 0, err
 			}
 
-			if err := cm.DB.Model(&ObjRef{}).
+			if err := cm.DB.Model(&util.ObjRef{}).
 				Where("content in (?)",
-					cm.DB.Model(Content{}).
+					cm.DB.Model(util.Content{}).
 						Where("aggregated_in = ?", c).
 						Select("id")).
 				Update("offloaded", 1).Error; err != nil {
 				return 0, err
 			}
 
-			var children []Content
+			var children []util.Content
 			if err := cm.DB.Find(&children, "aggregated_in = ?", c).Error; err != nil {
 				return 0, err
 			}
@@ -218,17 +218,17 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 }
 
 type removalCandidateInfo struct {
-	Content
+	util.Content
 	TotalDeals      int `json:"totalDeals"`
 	ActiveDeals     int `json:"activeDeals"`
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
-	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
+func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
+	ctx, span := cm.Tracer.Start(ctx, "GetRemovalCandidates")
 	defer span.End()
 
-	q := cm.DB.Model(Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
+	q := cm.DB.Model(util.Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
 	if loc != "" {
 		q = q.Where("location = ?", loc)
 	}
@@ -237,7 +237,7 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, lo
 		q = q.Where("user_id in ?", users)
 	}
 
-	var conts []Content
+	var conts []util.Content
 	if err := q.Scan(&conts).Error; err != nil {
 		return nil, fmt.Errorf("scanning removal candidates failed: %w", err)
 	}
@@ -263,7 +263,7 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, lo
 }
 
 func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint) (int, int, int, error) {
-	var contentDeals []contentDeal
+	var contentDeals []ContentDeal
 	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return 0, 0, 0, err
 	}

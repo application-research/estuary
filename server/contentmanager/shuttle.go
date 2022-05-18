@@ -33,7 +33,7 @@ type ShuttleConnection struct {
 	cmds    chan *drpc.Command
 	closing chan struct{}
 
-	hostname string
+	Hostname string
 	addrInfo peer.AddrInfo
 	address  address.Address
 

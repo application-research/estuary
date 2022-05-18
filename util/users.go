@@ -16,7 +16,7 @@ type User struct {
 	UserEmail string
 
 	Address   DbAddr
-	authToken AuthToken
+	AuthToken AuthToken
 	Perm      int
 	Flags     int
 

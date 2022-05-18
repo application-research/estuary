@@ -32,3 +32,5 @@ const StagingZoneKeepalive = time.Minute * 40
 const MinDealSize = 256 << 20
 
 const MaxBucketItems = 10000
+
+var NoDataTimeout = time.Minute * 10

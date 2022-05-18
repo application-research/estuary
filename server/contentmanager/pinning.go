@@ -169,7 +169,7 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) refreshPinQueue() error {
+func (cm *ContentManager) RefreshPinQueue() error {
 	var toPin []util.Content
 	if err := cm.DB.Find(&toPin, "active = false and pinning = true and not aggregate").Error; err != nil {
 		return err
@@ -280,7 +280,7 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []peer.AddrInfo
 	cm.pinJobs[cont.ID] = op
 	cm.pinLk.Unlock()
 
-	cm.pinMgr.Add(op)
+	cm.PinMgr.Add(op)
 }
 
 func (cm *ContentManager) PinContentOnShuttle(ctx context.Context, cont util.Content, peers []peer.AddrInfo, replace uint, handle string) error {
@@ -290,7 +290,7 @@ func (cm *ContentManager) PinContentOnShuttle(ctx context.Context, cont util.Con
 	))
 	defer span.End()
 
-	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
+	if err := cm.SendShuttleCommand(ctx, handle, &drpc.Command{
 		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{

@@ -1,9 +1,10 @@
-package main
+package server
 
 import (
 	"context"
 	"fmt"
 
+	contentmanager "github.com/application-research/estuary/server/contentmanager"
 	"github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
@@ -12,17 +13,17 @@ import (
 )
 
 func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
-	ctx, span := s.tracer.Start(ctx, "retrievalAsksForContent", trace.WithAttributes(
+	ctx, span := s.Tracer.Start(ctx, "retrievalAsksForContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))
 	defer span.End()
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
 		return nil, err
 	}
 
-	var deals []contentDeal
+	var deals []contentmanager.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and deal_id > 0", contid).Error; err != nil {
 		return nil, err
 	}
@@ -37,7 +38,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -55,12 +56,12 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 }
 
 func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
-	ctx, span := s.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
+	ctx, span := s.Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))
 	defer span.End()
 
-	content, err := s.CM.getContent(contid)
+	content, err := s.CM.GetContent(contid)
 	if err != nil {
 		return err
 	}
@@ -75,9 +76,9 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	for m, ask := range asks {
-		if err := s.CM.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
+		if err := s.CM.TryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),

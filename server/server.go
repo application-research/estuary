@@ -6,16 +6,19 @@ import (
 	"github.com/application-research/estuary/node"
 	contentmanager "github.com/application-research/estuary/server/contentmanager"
 	"github.com/application-research/estuary/stagingbs"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/ipfs/go-cid"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/whyrusleeping/memo"
-	"go.opencensus.io/trace"
+	trace "go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
-	"google.golang.org/appengine/log"
 	"gorm.io/gorm"
 )
+
+var log = logging.Logger("server")
 
 type Server struct {
 	Tracer     trace.Tracer
@@ -60,7 +63,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := s.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -71,8 +74,8 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []contentDeal
-	if err := s.DB.Model(contentDeal{}).
+	var deals []contentmanager.ContentDeal
+	if err := s.DB.Model(contentmanager.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
 		Scan(&deals).Error; err != nil {

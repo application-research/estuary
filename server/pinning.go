@@ -15,7 +15,6 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"gorm.io/gorm"
 )
@@ -379,7 +378,7 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
-	st, err := s.CM.pinStatus(content)
+	st, err := s.CM.PinStatus(content)
 	if err != nil {
 		return err
 	}
