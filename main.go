@@ -6,17 +6,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"go.opencensus.io/stats/view"
 
+	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/server"
+	contentmanager "github.com/application-research/estuary/server/contentmanager"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -274,11 +275,11 @@ func main() {
 				username := "admin"
 				passHash := ""
 
-				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
+				if err := quietdb.First(&util.User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
 				}
 
-				newUser := &User{
+				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
 					PassHash: passHash,
@@ -288,7 +289,7 @@ func main() {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
-				authToken := &AuthToken{
+				authToken := &util.AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
 					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
@@ -428,22 +429,22 @@ func main() {
 
 		s.DB = db
 
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cfg.Hostname)
+		cm, err := contentmanager.NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cfg.Hostname)
 		if err != nil {
 			return err
 		}
 
-		fc.SetPieceCommFunc(cm.getPieceCommitment)
+		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
 		cm.FailDealOnTransferFailure = cfg.DealConfig.FailOnTransferFailure
 
-		cm.isDealMakingDisabled = cfg.DealConfig.Disable
+		cm.IsDealMakingDisabled = cfg.DealConfig.Disable
 		cm.VerifiedDeal = cfg.DealConfig.Verified
-		cm.contentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
-		cm.localContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
+		cm.ContentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
+		cm.LocalContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
 		cm.Replication = cfg.Replication
 
-		cm.tracer = otel.Tracer("replicator")
+		cm.Tracer = otel.Tracer("replicator")
 
 		if cctx.Bool("enable-auto-retrive") {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
@@ -455,14 +456,14 @@ func main() {
 
 		s.CM = cm
 
-		if !cm.contentAddingDisabled {
+		if !cm.ContentAddingDisabled {
 			go func() {
 				// wait for shuttles to reconnect
 				// This is a bit of a hack, and theres probably a better way to
 				// solve this. but its good enough for now
 				time.Sleep(time.Second * 10)
 
-				if err := cm.refreshPinQueue(); err != nil {
+				if err := cm.RefreshPinQueue(); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)
 				}
 			}()
@@ -470,17 +471,17 @@ func main() {
 
 		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
 
-		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
-		if !ok {
-			updateInterval = "720"
-		}
-		intervalMinutes, err := strconv.Atoi(updateInterval)
-		if err != nil {
-			return err
-		}
+		// updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
+		// if !ok {
+		// 	updateInterval = "720"
+		// }
+		// intervalMinutes, err := strconv.Atoi(updateInterval)
+		// if err != nil {
+		// 	return err
+		// }
 
-		stopUpdateIndex := make(chan struct{})
-		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
+		// stopUpdateIndex := make(chan struct{})
+		// go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
 
 		go func() {
 			time.Sleep(time.Second * 10)
@@ -498,16 +499,6 @@ func main() {
 	}
 }
 
-type Autoretrieve struct {
-	gorm.Model
-
-	Handle         string `gorm:"unique"`
-	Token          string `gorm:"unique"`
-	LastConnection time.Time
-	PeerID         string `gorm:"unique"`
-	Addresses      string
-}
-
 func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 
 	/* TODO: change this default
@@ -522,29 +513,29 @@ func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
+	db.AutoMigrate(&util.Content{})
+	db.AutoMigrate(&util.Object{})
+	db.AutoMigrate(&util.ObjRef{})
+	db.AutoMigrate(&util.Collection{})
+	db.AutoMigrate(&util.CollectionRef{})
 
-	db.AutoMigrate(&contentDeal{})
-	db.AutoMigrate(&dfeRecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&proposalRecord{})
+	db.AutoMigrate(&contentmanager.ContentDeal{})
+	db.AutoMigrate(&contentmanager.DfeRecord{})
+	db.AutoMigrate(&contentmanager.PieceCommRecord{})
+	db.AutoMigrate(&contentmanager.ProposalRecord{})
 	db.AutoMigrate(&util.RetrievalFailureRecord{})
-	db.AutoMigrate(&retrievalSuccessRecord{})
+	db.AutoMigrate(&contentmanager.RetrievalSuccessRecord{})
 
-	db.AutoMigrate(&minerStorageAsk{})
-	db.AutoMigrate(&storageMiner{})
+	db.AutoMigrate(&contentmanager.MinerStorageAsk{})
+	db.AutoMigrate(&contentmanager.StorageMiner{})
 
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
+	db.AutoMigrate(&util.User{})
+	db.AutoMigrate(&util.AuthToken{})
+	db.AutoMigrate(&util.InviteCode{})
 
-	db.AutoMigrate(&Shuttle{})
+	db.AutoMigrate(&contentmanager.Shuttle{})
 
-	db.AutoMigrate(&Autoretrieve{})
+	db.AutoMigrate(&autoretrieve.Autoretrieve{})
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
@@ -552,14 +543,14 @@ func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 	}
 
 	var count int64
-	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
+	if err := db.Model(&contentmanager.StorageMiner{}).Count(&count).Error; err != nil {
 		return nil, err
 	}
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range build.DefaultMiners {
-			db.Create(&storageMiner{Address: util.DbAddr{m}})
+			db.Create(&contentmanager.StorageMiner{Address: util.DbAddr{m}})
 		}
 
 	}

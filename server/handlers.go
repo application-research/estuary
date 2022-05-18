@@ -647,7 +647,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.AddDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, s.CM.Replication)
 	if err != nil {
 		return err
 	}
@@ -3181,16 +3181,16 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 // @Produce      json
 // @Success      200  {object}  string
 // @Router       /collections/{coluuid}/commit [post]
-func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
+func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
 
-	var col Collection
+	var col util.Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
 		return err
 	}
 
-	contents := []Content{}
-	if err := s.DB.Model(CollectionRef{}).
+	contents := []util.Content{}
+	if err := s.DB.Model(util.CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*, collection_refs.path").
@@ -3222,7 +3222,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
-	err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error
+	err := s.DB.Model(util.Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error
 	if err != nil {
 		return err
 	}
@@ -3248,7 +3248,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*util.CollectionRef{}, peers, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}

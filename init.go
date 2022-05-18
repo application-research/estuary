@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/application-research/estuary/config"
+	"github.com/application-research/estuary/trackbs"
+	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"gorm.io/gorm"
@@ -12,7 +14,7 @@ import (
 type Initializer struct {
 	cfg            *config.Node
 	db             *gorm.DB
-	trackingBstore *TrackingBlockstore
+	trackingBstore *trackbs.TrackingBlockstore
 }
 
 func (init *Initializer) Config() *config.Node {
@@ -20,7 +22,7 @@ func (init *Initializer) Config() *config.Node {
 }
 
 func (init *Initializer) BlockstoreWrap(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-	init.trackingBstore = NewTrackingBlockstore(bs, init.db)
+	init.trackingBstore = trackbs.NewTrackingBlockstore(bs, init.db)
 	return init.trackingBstore, nil
 }
 
@@ -30,7 +32,7 @@ func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid,
 	go func() {
 		defer close(out)
 
-		var contents []Content
+		var contents []util.Content
 		if err := init.db.Find(&contents, "active").Error; err != nil {
 			log.Errorf("failed to load contents for reproviding: %s", err)
 			return

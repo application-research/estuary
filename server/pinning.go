@@ -350,7 +350,8 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
-	status, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta)
+	makeDeal := true
+	status, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -438,7 +439,8 @@ func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 		return err
 	}
 
-	status, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
+	makeDeal := true
+	status, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}

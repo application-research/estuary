@@ -196,7 +196,7 @@ func (cm *ContentManager) RefreshPinQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*util.CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*util.CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatus, error) {
 	loc, err := cm.SelectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
