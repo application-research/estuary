@@ -2,6 +2,9 @@ package server
 
 import (
 	"time"
+
+	contentmanager "github.com/application-research/estuary/server/contentmanager"
+	"github.com/application-research/estuary/util"
 )
 
 type DataExport struct {
@@ -12,12 +15,12 @@ type DataExport struct {
 }
 
 type ExportVersion1 struct {
-	Contents []Content
-	Deals    []ContentDeal
+	Contents []util.Content
+	Deals    []contentmanager.ContentDeal
 }
 
 func (s *Server) exportUserData(uid uint) (*DataExport, error) {
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
 		return nil, err
 	}
@@ -27,7 +30,7 @@ func (s *Server) exportUserData(uid uint) (*DataExport, error) {
 		conts = append(conts, c.ID)
 	}
 
-	var deals []ContentDeal
+	var deals []contentmanager.ContentDeal
 	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
 		return nil, err
 	}

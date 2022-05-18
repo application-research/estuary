@@ -3,14 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/application-research/estuary/util"
-	"github.com/application-research/filclient"
-	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
-	"github.com/ipfs/go-cid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -58,10 +54,6 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 	return out, nil
 }
 
-func (cm *ContentManager) recordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
-	return cm.DB.Create(rfr).Error
-}
-
 func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	ctx, span := s.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
@@ -99,52 +91,4 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	return nil
-}
-
-func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
-
-	proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
-	if err != nil {
-		return err
-	}
-
-	stats, err := cm.FilClient.RetrieveContent(ctx, maddr, proposal)
-	if err != nil {
-		return err
-	}
-
-	cm.recordRetrievalSuccess(c, maddr, stats)
-	return nil
-}
-
-type retrievalSuccessRecord struct {
-	ID        uint      `gorm:"primarykey" json:"-"`
-	CreatedAt time.Time `json:"createdAt"`
-
-	Cid   util.DbCID `json:"cid"`
-	Miner string     `json:"miner"`
-
-	Peer         string `json:"peer"`
-	Size         uint64 `json:"size"`
-	DurationMs   int64  `json:"durationMs"`
-	AverageSpeed uint64 `json:"averageSpeed"`
-	TotalPayment string `json:"totalPayment"`
-	NumPayments  int    `json:"numPayments"`
-	AskPrice     string `json:"askPrice"`
-}
-
-func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
-	if err := cm.DB.Create(&retrievalSuccessRecord{
-		Cid:          util.DbCID{cc},
-		Miner:        m.String(),
-		Peer:         rstats.Peer.String(),
-		Size:         rstats.Size,
-		DurationMs:   rstats.Duration.Milliseconds(),
-		AverageSpeed: rstats.AverageSpeed,
-		TotalPayment: rstats.TotalPayment.String(),
-		NumPayments:  rstats.NumPayments,
-		AskPrice:     rstats.AskPrice.String(),
-	}).Error; err != nil {
-		log.Errorf("failed to write retrieval success record: %s", err)
-	}
 }

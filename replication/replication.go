@@ -51,7 +51,7 @@ func (cb *ContentStagingZone) DeepCopy() *ContentStagingZone {
 	return cb2
 }
 
-func (cb ContentStagingZone) isReady() bool {
+func (cb ContentStagingZone) IsReady() bool {
 	if cb.CurSize < constants.MinDealSize {
 		return false
 	}
@@ -87,7 +87,7 @@ func (cb ContentStagingZone) hasRoomForContent(c util.Content) bool {
 	return cb.CurSize+c.Size <= cb.MaxSize
 }
 
-func (cb ContentStagingZone) hasContent(c util.Content) bool {
+func (cb ContentStagingZone) HasContent(c util.Content) bool {
 	cb.Lk.Lock()
 	defer cb.Lk.Unlock()
 

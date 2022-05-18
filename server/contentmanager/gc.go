@@ -72,13 +72,13 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 }
 
 func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) error {
-	ctx, span := cm.tracer.Start(ctx, "RemoveContent")
+	ctx, span := cm.Tracer.Start(ctx, "RemoveContent")
 	defer span.End()
 
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	if err := cm.DB.Delete(&Content{}, c).Error; err != nil {
+	if err := cm.DB.Delete(&util.Content{}, c).Error; err != nil {
 		return fmt.Errorf("failed to delete content from db: %w", err)
 	}
 
@@ -86,11 +86,11 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 		Object uint
 	}
 
-	if err := cm.DB.Model(&ObjRef{}).Find(&objIds, "content = ?", c).Error; err != nil {
+	if err := cm.DB.Model(&util.ObjRef{}).Find(&objIds, "content = ?", c).Error; err != nil {
 		return fmt.Errorf("failed to gather referenced object IDs: %w", err)
 	}
 
-	if err := cm.DB.Where("content = ?", c).Delete(&ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", c).Delete(&util.ObjRef{}).Error; err != nil {
 		return fmt.Errorf("failed to delete related object references: %w", err)
 	}
 
@@ -121,7 +121,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 	}
 
 	// TODO: copied from the offloading method, need to refactor this into something better
-	q := cm.DB.Model(&ObjRef{}).
+	q := cm.DB.Model(&util.ObjRef{}).
 		Select("cid").
 		Joins("left join objects on obj_refs.object = objects.id").
 		Group("cid").
@@ -146,8 +146,8 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 	return nil
 }
 
-func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
-	var pin Content
+func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
+	var pin util.Content
 	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
 		return err
 	}
@@ -157,11 +157,11 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := cm.DB.Delete(&Content{ID: pin.ID}).Error; err != nil {
+	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
 		return err
 	}
 
-	if err := cm.DB.Where("content = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", pin.ID).Delete(&util.ObjRef{}).Error; err != nil {
 		return err
 	}
 
@@ -180,7 +180,7 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 }
 
 func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *util.Object) (bool, error) {
-	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinned")
+	ctx, span := cm.Tracer.Start(ctx, "deleteIfNotPinned")
 	defer span.End()
 
 	cm.contentLk.Lock()
@@ -189,7 +189,7 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *util.Object)
 	return cm.deleteIfNotPinnedLock(ctx, o)
 }
 func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *util.Object) (bool, error) {
-	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinnedLock")
+	ctx, span := cm.Tracer.Start(ctx, "deleteIfNotPinnedLock")
 	defer span.End()
 
 	var objs []util.Object
@@ -211,7 +211,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 	defer cm.contentLk.Unlock()
 
 	if err := cm.DB.Where("(?) = 0 and id in ?",
-		cm.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
+		cm.DB.Model(util.ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
 		Delete(util.Object{}).Error; err != nil {
 		return err
 	}
@@ -221,7 +221,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 
 func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*util.Object, error) {
 	var objects []*util.Object
-	if err := cm.DB.Model(ObjRef{}).Where("content = ?", cont).
+	if err := cm.DB.Model(util.ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").
 		Scan(&objects).Error; err != nil {
 		return nil, err

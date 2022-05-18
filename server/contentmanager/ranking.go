@@ -80,7 +80,7 @@ func (mds *minerDealStats) Better(o *minerDealStats) bool {
 }
 
 func (cm *ContentManager) computeSortedMinerList() ([]*minerDealStats, error) {
-	var deals []contentDeal
+	var deals []ContentDeal
 	if err := cm.DB.Find(&deals).Error; err != nil {
 		return nil, err
 	}
