@@ -323,10 +323,6 @@ func main() {
 			return err
 		}
 
-		if len(cfg.NodeConfig.AnnounceAddrs) == 0 && !cfg.Dev {
-			return errors.New("running shuttle in prod mode requires announce-addr")
-		}
-
 		init := Initializer{&cfg.NodeConfig, db}
 
 		nd, err := node.Setup(context.TODO(), init)
