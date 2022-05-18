@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -321,6 +322,10 @@ func main() {
 		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
+		}
+
+		if len(cfg.NodeConfig.AnnounceAddrs) == 0 && !cfg.Dev {
+			return errors.New("running shuttle in prod mode requires announce-addr")
 		}
 
 		init := Initializer{&cfg.NodeConfig, db}
