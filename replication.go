@@ -51,8 +51,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var defaultReplication = 6
-
 const defaultContentSizeLimit = 34_000_000_000
 
 // Making default deal duration be three weeks less than the maximum to ensure
@@ -102,6 +100,8 @@ type ContentManager struct {
 
 	contentAddingDisabled      bool
 	localContentAddingDisabled bool
+
+	Replication int
 
 	hostname string
 
@@ -185,7 +185,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		Active:      false,
 		Pinning:     true,
 		UserID:      user,
-		Replication: defaultReplication,
+		Replication: cm.Replication,
 		Aggregate:   true,
 		Location:    loc,
 	}
@@ -1268,7 +1268,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		return nil
 	}
 
-	replicationFactor := defaultReplication
+	replicationFactor := cm.Replication
 	if content.Replication > 0 {
 		replicationFactor = content.Replication
 	}

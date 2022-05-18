@@ -197,7 +197,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		Name:        name,
 		UserID:      user,
 		Active:      false,
-		Replication: defaultReplication,
+		Replication: cm.Replication,
 
 		Pinning: true,
 		PinMeta: metab,

@@ -551,6 +551,7 @@ func main() {
 		cm.VerifiedDeal = cfg.DealConfig.Verified
 		cm.contentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
 		cm.localContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
+		cm.Replication = cfg.Replication
 
 		cm.tracer = otel.Tracer("replicator")
 

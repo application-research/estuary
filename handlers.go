@@ -644,7 +644,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, defaultReplication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, s.CM.Replication)
 	if err != nil {
 		return err
 	}
@@ -744,7 +744,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	defer fi.Close()
 
-	replication := defaultReplication
+	replication := s.CM.Replication
 	replVal := c.FormValue("replication")
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
@@ -2909,7 +2909,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Address:  u.Address.Addr.String(),
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
-			Replication:           defaultReplication,
+			Replication:           s.CM.Replication,
 			Verified:              s.CM.VerifiedDeal,
 			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
@@ -4301,7 +4301,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Active:      false,
 		Pinning:     false,
 		UserID:      u.ID,
-		Replication: defaultReplication,
+		Replication: s.CM.Replication,
 		Location:    req.Location,
 	}
 
@@ -4499,7 +4499,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	}
 
 	for _, c := range conts {
-		if c.NumDeals >= defaultReplication {
+		if c.NumDeals >= s.CM.Replication {
 			out.GoodContents = append(out.GoodContents, c.ID)
 		} else if c.NumDeals > 0 {
 			out.InProgress = append(out.InProgress, c.ID)
@@ -4664,7 +4664,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Active:      false,
 		Pinning:     false,
 		UserID:      req.User,
-		Replication: defaultReplication,
+		Replication: s.CM.Replication,
 		Location:    req.Location,
 	}
 	if req.DagSplitRoot != 0 {
