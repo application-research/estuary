@@ -1561,7 +1561,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
 		return errors.Wrap(err, "failed to walk DAG")
@@ -1946,7 +1946,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cc, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""

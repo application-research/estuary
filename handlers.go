@@ -933,7 +933,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
@@ -3904,7 +3904,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -3977,7 +3977,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cc, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -4551,7 +4551,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 					return nil, nil
 				}
 
-				return node.Links(), nil
+				return util.FilterUnwalkableLinks(node.Links()), nil
 			}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 			res := map[string]interface{}{
 				"content":     c,
