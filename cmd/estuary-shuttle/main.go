@@ -90,7 +90,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "datadir":
 			cfg.SetDataDir(cctx.String("datadir"))
 		case "blockstore":
-			cfg.NodeConfig.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.NodeConfig.BlockstoreDir = cctx.String("blockstore")
 		case "no-blockstore-cache":
 			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
