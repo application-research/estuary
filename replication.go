@@ -2204,6 +2204,11 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 			return nil, false, xerrors.Errorf("preparing for data request: %w", err)
 		}
 	} else {
+		// first check if shuttle is online
+		if !cm.shuttleIsOnline(contentLoc) {
+			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
+		}
+
 		addrInfo := cm.shuttleAddrInfo(contentLoc)
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
@@ -2211,7 +2216,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// that mean that messages from Estuary primary node would go through
 		// public internet to get to shuttle?
 		if addrInfo == nil || len(addrInfo.Addrs) == 0 {
-			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
+			return nil, false, xerrors.Errorf("no address found for shuttle: %s", contentLoc)
 		}
 		addrstr := addrInfo.Addrs[0].String() + "/p2p/" + addrInfo.ID.String()
 		announceAddr, err = multiaddr.NewMultiaddr(addrstr)
