@@ -1335,7 +1335,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
 	var contents []Content
-	if err := s.DB.Debug().Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
+	if err := s.DB.Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
 		return err
 	}
 
