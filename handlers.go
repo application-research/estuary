@@ -1331,10 +1331,11 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	// TODO: check both cidv0 and v1 for dag-pb cids
+	v0 := cid.NewCidV0(obj.Hash())
+	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
 	var contents []Content
-	if err := s.DB.Find(&contents, "cid = ? and active", obj.Bytes()).Error; err != nil {
+	if err := s.DB.Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
 		return err
 	}
 
