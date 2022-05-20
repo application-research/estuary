@@ -12,7 +12,7 @@ import (
 
 func checkNodeConfig(t *testing.T, node *Node) {
 	assert := assert.New(t)
-	assert.NotEmpty(node.BlockstoreDir)
+	assert.NotEmpty(node.Blockstore)
 	assert.NotEmpty(node.Libp2pKeyFile)
 	assert.NotEmpty(node.DatastoreDir)
 	assert.NotEmpty(node.WalletDir)
@@ -46,6 +46,7 @@ func TestEstuaryDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
 	config := NewEstuary()
+	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)
@@ -60,6 +61,7 @@ func TestShuttleDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
 	config := NewShuttle()
+	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)

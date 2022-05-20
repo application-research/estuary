@@ -2105,7 +2105,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	*/
 
 	var st unix.Statfs_t
-	if err := unix.Statfs(s.Node.Config.BlockstoreDir, &st); err != nil {
+	if err := unix.Statfs(s.Node.Config.Blockstore, &st); err != nil {
 		return err
 	}
 
