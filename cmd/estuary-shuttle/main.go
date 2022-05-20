@@ -237,7 +237,7 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
-			Usage: "enables write log truncating",
+			Usage: "truncates old logs with new ones",
 			Value: cfg.NodeConfig.WriteLogTruncate,
 		},
 		&cli.BoolFlag{
