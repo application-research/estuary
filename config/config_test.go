@@ -12,7 +12,7 @@ import (
 
 func checkNodeConfig(t *testing.T, node *Node) {
 	assert := assert.New(t)
-	assert.NotEmpty(node.BlockstoreDir)
+	assert.NotEmpty(node.Blockstore)
 	assert.NotEmpty(node.Libp2pKeyFile)
 	assert.NotEmpty(node.DatastoreDir)
 	assert.NotEmpty(node.WalletDir)
