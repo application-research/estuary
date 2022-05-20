@@ -46,6 +46,7 @@ func TestEstuaryDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
 	config := NewEstuary()
+	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)
@@ -60,6 +61,7 @@ func TestShuttleDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
 	config := NewShuttle()
+	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)
