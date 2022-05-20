@@ -298,7 +298,7 @@ type collectionListResponse struct {
 
 func (c *EstClient) CollectionsListDir(ctx context.Context, coluuid, path string) ([]collectionListResponse, error) {
 	var out []collectionListResponse
-	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?coluuid=%s&collectionPath=%s", coluuid, url.PathEscape(path)), nil, &out)
+	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?coluuid=%s&colpath=%s", coluuid, url.PathEscape(path)), nil, &out)
 	if err != nil {
 		return nil, err
 	}

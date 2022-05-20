@@ -53,7 +53,7 @@ definitions:
     type: object
   main.importDealBody:
     properties:
-      collectionPath:
+      colpath:
         type: string
       coluuid:
         type: string
@@ -73,7 +73,7 @@ definitions:
     type: object
   util.ContentAddIpfsBody:
     properties:
-      collectionPath:
+      colpath:
         type: string
       coluuid:
         type: string
@@ -240,7 +240,7 @@ paths:
           type: string
         - description: Directory
           in: query
-          name: collectionPath
+          name: colpath
           required: true
           type: string
       produces:

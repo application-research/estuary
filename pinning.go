@@ -668,7 +668,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		}
 
 		var colpath *string
-		colp, ok := pin.Meta["collectionPath"].(string)
+		colp, ok := pin.Meta["colpath"].(string)
 		if ok {
 			p, err := sanitizePath(colp)
 			if err != nil {
@@ -703,7 +703,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-	
+
 	status.Pin.Meta = pin.Meta
 
 	return e.JSON(202, status)

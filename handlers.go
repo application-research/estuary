@@ -486,7 +486,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		// if collectionPath is "" or nil, put the file on the root dir (/filename)
+		// if colpath is "" or nil, put the file on the root dir (/filename)
 		defaultPath := "/" + filename
 		colp := defaultPath
 		if params.CollectionPath != "" {
@@ -764,7 +764,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	var path *string
-	if cp := c.FormValue("collectionPath"); cp != "" {
+	if cp := c.FormValue("colpath"); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
@@ -4720,11 +4720,11 @@ type collectionListResponse struct {
 // @Tags         collections
 // @Produce      json
 // @Param        coluuid query string true "Collection ID"
-// @Param        collectionPath query string true "Directory"
+// @Param        colpath query string true "Directory"
 // @Router       /collections/fs/list [get]
 func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	coluuid := c.QueryParam("coluuid")
-	dir := c.QueryParam("collectionPath")
+	dir := c.QueryParam("colpath")
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {

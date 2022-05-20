@@ -17,7 +17,7 @@ const (
 
 type ContentInCollection struct {
 	CollectionID   string `json:"coluuid"`
-	CollectionPath string `json:"collectionPath"`
+	CollectionPath string `json:"colpath"`
 }
 
 type ContentAddIpfsBody struct {

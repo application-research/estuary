@@ -219,7 +219,7 @@
           {
             "type": "string",
             "description": "Directory",
-            "name": "collectionPath",
+            "name": "colpath",
             "in": "query",
             "required": true
           }
@@ -1452,7 +1452,7 @@
     "main.importDealBody": {
       "type": "object",
       "properties": {
-        "collectionPath": {
+        "colpath": {
           "type": "string"
         },
         "coluuid": {
@@ -1483,7 +1483,7 @@
     "util.ContentAddIpfsBody": {
       "type": "object",
       "properties": {
-        "collectionPath": {
+        "colpath": {
           "type": "string"
         },
         "coluuid": {

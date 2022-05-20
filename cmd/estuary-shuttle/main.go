@@ -1057,7 +1057,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	cic := util.ContentInCollection{
 		CollectionID:   c.FormValue("coluuid"),
-		CollectionPath: c.FormValue("collectionPath"),
+		CollectionPath: c.FormValue("colpath"),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1231,7 +1231,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
 		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("collectionPath"),
+		CollectionPath: c.QueryParam("colpath"),
 	})
 	if err != nil {
 		return err

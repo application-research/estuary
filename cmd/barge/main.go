@@ -1263,8 +1263,8 @@ var bargeSyncCmd = &cli.Command{
 			return err
 		}
 
-		collection := r.Cfg.GetString("collection.uuid")
-		if collection == "" {
+		coluuid := r.Cfg.GetString("collection.uuid")
+		if coluuid == "" {
 			return fmt.Errorf("barge repo does not have a collection set")
 		}
 
@@ -1427,8 +1427,8 @@ var bargeSyncCmd = &cli.Command{
 				}()
 
 				resp, err := c.PinAdd(ctx, fcid, filepath.Base(f.Path), addrs, map[string]interface{}{
-					"collection":     collection,
-					"collectionPath": "/" + f.Path,
+					"coluuid": coluuid,
+					"colpath": "/" + f.Path,
 				})
 				if err != nil {
 					errs[ix] = err
