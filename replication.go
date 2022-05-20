@@ -370,6 +370,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		isDealMakingDisabled:       cfg.DealConfig.Disable,
 		contentAddingDisabled:      cfg.ContentConfig.DisableGlobalAdding,
 		localContentAddingDisabled: cfg.ContentConfig.DisableLocalAdding,
+		VerifiedDeal:               cfg.DealConfig.Verified,
 		Replication:                cfg.Replication,
 		tracer:                     otel.Tracer("replicator"),
 	}
