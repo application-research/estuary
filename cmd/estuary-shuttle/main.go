@@ -257,7 +257,7 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "no-reload-pin-queue",
-			Usage: "disable reloading pins on shuttle start",
+			Usage: "disable reloading pin queue on shuttle start",
 			Value: cfg.NoReloadPinQueue,
 		},
 		&cli.BoolFlag{
