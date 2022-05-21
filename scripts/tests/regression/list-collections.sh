@@ -9,6 +9,10 @@
 
 . run.config
 
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
 description="This is a sample collection"

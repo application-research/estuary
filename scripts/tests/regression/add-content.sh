@@ -1,11 +1,15 @@
 #!/bin/bash
 
 ###################################################################
-#Script Name	: add-collection.sh                                                                                             
+#Script Name	: add-content.sh                                                                                             
 #Description	: This is a script file that runs a curl command to add a file to the estuary content server.                                                                                       
 #Author         : ARG
 #Email          : 
 ###################################################################
+
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
 
 . run.config
 
@@ -25,4 +29,8 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/create
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add
+res=$?
+if test "$res" != "0"; then
+   echo "add-content failed: $res"
+fi

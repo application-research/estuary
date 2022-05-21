@@ -1,3 +1,6 @@
+/scripts/tests/chaos/logs/*
+/scripts/tests/regression/logs/*
+
 /estuary
 /filc
 /barge
