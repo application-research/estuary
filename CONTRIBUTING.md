@@ -45,7 +45,11 @@ $ export FULLNODE_API_INFO=wss://api.chain.love
 Start your Estuary Node (Note: if you see error messages like `too many open files`, increase the number of open files allow `ulimit -n 10000`)
 
 ```bash
-$ ./estuary
+$ ./estuary --logging
+```
+output
+
+```
 Wallet address is:  <your_estuary_address_printed_here>
 2021-09-16T13:32:48.463-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
 /ip4/192.168.1.235/tcp/6744/p2p/12D3KooWEb5wbWf3KcExdLUMp4x9NqzyaMcBaYbxZ9V6RUNwvpX8
@@ -67,7 +71,13 @@ ____________________________________O/_______
 
 Estuary stores data on IPFS before replicating it to the Filecoin Network. When you store data using Estuary, that data will first go to an `estuary-shuttle` *node* that utilizes IPFS as *hot-storage* before replication to the Filecoin Network begins.
 
-First, initialize a shuttle node using the Estuary API endpoint `/admin/shuttle/init`
+Build the shuttle binary
+
+```bash
+$ make estuary-shuttle
+```
+
+Then, initialize a shuttle node using the Estuary API endpoint `/admin/shuttle/init` or the admin UI at <host>/admin/shuttle
 
 ```bash
 $ curl -H "Authorization: Bearer ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY" -X POST localhost:3004/admin/shuttle/init
@@ -77,7 +87,11 @@ $ curl -H "Authorization: Bearer ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY" -X 
 Using the output from the above command, start a shuttle node in development mode
 
 ```bash
-$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE
+$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRET7528ab25-1266-4fa4-86cf-719a43bbcb4fSECRET --handle=SHUTTLE4e8b1770-326c-4c95-9976-7cc1ee12244bHANDLE --logging --host=localhost:3005
+```
+output
+
+```
 Wallet address is:  <your_estuary-shuttle_address_printed_here>
 2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
 2021-09-16T14:47:54.416-0700    INFO    shuttle estuary-shuttle/main.go:1060    refreshing 0 pins
@@ -94,10 +108,26 @@ ____________________________________O/_______
 2021-09-16T14:47:54.416-0700    INFO    shuttle estuary-shuttle/rpc.go:54       sending rpc message: ShuttleUpdate
 2021-09-16T14:47:54.417-0700    INFO    shuttle estuary-shuttle/main.go:466     connecting to primary estuary node
 2021-09-16T14:47:54.417-0700    INFO    shuttle estuary-shuttle/main.go:519     sending hello   {"hostname": "", "address": "<your_estuary-shuttle_address_printed_here>", "pid": "12D3KooWHag4gY8fQkjQ8Rgs5v6Fb4TpP3LXm8xvhVX3GsVKNwUW"}
-
 ```
 
-The above commands can be repeated to create more shuttle nodes.
+NB: The above commands can be repeated to create and run more shuttle nodes. 
+If you want this shuttle to be part of the shuttle-proxy, then the `--host` option should be set and must point to the shuttle host. Also, the `open` column of the shuttle table in the database will have to be set to `true(1)`
+
+### Initialize & Start a Shuttle-proxy
+
+First build the binary for the shuttle-proxy
+
+```bash
+$ make shuttle-proxy
+```
+
+Then run the shuttle-proxy
+
+```bash
+$ ./shuttle-proxy --logging --controller=http://localhost:3004
+```
+
+NB: Make sure the Estuary node and at least one Estuary-shuttle node is running before running the shuttle-proxy. The `--controller` should point to your Estuary host
 
 ### API
 
