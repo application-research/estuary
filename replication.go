@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -44,14 +45,13 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-var defaultReplication = 6
 
 const defaultContentSizeLimit = 34_000_000_000
 
@@ -103,6 +103,8 @@ type ContentManager struct {
 	contentAddingDisabled      bool
 	localContentAddingDisabled bool
 
+	Replication int
+
 	hostname string
 
 	pinJobs map[uint]*pinner.PinningOperation
@@ -117,6 +119,8 @@ type ContentManager struct {
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
+
+	VerifiedDeal bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -183,7 +187,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		Active:      false,
 		Pinning:     true,
 		UserID:      user,
-		Replication: defaultReplication,
+		Replication: cm.Replication,
 		Aggregate:   true,
 		Location:    loc,
 	}
@@ -297,7 +301,7 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, hostname string) (*ContentManager, error) {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -343,25 +347,32 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	}
 
 	cm := &ContentManager{
-		Provider:             prov,
-		DB:                   db,
-		Api:                  api,
-		FilClient:            fc,
-		Blockstore:           tbs.Under().(node.EstuaryBlockstore),
-		Host:                 nd.Host,
-		Node:                 nd,
-		NotifyBlockstore:     nbs,
-		Tracker:              tbs,
-		ToCheck:              make(chan uint, 100000),
-		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
-		buckets:              zones,
-		pinJobs:              make(map[uint]*pinner.PinningOperation),
-		pinMgr:               pinmgr,
-		remoteTransferStatus: cache,
-		shuttles:             make(map[string]*ShuttleConnection),
-		contentSizeLimit:     defaultContentSizeLimit,
-		hostname:             hostname,
-		inflightCids:         make(map[cid.Cid]uint),
+		Provider:                   prov,
+		DB:                         db,
+		Api:                        api,
+		FilClient:                  fc,
+		Blockstore:                 tbs.Under().(node.EstuaryBlockstore),
+		Host:                       nd.Host,
+		Node:                       nd,
+		NotifyBlockstore:           nbs,
+		Tracker:                    tbs,
+		ToCheck:                    make(chan uint, 100000),
+		retrievalsInProgress:       make(map[uint]*util.RetrievalProgress),
+		buckets:                    zones,
+		pinJobs:                    make(map[uint]*pinner.PinningOperation),
+		pinMgr:                     pinmgr,
+		remoteTransferStatus:       cache,
+		shuttles:                   make(map[string]*ShuttleConnection),
+		contentSizeLimit:           defaultContentSizeLimit,
+		hostname:                   cfg.Hostname,
+		inflightCids:               make(map[cid.Cid]uint),
+		FailDealOnTransferFailure:  cfg.DealConfig.FailOnTransferFailure,
+		isDealMakingDisabled:       cfg.DealConfig.Disable,
+		contentAddingDisabled:      cfg.ContentConfig.DisableGlobalAdding,
+		localContentAddingDisabled: cfg.ContentConfig.DisableLocalAdding,
+		VerifiedDeal:               cfg.DealConfig.Verified,
+		Replication:                cfg.Replication,
+		tracer:                     otel.Tracer("replicator"),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -1212,7 +1223,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	))
 	defer span.End()
 
-	verified := true
+	verified := cm.VerifiedDeal
 
 	if content.AggregatedIn > 0 {
 		// This content is aggregated inside another piece of content, nothing to do here
@@ -1266,7 +1277,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		return nil
 	}
 
-	replicationFactor := defaultReplication
+	replicationFactor := cm.Replication
 	if content.Replication > 0 {
 		replicationFactor = content.Replication
 	}
@@ -1381,14 +1392,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			return nil
 		}
 
-		bl, err := cm.FilClient.Balance(ctx)
-		if err != nil {
-			return errors.Wrap(err, "could not retrieve dataCap from client balance")
-		}
+		// only verified deals need datacap checks
+		if verified {
+			bl, err := cm.FilClient.Balance(ctx)
+			if err != nil {
+				return errors.Wrap(err, "could not retrieve dataCap from client balance")
+			}
 
-		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
-			// how do we notify admin to top up datacap?
-			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+			if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
+				// how do we notify admin to top up datacap?
+				return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+			}
 		}
 
 		go func() {
@@ -2199,6 +2213,11 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 			return nil, false, xerrors.Errorf("preparing for data request: %w", err)
 		}
 	} else {
+		// first check if shuttle is online
+		if !cm.shuttleIsOnline(contentLoc) {
+			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
+		}
+
 		addrInfo := cm.shuttleAddrInfo(contentLoc)
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
@@ -2206,7 +2225,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// that mean that messages from Estuary primary node would go through
 		// public internet to get to shuttle?
 		if addrInfo == nil || len(addrInfo.Addrs) == 0 {
-			return nil, false, xerrors.Errorf("no announce address found for shuttle: %s", contentLoc)
+			return nil, false, xerrors.Errorf("no address found for shuttle: %s", contentLoc)
 		}
 		addrstr := addrInfo.Addrs[0].String() + "/p2p/" + addrInfo.ID.String()
 		announceAddr, err = multiaddr.NewMultiaddr(addrstr)

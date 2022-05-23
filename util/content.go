@@ -2,9 +2,14 @@ package util
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 
 	"github.com/ipfs/go-cid"
+	format "github.com/ipfs/go-ipld-format"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/ipfs/go-merkledag"
+	unixfs "github.com/ipfs/go-unixfs"
 )
 
 type ContentType int64
@@ -72,4 +77,45 @@ func FindCIDType(ctx context.Context, root cid.Cid, dserv ipld.NodeGetter) (cont
 		contentType = Directory
 	}
 	return
+}
+
+func removeEmptyStrings(strList []string) []string {
+	var strListNoEmpty []string
+	for _, str := range strList {
+		if str != "" {
+			strListNoEmpty = append(strListNoEmpty, str)
+		}
+	}
+	return strListNoEmpty
+}
+
+// DirsFromPath splits a path into a list of directories
+func DirsFromPath(collectionPath string, filename string) ([]string, error) {
+	collectionPath = filepath.Clean(collectionPath)
+	if dir, file := filepath.Split(collectionPath); file == filename { // path ends in the filename
+		collectionPath = dir // only keep the part with dirs
+	}
+	dirs := strings.Split(collectionPath, "/")
+	dirs = removeEmptyStrings(dirs)
+	return dirs, nil
+}
+
+func EnsurePathIsLinked(dirs []string, rootNode *merkledag.ProtoNode, ds format.DAGService) (*merkledag.ProtoNode, error) {
+	lookupNode := rootNode
+	for _, dir := range dirs {
+		// see if dir already created on DAG
+		_, err := lookupNode.GetNodeLink(dir)
+		if err == merkledag.ErrLinkNotFound { // if not create and link it
+			dirNode := unixfs.EmptyDirNode()
+			if err = lookupNode.AddNodeLink(dir, dirNode); err != nil {
+				return nil, err
+			}
+		}
+		ctx := context.Background()
+		lookupNode, err = lookupNode.GetLinkedProtoNode(ctx, ds, dir)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return lookupNode, nil
 }

@@ -1,7 +1,6 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/application-research/estuary/build"
@@ -10,9 +9,10 @@ import (
 type Estuary struct {
 	DatabaseConnString     string
 	StagingDataDir         string
+	ServerCacheDir         string
 	DataDir                string
 	ApiListen              string
-	AutoRetrieve           bool
+	EnableAutoRetrieve     bool
 	LightstepToken         string
 	Hostname               string
 	NodeConfig             Node
@@ -34,20 +34,24 @@ func (cfg *Estuary) Save(filename string) error {
 	return save(cfg, filename)
 }
 
-// Sets the root of many paths
-func (cfg *Estuary) SetDataDir(ddir string) {
-	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
-	cfg.NodeConfig.UpdateRoot(ddir, cfg.DataDir)
-	cfg.DataDir = ddir
+func (cfg *Estuary) SetRequiredOptions() error {
+	//TODO validate required options values - check empty strings etc
+
+	cfg.StagingDataDir = filepath.Join(cfg.DataDir, "stagingdata")
+	cfg.ServerCacheDir = filepath.Join(cfg.DataDir, "cache")
+	cfg.NodeConfig.WalletDir = filepath.Join(cfg.DataDir, "estuary-wallet")
+	cfg.NodeConfig.DatastoreDir = filepath.Join(cfg.DataDir, "estuary-leveldb")
+	cfg.NodeConfig.Libp2pKeyFile = filepath.Join(cfg.DataDir, "estuary-peer.key")
+
+	if cfg.NodeConfig.Blockstore == "" {
+		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, "estuary-blocks")
+	}
+	return nil
 }
 
 func NewEstuary() *Estuary {
-
-	pwd, _ := os.Getwd()
-
-	cfg := Estuary{
-		DataDir:                pwd,
-		StagingDataDir:         filepath.Join(pwd, "stagingdata"),
+	return &Estuary{
+		DataDir:                ".",
 		DatabaseConnString:     build.DefaultDatabaseValue,
 		ApiListen:              ":3004",
 		LightstepToken:         "",
@@ -55,10 +59,12 @@ func NewEstuary() *Estuary {
 		Replication:            6,
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
+		EnableAutoRetrieve:     false,
 
 		DealConfig: Deal{
 			Disable:               false,
 			FailOnTransferFailure: false,
+			Verified:              true,
 		},
 
 		ContentConfig: Content{
@@ -80,14 +86,17 @@ func NewEstuary() *Estuary {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			BlockstoreDir:    filepath.Join(pwd, "estuary-blocks"),
-			Libp2pKeyFile:    filepath.Join(pwd, "estuary-peer.key"),
-			DatastoreDir:     filepath.Join(pwd, "estuary-leveldb"),
-			WalletDir:        filepath.Join(pwd, "estuary-wallet"),
-			WriteLogDir:      "",
-			WriteLogTruncate: false,
-			NoLimiter:        true,
+			WriteLogDir:       "",
+			HardFlushWriteLog: false,
+			WriteLogTruncate:  false,
+			NoBlockstoreCache: false,
 
+			BitswapConfig: BitswapConfig{
+				MaxOutstandingBytesPerPeer: 5 << 20,
+				TargetMessageSize:          0,
+			},
+
+			NoLimiter: true,
 			LimitsConfig: Limits{
 				SystemLimitConfig: SystemLimit{
 					MinMemory:      1 << 30,
@@ -122,6 +131,4 @@ func NewEstuary() *Estuary {
 			},
 		},
 	}
-
-	return &cfg
 }

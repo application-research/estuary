@@ -21,6 +21,7 @@ import (
 	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/mitchellh/go-homedir"
+	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/codes"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
@@ -76,20 +77,19 @@ func init() {
 }
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
-	var err error
-
 	for _, flag := range flags {
 		name := flag.Names()[0]
 		if cctx.IsSet(name) {
-			log.Debugf("flag %s is set to %s", name, cctx.String(name))
+			log.Debugf("shuttle cli flag %s is set to %s", name, cctx.String(name))
 		} else {
 			continue
 		}
+
 		switch name {
 		case "datadir":
-			cfg.SetDataDir(cctx.String("datadir"))
+			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
-			cfg.NodeConfig.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.NodeConfig.Blockstore = cctx.String("blockstore")
 		case "no-blockstore-cache":
 			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
@@ -97,13 +97,17 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "write-log-flush":
 			cfg.NodeConfig.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
-			cfg.NodeConfig.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			wlog := cctx.String("write-log")
+			cfg.NodeConfig.WriteLogDir = wlog
+			if wlog != "" && wlog[0] != '/' {
+				cfg.NodeConfig.WriteLogDir = filepath.Join(cctx.String("datadir"), wlog)
+			}
 		case "database":
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "libp2p-websockets":
-			cfg.NodeConfig.AddListener(config.DefaultWebsocketAddr)
+			cfg.NodeConfig.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
 		case "announce-addr":
 			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
 		case "host":
@@ -135,13 +139,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "no-reload-pin-queue":
 			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
 		default:
-			// Do nothing
-		}
-		if (err) != nil {
-			return err
 		}
 	}
-	return err
+	return cfg.SetRequiredOptions()
 }
 
 func main() {
@@ -159,9 +159,12 @@ func main() {
 	logging.SetLogLevel("bs-migrate", "info")
 	logging.SetLogLevel("rcmgr", "debug")
 
-	app := cli.NewApp()
-	home, _ := homedir.Dir()
+	hDir, err := homedir.Dir()
+	if err != nil {
+		log.Fatalf("could not determine homedir for shuttle app: %+v", err)
+	}
 
+	app := cli.NewApp()
 	cfg := config.NewShuttle()
 
 	app.Flags = []cli.Flag{
@@ -171,17 +174,19 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "config",
-			Value: filepath.Join(home, ".estuary-shuttle"),
 			Usage: "specify configuration file location",
+			Value: filepath.Join(hDir, ".estuary-shuttle"),
 		},
 		&cli.StringFlag{
 			Name:    "database",
+			Usage:   "specify connection string for estuary database",
 			Value:   cfg.DatabaseConnString,
 			EnvVars: []string{"ESTUARY_SHUTTLE_DATABASE"},
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
-			Value: cfg.NodeConfig.BlockstoreDir,
+			Usage: "specify blockstore parameters",
+			Value: cfg.NodeConfig.Blockstore,
 		},
 		&cli.StringFlag{
 			Name:  "write-log",
@@ -222,22 +227,27 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "logging",
+			Usage: "enable api endpoint logging",
 			Value: cfg.LoggingConfig.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-flush",
+			Usage: "enable hard flushing blockstore",
 			Value: cfg.NodeConfig.HardFlushWriteLog,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
+			Usage: "truncates old logs with new ones",
 			Value: cfg.NodeConfig.WriteLogTruncate,
 		},
 		&cli.BoolFlag{
 			Name:  "no-blockstore-cache",
+			Usage: "disable blockstore caching",
 			Value: cfg.NodeConfig.NoBlockstoreCache,
 		},
 		&cli.BoolFlag{
 			Name:  "private",
+			Usage: "sets shuttle as private",
 			Value: cfg.Private,
 		},
 		&cli.BoolFlag{
@@ -247,6 +257,7 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "no-reload-pin-queue",
+			Usage: "disable reloading pin queue on shuttle start",
 			Value: cfg.NoReloadPinQueue,
 		},
 		&cli.BoolFlag{
@@ -261,10 +272,12 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
+			Usage: "enables jaeger tracing",
 			Value: cfg.JaegerConfig.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
+			Usage: "sets the jaeger provider url",
 			Value: cfg.JaegerConfig.ProviderUrl,
 		},
 		&cli.Float64Flag{
@@ -274,7 +287,8 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "libp2p-websockets",
-			Value: cfg.NodeConfig.HasListener(config.DefaultWebsocketAddr),
+			Usage: "enable adding libp2p websockets listen addr",
+			Value: cfg.NodeConfig.EnableWebsocketListenAddr,
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
@@ -291,31 +305,42 @@ func main() {
 			Name:  "configure",
 			Usage: "Saves a configuration file to the location specified by the config parameter",
 			Action: func(cctx *cli.Context) error {
-				configuration := cctx.String("config")
-				cfg.Load(configuration) // Assume error means no configuration file exists
-				overrideSetOptions(app.Flags, cctx, cfg)
-				return cfg.Save(configuration)
+				configFile := cctx.String("config")
+				if err := cfg.Load(configFile); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
+
+				if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+					return err
+				}
+				return cfg.Save(configFile)
 			},
 		},
 	}
 
 	app.Action = func(cctx *cli.Context) error {
+		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+			return err
+		}
 
-		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
-		overrideSetOptions(app.Flags, cctx, cfg)
+		if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+			return err
+		}
 
-		err := cfg.Validate()
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+
+		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}
 
-		db, err := setupDatabase(cctx.String("database"))
-		if err != nil {
-			return err
+		if cfg.NodeConfig.EnableWebsocketListenAddr {
+			cfg.NodeConfig.ListenAddrs = append(cfg.NodeConfig.ListenAddrs, config.DefaultWebsocketAddr)
 		}
 
 		init := Initializer{&cfg.NodeConfig, db}
-
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
 			return err
@@ -325,7 +350,6 @@ func main() {
 		if err != nil {
 			return err
 		}
-
 		defer closer()
 
 		defaddr, err := nd.Wallet.GetDefault()
@@ -334,7 +358,6 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-
 		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
 		if err != nil {
 			return err
@@ -618,8 +641,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalf("could not run shuttle app: %+v", err)
 	}
 }
 
@@ -1108,7 +1130,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
-		log.Warn(err)
+		log.Warnf("failed to provide: %+v", err)
 	}
 
 	return c.JSON(200, &util.ContentAddResponse{
@@ -1124,18 +1146,19 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 
 	if s.Node.FullRT.Ready() {
 		if err := s.Node.FullRT.Provide(subCtx, c, true); err != nil {
-			return fmt.Errorf("failed to provide newly added content: %w", err)
+			return errors.Wrap(err, "failed to provide newly added content")
 		}
 	} else {
 		log.Warnf("fullrt not in ready state, falling back to standard dht provide")
 		if err := s.Node.Dht.Provide(subCtx, c, true); err != nil {
-			return fmt.Errorf("fallback provide failed: %w", err)
+			return errors.Wrap(err, "fallback provide failed")
 		}
 	}
 
 	go func() {
 		if err := s.Node.Provider.Provide(c); err != nil {
-			log.Warnf("providing failed: ", err)
+			log.Warnf("providing failed: %s", err)
+			return
 		}
 		log.Infof("providing complete")
 	}()
@@ -1354,20 +1377,22 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to Do createContent")
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var respErr util.HttpError
+		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
+			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		}
+		return 0, errors.Wrap(respErr, "failed to request createContent ")
+	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to decode resp body")
 	}
-
-	if rbody.ID == 0 {
-		return 0, fmt.Errorf("create content request failed, got back content ID zero")
-	}
-
 	return rbody.ID, nil
 }
 
@@ -1404,20 +1429,22 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to do shuttle content create request")
 	}
-
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		var respErr util.HttpError
+		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
+			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		}
+		return 0, errors.Wrap(respErr, "request to create shuttle content failed")
+	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "failed to decode resp body")
 	}
-
-	if rbody.ID == 0 {
-		return 0, fmt.Errorf("create content request failed, got back content ID zero")
-	}
-
 	return rbody.ID, nil
 }
 
@@ -1446,7 +1473,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 		*/
 
-		return err
+		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
 
 	/*
@@ -1458,9 +1485,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		log.Warn(err)
+		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
-
 	return nil
 }
 
@@ -1473,7 +1499,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 	var dbpin Pin
 	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
-		return err
+		return errors.Wrap(err, "failed to retrieve content")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1525,7 +1551,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(err, "failed to Get CID node")
 		}
 
 		cb(int64(len(node.RawData())))
@@ -1551,7 +1577,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return node.Links(), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return err
+		return errors.Wrap(err, "failed to walk DAG")
 	}
 
 	span.SetAttributes(
@@ -1560,7 +1586,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	)
 
 	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
+		return errors.Wrap(err, "failed to create objects in db")
 	}
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
@@ -1568,7 +1594,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		"size":    totalSize,
 		"pinning": false,
 	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
+		return errors.Wrap(err, "failed to update content in database")
 	}
 
 	refs := make([]ObjRef, len(objects))
@@ -1578,7 +1604,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	}
 
 	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+		return errors.Wrap(err, "failed to create refs")
 	}
 
 	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)

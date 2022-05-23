@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/xerrors"
 
@@ -17,6 +18,7 @@ const (
 	ERR_INVALID_TOKEN           = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED           = "ERR_TOKEN_EXPIRED"
 	ERR_AUTH_MISSING            = "ERR_AUTH_MISSING"
+	ERR_WRONG_AUTH_FORMAT       = "ERR_WRONG_AUTH_FORMAT"
 	ERR_INVALID_AUTH            = "ERR_INVALID_AUTH"
 	ERR_AUTH_MISSING_BEARER     = "ERR_AUTH_MISSING_BEARER"
 	ERR_NOT_AUTHORIZED          = "ERR_NOT_AUTHORIZED"
@@ -47,6 +49,29 @@ const (
 	PermLevelAdmin  = 10
 )
 
+// isValidAuth checks if authStr is a valid
+// returns false if authStr is not in a valid format
+// returns true otherwise
+func isValidAuth(authStr string) bool {
+	matchEst, _ := regexp.MatchString("^EST(.+)ARY$", authStr)
+	matchSecret, _ := regexp.MatchString("^SECRET(.+)SECRET$", authStr)
+	if !matchEst && !matchSecret {
+		return false
+	}
+	// only get the uuid from the string
+	uuidStr := strings.ReplaceAll(authStr, "SECRET", "")
+	uuidStr = strings.ReplaceAll(authStr, "EST", "")
+	uuidStr = strings.ReplaceAll(authStr, "ARY", "")
+
+	// check if uuid is valid
+	_, err := uuid.Parse(uuidStr)
+	if err != nil {
+		return false
+	}
+
+	return true
+}
+
 func ExtractAuth(c echo.Context) (string, error) {
 	auth := c.Request().Header.Get("Authorization")
 	//	undefined will be the auth value if ESTUARY_TOKEN cookie is removed.
@@ -54,15 +79,6 @@ func ExtractAuth(c echo.Context) (string, error) {
 		return "", &HttpError{
 			Code:    403,
 			Message: ERR_AUTH_MISSING,
-		}
-	}
-
-	//	if auth is not missing, check format first before extracting
-	match, _ := regexp.MatchString("EST(.*)ARY", auth)
-	if match == false {
-		return "", &HttpError{
-			Code:    403,
-			Message: ERR_INVALID_AUTH,
 		}
 	}
 
@@ -80,6 +96,16 @@ func ExtractAuth(c echo.Context) (string, error) {
 			Message: ERR_AUTH_MISSING_BEARER,
 		}
 	}
+
+	/*
+		//	if auth is not missing, check format first before extracting
+		if !isValidAuth(parts[1]) {
+			return "", &HttpError{
+				Code:    403,
+				Message: ERR_WRONG_AUTH_FORMAT,
+			}
+		}
+	*/
 
 	return parts[1], nil
 }

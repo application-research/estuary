@@ -74,6 +74,7 @@ type Content struct {
 	Description string           `json:"description"`
 	Size        int64            `json:"size"`
 	Type        util.ContentType `json:"type"`
+	Path        string           `json:"path"`
 	Active      bool             `json:"active"`
 	Offloaded   bool             `json:"offloaded"`
 	Replication int              `json:"replication"`
@@ -155,23 +156,33 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 }
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
-	var err error
 	for _, flag := range flags {
 		name := flag.Names()[0]
 		if cctx.IsSet(name) {
-			log.Debugf("Flag %s is set to %s", name, cctx.String(name))
+			log.Debugf("estuary cli flag %s is set to %s", name, cctx.String(name))
 		} else {
 			continue
 		}
+
 		switch name {
 		case "datadir":
-			cfg.SetDataDir(cctx.String("datadir"))
+			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
-			cfg.NodeConfig.BlockstoreDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("blockstore"))
+			cfg.NodeConfig.Blockstore = cctx.String("blockstore")
+		case "no-blockstore-cache":
+			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
 			cfg.NodeConfig.WriteLogTruncate = cctx.Bool("write-log-truncate")
+		case "write-log-flush":
+			cfg.NodeConfig.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
-			cfg.NodeConfig.WriteLogDir, err = config.MakeAbsolute(cfg.DataDir, cctx.String("write-log"))
+			if wl := cctx.String("write-log"); wl != "" {
+				if wl[0] == '/' {
+					cfg.NodeConfig.WriteLogDir = wl
+				} else {
+					cfg.NodeConfig.WriteLogDir = filepath.Join(cctx.String("datadir"), wl)
+				}
+			}
 		case "database":
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
@@ -186,14 +197,16 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
 			cfg.Hostname = cctx.String("hostname")
-		case "default-replication":
-			cfg.Replication = cctx.Int("default-replication")
+		case "replication":
+			cfg.Replication = cctx.Int("replication")
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
 		case "no-storage-cron":
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
 			cfg.DealConfig.Disable = cctx.Bool("disable-deal-making")
+		case "verified-deal":
+			cfg.DealConfig.Verified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
 			cfg.DealConfig.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
@@ -208,14 +221,19 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.JaegerConfig.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
 			cfg.LoggingConfig.ApiEndpointLogging = cctx.Bool("logging")
+		case "enable-auto-retrieve":
+			cfg.EnableAutoRetrieve = cctx.Bool("enable-auto-retrieve")
+		case "bitswap-max-work-per-peer":
+			cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
+		case "bitswap-target-message-size":
+			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+		case "announce-addr":
+			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
+
 		default:
-			// Do nothing
-		}
-		if (err) != nil {
-			return err
 		}
 	}
-	return err
+	return cfg.SetRequiredOptions()
 }
 
 func main() {
@@ -233,8 +251,12 @@ func main() {
 	logging.SetLogLevel("provider.batched", "info")
 	logging.SetLogLevel("bs-migrate", "info")
 
+	hDir, err := homedir.Dir()
+	if err != nil {
+		log.Fatalf("could not determine homedir for estuary app: %+v", err)
+	}
+
 	app := cli.NewApp()
-	home, _ := homedir.Dir()
 	cfg := config.NewEstuary()
 
 	app.Flags = []cli.Flag{
@@ -244,8 +266,8 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "config",
-			Value: filepath.Join(home, ".estuary"),
 			Usage: "specify configuration file location",
+			Value: filepath.Join(hDir, ".estuary"),
 		},
 		&cli.StringFlag{
 			Name:    "database",
@@ -288,8 +310,9 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:   "enable-auto-retrieve",
+			Usage:  "enables autoretrieve",
+			Value:  cfg.EnableAutoRetrieve,
 			Hidden: true,
-			Value:  cfg.AutoRetrieve,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
@@ -313,6 +336,11 @@ func main() {
 			Value: cfg.DealConfig.Disable,
 		},
 		&cli.BoolFlag{
+			Name:  "verified-deal",
+			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
+			Value: cfg.DealConfig.Verified,
+		},
+		&cli.BoolFlag{
 			Name:  "disable-content-adding",
 			Usage: "disallow new content ingestion globally",
 			Value: cfg.ContentConfig.DisableGlobalAdding,
@@ -325,14 +353,26 @@ func main() {
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
-			Value: cfg.NodeConfig.BlockstoreDir,
+			Value: cfg.NodeConfig.Blockstore,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
+			Usage: "enables log truncating",
 			Value: cfg.NodeConfig.WriteLogTruncate,
 		},
+		&cli.BoolFlag{
+			Name:  "write-log-flush",
+			Usage: "enable hard flushing blockstore",
+			Value: cfg.NodeConfig.HardFlushWriteLog,
+		},
+		&cli.BoolFlag{
+			Name:  "no-blockstore-cache",
+			Usage: "disable blockstore caching",
+			Value: cfg.NodeConfig.NoBlockstoreCache,
+		},
 		&cli.IntFlag{
-			Name:  "default-replication",
+			Name:  "replication",
+			Usage: "sets replication factor",
 			Value: cfg.Replication,
 		},
 		&cli.BoolFlag{
@@ -342,10 +382,12 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
+			Usage: "enables jaeger tracing",
 			Value: cfg.JaegerConfig.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
+			Usage: "sets the jaeger provider url",
 			Value: cfg.JaegerConfig.ProviderUrl,
 		},
 		&cli.Float64Flag{
@@ -353,15 +395,34 @@ func main() {
 			Usage: "If less than 1 probabilistic metrics will be used.",
 			Value: cfg.JaegerConfig.SamplerRatio,
 		},
+		&cli.Int64Flag{
+			Name:  "bitswap-max-work-per-peer",
+			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
+		},
+		&cli.IntFlag{
+			Name:  "bitswap-target-message-size",
+			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+		},
+		&cli.StringSliceFlag{
+			Name:  "announce-addr",
+			Usage: "specify multiaddrs that this node can be connected to on",
+			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
 			Action: func(cctx *cli.Context) error {
-				cfg.Load(cctx.String("config"))
-				overrideSetOptions(app.Flags, cctx, cfg)
-				db, err := setupDatabase(cfg)
+				if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
+
+				if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+					return nil
+				}
+
+				db, err := setupDatabase(cfg.DatabaseConnString)
 				if err != nil {
 					return err
 				}
@@ -404,34 +465,39 @@ func main() {
 			Name:  "configure",
 			Usage: "Saves a configuration file to the location specified by the config parameter",
 			Action: func(cctx *cli.Context) error {
-				configuration := cctx.String("config")
-				cfg.Load(configuration) // Assume error means no configuration file exists
-				log.Info("test")
-				overrideSetOptions(app.Flags, cctx, cfg)
-				return cfg.Save(configuration)
+				configFile := cctx.String("config")
+				if err := cfg.Load(configFile); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
+
+				if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+					return err
+				}
+				return cfg.Save(configFile)
 			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
+		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
+			return err
+		}
 
-		cfg.Load(cctx.String("config")) // Ignore error for now; eventually error out if no configuration file
-		overrideSetOptions(app.Flags, cctx, cfg)
+		if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+			return err
+		}
 
-		db, err := setupDatabase(cfg)
+		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
 		}
 
 		init := Initializer{&cfg.NodeConfig, db, nil}
-
 		nd, err := node.Setup(context.Background(), &init)
 		if err != nil {
 			return err
 		}
 
-		if err = view.Register(
-			metrics.DefaultViews...,
-		); err != nil {
+		if err = view.Register(metrics.DefaultViews...); err != nil {
 			log.Fatalf("Cannot register the OpenCensus view: %v", err)
 			return err
 		}
@@ -463,6 +529,7 @@ func main() {
 		}
 
 		s := &Server{
+			DB:          db,
 			Node:        nd,
 			Api:         api,
 			StagingMgr:  sbmgr,
@@ -475,7 +542,6 @@ func main() {
 		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 		})
-
 		go pinmgr.Run(50)
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
@@ -495,12 +561,10 @@ func main() {
 			})
 		}
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir)
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
-
-		s.FilClient = fc
 
 		for _, a := range nd.Host.Addrs() {
 			fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
@@ -519,32 +583,22 @@ func main() {
 			}
 		}()
 
-		s.DB = db
-
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, s.Node.NotifBlockstore, nd.Provider, pinmgr, nd, cfg.Hostname)
+		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
 		if err != nil {
 			return err
 		}
+		s.CM = cm
 
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
+		s.FilClient = fc
 
-		cm.FailDealOnTransferFailure = cfg.DealConfig.FailOnTransferFailure
-
-		cm.isDealMakingDisabled = cfg.DealConfig.Disable
-		cm.contentAddingDisabled = cfg.ContentConfig.DisableGlobalAdding
-		cm.localContentAddingDisabled = cfg.ContentConfig.DisableLocalAdding
-
-		cm.tracer = otel.Tracer("replicator")
-
-		if cctx.Bool("enable-auto-retrive") {
+		if cfg.EnableAutoRetrieve {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
 		if !cfg.DisableFilecoinStorage {
 			go cm.ContentWatcher()
 		}
-
-		s.CM = cm
 
 		if !cm.contentAddingDisabled {
 			go func() {
@@ -560,7 +614,6 @@ func main() {
 		}
 
 		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
-
 		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
 		if !ok {
 			updateInterval = "720"
@@ -581,11 +634,11 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging, cfg.LightstepToken, filepath.Join(cfg.DataDir, "cache"))
+		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging, cfg.LightstepToken, cfg.ServerCacheDir)
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Println(err)
+		log.Fatalf("could not run esturay app: %+v", err)
 	}
 }
 
@@ -599,16 +652,8 @@ type Autoretrieve struct {
 	Addresses      string
 }
 
-func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
-
-	/* TODO: change this default
-	ddir := cctx.String("datadir")
-	if dbval == defaultDatabaseValue && ddir != "." {
-		dbval = "sqlite=" + filepath.Join(ddir, "estuary.db")
-	}
-	*/
-
-	db, err := util.SetupDatabase(cfg.DatabaseConnString)
+func setupDatabase(dbConnStr string) (*gorm.DB, error) {
+	db, err := util.SetupDatabase(dbConnStr)
 	if err != nil {
 		return nil, err
 	}
@@ -650,7 +695,7 @@ func setupDatabase(cfg *config.Estuary) (*gorm.DB, error) {
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range build.DefaultMiners {
-			db.Create(&storageMiner{Address: util.DbAddr{m}})
+			db.Create(&storageMiner{Address: util.DbAddr{Addr: m}})
 		}
 
 	}

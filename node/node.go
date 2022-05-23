@@ -114,7 +114,6 @@ type Node struct {
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
-
 	cfg := init.Config()
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
@@ -128,16 +127,14 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	}
 
 	var rcm network.ResourceManager
-
 	if cfg.NoLimiter {
-		rcm, err = network.NullResourceManager, nil
+		rcm = network.NullResourceManager
+		log.Warnf("starting node with no resource limits")
 	} else {
-		lim := cfg.GetLimiter()
-		rcm, err = rcmgr.NewResourceManager(lim)
-	}
-
-	if err != nil {
-		return nil, err
+		rcm, err = rcmgr.NewResourceManager(cfg.GetLimiter())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	bwc := metrics.NewBandwidthCounter()
@@ -207,7 +204,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	mbs, stordir, err := loadBlockstore(cfg.BlockstoreDir, cfg.WriteLogDir, cfg.HardFlushWriteLog, cfg.WriteLogTruncate, cfg.NoBlockstoreCache)
+	mbs, stordir, err := loadBlockstore(cfg.Blockstore, cfg.WriteLogDir, cfg.HardFlushWriteLog, cfg.WriteLogTruncate, cfg.NoBlockstoreCache)
 	if err != nil {
 		return nil, err
 	}

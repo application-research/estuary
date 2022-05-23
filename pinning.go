@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -98,10 +99,21 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
+	connectedToAtLeastOne := false
 	for _, pi := range op.Peers {
-		if err := s.Node.Host.Connect(ctx, pi); err != nil {
+		if err := s.Node.Host.Connect(ctx, pi); err != nil && s.Node.Host.ID() != pi.ID {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+		} else {
+			//	Check if it's trying to connect to itself since we only want to check if the
+			//	the connection is between the host and the external/other peers.
+			connectedToAtLeastOne = true
 		}
+	}
+
+	//	If it can't connect to any legitimate provider peers, then we fail the entire operation.
+	if !connectedToAtLeastOne {
+		log.Errorf("unable to connect to any of the provider peers for pinning operation")
+		return nil
 	}
 
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
@@ -113,7 +125,9 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		return err
 	}
 
-	s.CM.ToCheck <- op.ContId
+	if op.MakeDeal {
+		s.CM.ToCheck <- op.ContId
+	}
 
 	if op.Replace > 0 {
 		if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
@@ -123,12 +137,12 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 
 	// this provide call goes out immediately
 	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		log.Infof("provider broadcast failed: %s", err)
+		log.Warnf("provider broadcast failed: %s", err)
 	}
 
 	// this one adds to a queue
 	if err := s.Node.Provider.Provide(op.Obj); err != nil {
-		log.Infof("providing failed: %s", err)
+		log.Warnf("providing failed: %s", err)
 	}
 
 	return nil
@@ -147,11 +161,12 @@ func (cm *ContentManager) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
+	makeDeal := true
 	for _, c := range toPin {
 		if c.Location == "local" {
-			cm.addPinToQueue(c, nil, 0)
+			cm.addPinToQueue(c, nil, 0, makeDeal)
 		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location); err != nil {
+			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location, makeDeal); err != nil {
 				log.Errorf("failed to send pin message to shuttle: %s", err)
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -161,7 +176,7 @@ func (cm *ContentManager) refreshPinQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatus, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -182,7 +197,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		Name:        name,
 		UserID:      user,
 		Active:      false,
-		Replication: defaultReplication,
+		Replication: cm.Replication,
 
 		Pinning: true,
 		PinMeta: metab,
@@ -213,9 +228,9 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	}
 
 	if loc == "local" {
-		cm.addPinToQueue(cont, peers, replace)
+		cm.addPinToQueue(cont, peers, replace, makeDeal)
 	} else {
-		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc); err != nil {
+		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc, makeDeal); err != nil {
 			return nil, err
 		}
 	}
@@ -223,7 +238,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	return cm.pinStatus(cont)
 }
 
-func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint) {
+func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint, makeDeal bool) {
 	if cont.Location != "local" {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
@@ -238,6 +253,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 		Status:   "queued",
 		Replace:  replace,
 		Location: cont.Location,
+		MakeDeal: makeDeal,
 	}
 
 	cm.pinLk.Lock()
@@ -248,7 +264,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 	cm.pinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string) error {
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
 		attribute.String("CID", cont.Cid.CID.String()),
@@ -279,6 +295,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 		Status:   "queued",
 		Replace:  replace,
 		Location: handle,
+		MakeDeal: makeDeal,
 	}
 
 	cm.pinLk.Lock()
@@ -558,7 +575,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	if len(out) == 0 {
 		out = make([]*types.IpfsPinStatus, 0)
 	}
-	return e.JSON(200, map[string]interface{}{
+	return e.JSON(http.StatusOK, map[string]interface{}{
 		"count":   len(out),
 		"results": out,
 	})
@@ -650,7 +667,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -699,14 +716,15 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta)
+	makeDeal := true
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
 
 	status.Pin.Meta = pin.Meta
 
-	return e.JSON(202, status)
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
@@ -732,7 +750,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	return e.JSON(200, st)
+	return e.JSON(http.StatusOK, st)
 }
 
 // handleReplacePin godoc
@@ -745,7 +763,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -767,7 +785,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	}
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
@@ -787,12 +805,13 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta)
+	makeDeal := true
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
 
-	return e.JSON(200, status)
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleDeletePin godoc
@@ -826,7 +845,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	return nil
+	return e.NoContent(http.StatusAccepted)
 }
 
 func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status string) {
