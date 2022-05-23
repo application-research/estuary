@@ -439,6 +439,7 @@ func main() {
 			shuttleToken:       cfg.EstuaryRemote.AuthToken,
 			disableLocalAdding: cfg.Content.DisableLocalAdding,
 			dev:                cfg.Dev,
+			shuttleConfig:      cfg,
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -693,6 +694,8 @@ type Shuttle struct {
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
+
+	shuttleConfig *config.Shuttle
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
@@ -977,6 +980,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/garbage/check", s.handleManualGarbageCheck)
 	admin.POST("/garbage/collect", s.handleGarbageCollect)
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
+	admin.GET("/system/config", s.handleGetSystemConfig)
 
 	return e.Start(listen)
 }
@@ -2207,4 +2211,11 @@ func (s *Shuttle) handleRcmgrStats(e echo.Context) error {
 	rcm := s.Node.Host.Network().ResourceManager()
 
 	return e.JSON(200, rcm.(rcmgr.ResourceManagerState).Stat())
+}
+
+func (s *Shuttle) handleGetSystemConfig(e echo.Context) error {
+	resp := map[string]interface{}{
+		"data": s.shuttleConfig,
+	}
+	return e.JSON(200, resp)
 }
