@@ -2,7 +2,6 @@ package autoretrieve
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"strings"
@@ -55,17 +54,85 @@ type AutoretrieveInitResponse struct {
 // EstuaryMhIterator contains objects to query the database
 // incrementally, to avoid having all CIDs in memory at once
 type EstuaryMhIterator struct {
-	Cursor *sql.Rows
-	Db     *gorm.DB
+	contentOffset int // offset of the content in the Contents slice
+	cidOffset     int // offset of the cid related to the current content
+	Contents      []util.Content
+	ContentCids   []cid.Cid
+	Db            *gorm.DB
 }
 
 func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
-	var nextCid cid.Cid
-	if m.Cursor.Next() {
-		m.Db.ScanRows(m.Cursor, &nextCid)
-		return nextCid.Hash(), nil
+	if len(m.Contents) == 0 {
+		// no contents to announce
+		return nil, io.EOF
 	}
-	return nil, io.EOF
+
+	if m.cidOffset == len(m.ContentCids) {
+		// finished publishing objects related to this offset, move to next
+		m.cidOffset = 0
+		m.contentOffset++
+	}
+
+	// finished publishing all cids
+	if m.contentOffset == len(m.Contents) {
+		return nil, io.EOF
+	}
+
+	if m.cidOffset == 0 { // we need to get another content's related CIDs
+		nextContent := m.Contents[m.contentOffset]
+		var err error
+		m.ContentCids, err = findContentCids(m.Db, nextContent)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	curCid := m.ContentCids[m.cidOffset]
+	m.cidOffset++
+
+	return curCid.Hash(), nil
+}
+
+// findNewContents takes a time.Time struct `since` and queries all active
+// util.Content entries created after that time
+// Returns a list of the util.Contents created after `since`
+// Returns an error if failed
+func findNewContents(db *gorm.DB, since time.Time) ([]util.Content, error) {
+	var newContents []util.Content
+	err := db.Model(&util.Content{}).
+		Where("active = true AND created_at >= ?", since).
+		Select("*").
+		Scan(&newContents).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("unable to query new CIDs from database: %s", err)
+	}
+
+	return newContents, nil
+}
+
+// findContentCids takes a util.Content struct and queries all util.Object entries
+// related to that content on the database through the obj_refs table
+// Returns a list of the CIDs of the found objects if successful
+// Returns an error if failed
+func findContentCids(db *gorm.DB, content util.Content) ([]cid.Cid, error) {
+	var newContentCids []cid.Cid
+	var newContentObjects []util.Object
+	err := db.Model(&util.ObjRef{}).
+		Joins("LEFT JOIN objects on objects.id = obj_refs.object").
+		Where("obj_refs.content = ?", content.ID).
+		Select("objects.cid").
+		Scan(&newContentObjects).
+		Error
+	if err != nil {
+		return nil, fmt.Errorf("unable to query new CIDs from database: %s", err)
+	}
+
+	for _, obj := range newContentObjects {
+		newContentCids = append(newContentCids, obj.Cid.CID)
+	}
+
+	return newContentCids, nil
 }
 
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
@@ -86,34 +153,36 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
 
 		arHandle := contextID // contextID is the autoretrieve handle
-		if err != nil {
-			return nil, err
-		}
 
-		var ar Autoretrieve
 		// get the autoretrieve entry from the database
+		var ar Autoretrieve
 		err = db.Find(&ar, "handle = ?", arHandle).Error
 		if err != nil {
 			return nil, err
 		}
 
-		// find all new multihashes since the last time we advertised for this autoretrieve server
-		// joins three tables (contents, obj_refs and objects) to query all CIDs (from objects)
-		// that are active (from contents)
-		// TODO: figure out where to close the Rows object. Maybe do an autoretrieve close function and call `defer ArEngine.Close()` in main
-		rows, err := db.Model(&util.Content{}).
-			Joins("LEFT JOIN (select * from obj_refs left join objects on obj_refs.object = objects.id) all_objs ON contents.id = all_objs.content").
-			Where("contents.active = true AND all_objs.cid IS NOT NULL").
-			Where("contents.created_at >= ?", ar.LastAdvertisement).
-			Select("all_objs.cid AS cid").
-			Rows()
+		// find all new content entries since the last time we advertised for this autoretrieve server
+		newContents, err := findNewContents(db, ar.LastAdvertisement)
 		if err != nil {
 			return nil, err
 		}
 
+		if len(newContents) == 0 {
+			return nil, fmt.Errorf("no new contents")
+		}
+
+		var newContentCids []cid.Cid
+		newContentCids, err = findContentCids(db, newContents[0])
+		if err != nil {
+			return nil, err
+		}
+
+		log.Debugf("found %d new contents, announcing", len(newContents))
+
 		return &EstuaryMhIterator{
-			Cursor: rows,
-			Db:     db,
+			Contents:    newContents,
+			ContentCids: newContentCids,
+			Db:          db,
 		}, nil
 	})
 
@@ -147,25 +216,6 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	if len(retrievalAddresses) == 0 {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
 	}
-
-	// see if we need to make a new announcement for this AR server (if there were new CIDs since last advertisement)
-	var newContentsCount int64
-	err := arEng.db.Model(&util.Content{}).
-		Joins("LEFT JOIN (select * from obj_refs left join objects on obj_refs.object = objects.id) all_objs ON contents.id = all_objs.content").
-		Where("contents.active = true AND all_objs.cid IS NOT NULL").
-		Where("contents.created_at >= ?", ar.LastAdvertisement).
-		Select("all_objs.cid").
-		Count(&newContentsCount).
-		Error
-	if err != nil {
-		return fmt.Errorf("unable to query new CIDs from database: %s", err)
-	}
-	if newContentsCount == 0 {
-		log.Debugf("no new CIDs to announce, skipping")
-		return nil
-	}
-
-	log.Debugf("found %d new CIDs, announcing", newContentsCount)
 
 	log.Infof("sending announcement to %s", ar.Handle)
 	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
