@@ -2,6 +2,8 @@ basePath: /
 definitions:
   main.Collection:
     properties:
+      cid:
+        type: string
       createdAt:
         type: string
       description:
@@ -117,7 +119,38 @@ paths:
       summary: Get all users
       tags:
         - admin
+  /collections/{coluuid}/commit:
+    post:
+      description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
+      parameters:
+        - description: coluuid
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Produce a CID of the collection contents
+      tags:
+        - collections
   /collections/add-content:
+    delete:
+      description: This endpoint is used to delete an existing collection.
+      parameters:
+        - description: Collection ID
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      responses: {}
+      summary: Deletes a collection
+      tags:
+        - collections
     post:
       consumes:
         - application/json

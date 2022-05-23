@@ -65,6 +65,23 @@
             }
           }
         }
+      },
+      "delete": {
+        "description": "This endpoint is used to delete an existing collection.",
+        "tags": [
+          "collections"
+        ],
+        "summary": "Deletes a collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Collection ID",
+            "name": "coluuid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
       }
     },
     "/collections/content/{collection-id}": {
@@ -262,6 +279,35 @@
             "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/collections/{coluuid}/commit": {
+      "post": {
+        "description": "This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "collections"
+        ],
+        "summary": "Produce a CID of the collection contents",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "coluuid",
+            "name": "coluuid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
             }
           }
         }
@@ -1363,6 +1409,9 @@
     "main.Collection": {
       "type": "object",
       "properties": {
+        "cid": {
+          "type": "string"
+        },
         "createdAt": {
           "type": "string"
         },

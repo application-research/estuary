@@ -3319,7 +3319,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 // @Summary      Deletes a collection
 // @Description  This endpoint is used to delete an existing collection.
 // @Tags         collections
-// @Param        coluuid    collectionUUID    string    true    "Collection ID"
+// @Param        coluuid    path    string    true    "Collection ID"
 // @Router       /collections/add-content [delete]
 func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	colid := c.Param("coluuid")
