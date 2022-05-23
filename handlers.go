@@ -24,10 +24,8 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	commcid "github.com/filecoin-project/go-fil-commcid"
-	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
@@ -36,21 +34,16 @@ import (
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	blocks "github.com/ipfs/go-block-format"
-	"github.com/ipfs/go-blockservice"
-	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	merkledag "github.com/ipfs/go-merkledag"
-	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	car "github.com/ipld/go-car"
-	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
-	"github.com/multiformats/go-multiaddr"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
@@ -4836,7 +4829,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, path, size, contents.type").
+		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, collection_refs.path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
