@@ -3,19 +3,19 @@ package config
 import rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 
 type SystemLimit struct {
-	MinMemory      int64
-	MaxMemory      int64
-	MemoryFraction float64
+	MinMemory      int64   `json:"min_memory"`
+	MaxMemory      int64   `json:"max_memory"`
+	MemoryFraction float64 `json:"memory_fraction"`
 
-	StreamsInbound  int
-	StreamsOutbound int
-	Streams         int
+	StreamsInbound  int `json:"streams_inbound"`
+	StreamsOutbound int `json:"streams_outbound"`
+	Streams         int `json:"streams"`
 
-	ConnsInbound  int
-	ConnsOutbound int
-	Conns         int
+	ConnsInbound  int `json:"conns_inbound"`
+	ConnsOutbound int `json:"conns_outbound"`
+	Conns         int `json:"conns"`
 
-	FD int
+	FD int `json:"fd"`
 }
 
 func (sl *SystemLimit) apply(lim *rcmgr.BasicLimiter) {
@@ -23,15 +23,15 @@ func (sl *SystemLimit) apply(lim *rcmgr.BasicLimiter) {
 }
 
 type TransientLimit struct {
-	StreamsInbound  int
-	StreamsOutbound int
-	Streams         int
+	StreamsInbound  int `json:"streams_inbound"`
+	StreamsOutbound int `json:"streams_outbound"`
+	Streams         int `json:"streams"`
 
-	ConnsInbound  int
-	ConnsOutbound int
-	Conns         int
+	ConnsInbound  int `json:"conns_inbound"`
+	ConnsOutbound int `json:"conns_outbound"`
+	Conns         int `json:"conns"`
 
-	FD int
+	FD int `json:"fd"`
 }
 
 func (tl *TransientLimit) apply(lim *rcmgr.BasicLimiter) {
@@ -39,11 +39,11 @@ func (tl *TransientLimit) apply(lim *rcmgr.BasicLimiter) {
 }
 
 type Limits struct {
-	SystemLimitConfig    SystemLimit
-	TransientLimitConfig TransientLimit
+	SystemLimit    SystemLimit    `json:"system_limit"`
+	TransientLimit TransientLimit `json:"transient_limit"`
 }
 
 func (limits *Limits) apply(lim *rcmgr.BasicLimiter) {
-	limits.SystemLimitConfig.apply(lim)
-	limits.TransientLimitConfig.apply(lim)
+	limits.SystemLimit.apply(lim)
+	limits.TransientLimit.apply(lim)
 }

@@ -17,29 +17,29 @@ func checkNodeConfig(t *testing.T, node *Node) {
 	assert.NotEmpty(node.DatastoreDir)
 	assert.NotEmpty(node.WalletDir)
 
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.Conns, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.ConnsInbound, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.ConnsOutbound, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.Streams, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.StreamsInbound, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.StreamsOutbound, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.FD, 0)
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.MinMemory, int64(0))
-	assert.Greater(node.LimitsConfig.SystemLimitConfig.MaxMemory, node.LimitsConfig.SystemLimitConfig.MinMemory)
+	assert.Greater(node.Limits.SystemLimit.Conns, 0)
+	assert.Greater(node.Limits.SystemLimit.ConnsInbound, 0)
+	assert.Greater(node.Limits.SystemLimit.ConnsOutbound, 0)
+	assert.Greater(node.Limits.SystemLimit.Streams, 0)
+	assert.Greater(node.Limits.SystemLimit.StreamsInbound, 0)
+	assert.Greater(node.Limits.SystemLimit.StreamsOutbound, 0)
+	assert.Greater(node.Limits.SystemLimit.FD, 0)
+	assert.Greater(node.Limits.SystemLimit.MinMemory, int64(0))
+	assert.Greater(node.Limits.SystemLimit.MaxMemory, node.Limits.SystemLimit.MinMemory)
 
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.Conns, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.ConnsInbound, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.ConnsOutbound, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.Streams, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.StreamsInbound, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.StreamsOutbound, 0)
-	assert.Greater(node.LimitsConfig.TransientLimitConfig.FD, 0)
+	assert.Greater(node.Limits.TransientLimit.Conns, 0)
+	assert.Greater(node.Limits.TransientLimit.ConnsInbound, 0)
+	assert.Greater(node.Limits.TransientLimit.ConnsOutbound, 0)
+	assert.Greater(node.Limits.TransientLimit.Streams, 0)
+	assert.Greater(node.Limits.TransientLimit.StreamsInbound, 0)
+	assert.Greater(node.Limits.TransientLimit.StreamsOutbound, 0)
+	assert.Greater(node.Limits.TransientLimit.FD, 0)
 
 	assert.NotEmpty(node.ListenAddrs)
 	assert.NotEmpty(node.ListenAddrs[0])
 
-	assert.Greater(node.ConnectionManagerConfig.LowWater, 0)
-	assert.Greater(node.ConnectionManagerConfig.HighWater, node.ConnectionManagerConfig.LowWater)
+	assert.Greater(node.ConnectionManager.LowWater, 0)
+	assert.Greater(node.ConnectionManager.HighWater, node.ConnectionManager.LowWater)
 }
 
 func TestEstuaryDefaultSanity(t *testing.T) {
@@ -54,7 +54,7 @@ func TestEstuaryDefaultSanity(t *testing.T) {
 	assert.NotEmpty(config.ApiListen)
 	assert.NotEmpty(config.Hostname)
 
-	checkNodeConfig(t, &config.NodeConfig)
+	checkNodeConfig(t, &config.Node)
 }
 
 func TestShuttleDefaultSanity(t *testing.T) {
@@ -67,32 +67,32 @@ func TestShuttleDefaultSanity(t *testing.T) {
 	assert.NotEmpty(config.StagingDataDir)
 	assert.NotEmpty(config.DatabaseConnString)
 	assert.NotEmpty(config.ApiListen)
-	assert.NotEmpty(config.EstuaryConfig.Api)
+	assert.NotEmpty(config.EstuaryRemote.Api)
 
-	checkNodeConfig(t, &config.NodeConfig)
+	checkNodeConfig(t, &config.Node)
 }
 
 func TestApplyLimits(t *testing.T) {
 	assert := assert.New(t)
-	config := NewShuttle().NodeConfig.LimitsConfig
+	config := NewShuttle().Node.Limits
 
 	limiter := rcmgr.NewDefaultLimiter()
 	config.apply(limiter)
 
-	assert.Equal(limiter.SystemLimits.GetConnLimit(network.DirInbound), config.SystemLimitConfig.ConnsInbound)
-	assert.Equal(limiter.SystemLimits.GetConnLimit(network.DirOutbound), config.SystemLimitConfig.ConnsOutbound)
-	assert.Equal(limiter.SystemLimits.GetConnTotalLimit(), config.SystemLimitConfig.Conns)
-	assert.Equal(limiter.TransientLimits.GetConnLimit(network.DirInbound), config.TransientLimitConfig.ConnsInbound)
-	assert.Equal(limiter.TransientLimits.GetConnLimit(network.DirOutbound), config.TransientLimitConfig.ConnsOutbound)
-	assert.Equal(limiter.TransientLimits.GetConnTotalLimit(), config.TransientLimitConfig.Conns)
-	assert.Equal(limiter.SystemLimits.GetStreamLimit(network.DirInbound), config.SystemLimitConfig.StreamsInbound)
-	assert.Equal(limiter.SystemLimits.GetStreamLimit(network.DirOutbound), config.SystemLimitConfig.StreamsOutbound)
-	assert.Equal(limiter.SystemLimits.GetStreamTotalLimit(), config.SystemLimitConfig.Streams)
-	assert.Equal(limiter.TransientLimits.GetStreamLimit(network.DirInbound), config.TransientLimitConfig.StreamsInbound)
-	assert.Equal(limiter.TransientLimits.GetStreamLimit(network.DirOutbound), config.TransientLimitConfig.StreamsOutbound)
-	assert.Equal(limiter.TransientLimits.GetStreamTotalLimit(), config.TransientLimitConfig.Streams)
-	assert.Equal(limiter.SystemLimits.GetFDLimit(), config.SystemLimitConfig.FD)
-	assert.Equal(limiter.TransientLimits.GetFDLimit(), config.TransientLimitConfig.FD)
+	assert.Equal(limiter.SystemLimits.GetConnLimit(network.DirInbound), config.SystemLimit.ConnsInbound)
+	assert.Equal(limiter.SystemLimits.GetConnLimit(network.DirOutbound), config.SystemLimit.ConnsOutbound)
+	assert.Equal(limiter.SystemLimits.GetConnTotalLimit(), config.SystemLimit.Conns)
+	assert.Equal(limiter.TransientLimits.GetConnLimit(network.DirInbound), config.TransientLimit.ConnsInbound)
+	assert.Equal(limiter.TransientLimits.GetConnLimit(network.DirOutbound), config.TransientLimit.ConnsOutbound)
+	assert.Equal(limiter.TransientLimits.GetConnTotalLimit(), config.TransientLimit.Conns)
+	assert.Equal(limiter.SystemLimits.GetStreamLimit(network.DirInbound), config.SystemLimit.StreamsInbound)
+	assert.Equal(limiter.SystemLimits.GetStreamLimit(network.DirOutbound), config.SystemLimit.StreamsOutbound)
+	assert.Equal(limiter.SystemLimits.GetStreamTotalLimit(), config.SystemLimit.Streams)
+	assert.Equal(limiter.TransientLimits.GetStreamLimit(network.DirInbound), config.TransientLimit.StreamsInbound)
+	assert.Equal(limiter.TransientLimits.GetStreamLimit(network.DirOutbound), config.TransientLimit.StreamsOutbound)
+	assert.Equal(limiter.TransientLimits.GetStreamTotalLimit(), config.TransientLimit.Streams)
+	assert.Equal(limiter.SystemLimits.GetFDLimit(), config.SystemLimit.FD)
+	assert.Equal(limiter.TransientLimits.GetFDLimit(), config.TransientLimit.FD)
 }
 
 func TestEstuaryJSONRoundtrip(t *testing.T) {

@@ -7,27 +7,26 @@ import (
 
 const DefaultWebsocketAddr = "/ip4/0.0.0.0/tcp/6747/ws"
 
-type EstuaryRemoteConfig struct {
-	Api       string
-	Handle    string
-	AuthToken string
+type EstuaryRemote struct {
+	Api       string `json:"api"`
+	Handle    string `json:"handle"`
+	AuthToken string `json:"auth_token"`
 }
 
 type Shuttle struct {
-	DatabaseConnString string
-	StagingDataDir     string
-	DataDir            string
-	ApiListen          string
-	AutoRetrieve       bool
-	Hostname           string
-	Private            bool
-	Dev                bool
-	NoReloadPinQueue   bool
-	NodeConfig         Node
-	JaegerConfig       Jaeger
-	ContentConfig      Content
-	LoggingConfig      Logging
-	EstuaryConfig      EstuaryRemoteConfig
+	DatabaseConnString string        `json:"database_conn_string"`
+	StagingDataDir     string        `json:"staging_data_dir"`
+	DataDir            string        `json:"data_dir"`
+	ApiListen          string        `json:"api_listen"`
+	Hostname           string        `json:"hostname"`
+	Private            bool          `json:"private"`
+	Dev                bool          `json:"dev"`
+	NoReloadPinQueue   bool          `json:"no_reload_pin_queue"`
+	Node               Node          `json:"node"`
+	Jaeger             Jaeger        `json:"jaeger"`
+	Content            Content       `json:"content"`
+	Logging            Logging       `json:"logging"`
+	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -40,11 +39,11 @@ func (cfg *Shuttle) Save(filename string) error {
 }
 
 func (cfg *Shuttle) Validate() error {
-	if cfg.EstuaryConfig.AuthToken == "" {
+	if cfg.EstuaryRemote.AuthToken == "" {
 		return errors.New("no auth-token configured or specified on command line")
 	}
 
-	if cfg.EstuaryConfig.Handle == "" {
+	if cfg.EstuaryRemote.Handle == "" {
 		return errors.New("no handle configured or specified on command line")
 	}
 	return nil
@@ -54,14 +53,14 @@ func (cfg *Shuttle) SetRequiredOptions() error {
 	//TODO validate flags values - empty strings etc
 
 	cfg.StagingDataDir = filepath.Join(cfg.DataDir, "staging")
-	cfg.NodeConfig.WalletDir = filepath.Join(cfg.DataDir, "wallet")
-	cfg.NodeConfig.DatastoreDir = filepath.Join(cfg.DataDir, "leveldb")
-	cfg.NodeConfig.Libp2pKeyFile = filepath.Join(cfg.DataDir, "peer.key")
+	cfg.Node.WalletDir = filepath.Join(cfg.DataDir, "wallet")
+	cfg.Node.DatastoreDir = filepath.Join(cfg.DataDir, "leveldb")
+	cfg.Node.Libp2pKeyFile = filepath.Join(cfg.DataDir, "peer.key")
 
-	if cfg.NodeConfig.Blockstore == "" {
-		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, "blocks")
-	} else if cfg.NodeConfig.Blockstore[0] != '/' && cfg.NodeConfig.Blockstore[0] != ':' {
-		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, cfg.NodeConfig.Blockstore)
+	if cfg.Node.Blockstore == "" {
+		cfg.Node.Blockstore = filepath.Join(cfg.DataDir, "blocks")
+	} else if cfg.Node.Blockstore[0] != '/' && cfg.Node.Blockstore[0] != ':' {
+		cfg.Node.Blockstore = filepath.Join(cfg.DataDir, cfg.Node.Blockstore)
 	}
 	return nil
 }
@@ -76,21 +75,21 @@ func NewShuttle() *Shuttle {
 		Dev:                false,
 		NoReloadPinQueue:   false,
 
-		ContentConfig: Content{
+		Content: Content{
 			DisableLocalAdding: false,
 		},
 
-		JaegerConfig: Jaeger{
+		Jaeger: Jaeger{
 			EnableTracing: false,
 			ProviderUrl:   "http://localhost:14268/api/traces",
 			SamplerRatio:  1,
 		},
 
-		LoggingConfig: Logging{
+		Logging: Logging{
 			ApiEndpointLogging: false,
 		},
 
-		NodeConfig: Node{
+		Node: Node{
 			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6745",
@@ -103,14 +102,14 @@ func NewShuttle() *Shuttle {
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
 
-			BitswapConfig: BitswapConfig{
+			Bitswap: Bitswap{
 				MaxOutstandingBytesPerPeer: 5 << 20,
 				TargetMessageSize:          16 << 10,
 			},
 
 			NoLimiter: true,
-			LimitsConfig: Limits{
-				SystemLimitConfig: SystemLimit{
+			Limits: Limits{
+				SystemLimit: SystemLimit{
 					MinMemory:      1 << 30,
 					MaxMemory:      10 << 30,
 					MemoryFraction: .2,
@@ -125,7 +124,7 @@ func NewShuttle() *Shuttle {
 
 					FD: 8192,
 				},
-				TransientLimitConfig: TransientLimit{
+				TransientLimit: TransientLimit{
 					StreamsInbound:  2 << 10,
 					StreamsOutbound: 4 << 10,
 					Streams:         4 << 10,
@@ -137,13 +136,13 @@ func NewShuttle() *Shuttle {
 					FD: 1024,
 				},
 			},
-			ConnectionManagerConfig: ConnectionManager{
+			ConnectionManager: ConnectionManager{
 				LowWater:  2000,
 				HighWater: 3000,
 			},
 		},
 
-		EstuaryConfig: EstuaryRemoteConfig{
+		EstuaryRemote: EstuaryRemote{
 			Api:       "api.estuary.tech",
 			Handle:    "",
 			AuthToken: "",

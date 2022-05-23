@@ -5,11 +5,12 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"math/rand"
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
@@ -366,11 +367,11 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		contentSizeLimit:           defaultContentSizeLimit,
 		hostname:                   cfg.Hostname,
 		inflightCids:               make(map[cid.Cid]uint),
-		FailDealOnTransferFailure:  cfg.DealConfig.FailOnTransferFailure,
-		isDealMakingDisabled:       cfg.DealConfig.Disable,
-		contentAddingDisabled:      cfg.ContentConfig.DisableGlobalAdding,
-		localContentAddingDisabled: cfg.ContentConfig.DisableLocalAdding,
-		VerifiedDeal:               cfg.DealConfig.Verified,
+		FailDealOnTransferFailure:  cfg.Deal.FailOnTransferFailure,
+		isDealMakingDisabled:       cfg.Deal.Disable,
+		contentAddingDisabled:      cfg.Content.DisableGlobalAdding,
+		localContentAddingDisabled: cfg.Content.DisableLocalAdding,
+		VerifiedDeal:               cfg.Deal.Verified,
 		Replication:                cfg.Replication,
 		tracer:                     otel.Tracer("replicator"),
 	}
