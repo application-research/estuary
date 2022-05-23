@@ -536,6 +536,7 @@ func main() {
 			tracer:      otel.Tracer("api"),
 			cacher:      memo.NewCacher(),
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+			estuaryCfg:  cfg,
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -703,6 +704,7 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 }
 
 type Server struct {
+	estuaryCfg *config.Estuary
 	tracer     trace.Tracer
 	Node       *node.Node
 	DB         *gorm.DB
