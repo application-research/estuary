@@ -91,7 +91,7 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/collections/content/{collection-id}": {
+        "/collections/content/{coluuid}": {
             "get": {
                 "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
                 "produces": [
@@ -183,14 +183,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Collection ID",
-                        "name": "col",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Collection ID Long",
-                        "name": "collection",
+                        "name": "coluuid",
                         "in": "query",
                         "required": true
                     },
@@ -225,15 +218,15 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection",
-                        "name": "col",
+                        "description": "Collection ID",
+                        "name": "coluuid",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
                         "description": "Directory",
-                        "name": "dir",
+                        "name": "colpath",
                         "in": "query",
                         "required": true
                     }
@@ -1445,7 +1438,7 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
-                "collection": {
+                "coluuid": {
                     "type": "string"
                 },
                 "contents": {
@@ -1498,10 +1491,10 @@ const docTemplate = `{
         "main.importDealBody": {
             "type": "object",
             "properties": {
-                "collection": {
+                "colpath": {
                     "type": "string"
                 },
-                "collectionPath": {
+                "coluuid": {
                     "type": "string"
                 },
                 "dealIDs": {
@@ -1529,13 +1522,13 @@ const docTemplate = `{
         "util.ContentAddIpfsBody": {
             "type": "object",
             "properties": {
-                "collection": {
+                "colpath": {
                     "type": "string"
                 },
-                "collectionPath": {
+                "coluuid": {
                     "type": "string"
                 },
-                "name": {
+                "filename": {
                     "type": "string"
                 },
                 "peers": {

@@ -21,7 +21,7 @@ definitions:
         items:
           type: string
         type: array
-      collection:
+      coluuid:
         type: string
       contents:
         items:
@@ -55,9 +55,9 @@ definitions:
     type: object
   main.importDealBody:
     properties:
-      collection:
+      colpath:
         type: string
-      collectionPath:
+      coluuid:
         type: string
       dealIDs:
         items:
@@ -75,11 +75,11 @@ definitions:
     type: object
   util.ContentAddIpfsBody:
     properties:
-      collection:
+      colpath:
         type: string
-      collectionPath:
+      coluuid:
         type: string
-      name:
+      filename:
         type: string
       peers:
         items:
@@ -174,7 +174,7 @@ paths:
       summary: Add contents to a collection
       tags:
         - collections
-  /collections/content/{collection-id}:
+  /collections/content/{coluuid}:
     get:
       description: This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
       parameters:
@@ -231,12 +231,7 @@ paths:
       parameters:
         - description: Collection ID
           in: query
-          name: col
-          required: true
-          type: string
-        - description: Collection ID Long
-          in: query
-          name: collection
+          name: coluuid
           required: true
           type: string
         - description: Content
@@ -259,14 +254,14 @@ paths:
     get:
       description: This endpoint creates a new collection
       parameters:
-        - description: Collection
+        - description: Collection ID
           in: query
-          name: col
+          name: coluuid
           required: true
           type: string
         - description: Directory
           in: query
-          name: dir
+          name: colpath
           required: true
           type: string
       produces:
