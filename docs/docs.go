@@ -284,6 +284,35 @@ const docTemplate = `{
                 }
             }
         },
+        "/collections/{coluuid}/commit": {
+            "post": {
+                "description": "This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Produce a CID of the collection contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "coluuid",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/content/add": {
             "post": {
                 "description": "This endpoint is used to upload new content.",
@@ -1380,6 +1409,9 @@ const docTemplate = `{
         "main.Collection": {
             "type": "object",
             "properties": {
+                "cid": {
+                    "type": "string"
+                },
                 "createdAt": {
                     "type": "string"
                 },
