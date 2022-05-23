@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -849,16 +850,14 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		var herr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&herr); err != nil {
-			return nil, fmt.Errorf("authentication check returned unexpected error, code %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
 		}
-
-		return nil, fmt.Errorf("authentication check failed: %s(%d)", herr.Message, herr.Code)
+		return nil, fmt.Errorf("authentication check returned unexpected error: %s", bodyBytes)
 	}
 
 	var out util.ViewerResponse
@@ -1369,11 +1368,11 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var respErr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
-			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return 0, err
 		}
-		return 0, errors.Wrap(respErr, "failed to request createContent ")
+		return 0, fmt.Errorf("failed to request createContent: %s", bodyBytes)
 	}
 
 	var rbody util.ContentCreateResponse
@@ -1421,11 +1420,11 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var respErr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
-			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return 0, err
 		}
-		return 0, errors.Wrap(respErr, "request to create shuttle content failed")
+		return 0, fmt.Errorf("request to create shuttle content failed: %s", bodyBytes)
 	}
 
 	var rbody util.ContentCreateResponse
