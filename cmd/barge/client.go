@@ -180,7 +180,7 @@ func (c *EstClient) AddCar(fpath, name string) (*util.ContentAddResponse, error)
 	return &rbody, nil
 }
 
-func (c *EstClient) AddFile(fpath, name string) (*util.ContentAddResponse, error) {
+func (c *EstClient) AddFile(fpath, filename string) (*util.ContentAddResponse, error) {
 	r, w := io.Pipe()
 	fi, err := os.Open(fpath)
 	if err != nil {
@@ -209,7 +209,7 @@ func (c *EstClient) AddFile(fpath, name string) (*util.ContentAddResponse, error
 			}
 		}()
 
-		part, err := mw.CreateFormFile("data", name)
+		part, err := mw.CreateFormFile("data", filename)
 		if err != nil {
 			outerr = err
 			return
@@ -296,9 +296,9 @@ type collectionListResponse struct {
 	ContID uint   `json:"contId"`
 }
 
-func (c *EstClient) CollectionsListDir(ctx context.Context, col, path string) ([]collectionListResponse, error) {
+func (c *EstClient) CollectionsListDir(ctx context.Context, coluuid, path string) ([]collectionListResponse, error) {
 	var out []collectionListResponse
-	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?col=%s&dir=%s", col, url.PathEscape(path)), nil, &out)
+	_, err := c.doRequest(ctx, "GET", fmt.Sprintf("/collections/fs/list?coluuid=%s&colpath=%s", coluuid, url.PathEscape(path)), nil, &out)
 	if err != nil {
 		return nil, err
 	}

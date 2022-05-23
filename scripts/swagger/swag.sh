@@ -20,7 +20,8 @@ localhost='api.estuary.tech'
 host=$1
 
 # Swag
-swagVersion=$(curl -s https://api.github.com/repos/swaggo/swag/releases/latest | jq -r .tag_name)
+#swagVersion=$(curl -s https://api.github.com/repos/swaggo/swag/releases/latest | jq -r .tag_name)
+swagVersion=v1.8.1
 linuxSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Linux_x86_64.tar.gz
 darwinSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Darwin_x86_64.tar.gz
 

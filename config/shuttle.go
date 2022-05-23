@@ -2,7 +2,6 @@ package config
 
 import (
 	"errors"
-	"os"
 	"path/filepath"
 )
 
@@ -51,26 +50,25 @@ func (cfg *Shuttle) Validate() error {
 	return nil
 }
 
-// Sets the root of many paths
-func (cfg *Shuttle) SetDataDir(ddir string) {
-	cfg.StagingDataDir = updateRootDir(ddir, cfg.DataDir, cfg.StagingDataDir)
-	cfg.NodeConfig.UpdateRoot(ddir, cfg.DataDir)
-	cfg.DataDir = ddir
+func (cfg *Shuttle) SetRequiredOptions() error {
+	//TODO validate flags values - empty strings etc
+
+	cfg.StagingDataDir = filepath.Join(cfg.DataDir, "staging")
+	cfg.NodeConfig.WalletDir = filepath.Join(cfg.DataDir, "wallet")
+	cfg.NodeConfig.DatastoreDir = filepath.Join(cfg.DataDir, "leveldb")
+	cfg.NodeConfig.Libp2pKeyFile = filepath.Join(cfg.DataDir, "peer.key")
+
+	if cfg.NodeConfig.Blockstore == "" {
+		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, "blocks")
+	} else if cfg.NodeConfig.Blockstore[0] != '/' && cfg.NodeConfig.Blockstore[0] != ':' {
+		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, cfg.NodeConfig.Blockstore)
+	}
+	return nil
 }
 
 func NewShuttle() *Shuttle {
-
-	pwd, _ := os.Getwd()
-
-	listens := []string{
-		"/ip4/0.0.0.0/tcp/6745",
-		"/ip4/0.0.0.0/udp/6746/quic",
-	}
-
-	cfg := Shuttle{
-
-		DataDir:            pwd,
-		StagingDataDir:     filepath.Join(pwd, "staging"),
+	return &Shuttle{
+		DataDir:            ".",
 		DatabaseConnString: "sqlite=estuary-shuttle.db",
 		ApiListen:          ":3005",
 		Hostname:           "",
@@ -93,20 +91,23 @@ func NewShuttle() *Shuttle {
 		},
 
 		NodeConfig: Node{
-			ListenAddrs:       listens,
-			BlockstoreDir:     filepath.Join(pwd, "blocks"),
+			AnnounceAddrs: []string{},
+			ListenAddrs: []string{
+				"/ip4/0.0.0.0/tcp/6745",
+				"/ip4/0.0.0.0/udp/6746/quic",
+			},
+			EnableWebsocketListenAddr: false,
+
 			WriteLogDir:       "",
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
-			Libp2pKeyFile:     filepath.Join(pwd, "peer.key"),
-			DatastoreDir:      filepath.Join(pwd, "leveldb"),
-			WalletDir:         filepath.Join(pwd, "wallet"),
-			AnnounceAddrs:     []string{},
+
 			BitswapConfig: BitswapConfig{
 				MaxOutstandingBytesPerPeer: 5 << 20,
 				TargetMessageSize:          16 << 10,
 			},
+
 			NoLimiter: true,
 			LimitsConfig: Limits{
 				SystemLimitConfig: SystemLimit{
@@ -148,6 +149,4 @@ func NewShuttle() *Shuttle {
 			AuthToken: "",
 		},
 	}
-
-	return &cfg
 }

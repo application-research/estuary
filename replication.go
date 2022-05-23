@@ -9,9 +9,8 @@ import (
 	"sort"
 	"sync"
 	"time"
-
 	"github.com/google/uuid"
-
+	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -45,6 +44,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -300,7 +300,7 @@ func (cb *contentStagingZone) hasContent(c Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, hostname string) (*ContentManager, error) {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -346,25 +346,32 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	}
 
 	cm := &ContentManager{
-		Provider:             prov,
-		DB:                   db,
-		Api:                  api,
-		FilClient:            fc,
-		Blockstore:           tbs.Under().(node.EstuaryBlockstore),
-		Host:                 nd.Host,
-		Node:                 nd,
-		NotifyBlockstore:     nbs,
-		Tracker:              tbs,
-		ToCheck:              make(chan uint, 100000),
-		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
-		buckets:              zones,
-		pinJobs:              make(map[uint]*pinner.PinningOperation),
-		pinMgr:               pinmgr,
-		remoteTransferStatus: cache,
-		shuttles:             make(map[string]*ShuttleConnection),
-		contentSizeLimit:     defaultContentSizeLimit,
-		hostname:             hostname,
-		inflightCids:         make(map[cid.Cid]uint),
+		Provider:                   prov,
+		DB:                         db,
+		Api:                        api,
+		FilClient:                  fc,
+		Blockstore:                 tbs.Under().(node.EstuaryBlockstore),
+		Host:                       nd.Host,
+		Node:                       nd,
+		NotifyBlockstore:           nbs,
+		Tracker:                    tbs,
+		ToCheck:                    make(chan uint, 100000),
+		retrievalsInProgress:       make(map[uint]*util.RetrievalProgress),
+		buckets:                    zones,
+		pinJobs:                    make(map[uint]*pinner.PinningOperation),
+		pinMgr:                     pinmgr,
+		remoteTransferStatus:       cache,
+		shuttles:                   make(map[string]*ShuttleConnection),
+		contentSizeLimit:           defaultContentSizeLimit,
+		hostname:                   cfg.Hostname,
+		inflightCids:               make(map[cid.Cid]uint),
+		FailDealOnTransferFailure:  cfg.DealConfig.FailOnTransferFailure,
+		isDealMakingDisabled:       cfg.DealConfig.Disable,
+		contentAddingDisabled:      cfg.ContentConfig.DisableGlobalAdding,
+		localContentAddingDisabled: cfg.ContentConfig.DisableLocalAdding,
+		VerifiedDeal:               cfg.DealConfig.Verified,
+		Replication:                cfg.Replication,
+		tracer:                     otel.Tracer("replicator"),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c

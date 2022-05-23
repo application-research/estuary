@@ -97,13 +97,15 @@ func ExtractAuth(c echo.Context) (string, error) {
 		}
 	}
 
-	//	if auth is not missing, check format first before extracting
-	if !isValidAuth(parts[1]) {
-		return "", &HttpError{
-			Code:    403,
-			Message: ERR_WRONG_AUTH_FORMAT,
+	/*
+		//	if auth is not missing, check format first before extracting
+		if !isValidAuth(parts[1]) {
+			return "", &HttpError{
+				Code:    403,
+				Message: ERR_WRONG_AUTH_FORMAT,
+			}
 		}
-	}
+	*/
 
 	return parts[1], nil
 }
