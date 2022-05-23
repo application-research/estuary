@@ -60,8 +60,8 @@ func isValidAuth(authStr string) bool {
 	}
 	// only get the uuid from the string
 	uuidStr := strings.ReplaceAll(authStr, "SECRET", "")
-	uuidStr = strings.ReplaceAll(authStr, "EST", "")
-	uuidStr = strings.ReplaceAll(authStr, "ARY", "")
+	uuidStr = strings.ReplaceAll(uuidStr, "EST", "")
+	uuidStr = strings.ReplaceAll(uuidStr, "ARY", "")
 
 	// check if uuid is valid
 	_, err := uuid.Parse(uuidStr)
