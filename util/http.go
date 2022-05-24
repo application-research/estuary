@@ -1,6 +1,7 @@
 package util
 
 import (
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -137,7 +138,6 @@ type ViewerResponse struct {
 }
 
 func ErrorHandler(err error, ctx echo.Context) {
-	log.Errorf("handler error: %s", err)
 	var herr *HttpError
 	if xerrors.As(err, &herr) {
 		res := map[string]string{
@@ -146,6 +146,8 @@ func ErrorHandler(err error, ctx echo.Context) {
 		if herr.Details != "" {
 			res["details"] = herr.Details
 		}
+
+		log.Errorf("handler error: %s", err)
 		ctx.JSON(herr.Code, res)
 		return
 	}
@@ -158,8 +160,8 @@ func ErrorHandler(err error, ctx echo.Context) {
 		return
 	}
 
-	// TODO: returning all errors out to the user smells potentially bad
+	log.Errorf("handler error: %s", err)
 	_ = ctx.JSON(500, map[string]interface{}{
-		"error": err.Error(),
+		"error": http.StatusText(http.StatusInternalServerError),
 	})
 }

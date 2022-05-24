@@ -96,34 +96,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	}
 
 	e.Use(s.tracingMiddleware)
-	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
-		var herr *util.HttpError
-		if xerrors.As(err, &herr) {
-			res := map[string]string{
-				"error": herr.Message,
-			}
-			if herr.Details != "" {
-				res["details"] = herr.Details
-			}
-			ctx.JSON(herr.Code, res)
-			return
-		}
-
-		var echoErr *echo.HTTPError
-		if xerrors.As(err, &echoErr) {
-			ctx.JSON(echoErr.Code, map[string]interface{}{
-				"error": echoErr.Message,
-			})
-			return
-		}
-
-		log.Errorf("handler error: %s", err)
-
-		// TODO: returning all errors out to the user smells potentially bad
-		_ = ctx.JSON(500, map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
