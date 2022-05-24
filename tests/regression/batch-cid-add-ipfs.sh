@@ -8,7 +8,7 @@
 ###################################################################
 
 
-. run.config
+. ../data/config/run.config
 
 ## Some sample CIDs.
 array=(
@@ -35,7 +35,7 @@ do
         }'
     )"
     set -x
-    curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add-ipfs
+    curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add-ipfs
 
     sleep 2
 done

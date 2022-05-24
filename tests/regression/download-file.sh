@@ -7,14 +7,12 @@
 #Email        : 
 ###################################################################
 
+. ../data/config/run.config
+
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
 
-. run.config
-
-for i in {0..3}
-do
-  nohup ./download-large-files.sh > logs/$i-download-large-files.log &
-done
+set -x
+curl --progress-bar -X GET $DWEB_HOST/$CID
 

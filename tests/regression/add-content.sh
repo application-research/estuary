@@ -7,11 +7,11 @@
 #Email          : 
 ###################################################################
 
+. ../data/config/run.config
+
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
-
-. run.config
 
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
@@ -27,10 +27,8 @@ data="$(echo {} | jq --raw-output \
 )"
 
 echo $data
-
+EST_API_HOST=https://upload.estuary.tech
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add
-res=$?
-if test "$res" != "0"; then
-   echo "add-content failed: $res"
-fi
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add
+echo $?
+bash ../reporting/report.sh $0 $?

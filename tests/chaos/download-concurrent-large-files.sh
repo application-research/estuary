@@ -7,17 +7,14 @@
 #Email        : 
 ###################################################################
 
+. ../data/config/run.config
+
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
 
-. run.config
-
-set -x
-for i in "${MULTIPLE_GATEAWAYS[@]}"
+for i in {0..3}
 do
-  set -x
-  HOST=$i
-  curl --progress-bar -X GET $HOST/$CID
+  nohup ./download-large-files.sh > logs/$i-download-large-files.log &
 done
 

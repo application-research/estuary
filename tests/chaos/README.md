@@ -18,5 +18,10 @@ From this folder
 ./run-chaos-tests.sh
 ```
 
+Run specific Test case
+```shell
+./run-chaos-tests.sh download-large-files
+```
+
 ## Generated Reports
 WIP

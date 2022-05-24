@@ -7,7 +7,7 @@
 #Email          : 
 ###################################################################
 
-. run.config
+. ../data/config/run.config
 
 echo '#####################################'
 echo `basename "$0"`
@@ -15,6 +15,6 @@ echo '#####################################'
 
 for i in {0..3}
 do
-  nohup ./add-large-content-to-shuttles.sh > logs/$i-add-large-file.log &
+  nohup ./add-large-content-to-shuttles.sh > ../data/logs/$i-add-large-file.log &
 done
 

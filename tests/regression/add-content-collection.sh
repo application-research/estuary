@@ -7,11 +7,12 @@
 #Email            : 
 ###################################################################
 
+. ../data/config/run.config
+
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
 
-. run.config
 
 fname=$(basename $EST_SAMPLE_FILE)
 contents='[0,1,2,3,4]'
@@ -33,7 +34,7 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/collections/add-content
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/add-content
 res=$?
 if test "$res" != "0"; then
    echo "add-content-collection failed: $res"

@@ -7,12 +7,17 @@
 #Email        : 
 ###################################################################
 
+. ../data/config/run.config
+
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
 
-. run.config
-
 set -x
-curl --progress-bar -X GET $DWEB_HOST/$CID
+for i in "${MULTIPLE_GATEAWAYS[@]}"
+do
+  set -x
+  HOST=$i
+  curl --progress-bar -X GET $HOST/$CID
+done
 

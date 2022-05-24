@@ -14,5 +14,7 @@ From this folder
 ./run-regression-tests.sh
 ```
 
+## Adding a new test case run
+
 ## Generated Reports
 WIP
