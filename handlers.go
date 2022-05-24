@@ -2857,9 +2857,10 @@ type userStatsResponse struct {
 // @Router       /user/stats [get]
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
-	if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).
-		Select("SUM(size) as total_size,COUNT(1) as num_pins").
-		Scan(&stats).Error; err != nil {
+	if err := s.DB.Raw(` SELECT
+						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ?) as num_pins`,
+		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
 
