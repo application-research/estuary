@@ -24,11 +24,7 @@ type Node struct {
 	BitswapConfig           BitswapConfig
 	LimitsConfig            Limits
 	ConnectionManagerConfig ConnectionManager
-}
 
-type BitswapConfig struct {
-	MaxOutstandingBytesPerPeer int64
-	TargetMessageSize          int
 }
 
 func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {
