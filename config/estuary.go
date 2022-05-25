@@ -83,6 +83,7 @@ func NewEstuary() *Estuary {
 		},
 
 		NodeConfig: Node{
+			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
