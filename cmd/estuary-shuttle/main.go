@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -80,6 +81,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		}
 
 		switch name {
+		case "node-api-url":
+			cfg.NodeConfig.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
@@ -163,8 +166,10 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
-			Name:  "repo",
-			Value: "~/.lotus",
+			Name:    "node-api-url",
+			Usage:   "specify blockstore parameters",
+			Value:   cfg.NodeConfig.ApiURL,
+			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
 			Name:  "config",
@@ -340,7 +345,14 @@ func main() {
 			return err
 		}
 
-		api, closer, err := lcli.GetGatewayAPI(cctx)
+		// send a clean cctx down into lotus - it needs only the node "api-url"
+		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+		flset.String("api-url", "", "node api url")
+		flset.Set("api-url", cfg.NodeConfig.ApiURL)
+
+		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+		api, closer, err := lcli.GetGatewayAPI(ncctx)
 		if err != nil {
 			return err
 		}
