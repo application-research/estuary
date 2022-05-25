@@ -103,6 +103,8 @@ func NewShuttle() *Shuttle {
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
 
+			ApiURL: "wss://api.chain.love",
+
 			BitswapConfig: BitswapConfig{
 				MaxOutstandingBytesPerPeer: 5 << 20,
 				TargetMessageSize:          16 << 10,

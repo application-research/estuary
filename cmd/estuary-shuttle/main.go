@@ -70,12 +70,6 @@ import (
 
 var log = logging.Logger("shuttle")
 
-func init() {
-	if os.Getenv("FULLNODE_API_INFO") == "" {
-		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
-	}
-}
-
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
 	for _, flag := range flags {
 		name := flag.Names()[0]

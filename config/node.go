@@ -25,6 +25,7 @@ type Node struct {
 	LimitsConfig            Limits
 	ConnectionManagerConfig ConnectionManager
 
+	ApiURL string
 }
 
 func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {
