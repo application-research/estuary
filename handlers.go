@@ -4810,7 +4810,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, path, size, contents.type").
+		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, collection_refs.path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
