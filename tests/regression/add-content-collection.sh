@@ -26,7 +26,7 @@ data="$(echo {} | jq --raw-output \
   --argjson cids "$cids" \
   '. + { 
          "contents": $contents,
-         "collection": $collection,
+         "coluuid": $collection,
          "cids": $cids
        }'
 )"
