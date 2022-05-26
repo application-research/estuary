@@ -12,7 +12,7 @@ import (
 
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
-	"github.com/application-research/estuary/types"
+	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
