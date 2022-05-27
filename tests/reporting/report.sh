@@ -8,9 +8,9 @@ resp=$2
 output=report.log
 
 echo -n '
-######
+####################################
 Test Case: '$basename'
 Response:
 '$resp'
-######
+####################################
 ' >> report.log

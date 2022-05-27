@@ -30,5 +30,3 @@ echo $data
 EST_API_HOST=https://upload.estuary.tech
 set -x
 curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add
-echo $?
-bash ../reporting/report.sh $0 $?
