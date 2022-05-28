@@ -99,34 +99,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	}
 
 	e.Use(s.tracingMiddleware)
-	e.HTTPErrorHandler = func(err error, ctx echo.Context) {
-		var herr *util.HttpError
-		if xerrors.As(err, &herr) {
-			res := map[string]string{
-				"error": herr.Message,
-			}
-			if herr.Details != "" {
-				res["details"] = herr.Details
-			}
-			ctx.JSON(herr.Code, res)
-			return
-		}
-
-		var echoErr *echo.HTTPError
-		if xerrors.As(err, &echoErr) {
-			ctx.JSON(echoErr.Code, map[string]interface{}{
-				"error": echoErr.Message,
-			})
-			return
-		}
-
-		log.Errorf("handler error: %s", err)
-
-		// TODO: returning all errors out to the user smells potentially bad
-		_ = ctx.JSON(500, map[string]interface{}{
-			"error": err.Error(),
-		})
-	}
+	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
@@ -937,7 +910,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
@@ -2886,9 +2859,10 @@ type userStatsResponse struct {
 // @Router       /user/stats [get]
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
-	if err := s.DB.Model(Content{}).Where("user_id = ?", u.ID).
-		Select("SUM(size) as total_size,COUNT(1) as num_pins").
-		Scan(&stats).Error; err != nil {
+	if err := s.DB.Raw(` SELECT
+						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ?) as num_pins`,
+		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
 
@@ -3933,7 +3907,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -4006,7 +3980,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cc, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -4580,7 +4554,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 					return nil, nil
 				}
 
-				return node.Links(), nil
+				return util.FilterUnwalkableLinks(node.Links()), nil
 			}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 			res := map[string]interface{}{
 				"content":     c,
@@ -4865,7 +4839,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, path, size, contents.type").
+		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, collection_refs.path, size, contents.type").
 		Scan(&refs).Error; err != nil {
 		return err
 	}

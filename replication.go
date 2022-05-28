@@ -9,9 +9,7 @@ import (
 	"sort"
 	"sync"
 	"time"
-
 	"github.com/google/uuid"
-
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
@@ -3074,7 +3072,7 @@ func (cm *ContentManager) safeFetchData(ctx context.Context, c cid.Cid) (func(),
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, c, cset.Visit, merkledag.Concurrent())
 	if err != nil {
 		return deref, err
