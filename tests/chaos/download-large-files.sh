@@ -12,12 +12,13 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 set -x
 for i in "${MULTIPLE_GATEAWAYS[@]}"
 do
   set -x
   HOST=$i
-  curl --progress-bar -X GET $HOST/$CID
+  curl --trace - --trace-time --progress-bar -X GET $HOST/$CID
 done
 

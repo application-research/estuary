@@ -12,7 +12,8 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 set -x
-curl --progress-bar -X GET $DWEB_HOST/$CID
+curl --trace - --trace-time --progress-bar -X GET $DWEB_HOST/$CID
 

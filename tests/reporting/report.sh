@@ -5,12 +5,14 @@
 basename=$1
 resp=$2
 
+. ../data/config/run.config
+
 output=report.log
 
 echo -n '
 ####################################
 Test Case: '$basename'
-Response:
-'$resp'
+Response: '$resp'
+Result: '$result'
 ####################################
-' >> report.log
+' >> $EST_REPORT_FILE

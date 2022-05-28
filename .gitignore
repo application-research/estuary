@@ -1,5 +1,5 @@
-/scripts/tests/chaos/logs/*
-/scripts/tests/regression/logs/*
+/scripts/tests/data/config/run.config
+/scripts/tests/data/logs/*
 
 /estuary
 /filc

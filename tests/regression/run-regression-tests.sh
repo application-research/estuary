@@ -12,7 +12,7 @@ source ../data/config/config.sh
 specificScript=$1
 # create reports folder.
 if [ -z "$specificScript" ]; then
-  echo "no specific script specified";
+  echo "###############";
 else
   bash "$specificScript";
   exit;

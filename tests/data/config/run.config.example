@@ -1,9 +1,10 @@
-ESTUARY_TOKEN=ESTabcdefgARY
+ESTUARY_TOKEN=ESTabcdefghARY
 EST_API_HOST=https://api.estuary.tech
 EST_UPLOAD_HOST=https://upload.estuary.tech
 EST_SAMPLE_FILE=../data/files/dummy.file
 EST_SAMPLE_LARGE_FILE=../data/files/large-file
 EST_SAMPLE_DIR=../data/files/dummy_dir
+EST_REPORT_FILE=../data/logs
 
 DWEB_HOST=https://dweb.link/ipfs
 CID=bafkqaflunbuxgidjomqgcideovww26jamzuwyzik

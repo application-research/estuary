@@ -11,6 +11,7 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
@@ -28,4 +29,4 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_EXPIRED_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add
+curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_EXPIRED_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add

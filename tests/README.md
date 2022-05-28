@@ -1,6 +1,6 @@
-# Estuary Regression Tests
+# Estuary Tests
 
-Collection of shell scripts to perform several estuary API regression tests
+Runs a bunch of tests against the Estuary API
 
 ## Before running
 Make sure data/config/run.config is setup with the right keys.
@@ -9,12 +9,12 @@ Make sure data/config/run.config is setup with the right keys.
 
 From the estuary root folder
 ```shell
-make regression-tests
+make run-all-tests
 ```
 
 From this folder
 ```shell
-./run-regression-tests.sh
+make all
 ```
 
 ## Generated Reports

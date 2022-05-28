@@ -12,6 +12,7 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 qcids=""
 qname=""
@@ -50,4 +51,4 @@ if [ -z "$qreqids" ]; then
 fi
 
 set -x
-curl --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_API_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
+curl --trace - --trace-time --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_API_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids

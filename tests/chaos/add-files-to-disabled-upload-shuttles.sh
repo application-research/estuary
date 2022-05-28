@@ -12,6 +12,7 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
 EST_UPLOAD_HOST=https://upload.estuary.tech
@@ -22,7 +23,7 @@ for i in "${DISABLED_UPLOAD_URLS[@]}"
 do
   set -x
   HOST=$i
-  curl --progress-bar -X POST $HOST/content/add -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Accept: application/json" -H "Content-Type: multipart/form-data" -F "data=@$EST_SAMPLE_LARGE_FILE"
+  curl --trace - --trace-time --progress-bar -X POST $HOST/content/add -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Accept: application/json" -H "Content-Type: multipart/form-data" -F "data=@$EST_SAMPLE_LARGE_FILE"
 done
 echo "Upload to several shuttles: Done"
 res=$?

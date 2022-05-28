@@ -12,6 +12,7 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 
 fname=$(basename $EST_SAMPLE_FILE)
@@ -34,8 +35,4 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/add-content
-res=$?
-if test "$res" != "0"; then
-   echo "add-content-collection failed: $res"
-fi
+curl --trace - --trace-time --progress-bar POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/add-content

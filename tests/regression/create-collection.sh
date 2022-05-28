@@ -12,6 +12,7 @@
 echo '#####################################'
 echo `basename "$0"`
 echo '#####################################'
+echo ''
 
 . config/run.config
 
@@ -31,4 +32,4 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/create
+curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/create

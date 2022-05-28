@@ -6,6 +6,9 @@ Here are the available test scripts
 - Adding large content on a list of shuttles.
 - Downloading large content from different IPFS gateways.
 
+## Before running
+Make sure data/config/run.config is setup with the right keys.
+
 ## Running
 
 From the estuary root folder
@@ -24,4 +27,4 @@ Run specific Test case
 ```
 
 ## Generated Reports
-WIP
+All test runs log output goes to the data/logs folder.
