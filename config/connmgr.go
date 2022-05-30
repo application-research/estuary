@@ -1,6 +1,6 @@
 package config
 
 type ConnectionManager struct {
-	HighWater int
-	LowWater  int
+	HighWater int `json:"high_water"`
+	LowWater  int `json:"low_water"`
 }
