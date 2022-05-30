@@ -1804,6 +1804,12 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	})
 }
 
+// handleGetSystemConfig godoc
+// @Summary      Get systems(estuary/shuttle) config
+// @Description  This endpoint is used to get system configs.
+// @Tags       	 admin
+// @Produce      json
+// @Router       /admin/system/config [get]
 func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 	var shts []interface{}
 	for _, sh := range s.CM.shuttles {
