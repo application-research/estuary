@@ -27,11 +27,6 @@ type Node struct {
 	ConnectionManager ConnectionManager `json:"connection_manager"`
 }
 
-type Bitswap struct {
-	MaxOutstandingBytesPerPeer int64 `json:"max_outstanding_bytes_per_peer"`
-	TargetMessageSize          int   `json:"target_message_size"`
-}
-
 func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {
 	lim := rcmgr.NewDefaultLimiter()
 	cfg.Limits.apply(lim)

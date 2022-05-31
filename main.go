@@ -252,6 +252,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "node-api-url",
 			Value:   cfg.Node.ApiURL,
+			Usage:   "lotus api gateway url",
 			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{

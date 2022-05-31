@@ -168,7 +168,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "node-api-url",
-			Usage:   "specify blockstore parameters",
+			Usage:   "lotus api gateway url",
 			Value:   cfg.Node.ApiURL,
 			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
