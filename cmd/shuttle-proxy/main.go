@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 
@@ -73,23 +74,26 @@ func (p *Proxy) getViewer(auth string) (*util.ViewerResponse, int, error) {
 	}
 
 	req.Header.Set("Authorization", "Bearer "+auth)
+	req.Header.Set("Shuttle-Proxy", "true")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, 500, err
 	}
-
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return nil, resp.StatusCode, fmt.Errorf("auth check failed")
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, 500, err
+		}
+		return nil, resp.StatusCode, fmt.Errorf("auth check failed: %s", bodyBytes)
 	}
 
 	var rb util.ViewerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rb); err != nil {
 		return nil, 500, err
 	}
-
 	return &rb, 0, nil
 }
 
@@ -99,10 +103,9 @@ func (p *Proxy) getEndpoints(c echo.Context) ([]string, error) {
 		return nil, err
 	}
 
-	view, code, err := p.getViewer(auth)
+	view, _, err := p.getViewer(auth)
 	if err != nil {
-		// TODO: match error format of shuttles
-		return nil, c.String(code, err.Error())
+		return nil, err
 	}
 
 	var endps []string

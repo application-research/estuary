@@ -160,23 +160,23 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 
 		switch name {
 		case "node-api-url":
-			cfg.NodeConfig.ApiURL = cctx.String("node-api-url")
+			cfg.Node.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
-			cfg.NodeConfig.Blockstore = cctx.String("blockstore")
+			cfg.Node.Blockstore = cctx.String("blockstore")
 		case "no-blockstore-cache":
-			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
+			cfg.Node.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
-			cfg.NodeConfig.WriteLogTruncate = cctx.Bool("write-log-truncate")
+			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
 		case "write-log-flush":
-			cfg.NodeConfig.HardFlushWriteLog = cctx.Bool("write-log-flush")
+			cfg.Node.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
 			if wl := cctx.String("write-log"); wl != "" {
 				if wl[0] == '/' {
-					cfg.NodeConfig.WriteLogDir = wl
+					cfg.Node.WriteLogDir = wl
 				} else {
-					cfg.NodeConfig.WriteLogDir = filepath.Join(cctx.String("datadir"), wl)
+					cfg.Node.WriteLogDir = filepath.Join(cctx.String("datadir"), wl)
 				}
 			}
 		case "database":
@@ -184,7 +184,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "announce":
-			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce")
+			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce")
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -196,30 +196,29 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "no-storage-cron":
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
-			cfg.DealConfig.Disable = cctx.Bool("disable-deal-making")
+			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
 		case "verified-deal":
-			cfg.DealConfig.Verified = cctx.Bool("verified-deal")
+			cfg.Deal.Verified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
-			cfg.DealConfig.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
+			cfg.Deal.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
-			cfg.ContentConfig.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
+			cfg.Content.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
 		case "disable-content-adding":
-			cfg.ContentConfig.DisableGlobalAdding = cctx.Bool("disable-content-adding")
+			cfg.Content.DisableGlobalAdding = cctx.Bool("disable-content-adding")
 		case "jaeger-tracing":
-			cfg.JaegerConfig.EnableTracing = cctx.Bool("jaeger-tracing")
+			cfg.Jaeger.EnableTracing = cctx.Bool("jaeger-tracing")
 		case "jaeger-provider-url":
-			cfg.JaegerConfig.ProviderUrl = cctx.String("jaeger-provider-url")
+			cfg.Jaeger.ProviderUrl = cctx.String("jaeger-provider-url")
 		case "jaeger-sampler-ratio":
-			cfg.JaegerConfig.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
-			cfg.LoggingConfig.ApiEndpointLogging = cctx.Bool("logging")
+			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
 		case "enable-auto-retrieve":
 			cfg.EnableAutoRetrieve = cctx.Bool("enable-auto-retrieve")
 		case "bitswap-max-work-per-peer":
-			cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
+			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
-			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
-
+			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		default:
 		}
 	}
@@ -252,7 +251,7 @@ func main() {
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:    "node-api-url",
-			Value:   cfg.NodeConfig.ApiURL,
+			Value:   cfg.Node.ApiURL,
 			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
@@ -281,7 +280,7 @@ func main() {
 		&cli.StringFlag{
 			Name:   "write-log",
 			Usage:  "enable write log blockstore in specified directory",
-			Value:  cfg.NodeConfig.WriteLogDir,
+			Value:  cfg.Node.WriteLogDir,
 			Hidden: true,
 		},
 		&cli.BoolFlag{
@@ -292,7 +291,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "logging",
 			Usage: "enable api endpoint logging",
-			Value: cfg.LoggingConfig.ApiEndpointLogging,
+			Value: cfg.Logging.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
 			Name:   "enable-auto-retrieve",
@@ -314,47 +313,47 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "fail-deals-on-transfer-failure",
 			Usage: "consider deals failed when the transfer to the miner fails",
-			Value: cfg.DealConfig.FailOnTransferFailure,
+			Value: cfg.Deal.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
-			Value: cfg.DealConfig.Disable,
+			Value: cfg.Deal.Disable,
 		},
 		&cli.BoolFlag{
 			Name:  "verified-deal",
 			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
-			Value: cfg.DealConfig.Verified,
+			Value: cfg.Deal.Verified,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
 			Usage: "disallow new content ingestion globally",
-			Value: cfg.ContentConfig.DisableGlobalAdding,
+			Value: cfg.Content.DisableGlobalAdding,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
-			Value: cfg.ContentConfig.DisableLocalAdding,
+			Value: cfg.Content.DisableLocalAdding,
 		},
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
-			Value: cfg.NodeConfig.Blockstore,
+			Value: cfg.Node.Blockstore,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
 			Usage: "enables log truncating",
-			Value: cfg.NodeConfig.WriteLogTruncate,
+			Value: cfg.Node.WriteLogTruncate,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-flush",
 			Usage: "enable hard flushing blockstore",
-			Value: cfg.NodeConfig.HardFlushWriteLog,
+			Value: cfg.Node.HardFlushWriteLog,
 		},
 		&cli.BoolFlag{
 			Name:  "no-blockstore-cache",
 			Usage: "disable blockstore caching",
-			Value: cfg.NodeConfig.NoBlockstoreCache,
+			Value: cfg.Node.NoBlockstoreCache,
 		},
 		&cli.IntFlag{
 			Name:  "replication",
@@ -369,32 +368,32 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
 			Usage: "enables jaeger tracing",
-			Value: cfg.JaegerConfig.EnableTracing,
+			Value: cfg.Jaeger.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
 			Usage: "sets the jaeger provider url",
-			Value: cfg.JaegerConfig.ProviderUrl,
+			Value: cfg.Jaeger.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.JaegerConfig.SamplerRatio,
+			Value: cfg.Jaeger.SamplerRatio,
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
 			Usage: "sets the bitswap max work per peer",
-			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
+			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
 			Usage: "sets the bitswap target message size",
-			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 		&cli.StringSliceFlag{
 			Name:  "announce",
 			Usage: "announce address for the libp2p server to listen on",
-			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
+			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -479,7 +478,7 @@ func main() {
 			return err
 		}
 
-		init := Initializer{&cfg.NodeConfig, db, nil}
+		init := Initializer{&cfg.Node, db, nil}
 		nd, err := node.Setup(context.Background(), &init)
 		if err != nil {
 			return err
@@ -504,7 +503,7 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.NodeConfig.ApiURL)
+		flset.Set("api-url", cfg.Node.ApiURL)
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -514,9 +513,9 @@ func main() {
 		defer closer()
 
 		// setup tracing to jaeger if enabled
-		if cfg.JaegerConfig.EnableTracing {
+		if cfg.Jaeger.EnableTracing {
 			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cfg.JaegerConfig.ProviderUrl, cfg.JaegerConfig.SamplerRatio)
+				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -531,6 +530,7 @@ func main() {
 			tracer:      otel.Tracer("api"),
 			cacher:      memo.NewCacher(),
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+			estuaryCfg:  cfg,
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -629,7 +629,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging, cfg.LightstepToken, cfg.ServerCacheDir)
+		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging, cfg.LightstepToken, cfg.ServerCacheDir)
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -698,6 +698,7 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 }
 
 type Server struct {
+	estuaryCfg *config.Estuary
 	tracer     trace.Tracer
 	Node       *node.Node
 	DB         *gorm.DB

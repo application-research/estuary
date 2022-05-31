@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	httpprof "net/http/pprof"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
@@ -51,6 +53,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/pkg/errors"
 	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
@@ -236,6 +239,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	admin.GET("/dealstats", s.handleDealStats)
 	admin.GET("/disk-info", s.handleDiskSpaceCheck)
 	admin.GET("/stats", s.handleAdminStats)
+	admin.GET("/system/config", withUser(s.handleGetSystemConfig))
 
 	// miners
 	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
@@ -906,7 +910,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
@@ -1798,6 +1802,37 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		NumStorageFailures:   numStorageFailures,
 		PinQueueSize:         s.CM.pinMgr.PinQueueSize(),
 	})
+}
+
+// handleGetSystemConfig godoc
+// @Summary      Get systems(estuary/shuttle) config
+// @Description  This endpoint is used to get system configs.
+// @Tags       	 admin
+// @Produce      json
+// @Router       /admin/system/config [get]
+func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
+	var shts []interface{}
+	for _, sh := range s.CM.shuttles {
+		if sh.hostname == "" {
+			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.handle)
+			continue
+		}
+
+		out, err := s.getShuttleConfig(sh.hostname, u.authToken.Token)
+		if err != nil {
+			log.Warnf("failed to get shuttle config: %s", err)
+			continue
+		}
+		shts = append(shts, out)
+	}
+
+	resp := map[string]interface{}{
+		"data": map[string]interface{}{
+			"primary":  s.estuaryCfg,
+			"shuttles": shts,
+		},
+	}
+	return c.JSON(200, resp)
 }
 
 type minerResp struct {
@@ -3878,7 +3913,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -3951,7 +3986,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cc, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -4525,7 +4560,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 					return nil, nil
 				}
 
-				return node.Links(), nil
+				return util.FilterUnwalkableLinks(node.Links()), nil
 			}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
 			res := map[string]interface{}{
 				"content":     c,
@@ -5049,4 +5084,38 @@ func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *User) (bool
 		return true, c.JSON(409, map[string]string{"message": fmt.Sprintf("this content is already preserved under cid:%s", rootCID.String())})
 	}
 	return false, nil
+}
+
+func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
+	u, err := url.Parse(hostname)
+	if err != nil {
+		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
+	}
+	u.Path = ""
+
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/admin/system/config", u.Scheme, u.Host), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to build GET request for shuttle(%s) config: %s", hostname, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+authToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, errors.Errorf("failed to request shuttle(%s) config: %s", hostname, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, errors.Errorf("failed to read shuttle(%s) config err resp: %s", hostname, err)
+		}
+		return nil, errors.Errorf("failed to get shuttle(%s) config: %s", hostname, bodyBytes)
+	}
+
+	var out interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
+	}
+	return out, nil
 }

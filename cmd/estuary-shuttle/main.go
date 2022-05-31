@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -82,53 +83,53 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 
 		switch name {
 		case "node-api-url":
-			cfg.NodeConfig.ApiURL = cctx.String("node-api-url")
+			cfg.Node.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
-			cfg.NodeConfig.Blockstore = cctx.String("blockstore")
+			cfg.Node.Blockstore = cctx.String("blockstore")
 		case "no-blockstore-cache":
-			cfg.NodeConfig.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
+			cfg.Node.NoBlockstoreCache = cctx.Bool("no-blockstore-cache")
 		case "write-log-truncate":
-			cfg.NodeConfig.WriteLogTruncate = cctx.Bool("write-log-truncate")
+			cfg.Node.WriteLogTruncate = cctx.Bool("write-log-truncate")
 		case "write-log-flush":
-			cfg.NodeConfig.HardFlushWriteLog = cctx.Bool("write-log-flush")
+			cfg.Node.HardFlushWriteLog = cctx.Bool("write-log-flush")
 		case "write-log":
 			wlog := cctx.String("write-log")
-			cfg.NodeConfig.WriteLogDir = wlog
+			cfg.Node.WriteLogDir = wlog
 			if wlog != "" && wlog[0] != '/' {
-				cfg.NodeConfig.WriteLogDir = filepath.Join(cctx.String("datadir"), wlog)
+				cfg.Node.WriteLogDir = filepath.Join(cctx.String("datadir"), wlog)
 			}
 		case "database":
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "libp2p-websockets":
-			cfg.NodeConfig.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
+			cfg.Node.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
 		case "announce":
-			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce")
+			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce")
 		case "host":
 			cfg.Hostname = cctx.String("host")
 		case "disable-local-content-adding":
-			cfg.ContentConfig.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
+			cfg.Content.DisableLocalAdding = cctx.Bool("disable-local-content-adding")
 		case "jaeger-tracing":
-			cfg.JaegerConfig.EnableTracing = cctx.Bool("jaeger-tracing")
+			cfg.Jaeger.EnableTracing = cctx.Bool("jaeger-tracing")
 		case "jaeger-provider-url":
-			cfg.JaegerConfig.ProviderUrl = cctx.String("jaeger-provider-url")
+			cfg.Jaeger.ProviderUrl = cctx.String("jaeger-provider-url")
 		case "jaeger-sampler-ratio":
-			cfg.JaegerConfig.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
+			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
-			cfg.LoggingConfig.ApiEndpointLogging = cctx.Bool("logging")
+			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
 		case "bitswap-max-work-per-peer":
-			cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
+			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
-			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "estuary-api":
-			cfg.EstuaryConfig.Api = cctx.String("estuary-api")
+			cfg.EstuaryRemote.Api = cctx.String("estuary-api")
 		case "handle":
-			cfg.EstuaryConfig.Handle = cctx.String("handle")
+			cfg.EstuaryRemote.Handle = cctx.String("handle")
 		case "auth-token":
-			cfg.EstuaryConfig.AuthToken = cctx.String("auth-token")
+			cfg.EstuaryRemote.AuthToken = cctx.String("auth-token")
 		case "private":
 			cfg.Private = cctx.Bool("private")
 		case "dev":
@@ -168,7 +169,7 @@ func main() {
 		&cli.StringFlag{
 			Name:    "node-api-url",
 			Usage:   "specify blockstore parameters",
-			Value:   cfg.NodeConfig.ApiURL,
+			Value:   cfg.Node.ApiURL,
 			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
@@ -185,12 +186,12 @@ func main() {
 		&cli.StringFlag{
 			Name:  "blockstore",
 			Usage: "specify blockstore parameters",
-			Value: cfg.NodeConfig.Blockstore,
+			Value: cfg.Node.Blockstore,
 		},
 		&cli.StringFlag{
 			Name:  "write-log",
 			Usage: "enable write log blockstore in specified directory",
-			Value: cfg.NodeConfig.WriteLogDir,
+			Value: cfg.Node.WriteLogDir,
 		},
 		&cli.StringFlag{
 			Name:    "apilisten",
@@ -207,17 +208,17 @@ func main() {
 		&cli.StringFlag{
 			Name:  "estuary-api",
 			Usage: "api endpoint for master estuary node",
-			Value: cfg.EstuaryConfig.Api,
+			Value: cfg.EstuaryRemote.Api,
 		},
 		&cli.StringFlag{
 			Name:  "auth-token",
 			Usage: "auth token for connecting to estuary",
-			Value: cfg.EstuaryConfig.AuthToken,
+			Value: cfg.EstuaryRemote.AuthToken,
 		},
 		&cli.StringFlag{
 			Name:  "handle",
 			Usage: "estuary shuttle handle to use",
-			Value: cfg.EstuaryConfig.Handle,
+			Value: cfg.EstuaryRemote.Handle,
 		},
 		&cli.StringFlag{
 			Name:  "host",
@@ -227,22 +228,22 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "logging",
 			Usage: "enable api endpoint logging",
-			Value: cfg.LoggingConfig.ApiEndpointLogging,
+			Value: cfg.Logging.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-flush",
 			Usage: "enable hard flushing blockstore",
-			Value: cfg.NodeConfig.HardFlushWriteLog,
+			Value: cfg.Node.HardFlushWriteLog,
 		},
 		&cli.BoolFlag{
 			Name:  "write-log-truncate",
 			Usage: "truncates old logs with new ones",
-			Value: cfg.NodeConfig.WriteLogTruncate,
+			Value: cfg.Node.WriteLogTruncate,
 		},
 		&cli.BoolFlag{
 			Name:  "no-blockstore-cache",
 			Usage: "disable blockstore caching",
-			Value: cfg.NodeConfig.NoBlockstoreCache,
+			Value: cfg.Node.NoBlockstoreCache,
 		},
 		&cli.BoolFlag{
 			Name:  "private",
@@ -252,7 +253,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "disable-local-content-adding",
 			Usage: "disallow new content ingestion on this node",
-			Value: cfg.ContentConfig.DisableLocalAdding,
+			Value: cfg.Content.DisableLocalAdding,
 		},
 		&cli.BoolFlag{
 			Name:  "no-reload-pin-queue",
@@ -267,37 +268,37 @@ func main() {
 		&cli.StringSliceFlag{
 			Name:  "announce",
 			Usage: "announce address for the libp2p server to listen on",
-			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
+			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
 			Usage: "enables jaeger tracing",
-			Value: cfg.JaegerConfig.EnableTracing,
+			Value: cfg.Jaeger.EnableTracing,
 		},
 		&cli.StringFlag{
 			Name:  "jaeger-provider-url",
 			Usage: "sets the jaeger provider url",
-			Value: cfg.JaegerConfig.ProviderUrl,
+			Value: cfg.Jaeger.ProviderUrl,
 		},
 		&cli.Float64Flag{
 			Name:  "jaeger-sampler-ratio",
 			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.JaegerConfig.SamplerRatio,
+			Value: cfg.Jaeger.SamplerRatio,
 		},
 		&cli.BoolFlag{
 			Name:  "libp2p-websockets",
 			Usage: "enable adding libp2p websockets listen addr",
-			Value: cfg.NodeConfig.EnableWebsocketListenAddr,
+			Value: cfg.Node.EnableWebsocketListenAddr,
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
 			Usage: "sets the bitswap max work per peer",
-			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
+			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
 			Usage: "sets the bitswap target message size",
-			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 	}
 
@@ -337,11 +338,11 @@ func main() {
 			return err
 		}
 
-		if cfg.NodeConfig.EnableWebsocketListenAddr {
-			cfg.NodeConfig.ListenAddrs = append(cfg.NodeConfig.ListenAddrs, config.DefaultWebsocketAddr)
+		if cfg.Node.EnableWebsocketListenAddr {
+			cfg.Node.ListenAddrs = append(cfg.Node.ListenAddrs, config.DefaultWebsocketAddr)
 		}
 
-		init := Initializer{&cfg.NodeConfig, db}
+		init := Initializer{&cfg.Node, db}
 		nd, err := node.Setup(context.TODO(), init)
 		if err != nil {
 			return err
@@ -351,7 +352,7 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.NodeConfig.ApiURL)
+		flset.Set("api-url", cfg.Node.ApiURL)
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -412,9 +413,9 @@ func main() {
 			return err
 		}
 
-		if cfg.JaegerConfig.EnableTracing {
+		if cfg.Jaeger.EnableTracing {
 			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
-				cfg.JaegerConfig.ProviderUrl, cfg.JaegerConfig.SamplerRatio)
+				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
 			if err != nil {
 				return err
 			}
@@ -442,11 +443,12 @@ func main() {
 			authCache: cache,
 
 			hostname:           cfg.Hostname,
-			estuaryHost:        cfg.EstuaryConfig.Api,
-			shuttleHandle:      cfg.EstuaryConfig.Handle,
-			shuttleToken:       cfg.EstuaryConfig.AuthToken,
-			disableLocalAdding: cfg.ContentConfig.DisableLocalAdding,
+			estuaryHost:        cfg.EstuaryRemote.Api,
+			shuttleHandle:      cfg.EstuaryRemote.Handle,
+			shuttleToken:       cfg.EstuaryRemote.AuthToken,
+			disableLocalAdding: cfg.Content.DisableLocalAdding,
 			dev:                cfg.Dev,
+			shuttleConfig:      cfg,
 		}
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -645,7 +647,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.LoggingConfig.ApiEndpointLogging)
+		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging)
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -701,6 +703,8 @@ type Shuttle struct {
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
+
+	shuttleConfig *config.Shuttle
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
@@ -870,16 +874,14 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		var herr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&herr); err != nil {
-			return nil, fmt.Errorf("authentication check returned unexpected error, code %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return nil, err
 		}
-
-		return nil, fmt.Errorf("authentication check failed: %s(%d)", herr.Message, herr.Code)
+		return nil, fmt.Errorf("authentication check returned unexpected error: %s", bodyBytes)
 	}
 
 	var out util.ViewerResponse
@@ -985,6 +987,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.POST("/garbage/check", s.handleManualGarbageCheck)
 	admin.POST("/garbage/collect", s.handleGarbageCollect)
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
+	admin.GET("/system/config", s.handleGetSystemConfig)
 
 	return e.Start(listen)
 }
@@ -1390,11 +1393,11 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var respErr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
-			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return 0, err
 		}
-		return 0, errors.Wrap(respErr, "failed to request createContent ")
+		return 0, fmt.Errorf("failed to request createContent: %s", bodyBytes)
 	}
 
 	var rbody util.ContentCreateResponse
@@ -1442,11 +1445,11 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		var respErr util.HttpError
-		if err := json.NewDecoder(resp.Body).Decode(&respErr); err != nil {
-			return 0, errors.Wrapf(err, "failed to decode err resp body, code %d", resp.StatusCode)
+		bodyBytes, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return 0, err
 		}
-		return 0, errors.Wrap(respErr, "request to create shuttle content failed")
+		return 0, fmt.Errorf("request to create shuttle content failed: %s", bodyBytes)
 	}
 
 	var rbody util.ContentCreateResponse
@@ -1582,7 +1585,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
 		return errors.Wrap(err, "failed to walk DAG")
@@ -1967,7 +1970,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, cc, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
@@ -2215,4 +2218,11 @@ func (s *Shuttle) handleRcmgrStats(e echo.Context) error {
 	rcm := s.Node.Host.Network().ResourceManager()
 
 	return e.JSON(200, rcm.(rcmgr.ResourceManagerState).Stat())
+}
+
+func (s *Shuttle) handleGetSystemConfig(e echo.Context) error {
+	resp := map[string]interface{}{
+		"data": s.shuttleConfig,
+	}
+	return e.JSON(200, resp)
 }

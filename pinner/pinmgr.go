@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/types"
+	"github.com/application-research/estuary/pinner/types"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"

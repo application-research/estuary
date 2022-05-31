@@ -5,12 +5,11 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	"github.com/google/uuid"
 	"math/rand"
 	"sort"
 	"sync"
 	"time"
-
+	"github.com/google/uuid"
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
@@ -366,11 +365,11 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		contentSizeLimit:           defaultContentSizeLimit,
 		hostname:                   cfg.Hostname,
 		inflightCids:               make(map[cid.Cid]uint),
-		FailDealOnTransferFailure:  cfg.DealConfig.FailOnTransferFailure,
-		isDealMakingDisabled:       cfg.DealConfig.Disable,
-		contentAddingDisabled:      cfg.ContentConfig.DisableGlobalAdding,
-		localContentAddingDisabled: cfg.ContentConfig.DisableLocalAdding,
-		VerifiedDeal:               cfg.DealConfig.Verified,
+		FailDealOnTransferFailure:  cfg.Deal.FailOnTransferFailure,
+		isDealMakingDisabled:       cfg.Deal.Disable,
+		contentAddingDisabled:      cfg.Content.DisableGlobalAdding,
+		localContentAddingDisabled: cfg.Content.DisableLocalAdding,
+		VerifiedDeal:               cfg.Deal.Verified,
 		Replication:                cfg.Replication,
 		tracer:                     otel.Tracer("replicator"),
 	}
@@ -3073,7 +3072,7 @@ func (cm *ContentManager) safeFetchData(ctx context.Context, c cid.Cid) (func(),
 			return nil, nil
 		}
 
-		return node.Links(), nil
+		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, c, cset.Visit, merkledag.Concurrent())
 	if err != nil {
 		return deref, err

@@ -139,7 +139,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	bwc := metrics.NewBandwidthCounter()
 
-	cmgr, err := connmgr.NewConnManager(cfg.ConnectionManagerConfig.LowWater, cfg.ConnectionManagerConfig.HighWater)
+	cmgr, err := connmgr.NewConnManager(cfg.ConnectionManager.LowWater, cfg.ConnectionManager.HighWater)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +218,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 
 	bsnet := bsnet.NewFromIpfsHost(h, frt)
 
-	peerwork := cfg.BitswapConfig.MaxOutstandingBytesPerPeer
+	peerwork := cfg.Bitswap.MaxOutstandingBytesPerPeer
 	if peerwork == 0 {
 		peerwork = 5 << 20
 	}
@@ -229,7 +229,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		bitswap.MaxOutstandingBytesPerPeer(int(peerwork)),
 	}
 
-	if tms := cfg.BitswapConfig.TargetMessageSize; tms != 0 {
+	if tms := cfg.Bitswap.TargetMessageSize; tms != 0 {
 		bsopts = append(bsopts, bitswap.WithTargetMessageSize(tms))
 	}
 

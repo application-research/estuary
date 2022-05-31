@@ -7,22 +7,22 @@ import (
 )
 
 type Estuary struct {
-	DatabaseConnString     string
-	StagingDataDir         string
-	ServerCacheDir         string
-	DataDir                string
-	ApiListen              string
-	EnableAutoRetrieve     bool
-	LightstepToken         string
-	Hostname               string
-	NodeConfig             Node
-	JaegerConfig           Jaeger
-	DealConfig             Deal
-	ContentConfig          Content
-	LowMem                 bool
-	DisableFilecoinStorage bool
-	Replication            int
-	LoggingConfig          Logging
+	DatabaseConnString     string  `json:"database_conn_string"`
+	StagingDataDir         string  `json:"staging_data_dir"`
+	ServerCacheDir         string  `json:"server_cache_dir"`
+	DataDir                string  `json:"data_dir"`
+	ApiListen              string  `json:"api_listen"`
+	EnableAutoRetrieve     bool    `json:"enable_autoretrieve"`
+	LightstepToken         string  `json:"lightstep_token"`
+	Hostname               string  `json:"hostname"`
+	Node                   Node    `json:"node"`
+	Jaeger                 Jaeger  `json:"jaeger"`
+	Deal                   Deal    `json:"deal"`
+	Content                Content `json:"content"`
+	LowMem                 bool    `json:"low_mem"`
+	DisableFilecoinStorage bool    `json:"disable_filecoin_storage"`
+	Replication            int     `json:"replication"`
+	Logging                Logging `json:"logging"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -39,12 +39,12 @@ func (cfg *Estuary) SetRequiredOptions() error {
 
 	cfg.StagingDataDir = filepath.Join(cfg.DataDir, "stagingdata")
 	cfg.ServerCacheDir = filepath.Join(cfg.DataDir, "cache")
-	cfg.NodeConfig.WalletDir = filepath.Join(cfg.DataDir, "estuary-wallet")
-	cfg.NodeConfig.DatastoreDir = filepath.Join(cfg.DataDir, "estuary-leveldb")
-	cfg.NodeConfig.Libp2pKeyFile = filepath.Join(cfg.DataDir, "estuary-peer.key")
+	cfg.Node.WalletDir = filepath.Join(cfg.DataDir, "estuary-wallet")
+	cfg.Node.DatastoreDir = filepath.Join(cfg.DataDir, "estuary-leveldb")
+	cfg.Node.Libp2pKeyFile = filepath.Join(cfg.DataDir, "estuary-peer.key")
 
-	if cfg.NodeConfig.Blockstore == "" {
-		cfg.NodeConfig.Blockstore = filepath.Join(cfg.DataDir, "estuary-blocks")
+	if cfg.Node.Blockstore == "" {
+		cfg.Node.Blockstore = filepath.Join(cfg.DataDir, "estuary-blocks")
 	}
 	return nil
 }
@@ -61,28 +61,28 @@ func NewEstuary() *Estuary {
 		DisableFilecoinStorage: false,
 		EnableAutoRetrieve:     false,
 
-		DealConfig: Deal{
+		Deal: Deal{
 			Disable:               false,
 			FailOnTransferFailure: false,
 			Verified:              true,
 		},
 
-		ContentConfig: Content{
+		Content: Content{
 			DisableLocalAdding:  false,
 			DisableGlobalAdding: false,
 		},
 
-		JaegerConfig: Jaeger{
+		Jaeger: Jaeger{
 			EnableTracing: false,
 			ProviderUrl:   "http://localhost:14268/api/traces",
 			SamplerRatio:  1,
 		},
 
-		LoggingConfig: Logging{
+		Logging: Logging{
 			ApiEndpointLogging: false,
 		},
 
-		NodeConfig: Node{
+		Node: Node{
 			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
@@ -94,14 +94,14 @@ func NewEstuary() *Estuary {
 
 			ApiURL: "wss://api.chain.love",
 
-			BitswapConfig: BitswapConfig{
+			Bitswap: Bitswap{
 				MaxOutstandingBytesPerPeer: 5 << 20,
 				TargetMessageSize:          0,
 			},
 
 			NoLimiter: true,
-			LimitsConfig: Limits{
-				SystemLimitConfig: SystemLimit{
+			Limits: Limits{
+				SystemLimit: SystemLimit{
 					MinMemory:      1 << 30,
 					MaxMemory:      10 << 30,
 					MemoryFraction: .2,
@@ -116,7 +116,7 @@ func NewEstuary() *Estuary {
 
 					FD: 8192,
 				},
-				TransientLimitConfig: TransientLimit{
+				TransientLimit: TransientLimit{
 					StreamsInbound:  2 << 10,
 					StreamsOutbound: 4 << 10,
 					Streams:         4 << 10,
@@ -128,7 +128,7 @@ func NewEstuary() *Estuary {
 					FD: 1024,
 				},
 			},
-			ConnectionManagerConfig: ConnectionManager{
+			ConnectionManager: ConnectionManager{
 				LowWater:  2000,
 				HighWater: 3000,
 			},

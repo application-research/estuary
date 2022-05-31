@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/application-research/estuary/types"
+	"github.com/application-research/estuary/pinner/types"
 	util "github.com/application-research/estuary/util"
 	"github.com/cheggaaa/pb/v3"
 	"github.com/ipfs/go-cid"
