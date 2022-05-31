@@ -5,6 +5,7 @@
 /bsget
 /benchest
 /estuary-shuttle
+/shuttle-proxy
 
 estuary-blocks/*
 blocks/*

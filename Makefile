@@ -59,7 +59,7 @@ CLEAN+=build/.update-modules
 # export CGO_CFLAGS+=-Wno-stringop-overflow
 
 .PHONY: build
-build: deps estuary shuttle barge benchest bsget
+build: deps estuary shuttle barge benchest bsget shuttle-proxy
 
 .PHONY: deps
 deps: $(BUILD_DEPS)
@@ -88,6 +88,11 @@ BINS+=benchest
 bsget:
 	go build $(GOFLAGS) -o bsget ./cmd/bsget
 BINS+=bsget
+
+.PHONY: shuttle-proxy
+shuttle-proxy:
+	go build $(GOFLAGS) -o shuttle-proxy ./cmd/shuttle-proxy
+BINS+=shuttle-proxy
 
 .PHONY: install
 install: estuary
