@@ -1144,7 +1144,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 }
 
 func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
-	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*15)
 	defer cancel()
 
 	if s.Node.FullRT.Ready() {
