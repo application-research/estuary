@@ -477,6 +477,11 @@ func main() {
 			}
 		})
 
+		debounceCache, err := lru.New(2000)
+		if err != nil {
+			return err
+		}
+
 		// Subscribe to data transfer events from Boost
 		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
 			if st.Status == datatransfer.Requested {
@@ -495,11 +500,27 @@ func main() {
 				}()
 			}
 
-			go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-				Chanid:   st.TransferID,
-				DealDBID: dbid,
-				State:    &st,
-			})
+			go func() {
+				canSendUpdate := true
+				cachedTime, ok := debounceCache.Get(st.TransferID)
+				if ok {
+					ct, ctOk := cachedTime.(time.Time)
+					if ctOk && ct.Add(10*time.Second).Before(time.Now()) {
+						canSendUpdate = false
+					}
+				}
+
+				// only send update if the last update was over 10secs ago or this is the first update
+				if canSendUpdate {
+					debounceCache.Add(st.TransferID, time.Now())
+
+					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+						Chanid:   st.TransferID,
+						DealDBID: dbid,
+						State:    &st,
+					})
+				}
+			}()
 		})
 		if err != nil {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
