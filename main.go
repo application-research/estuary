@@ -28,6 +28,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
@@ -184,7 +185,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "announce":
-			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce")
+
+			_, err := multiaddr.NewMultiaddr(cctx.String("announce"))
+			if err != nil {
+				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
+			}
+			cfg.NodeConfig.AnnounceAddrs = []string{cctx.String("announce")}
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -218,7 +224,11 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "bitswap-max-work-per-peer":
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
-			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+
+			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+		case "announce-addr":
+			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
+
 		default:
 		}
 	}
@@ -273,6 +283,11 @@ func main() {
 			EnvVars: []string{"ESTUARY_API_LISTEN"},
 		},
 		&cli.StringFlag{
+			Name:    "announce",
+			Usage:   "announce address for the libp2p server to listen on",
+			EnvVars: []string{"ESTUARY_ANNOUNCE"},
+		},
+		&cli.StringFlag{
 			Name:    "datadir",
 			Usage:   "directory to store data in",
 			Value:   cfg.DataDir,
@@ -303,8 +318,8 @@ func main() {
 		&cli.StringFlag{
 			Name:    "lightstep-token",
 			Usage:   "specify lightstep access token for enabling trace exports",
-			Value:   cfg.LightstepToken,
 			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
+			Value:   cfg.LightstepToken,
 		},
 		&cli.StringFlag{
 			Name:  "hostname",
@@ -383,18 +398,16 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
-			Usage: "sets the bitswap max work per peer",
-			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
+			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
-			Usage: "sets the bitswap target message size",
-			Value: cfg.Node.Bitswap.TargetMessageSize,
+			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce",
-			Usage: "announce address for the libp2p server to listen on",
-			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
+			Name:  "announce-addr",
+			Usage: "specify multiaddrs that this node can be connected to on",
+			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
 		},
 	}
 	app.Commands = []*cli.Command{
