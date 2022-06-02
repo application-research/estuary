@@ -190,7 +190,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if err != nil {
 				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
 			}
-			cfg.NodeConfig.AnnounceAddrs = []string{cctx.String("announce")}
+			cfg.Node.AnnounceAddrs = []string{cctx.String("announce")}
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -225,9 +225,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 
-			cfg.NodeConfig.BitswapConfig.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "announce-addr":
-			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
+			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
 
 		default:
 		}
@@ -259,6 +259,10 @@ func main() {
 	cfg := config.NewEstuary()
 
 	app.Flags = []cli.Flag{
+		&cli.StringFlag{
+			Name:  "repo",
+			Value: "~/.lotus",
+		},
 		&cli.StringFlag{
 			Name:    "node-api-url",
 			Value:   cfg.Node.ApiURL,
@@ -398,16 +402,18 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
-			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
+			Usage: "sets the bitswap max work per peer",
+			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
-			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+			Usage: "sets the bitswap target message size",
+			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 		&cli.StringSliceFlag{
 			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to on",
-			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
+			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 	}
 	app.Commands = []*cli.Command{

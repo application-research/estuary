@@ -82,7 +82,8 @@ func NewEstuary() *Estuary {
 			ApiEndpointLogging: false,
 		},
 
-		NodeConfig: Node{
+		Node: Node{
+			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},

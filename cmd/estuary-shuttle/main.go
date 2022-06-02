@@ -105,9 +105,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "libp2p-websockets":
-			cfg.NodeConfig.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
+			cfg.Node.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
 		case "announce-addr":
-			cfg.NodeConfig.AnnounceAddrs = cctx.StringSlice("announce-addr")
+			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
 		case "host":
 			cfg.Hostname = cctx.String("host")
 		case "disable-local-content-adding":
@@ -166,6 +166,10 @@ func main() {
 	cfg := config.NewShuttle()
 
 	app.Flags = []cli.Flag{
+		&cli.StringFlag{
+			Name:  "repo",
+			Value: "~/.lotus",
+		},
 		&cli.StringFlag{
 			Name:    "node-api-url",
 			Usage:   "lotus api gateway url",
@@ -268,7 +272,7 @@ func main() {
 		&cli.StringSliceFlag{
 			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to on",
-			Value: cli.NewStringSlice(cfg.NodeConfig.AnnounceAddrs...),
+			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
@@ -292,11 +296,13 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
-			Value: cfg.NodeConfig.BitswapConfig.MaxOutstandingBytesPerPeer,
+			Usage: "sets the bitswap max work per peer",
+			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
-			Value: cfg.NodeConfig.BitswapConfig.TargetMessageSize,
+			Usage: "sets the bitswap target message size",
+			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 	}
 
