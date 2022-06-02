@@ -205,9 +205,9 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
 	pinning.POST("/pins", withUser(s.handleAddPin))
-	pinning.GET("/pins/:requestid", withUser(s.handleGetPin))
-	pinning.POST("/pins/:requestid", withUser(s.handleReplacePin))
-	pinning.DELETE("/pins/:requestid", withUser(s.handleDeletePin))
+	pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
+	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
+	pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -3329,7 +3329,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 // @Description  This endpoint is used to delete an existing collection.
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
-// @Router       /collections/add-content [delete]
+// @Router       /collections/{coluuid} [delete]
 func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	coluuid := c.Param("coluuid")
 

@@ -24,6 +24,19 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/system/config": {
+            "get": {
+                "description": "This endpoint is used to get system configs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get systems(estuary/shuttle) config",
+                "responses": {}
+            }
+        },
         "/admin/users": {
             "get": {
                 "description": "This endpoint is used to get all users.",
@@ -72,23 +85,6 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
-            "delete": {
-                "description": "This endpoint is used to delete an existing collection.",
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Deletes a collection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Collection ID",
-                        "name": "coluuid",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
             }
         },
         "/collections/content/{coluuid}": {
@@ -282,6 +278,25 @@ const docTemplate = `{
                         }
                     }
                 }
+            }
+        },
+        "/collections/{coluuid}": {
+            "delete": {
+                "description": "This endpoint is used to delete an existing collection.",
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Deletes a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
             }
         },
         "/collections/{coluuid}/commit": {
@@ -954,14 +969,14 @@ const docTemplate = `{
         },
         "/pinning/pins": {
             "get": {
-                "description": "This endpoint lists all pinned objects",
+                "description": "This endpoint lists all pin status objects",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "pinning"
                 ],
-                "summary": "List all pinned objects",
+                "summary": "List all pin status objects",
                 "responses": {
                     "400": {
                         "description": "Bad Request",
@@ -1011,7 +1026,27 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/pinning/pins/{id}": {
+        "/pinning/pins/{pinid}": {
+            "get": {
+                "description": "This endpoint returns a pin status object.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "pinning"
+                ],
+                "summary": "Get a pin status object",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "cid",
+                        "name": "pinid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            },
             "post": {
                 "description": "This endpoint replaces a pinned object.",
                 "produces": [
@@ -1024,30 +1059,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "id",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/pinning/pins/{requestid}": {
-            "get": {
-                "description": "This endpoint returns a pinned object.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "pinning"
-                ],
-                "summary": "Get a pinned objects",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "cid",
-                        "name": "requestid",
+                        "description": "Pin ID",
+                        "name": "pinid",
                         "in": "path",
                         "required": true
                     }
@@ -1066,8 +1079,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "requestid",
-                        "name": "requestid",
+                        "description": "Pin ID",
+                        "name": "pinid",
                         "in": "path",
                         "required": true
                     }
