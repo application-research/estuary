@@ -88,17 +88,18 @@ import (
 // @securityDefinitions.Bearer.type apiKey
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
-func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
+func (s *Server) ServeAPI() error {
 
 	e := echo.New()
 
 	e.Binder = new(binder)
 
-	if logging {
+	if s.estuaryCfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(s.tracingMiddleware)
+	e.Use(util.AppVersionMiddleware(s.estuaryCfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -300,7 +301,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(srv)
+	return e.Start(s.estuaryCfg.ApiListen)
 }
 
 type binder struct{}

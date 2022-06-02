@@ -45,7 +45,7 @@ func checkNodeConfig(t *testing.T, node *Node) {
 func TestEstuaryDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
-	config := NewEstuary()
+	config := NewEstuary("test-version")
 	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
@@ -60,7 +60,7 @@ func TestEstuaryDefaultSanity(t *testing.T) {
 func TestShuttleDefaultSanity(t *testing.T) {
 
 	assert := assert.New(t)
-	config := NewShuttle()
+	config := NewShuttle("test-version")
 	config.SetRequiredOptions()
 
 	assert.NotEmpty(config.DataDir)
@@ -74,7 +74,7 @@ func TestShuttleDefaultSanity(t *testing.T) {
 
 func TestApplyLimits(t *testing.T) {
 	assert := assert.New(t)
-	config := NewShuttle().Node.Limits
+	config := NewShuttle("test-version").Node.Limits
 
 	limiter := rcmgr.NewDefaultLimiter()
 	config.apply(limiter)
@@ -97,7 +97,7 @@ func TestApplyLimits(t *testing.T) {
 
 func TestEstuaryJSONRoundtrip(t *testing.T) {
 	assert := assert.New(t)
-	config := NewEstuary()
+	config := NewEstuary("test-version")
 	path := filepath.Join(os.TempDir(), "test.json")
 	save(config, path)
 	config2 := Estuary{}
@@ -107,7 +107,7 @@ func TestEstuaryJSONRoundtrip(t *testing.T) {
 
 func TestShuttleJSONRoundtrip(t *testing.T) {
 	assert := assert.New(t)
-	config := NewShuttle()
+	config := NewShuttle("test-version")
 	path := filepath.Join(os.TempDir(), "test.json")
 	save(config, path)
 	config2 := Shuttle{}

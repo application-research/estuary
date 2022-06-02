@@ -16,6 +16,8 @@ import (
 	"github.com/application-research/estuary/util"
 )
 
+var appVersion string
+
 var log = logging.Logger("shuttle-proxy")
 
 type Proxy struct {
@@ -23,8 +25,11 @@ type Proxy struct {
 }
 
 func main() {
+	logging.SetLogLevel("shuttle-proxy", "debug")
 
 	app := cli.NewApp()
+	app.Version = appVersion
+
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "listen",
@@ -40,6 +45,8 @@ func main() {
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
+		log.Infof("shuttle proxy version: %s", appVersion)
+
 		logging := cctx.Bool("logging")
 		p := &Proxy{
 			ControllerUrl: cctx.String("controller"),
@@ -55,6 +62,7 @@ func main() {
 		}
 
 		e.Use(middleware.CORS())
+		e.Use(util.AppVersionMiddleware(appVersion))
 
 		e.HTTPErrorHandler = util.ErrorHandler
 
