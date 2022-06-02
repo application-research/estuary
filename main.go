@@ -185,7 +185,6 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
 		case "announce":
-
 			_, err := multiaddr.NewMultiaddr(cctx.String("announce"))
 			if err != nil {
 				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
@@ -224,10 +223,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "bitswap-max-work-per-peer":
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
-
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
-		case "announce-addr":
-			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
 
 		default:
 		}
@@ -409,11 +405,6 @@ func main() {
 			Name:  "bitswap-target-message-size",
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
-		},
-		&cli.StringSliceFlag{
-			Name:  "announce-addr",
-			Usage: "specify multiaddrs that this node can be connected to on",
-			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 	}
 	app.Commands = []*cli.Command{
