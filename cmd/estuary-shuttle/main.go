@@ -69,9 +69,9 @@ import (
 	"github.com/whyrusleeping/memo"
 )
 
-var log = logging.Logger("shuttle")
-
 var appVersion string
+
+var log = logging.Logger("shuttle").With("app_version", appVersion)
 
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
@@ -2172,7 +2172,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	for i, d := range deals {
 		qr, err := s.Filc.RetrievalQuery(ctx, d.Proposal.Provider, cc)
 		if err != nil {
-			log.Warningf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
+			log.Warnf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
 		}
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(qr, cc, nil)

@@ -51,7 +51,7 @@ func init() {
 	}
 }
 
-var log = logging.Logger("estuary")
+var log = logging.Logger("estuary").With("app_version", appVersion)
 
 type storageMiner struct {
 	gorm.Model

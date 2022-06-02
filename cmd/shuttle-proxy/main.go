@@ -18,7 +18,7 @@ import (
 
 var appVersion string
 
-var log = logging.Logger("shuttle-proxy")
+var log = logging.Logger("shuttle-proxy").With("app_version", appVersion)
 
 type Proxy struct {
 	ControllerUrl string
