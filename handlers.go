@@ -2867,8 +2867,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ?) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
