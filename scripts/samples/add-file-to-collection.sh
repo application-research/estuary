@@ -37,5 +37,5 @@ EST_HOST="https://shuttle-4.estuary.tech"
 
 COLLECTION="185d7ffc-85d8-4b73-86bb-1ca6419bc10d"
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$file" -F "name=$fname" $EST_HOST/content/add\?collection="$COLLECTION"
+curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$file" -F "filename=$fname" $EST_HOST/content/add\?collection="$COLLECTION"
 
