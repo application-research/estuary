@@ -88,17 +88,18 @@ import (
 // @securityDefinitions.Bearer.type apiKey
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
-func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
+func (s *Server) ServeAPI() error {
 
 	e := echo.New()
 
 	e.Binder = new(binder)
 
-	if logging {
+	if s.estuaryCfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(s.tracingMiddleware)
+	e.Use(util.AppVersionMiddleware(s.estuaryCfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -300,7 +301,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(srv)
+	return e.Start(s.estuaryCfg.ApiListen)
 }
 
 type binder struct{}
@@ -2866,8 +2867,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ?) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}

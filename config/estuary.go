@@ -7,6 +7,7 @@ import (
 )
 
 type Estuary struct {
+	AppVersion             string  `json:"app_version"`
 	DatabaseConnString     string  `json:"database_conn_string"`
 	StagingDataDir         string  `json:"staging_data_dir"`
 	ServerCacheDir         string  `json:"server_cache_dir"`
@@ -49,8 +50,9 @@ func (cfg *Estuary) SetRequiredOptions() error {
 	return nil
 }
 
-func NewEstuary() *Estuary {
+func NewEstuary(appVersion string) *Estuary {
 	return &Estuary{
+		AppVersion:             appVersion,
 		DataDir:                ".",
 		DatabaseConnString:     build.DefaultDatabaseValue,
 		ApiListen:              ":3004",

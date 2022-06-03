@@ -1,7 +1,6 @@
 package util
 
 import (
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -162,6 +161,6 @@ func ErrorHandler(err error, ctx echo.Context) {
 
 	log.Errorf("handler error: %s", err)
 	_ = ctx.JSON(500, map[string]interface{}{
-		"error": http.StatusText(http.StatusInternalServerError),
+		"error": err.Error(),
 	})
 }
