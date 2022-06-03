@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -73,12 +74,6 @@ var appVersion string
 
 var log = logging.Logger("shuttle").With("app_version", appVersion)
 
-func init() {
-	if os.Getenv("FULLNODE_API_INFO") == "" {
-		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
-	}
-}
-
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
 	for _, flag := range flags {
 		name := flag.Names()[0]
@@ -89,6 +84,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		}
 
 		switch name {
+		case "node-api-url":
+			cfg.Node.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
@@ -176,6 +173,12 @@ func main() {
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
+		},
+		&cli.StringFlag{
+			Name:    "node-api-url",
+			Usage:   "lotus api gateway url",
+			Value:   cfg.Node.ApiURL,
+			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
 			Name:  "config",
@@ -297,10 +300,12 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
+			Usage: "sets the bitswap max work per peer",
 			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
+			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 	}
@@ -353,7 +358,14 @@ func main() {
 			return err
 		}
 
-		api, closer, err := lcli.GetGatewayAPI(cctx)
+		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
+		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+		flset.String("api-url", "", "node api url")
+		flset.Set("api-url", cfg.Node.ApiURL)
+
+		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+		api, closer, err := lcli.GetGatewayAPI(ncctx)
 		if err != nil {
 			return err
 		}

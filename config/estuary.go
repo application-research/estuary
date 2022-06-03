@@ -85,6 +85,7 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		Node: Node{
+			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
@@ -92,6 +93,8 @@ func NewEstuary(appVersion string) *Estuary {
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
+
+			ApiURL: "wss://api.chain.love",
 
 			Bitswap: Bitswap{
 				MaxOutstandingBytesPerPeer: 5 << 20,

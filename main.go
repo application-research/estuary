@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -44,13 +45,6 @@ import (
 )
 
 var appVersion string
-
-func init() {
-	if os.Getenv("FULLNODE_API_INFO") == "" {
-		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
-	}
-}
-
 var log = logging.Logger("estuary").With("app_version", appVersion)
 
 type storageMiner struct {
@@ -167,6 +161,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		}
 
 		switch name {
+		case "node-api-url":
+			cfg.Node.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
@@ -229,8 +225,6 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
-		case "announce-addr":
-			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
 
 		default:
 		}
@@ -267,6 +261,12 @@ func main() {
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
+		},
+		&cli.StringFlag{
+			Name:    "node-api-url",
+			Value:   cfg.Node.ApiURL,
+			Usage:   "lotus api gateway url",
+			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
 			Name:  "config",
@@ -401,16 +401,13 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
+			Usage: "sets the bitswap max work per peer",
 			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
+			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
-		},
-		&cli.StringSliceFlag{
-			Name:  "announce-addr",
-			Usage: "specify multiaddrs that this node can be connected to on",
-			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -518,7 +515,14 @@ func main() {
 			return err
 		}
 
-		api, closer, err := lcli.GetGatewayAPI(cctx)
+		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
+		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+		flset.String("api-url", "", "node api url")
+		flset.Set("api-url", cfg.Node.ApiURL)
+
+		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+		api, closer, err := lcli.GetGatewayAPI(ncctx)
 		if err != nil {
 			return err
 		}
