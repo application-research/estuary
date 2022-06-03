@@ -69,7 +69,9 @@ import (
 	"github.com/whyrusleeping/memo"
 )
 
-var log = logging.Logger("shuttle")
+var appVersion string
+
+var log = logging.Logger("shuttle").With("app_version", appVersion)
 
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
@@ -166,7 +168,9 @@ func main() {
 	}
 
 	app := cli.NewApp()
-	cfg := config.NewShuttle()
+	app.Version = appVersion
+
+	cfg := config.NewShuttle(appVersion)
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -320,6 +324,8 @@ func main() {
 	}
 
 	app.Action = func(cctx *cli.Context) error {
+		log.Infof("shuttle version: %s", appVersion)
+
 		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 			return err
 		}
@@ -639,7 +645,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging)
+		return s.ServeAPI()
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -934,15 +940,16 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (s *Shuttle) ServeAPI(listen string, logging bool) error {
+func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
 
-	if logging {
+	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(middleware.CORS())
 	e.Use(s.tracingMiddleware)
+	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
 
 	e.HTTPErrorHandler = util.ErrorHandler
 
@@ -981,7 +988,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
-	return e.Start(listen)
+	return e.Start(s.shuttleConfig.ApiListen)
 }
 
 func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -2165,7 +2172,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	for i, d := range deals {
 		qr, err := s.Filc.RetrievalQuery(ctx, d.Proposal.Provider, cc)
 		if err != nil {
-			log.Warningf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
+			log.Warnf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
 		}
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(qr, cc, nil)

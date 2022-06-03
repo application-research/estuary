@@ -43,13 +43,15 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+var appVersion string
+
 func init() {
 	if os.Getenv("FULLNODE_API_INFO") == "" {
 		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
 	}
 }
 
-var log = logging.Logger("estuary")
+var log = logging.Logger("estuary").With("app_version", appVersion)
 
 type storageMiner struct {
 	gorm.Model
@@ -257,7 +259,9 @@ func main() {
 	}
 
 	app := cli.NewApp()
-	cfg := config.NewEstuary()
+	app.Version = appVersion
+
+	cfg := config.NewEstuary(appVersion)
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
@@ -478,6 +482,8 @@ func main() {
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
+		log.Infof("estuary version: %s", appVersion)
+
 		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
 			return err
 		}
@@ -635,7 +641,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging, cfg.LightstepToken, cfg.ServerCacheDir)
+		return s.ServeAPI()
 	}
 
 	if err := app.Run(os.Args); err != nil {
