@@ -1,4 +1,4 @@
-PACKAGE_NAME          := github.com/goreleaser/goreleaser-cross-example
+PACKAGE_NAME          := github.com/jlogelin/estuary
 GOLANG_CROSS_VERSION  ?= v1.17.6
 
 SYSROOT_DIR     ?= sysroots
