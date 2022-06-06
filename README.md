@@ -1,5 +1,7 @@
 # Estuary
 
+[![Coverage Status](https://coveralls.io/repos/github/jlogelin/estuary/badge.svg?branch=master)](https://coveralls.io/github/jlogelin/estuary?branch=master)
+
 > An experimental ipfs node
 
 ## Building
