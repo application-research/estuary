@@ -1,16 +1,5 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
-before:
-  hooks:
-    - git submodule update --init --recursive
-    - git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
-    - touch build/.update-modules
-    - make -C extern/filecoin-ffi/ .install-filcrypto
-    # - make clean build
-    # You may remove this if you don't use go modules.
-    # - go mod tidy
-    # you may remove this if you don't need go generate
-    #- go generate ./...
 
 builds:
   - main: .
@@ -19,6 +8,20 @@ builds:
     goos:
       - linux
       - darwin
+    hooks:
+      pre:
+       #- cmd: git submodule update --init --recursive
+       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
+       # - cmd: touch build/.update-modules
+       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
+       #- cmd: ./install-filcrypto
+       #- make clean build
+       # You may remove this if you don't use go modules.
+       # - cmd: go mod tidy
+       # you may remove this if you don't need go generate
+       #- go generate ./...
+      post:
+       - cmd: git submodule deinit . 
 
   - main: ./cmd/estuary-shuttle
     id: "estuary-shuttle"
