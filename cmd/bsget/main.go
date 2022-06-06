@@ -14,7 +14,6 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/libp2p/go-libp2p"
-	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
 	rhelp "github.com/libp2p/go-libp2p-routing-helpers"
 	"github.com/multiformats/go-multiaddr"
@@ -78,17 +77,7 @@ VERSION:
 
 		// set up libp2p node...
 		ctx := context.Background()
-		bytePk, err := crypto.ConfigDecodeKey("CAESQHHiijN4B16MLqKoQK/VgCBXy8fJ0PbLZWlr2x5HGGtxO/qPL96PDoD399cN2doCxG069r+wgs1rcOOPC8l+4Dk=")
-		if err != nil {
-			return err
-		}
-
-		pk, err := crypto.UnmarshalPrivateKey(bytePk)
-		if err != nil {
-			return err
-		}
-
-		h, err := libp2p.New(libp2p.Identity(pk))
+		h, err := libp2p.New()
 		if err != nil {
 			return err
 		}
