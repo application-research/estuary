@@ -161,3 +161,7 @@ generate-swagger:
 
 lint: ## Lint Golang files
 	golint -set_exit_status ./...
+
+test-coverage: ## Run tests with coverage
+	go test -short -coverprofile cover.out -covermode=atomic ./...
+	cat cover.out >> coverage.txt
