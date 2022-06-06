@@ -9,7 +9,7 @@ import (
 	"sort"
 	"sync"
 	"time"
-	"github.com/google/uuid"
+
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
@@ -28,6 +28,7 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
@@ -51,8 +52,6 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-const defaultContentSizeLimit = 34_000_000_000
 
 // Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early dont run into issues
@@ -134,7 +133,11 @@ func (cm *ContentManager) isInflight(c cid.Cid) bool {
 // the 10% gap is to accommodate car file packing overhead, can probably do this better
 var individualDealThreshold = (abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10
 
-var stagingZoneSizeLimit = (abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10
+// 14.29 Gib
+var maxStagingZoneSizeLimit = int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10)
+
+// 13.29 GiB
+var minStagingZoneSizeLimit = int64(maxStagingZoneSizeLimit - (1 << 30))
 
 type contentStagingZone struct {
 	ZoneOpened time.Time `json:"zoneOpened"`
@@ -198,8 +201,8 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 	return &contentStagingZone{
 		ZoneOpened: time.Now(),
 		CloseTime:  time.Now().Add(maxStagingZoneLifetime),
-		MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
-		MaxSize:    int64(stagingZoneSizeLimit),
+		MinSize:    minStagingZoneSizeLimit,
+		MaxSize:    maxStagingZoneSizeLimit,
 		MaxItems:   maxBucketItems,
 		User:       user,
 		ContID:     content.ID,
@@ -316,8 +319,8 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		z := &contentStagingZone{
 			ZoneOpened: c.CreatedAt,
 			CloseTime:  c.CreatedAt.Add(maxStagingZoneLifetime),
-			MinSize:    int64(stagingZoneSizeLimit - (1 << 30)),
-			MaxSize:    int64(stagingZoneSizeLimit),
+			MinSize:    minStagingZoneSizeLimit,
+			MaxSize:    maxStagingZoneSizeLimit,
 			MaxItems:   maxBucketItems,
 			User:       c.UserID,
 			ContID:     c.ID,
@@ -362,7 +365,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		pinMgr:                     pinmgr,
 		remoteTransferStatus:       cache,
 		shuttles:                   make(map[string]*ShuttleConnection),
-		contentSizeLimit:           defaultContentSizeLimit,
+		contentSizeLimit:           util.DefaultContentSizeLimit,
 		hostname:                   cfg.Hostname,
 		inflightCids:               make(map[cid.Cid]uint),
 		FailDealOnTransferFailure:  cfg.Deal.FailOnTransferFailure,
