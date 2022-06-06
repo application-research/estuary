@@ -19,7 +19,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
 
   - main: ./cmd/estuary-shuttle
     id: "estuary-shuttle"
@@ -27,7 +26,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
 
   - main: ./cmd/barge
     id: "barge"
@@ -35,7 +33,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
 
   - main: ./cmd/benchest
     id: "benchest"
@@ -43,7 +40,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
   
   - main: ./cmd/bsget
     id: "bsget"
@@ -51,7 +47,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
 
   - main: ./cmd/shuttle-proxy
     id: "shuttle-proxy"
@@ -59,7 +54,6 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
 
 archives:
   - replacements:
