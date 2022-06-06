@@ -8,19 +8,14 @@ builds:
     goos:
       - linux
       - darwin
+    goarch:
+      - 386
+      - amd64
+      - arm64
     hooks:
       pre:
-       #- cmd: apt update && apt install -y jq
-       #- cmd: git submodule update --init --recursive
        - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
-       # - cmd: touch build/.update-modules
        - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
-       #- cmd: ./install-filcrypto
-       #- make clean build
-       # You may remove this if you don't use go modules.
-       # - cmd: go mod tidy
-       # you may remove this if you don't need go generate
-       #- go generate ./...
       post:
        - cmd: git submodule deinit . 
 
