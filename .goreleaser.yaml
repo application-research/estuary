@@ -10,7 +10,7 @@ builds:
       - darwin
     hooks:
       pre:
-       - sudo apt update && sudo apt install -y jq
+       - apt update && apt install -y jq
        #- cmd: git submodule update --init --recursive
        - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
        # - cmd: touch build/.update-modules
