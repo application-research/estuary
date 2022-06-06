@@ -1,5 +1,8 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
+before:
+  hooks:
+    - apt update && apt install -y jq
 
 builds:
   - main: .
@@ -10,7 +13,6 @@ builds:
       - darwin
     hooks:
       pre:
-       - apt update && apt install -y jq
        #- cmd: git submodule update --init --recursive
        - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
        # - cmd: touch build/.update-modules
