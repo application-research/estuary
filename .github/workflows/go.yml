@@ -26,27 +26,6 @@ jobs:
           go get -u golang.org/x/lint/golint 
           make lint
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    steps:
-      - name: Set up Go
-        uses: actions/setup-go@v1
-        with:
-          go-version: 1.17
-
-      - name: Check out code
-        uses: actions/checkout@v1
-
-      - name: Run Unit tests.
-        run: make test-coverage
-      
-      - name: Upload Coverage report to CodeCov
-        uses: codecov/codecov-action@v1.0.0
-        with:
-          token: ${{secrets.CODECOV_TOKEN}}
-          file: ./coverage.txt
-
   build:
     runs-on: ubuntu-latest
     steps:
@@ -74,7 +53,29 @@ jobs:
     - name: Setup
       run: echo "ESTUARY_TOKEN=$(./estuary setup | grep Token | cut -d ' ' -f 3)" >> $GITHUB_ENV
 
-    - name: Test
-      run: go test -v ./...
-      env:
-        ESTUARY_TOKEN: $ESTUARY_TOKEN
+    #- name: Test
+    #  run: go test -v ./...
+    #  env:
+    #    ESTUARY_TOKEN: $ESTUARY_TOKEN
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: [lint, build]
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v1
+        with:
+          go-version: 1.17
+
+      - name: Check out code
+        uses: actions/checkout@v1
+
+      - name: Run Unit tests.
+        run: make test-coverage
+      
+      - name: Upload Coverage report to CodeCov
+        uses: codecov/codecov-action@v1.0.0
+        with:
+          token: ${{secrets.CODECOV_TOKEN}}
+          file: ./coverage.txt

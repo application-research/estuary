@@ -158,3 +158,6 @@ test:
 .PHONY: generate-swagger
 generate-swagger:
 	scripts/swagger/swag.sh
+
+lint: ## Lint Golang files
+	golint -set_exit_status ./...
