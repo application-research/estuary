@@ -29,3 +29,4 @@ build/.*
 .envrc
 
 .idea
+coverage.txt
