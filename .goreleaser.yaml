@@ -2,51 +2,6 @@
 # Make sure to check the documentation at https://goreleaser.com
 
 builds:
-  - id: "estuary-darwin-amd64"
-    main: .
-    binary: estuary
-    goos:
-      - darwin
-    goarch:
-      - amd64
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
-      - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
-      - CC=o64-clang
-      - CXX=o64-clang++
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-    hooks:
-      pre:
-       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
-       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
-      post:
-       - cmd: git submodule deinit . 
-  
-  - id: "estuary-darwin-arm64"
-    main: .
-    binary: estuary
-    goos:
-      - darwin
-    goarch:
-      - arm64
-    env:
-      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
-      - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
-      - CC=oa64-clang
-      - CXX=oa64-clang++
-    flags:
-      - -mod=readonly
-    ldflags:
-      - -s -w -X main.version={{.Version}}
-    hooks:
-      pre:
-       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
-       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
-      post:
-       - cmd: git submodule deinit . 
 
   - id: "estuary-linux-amd64"
     main: .
