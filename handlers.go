@@ -546,7 +546,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}
 
-	// if splitting is disabled and uploaded content size is over content size limit
+	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() {
 		bdWriter := &bytes.Buffer{}
