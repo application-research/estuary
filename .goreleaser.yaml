@@ -2,16 +2,45 @@
 # Make sure to check the documentation at https://goreleaser.com
 
 builds:
-  - main: .
-    id: "estuary"
+  - id: "estuary-darwin-amd64"
+    main: .
     binary: estuary
     goos:
-      - linux
       - darwin
     goarch:
-      - 386
       - amd64
+    env:
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/amd64
+      - PKG_CONFIG_PATH=/sysroot/macos/amd64/usr/local/lib/pkgconfig
+      - CC=o64-clang
+      - CXX=o64-clang++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    hooks:
+      pre:
+       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
+       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
+      post:
+       - cmd: git submodule deinit . 
+  
+  - id: "estuary-darwin-arm64"
+    main: .
+    binary: estuary
+    goos:
+      - darwin
+    goarch:
       - arm64
+    env:
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/macos/arm64
+      - PKG_CONFIG_PATH=/sysroot/macos/arm64/usr/local/lib/pkgconfig
+      - CC=oa64-clang
+      - CXX=oa64-clang++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
     hooks:
       pre:
        - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
@@ -19,40 +48,48 @@ builds:
       post:
        - cmd: git submodule deinit . 
 
-  - main: ./cmd/estuary-shuttle
-    id: "estuary-shuttle"
-    binary: estuary-shuttle
+  - id: "estuary-linux-amd64"
+    main: .
+    binary: estuary
     goos:
       - linux
-      - darwin
+    goarch:
+      - amd64
+    env:
+      - PKG_CONFIG_SYSROOT_DIR=/sysroot/linux/amd64
+      - CC=gcc
+      - CXX=g++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    hooks:
+      pre:
+       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
+       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
+      post:
+       - cmd: git submodule deinit . 
 
-  - main: ./cmd/barge
-    id: "barge"
-    binary: barge
+  - id: "estuary-linux-arm64"
+    main: .
+    binary: estuary
     goos:
       - linux
-      - darwin
-
-  - main: ./cmd/benchest
-    id: "benchest"
-    binary: benchest
-    goos:
-      - linux
-      - darwin
-  
-  - main: ./cmd/bsget
-    id: "bsget"
-    binary: bsget
-    goos:
-      - linux
-      - darwin
-
-  - main: ./cmd/shuttle-proxy
-    id: "shuttle-proxy"
-    binary: shuttle-proxy
-    goos:
-      - linux
-      - darwin
+    goarch:
+      - arm64
+    env:
+      - CC=aarch64-linux-gnu-gcc
+      - CXX=aarch64-linux-gnu-g++
+    flags:
+      - -mod=readonly
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    hooks:
+      pre:
+       - cmd: git submodule update --init --recursive && cd extern/filecoin-ffi/ && git checkout -q 
+       - cmd: make -C extern/filecoin-ffi/ .install-filcrypto
+      post:
+       - cmd: git submodule deinit . 
 
 archives:
   - replacements:
