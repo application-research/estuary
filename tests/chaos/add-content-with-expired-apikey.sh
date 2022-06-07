@@ -1,13 +1,17 @@
 #!/bin/bash
 
 ###################################################################
-#Script Name	: add-content.sh                                                                                             
-#Description	: This is a script file that runs a curl command to add a file to the estuary content server.                                                                                       
+#Script Name	: add-content-with-expired-api-key.sh
 #Author         : ARG
-#Email          : 
+#Email          :
 ###################################################################
 
-. run.config
+. ../data/config/run.config
+
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
@@ -25,4 +29,4 @@ data="$(echo {} | jq --raw-output \
 echo $data
 
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add
+curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_EXPIRED_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add

@@ -154,3 +154,15 @@ test:
 .PHONY: generate-swagger
 generate-swagger:
 	scripts/swagger/swag.sh
+
+.PHONY: run-all-tests
+run-all-tests:
+	cd tests; make all
+
+.PHONY: run-regression-tests
+regression-tests:
+	cd tests;make regression-tests
+
+.PHONY: run-chaos-tests
+chaos-tests:
+	cd tests;make chaos-tests

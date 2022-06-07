@@ -8,8 +8,14 @@
 ###################################################################
 
 
-. run.config
+. ../data/config/run.config
 
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+echo ''
+
+## Some sample CIDs.
 array=(
     "QmTkvGHnzSfqU3vNJ4DJtsFEMLsRUwHabZivGqLbgrrumy"
     "Qmad6w4R5657hGgZcjqnWEpJGGLUSEh7X2jSVkFb1YPjQb"
@@ -34,7 +40,8 @@ do
         }'
     )"
     set -x
-    curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/add-ipfs?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
+    curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/content/add-ipfs
+
     sleep 2
 done
 

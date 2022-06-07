@@ -7,8 +7,12 @@
 #Email            : 
 ###################################################################
 
+. ../data/config/run.config
 
-. run.config
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+echo ''
 
 qcids=""
 qname=""
@@ -18,33 +22,33 @@ qafter=""
 qlimit=""
 qreqids=""
 
-if[ $qcids != "" ]; then
+if [ -z "$qcids" ]; then
     qcids="&cids=$qcids"
 fi
 
-if[ $qname != "" ]; then
+if [ -z "$qname" ]; then
     qname="&name=$qname"
 fi
 
-if[ $qstatus != "" ]; then
+if [ -z "$qstatus" ]; then
     qstatus="&status=$qstatus"
 fi
 
-if[ $qbefore != "" ]; then
+if [ -z "$qbefore" ]; then
     qbefore="&before=$qbefore"
 fi
 
-if[ $qafter != "" ]; then
+if [ -z "$qafter" ]; then
     qafter="&after=$qafter"
 fi
 
-if[ $qlimit != "" ]; then
+if [ -z "$qlimit" ]; then
     qlimit="&limit=$qlimit"
 fi
 
-if[ $qreqids != "" ]; then
+if [ -z "$qreqids" ]; then
     qreqids="&reqids=$qreqids"
 fi
 
 set -x
-curl --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
+curl --trace - --trace-time --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" $EST_API_HOST/pinning/pins?$qcids$qname$qstatus$qbefore$qafter$qlimit$qreqids
