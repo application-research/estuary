@@ -10,20 +10,38 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build_linux:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        version: ['linux/amd64', 'linux/arm64', 'linux/386']
+        include:
+        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
+        # instead of using Linux' naming convention (version items).
+          - version: linux/amd64
+            OS: linux
+            ARCH: amd64
+          - version: linux/arm64
+            OS: linux
+            ARCH: arm64
+          - version: linux/i386
+            OS: linux
+            ARCH: '386'
     steps:
-      - name: checkout code
-        uses: actions/checkout@v2
-        with:
-          submodules: 'true'
-      - run: git fetch --prune --unshallow
-      - name: setup dependencies
-        uses: actions/setup-go@v2
-      - name: release dry run
-        run: make -f Makefile.goreleaser release-dry-run
-      - name: setup release environment
-        run: |-
-          echo 'GITHUB_TOKEN=${{secrets.GORELEASER_ACCESS_TOKEN}}' > .release-env
-      - name: release publish
-        run: make -f Makefile.goreleaser release
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Build binary for ${{ matrix.version }}
+      run: |
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/demo:latest /bin/bash -c "CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS='-C target-cpu=native -g' FFI_BUILD_FROM_SOURCE=1 make"
+    - name: Prepare build artifact for stashing
+      run: |
+        tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
+        mkdir release
+        mv ./estuary.tar.gz ./release
+    # The build artifact can be identified by the trailing sha of the git commit
+    - name: Stash the build artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary.tar.gz-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
+        path: ./release
