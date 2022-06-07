@@ -731,7 +731,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	// if splitting is disabled and uploaded content size is over content size limit
+	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
 		return &util.HttpError{
