@@ -14,19 +14,13 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
-        version: ['linux/amd64', 'linux/arm64', 'linux/386']
+        version: ['linux/amd64']
         include:
         # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
         # instead of using Linux' naming convention (version items).
           - version: linux/amd64
             OS: linux
             ARCH: amd64
-          - version: linux/arm64
-            OS: linux
-            ARCH: arm64
-          - version: linux/i386
-            OS: linux
-            ARCH: '386'
     steps:
     - uses: actions/checkout@v1
       with:
