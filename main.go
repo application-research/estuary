@@ -257,6 +257,8 @@ func main() {
 
 	cfg := config.NewEstuary(appVersion)
 
+	app.Usage = "Estuary server CLI"
+
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "repo",
