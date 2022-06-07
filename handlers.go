@@ -28,7 +28,6 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -584,41 +583,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
-	var commpcid cid.Cid
-	var commpSize abi.UnpaddedPieceSize
-	if cpc := c.QueryParam("commp"); cpc != "" {
-		if u.Perm < util.PermLevelAdmin {
-			return fmt.Errorf("must be an admin to specify commp for car file upload")
-		}
-
-		sizestr := c.QueryParam("size")
-		if sizestr == "" {
-			return fmt.Errorf("must also specify 'size' when setting commP for car files")
-		}
-
-		ss, err := strconv.ParseUint(sizestr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse size: %w", err)
-		}
-
-		commpSize = abi.UnpaddedPieceSize(ss)
-		if err := commpSize.Validate(); err != nil {
-			return fmt.Errorf("given commP size was invalid: %w", err)
-		}
-
-		cc, err := cid.Decode(cpc)
-		if err != nil {
-			return err
-		}
-
-		_, err = commcid.CIDToPieceCommitmentV1(cc)
-		if err != nil {
-			return err
-		}
-
-		commpcid = cc
-	}
-
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -629,24 +593,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
-	if commpcid.Defined() {
-		carSize, err := s.CM.calculateCarSize(ctx, header.Roots[0])
-		if err != nil {
-			return fmt.Errorf("failed to calculate CAR size: %w", err)
-		}
-
-		opcr := PieceCommRecord{
-			Data:    util.DbCID{rootCID},
-			Piece:   util.DbCID{commpcid},
-			Size:    commpSize,
-			CarSize: carSize,
-		}
-
-		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
-			return fmt.Errorf("failed to insert piece commitment record: %w", err)
-		}
 	}
 
 	go func() {

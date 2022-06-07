@@ -46,7 +46,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -1234,41 +1233,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		fname = qpname
 	}
 
-	var commpcid cid.Cid
-	var commpSize abi.UnpaddedPieceSize
-	if cpc := c.QueryParam("commp"); cpc != "" {
-		if u.Perms < util.PermLevelAdmin {
-			return fmt.Errorf("must be an admin to specify commp for car file upload")
-		}
-
-		sizestr := c.QueryParam("size")
-		if sizestr == "" {
-			return fmt.Errorf("must also specify 'size' when setting commP for car files")
-		}
-
-		ss, err := strconv.ParseUint(sizestr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse size: %w", err)
-		}
-
-		commpSize = abi.UnpaddedPieceSize(ss)
-		if err := commpSize.Validate(); err != nil {
-			return fmt.Errorf("given commP size was invalid: %w", err)
-		}
-
-		cc, err := cid.Decode(cpc)
-		if err != nil {
-			return err
-		}
-
-		_, err = commcid.CIDToPieceCommitmentV1(cc)
-		if err != nil {
-			return err
-		}
-
-		commpcid = cc
-	}
-
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -1307,54 +1271,11 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		log.Warn(err)
 	}
 
-	if commpcid.Defined() {
-		carSize, err := s.calculateCarSize(root)
-		if err != nil {
-			return xerrors.Errorf("failed to calculate CAR size: %w", err)
-		}
-
-		if err := s.sendRpcMessage(ctx, &drpc.Message{
-			Op: drpc.OP_CommPComplete,
-			Params: drpc.MsgParams{
-				CommPComplete: &drpc.CommPComplete{
-					Data:    root,
-					CommP:   commpcid,
-					Size:    commpSize,
-					CarSize: carSize,
-				},
-			},
-		}); err != nil {
-			log.Errorf("failed to send commP setting to controller node: %w", err)
-		}
-
-	}
-
 	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       root.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
-}
-
-// calculateCarSize works out the CAR size using the cids and block sizes
-// for the content stored in the DB
-func (s *Shuttle) calculateCarSize(data cid.Cid) (uint64, error) {
-	var objects []Object
-	where := "id in (select object from objref where content = (select id from content where cid = ?))"
-	if err := s.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
-		return 0, err
-	}
-
-	if len(objects) == 0 {
-		return 0, fmt.Errorf("not found")
-	}
-
-	os := make([]util.Object, len(objects))
-	for i, o := range objects {
-		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
-	}
-
-	return util.CalculateCarSize(data, os)
 }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
