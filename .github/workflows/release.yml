@@ -101,7 +101,7 @@ jobs:
     - name: Build binary for macOS
       run: |
         export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
-        make
+        GOOS=darwin GOARCH=amd64 make
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
