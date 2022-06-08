@@ -75,49 +75,12 @@ jobs:
       with:
         name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
         path: ./release
-  
-  build_macos_arm64:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        version: ['darwin-arm64']
-        include:
-          - version: darwin-arm64
-            OS: darwin
-            ARCH: arm64
-    steps:
-    - name: Set up Go 1.17
-      uses: actions/setup-go@v1
-      id: go
-      with:
-        go-version: 1.17
-    - uses: actions/checkout@v1
-      with:
-        submodules: true
-    - name: Install dependencies
-      run: |
-        brew install bzr jq pkg-config rustup hwloc
-        cargo install cargo-lipo
-    - name: Build binary for macOS
-      run: |
-        export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
-        GOOS=darwin GOARCH=amd64 make
-    - name: Prepare build artifact for stashing
-      run: |
-        mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
-    # The build artifact can be identified by the trailing sha of the git commit
-    - name: Stash the build artifact
-      uses: actions/upload-artifact@v1
-      with:
-        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
-        path: ./release
 
   # A Github release is created whenever the git reference contains a tag, starting with 'v*' (e.g. v0.4.2)
   # And the previous build jobs have been successful
   create_release:
     runs-on: ubuntu-20.04
-    needs: [build_linux_amd64, build_macos_amd64, build_macos_arm64]
+    needs: [build_linux_amd64, build_macos_amd64]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
     - name: Create Release
@@ -148,7 +111,7 @@ jobs:
     needs: create_release # release must be created before this job can start
     strategy:
       matrix:
-        version: ['linux-amd64', 'darwin-amd64', 'darwin-arm64']
+        version: ['linux-amd64', 'darwin-amd64']
         # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
         # instead of using Linux' naming convention (version items).
         include:
@@ -158,9 +121,6 @@ jobs:
           - version: darwin-amd64
             OS: darwin
             ARCH: amd64
-          - version: darwin-arm64
-            OS: darwin
-            ARCH: arm64
     steps:
     # Since Github actions (currently) doesn't provide a slugged version of the git tag we have to
     # create it by ourselves. It is then made available to other steps in this job as a step.outputs
