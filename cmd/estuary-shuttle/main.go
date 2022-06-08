@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -45,7 +46,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -69,13 +69,9 @@ import (
 	"github.com/whyrusleeping/memo"
 )
 
-var log = logging.Logger("shuttle")
+var appVersion string
 
-func init() {
-	if os.Getenv("FULLNODE_API_INFO") == "" {
-		os.Setenv("FULLNODE_API_INFO", "wss://api.chain.love")
-	}
-}
+var log = logging.Logger("shuttle").With("app_version", appVersion)
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
 	for _, flag := range flags {
@@ -87,6 +83,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		}
 
 		switch name {
+		case "node-api-url":
+			cfg.Node.ApiURL = cctx.String("node-api-url")
 		case "datadir":
 			cfg.DataDir = cctx.String("datadir")
 		case "blockstore":
@@ -166,12 +164,20 @@ func main() {
 	}
 
 	app := cli.NewApp()
-	cfg := config.NewShuttle()
+	app.Version = appVersion
+
+	cfg := config.NewShuttle(appVersion)
 
 	app.Flags = []cli.Flag{
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
+		},
+		&cli.StringFlag{
+			Name:    "node-api-url",
+			Usage:   "lotus api gateway url",
+			Value:   cfg.Node.ApiURL,
+			EnvVars: []string{"FULLNODE_API_INFO"},
 		},
 		&cli.StringFlag{
 			Name:  "config",
@@ -293,10 +299,12 @@ func main() {
 		},
 		&cli.Int64Flag{
 			Name:  "bitswap-max-work-per-peer",
+			Usage: "sets the bitswap max work per peer",
 			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
 		},
 		&cli.IntFlag{
 			Name:  "bitswap-target-message-size",
+			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 	}
@@ -320,6 +328,8 @@ func main() {
 	}
 
 	app.Action = func(cctx *cli.Context) error {
+		log.Infof("shuttle version: %s", appVersion)
+
 		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 			return err
 		}
@@ -347,7 +357,14 @@ func main() {
 			return err
 		}
 
-		api, closer, err := lcli.GetGatewayAPI(cctx)
+		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
+		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+		flset.String("api-url", "", "node api url")
+		flset.Set("api-url", cfg.Node.ApiURL)
+
+		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+		api, closer, err := lcli.GetGatewayAPI(ncctx)
 		if err != nil {
 			return err
 		}
@@ -655,7 +672,7 @@ func main() {
 			}
 		}()
 
-		return s.ServeAPI(cfg.ApiListen, cfg.Logging.ApiEndpointLogging)
+		return s.ServeAPI()
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -848,6 +865,12 @@ type User struct {
 	AuthToken       string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
 	StorageDisabled bool
 	AuthExpiry      time.Time
+
+	Flags int
+}
+
+func (u *User) FlagSplitContent() bool {
+	return u.Flags&8 != 0
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
@@ -904,6 +927,7 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		AuthToken:       token,
 		AuthExpiry:      out.AuthExpiry,
 		StorageDisabled: out.Settings.ContentAddingDisabled,
+		Flags:           out.Settings.Flags,
 	}
 
 	d.authCache.Add(token, usr)
@@ -950,15 +974,16 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-func (s *Shuttle) ServeAPI(listen string, logging bool) error {
+func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
 
-	if logging {
+	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(middleware.CORS())
 	e.Use(s.tracingMiddleware)
+	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
 
 	e.HTTPErrorHandler = util.ErrorHandler
 
@@ -997,7 +1022,7 @@ func (s *Shuttle) ServeAPI(listen string, logging bool) error {
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
-	return e.Start(listen)
+	return e.Start(s.shuttleConfig.ApiListen)
 }
 
 func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -1088,12 +1113,21 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
+		}
+	}
+
 	fname := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
 	}
-
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
@@ -1160,7 +1194,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 }
 
 func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
-	subCtx, cancel := context.WithTimeout(ctx, time.Second*10)
+	subCtx, cancel := context.WithTimeout(ctx, time.Second*15)
 	defer cancel()
 
 	if s.Node.FullRT.Ready() {
@@ -1201,6 +1235,28 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		}
 	}
 
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() {
+		bdWriter := &bytes.Buffer{}
+		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+
+		bdSize, err := io.Copy(ioutil.Discard, bdReader)
+		if err != nil {
+			return err
+		}
+
+		if bdSize > util.DefaultContentSizeLimit {
+			return &util.HttpError{
+				Code:    400,
+				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+			}
+		}
+
+		c.Request().Body = ioutil.NopCloser(bdWriter)
+	}
+
 	bsid, bs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -1229,41 +1285,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	fname := header.Roots[0].String()
 	if qpname := c.QueryParam("filename"); qpname != "" {
 		fname = qpname
-	}
-
-	var commpcid cid.Cid
-	var commpSize abi.UnpaddedPieceSize
-	if cpc := c.QueryParam("commp"); cpc != "" {
-		if u.Perms < util.PermLevelAdmin {
-			return fmt.Errorf("must be an admin to specify commp for car file upload")
-		}
-
-		sizestr := c.QueryParam("size")
-		if sizestr == "" {
-			return fmt.Errorf("must also specify 'size' when setting commP for car files")
-		}
-
-		ss, err := strconv.ParseUint(sizestr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse size: %w", err)
-		}
-
-		commpSize = abi.UnpaddedPieceSize(ss)
-		if err := commpSize.Validate(); err != nil {
-			return fmt.Errorf("given commP size was invalid: %w", err)
-		}
-
-		cc, err := cid.Decode(cpc)
-		if err != nil {
-			return err
-		}
-
-		_, err = commcid.CIDToPieceCommitmentV1(cc)
-		if err != nil {
-			return err
-		}
-
-		commpcid = cc
 	}
 
 	bserv := blockservice.New(bs, nil)
@@ -1304,54 +1325,11 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		log.Warn(err)
 	}
 
-	if commpcid.Defined() {
-		carSize, err := s.calculateCarSize(root)
-		if err != nil {
-			return xerrors.Errorf("failed to calculate CAR size: %w", err)
-		}
-
-		if err := s.sendRpcMessage(ctx, &drpc.Message{
-			Op: drpc.OP_CommPComplete,
-			Params: drpc.MsgParams{
-				CommPComplete: &drpc.CommPComplete{
-					Data:    root,
-					CommP:   commpcid,
-					Size:    commpSize,
-					CarSize: carSize,
-				},
-			},
-		}); err != nil {
-			log.Errorf("failed to send commP setting to controller node: %w", err)
-		}
-
-	}
-
 	return c.JSON(200, &util.ContentAddResponse{
 		Cid:       root.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
 	})
-}
-
-// calculateCarSize works out the CAR size using the cids and block sizes
-// for the content stored in the DB
-func (s *Shuttle) calculateCarSize(data cid.Cid) (uint64, error) {
-	var objects []Object
-	where := "id in (select object from objref where content = (select id from content where cid = ?))"
-	if err := s.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
-		return 0, err
-	}
-
-	if len(objects) == 0 {
-		return 0, fmt.Errorf("not found")
-	}
-
-	os := make([]util.Object, len(objects))
-	for i, o := range objects {
-		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
-	}
-
-	return util.CalculateCarSize(data, os)
 }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -2181,7 +2159,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	for i, d := range deals {
 		qr, err := s.Filc.RetrievalQuery(ctx, d.Proposal.Provider, cc)
 		if err != nil {
-			log.Warningf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
+			log.Warnf("failed to get retrieval query response for deal %d: %s", body.DealIDs[i], err)
 		}
 
 		proposal, err := retrievehelper.RetrievalProposalForAsk(qr, cc, nil)

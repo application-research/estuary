@@ -21,14 +21,10 @@ type Node struct {
 
 	WalletDir string `json:"wallet_dir"`
 
+	ApiURL            string            `json:"api_url"`
 	Bitswap           Bitswap           `json:"bitswap"`
 	Limits            Limits            `json:"limits"`
 	ConnectionManager ConnectionManager `json:"connection_manager"`
-}
-
-type Bitswap struct {
-	MaxOutstandingBytesPerPeer int64 `json:"max_outstanding_bytes_per_peer"`
-	TargetMessageSize          int   `json:"target_message_size"`
 }
 
 func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {

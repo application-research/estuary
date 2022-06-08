@@ -1,13 +1,18 @@
 #!/bin/bash
 
 ###################################################################
-#Script Name	: add-collection.sh                                                                                             
+#Script Name	: add-content.sh                                                                                             
 #Description	: This is a script file that runs a curl command to add a file to the estuary content server.                                                                                       
-#Author         : ARG
+#Author       : ARG
 #Email          : 
 ###################################################################
 
-. run.config
+. ../data/config/run.config
+
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
@@ -22,7 +27,7 @@ data="$(echo {} | jq --raw-output \
        }'
 )"
 
-echo $data
-
+echo "Data: " "$data"
+EST_API_HOST=https://upload.estuary.tech
 set -x
-curl --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/content/create
+curl --trace - --trace-time --progress-bar -X POST $EST_UPLOAD_HOST/content/add -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Accept: application/json" -H "Content-Type: multipart/form-data" -F "data=@$EST_SAMPLE_LARGE_FILE"

@@ -7,6 +7,7 @@ import (
 )
 
 type Estuary struct {
+	AppVersion             string    `json:"app_version"`
 	DatabaseConnString     string    `json:"database_conn_string"`
 	StagingDataDir         string    `json:"staging_data_dir"`
 	ServerCacheDir         string    `json:"server_cache_dir"`
@@ -50,8 +51,9 @@ func (cfg *Estuary) SetRequiredOptions() error {
 	return nil
 }
 
-func NewEstuary() *Estuary {
+func NewEstuary(appVersion string) *Estuary {
 	return &Estuary{
+		AppVersion:             appVersion,
 		DataDir:                ".",
 		DatabaseConnString:     build.DefaultDatabaseValue,
 		ApiListen:              ":3004",
@@ -84,6 +86,7 @@ func NewEstuary() *Estuary {
 		},
 
 		Node: Node{
+			AnnounceAddrs: []string{},
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
@@ -91,6 +94,8 @@ func NewEstuary() *Estuary {
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
+
+			ApiURL: "wss://api.chain.love",
 
 			Bitswap: Bitswap{
 				MaxOutstandingBytesPerPeer: 5 << 20,

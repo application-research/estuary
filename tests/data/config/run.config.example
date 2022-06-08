@@ -1,0 +1,14 @@
+ESTUARY_TOKEN=ESTabcdefghARY
+EST_API_HOST=https://api.estuary.tech
+EST_UPLOAD_HOST=https://upload.estuary.tech
+EST_SAMPLE_FILE=../data/files/dummy.file
+EST_SAMPLE_LARGE_FILE=../data/files/large-file
+EST_SAMPLE_DIR=../data/files/dummy_dir
+EST_REPORT_FILE=../data/logs
+
+DWEB_HOST=https://dweb.link/ipfs
+CID=bafkqaflunbuxgidjomqgcideovww26jamzuwyzik
+
+MULTIPLE_GATEAWAYS=(https://dweb.link/ipfs https://ipfs.io/ipfs)
+UPLOAD_URLS=(https://upload.estuary.tech https://shuttle-1.estuary.tech https://shuttle-2.estuary.tech https://shuttle-3.estuary.tech https://shuttle-4.estuary.tech https://shuttle-5.estuary.tech)
+DISABLED_UPLOAD_URLS=(https://shuttle-1.estuary.tech https://shuttle-2.estuary.tech https://shuttle-3.estuary.tech)

@@ -28,7 +28,6 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	commcid "github.com/filecoin-project/go-fil-commcid"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
@@ -88,17 +87,18 @@ import (
 // @securityDefinitions.Bearer.type apiKey
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
-func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir string) error {
+func (s *Server) ServeAPI() error {
 
 	e := echo.New()
 
 	e.Binder = new(binder)
 
-	if logging {
+	if s.estuaryCfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(s.tracingMiddleware)
+	e.Use(util.AppVersionMiddleware(s.estuaryCfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -300,7 +300,7 @@ func (s *Server) ServeAPI(srv string, logging bool, lsteptok string, cachedir st
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(srv)
+	return e.Start(s.estuaryCfg.ApiListen)
 }
 
 type binder struct{}
@@ -545,6 +545,28 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}
 
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() {
+		bdWriter := &bytes.Buffer{}
+		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+
+		bdSize, err := io.Copy(ioutil.Discard, bdReader)
+		if err != nil {
+			return err
+		}
+
+		if bdSize > util.DefaultContentSizeLimit {
+			return &util.HttpError{
+				Code:    400,
+				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+			}
+		}
+
+		c.Request().Body = ioutil.NopCloser(bdWriter)
+	}
+
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -583,41 +605,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
-	var commpcid cid.Cid
-	var commpSize abi.UnpaddedPieceSize
-	if cpc := c.QueryParam("commp"); cpc != "" {
-		if u.Perm < util.PermLevelAdmin {
-			return fmt.Errorf("must be an admin to specify commp for car file upload")
-		}
-
-		sizestr := c.QueryParam("size")
-		if sizestr == "" {
-			return fmt.Errorf("must also specify 'size' when setting commP for car files")
-		}
-
-		ss, err := strconv.ParseUint(sizestr, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse size: %w", err)
-		}
-
-		commpSize = abi.UnpaddedPieceSize(ss)
-		if err := commpSize.Validate(); err != nil {
-			return fmt.Errorf("given commP size was invalid: %w", err)
-		}
-
-		cc, err := cid.Decode(cpc)
-		if err != nil {
-			return err
-		}
-
-		_, err = commcid.CIDToPieceCommitmentV1(cc)
-		if err != nil {
-			return err
-		}
-
-		commpcid = cc
-	}
-
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -628,24 +615,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
-	if commpcid.Defined() {
-		carSize, err := s.CM.calculateCarSize(ctx, header.Roots[0])
-		if err != nil {
-			return fmt.Errorf("failed to calculate CAR size: %w", err)
-		}
-
-		opcr := PieceCommRecord{
-			Data:    util.DbCID{rootCID},
-			Piece:   util.DbCID{commpcid},
-			Size:    commpSize,
-			CarSize: carSize,
-		}
-
-		if err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
-			return fmt.Errorf("failed to insert piece commitment record: %w", err)
-		}
 	}
 
 	go func() {
@@ -701,12 +670,21 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-
 	defer form.RemoveAll()
 
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
+	}
+
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
+		}
 	}
 
 	filename := mpf.Filename
@@ -2866,8 +2844,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ?) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
@@ -2927,6 +2905,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
+			Flags:                 u.Flags,
 		},
 		AuthExpiry: u.authToken.Expiry,
 	})

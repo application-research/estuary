@@ -1,7 +1,6 @@
 package util
 
 import (
-	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -32,6 +31,7 @@ const (
 	ERR_INVITE_ALREADY_USED     = "ERR_INVITE_ALREADY_USED"
 	ERR_CONTENT_ADDING_DISABLED = "ERR_CONTENT_ADDING_DISABLED"
 	ERR_INVALID_INPUT           = "ERR_INVALID_INPUT"
+	ERR_CONTENT_SIZE_OVER_LIMIT = "ERR_CONTENT_SIZE_OVER_LIMIT"
 )
 
 type HttpError struct {
@@ -41,7 +41,10 @@ type HttpError struct {
 }
 
 func (he HttpError) Error() string {
-	return he.Message
+	if he.Details == "" {
+		return he.Message
+	}
+	return he.Message + ": " + he.Details
 }
 
 const (
@@ -123,6 +126,7 @@ type UserSettings struct {
 	DealMakingDisabled    bool `json:"dealMakingDisabled"`
 
 	UploadEndpoints []string `json:"uploadEndpoints"`
+	Flags           int      `json:"flags"`
 }
 
 type ViewerResponse struct {
@@ -162,6 +166,6 @@ func ErrorHandler(err error, ctx echo.Context) {
 
 	log.Errorf("handler error: %s", err)
 	_ = ctx.JSON(500, map[string]interface{}{
-		"error": http.StatusText(http.StatusInternalServerError),
+		"error": err.Error(),
 	})
 }

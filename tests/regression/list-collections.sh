@@ -7,7 +7,12 @@
 #Email          : 
 ###################################################################
 
-. run.config
+. ../data/config/run.config
+
+echo '#####################################'
+echo `basename "$0"`
+echo '#####################################'
+echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
 name="Sample Collection"
@@ -16,4 +21,4 @@ description="This is a sample collection"
 echo $data
 
 set -x
-curl --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_HOST/collections/list
+curl --trace - --trace-time --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/list

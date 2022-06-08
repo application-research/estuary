@@ -14,6 +14,7 @@ type EstuaryRemote struct {
 }
 
 type Shuttle struct {
+	AppVersion         string        `json:"app_version"`
 	DatabaseConnString string        `json:"database_conn_string"`
 	StagingDataDir     string        `json:"staging_data_dir"`
 	DataDir            string        `json:"data_dir"`
@@ -66,8 +67,9 @@ func (cfg *Shuttle) SetRequiredOptions() error {
 	return nil
 }
 
-func NewShuttle() *Shuttle {
+func NewShuttle(appVersion string) *Shuttle {
 	return &Shuttle{
+		AppVersion:         appVersion,
 		DataDir:            ".",
 		DatabaseConnString: "sqlite=estuary-shuttle.db",
 		ApiListen:          ":3005",
@@ -102,6 +104,8 @@ func NewShuttle() *Shuttle {
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
+
+			ApiURL: "wss://api.chain.love",
 
 			Bitswap: Bitswap{
 				MaxOutstandingBytesPerPeer: 5 << 20,
