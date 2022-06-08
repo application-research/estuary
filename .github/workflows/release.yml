@@ -61,8 +61,6 @@ jobs:
     - name: Install dependencies
       run: |
         brew install bzr jq pkg-config rustup hwloc
-    - name: Install code generators
-      run: make install-deps
     - name: Build binary for macOS
       run: |
         export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
