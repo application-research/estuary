@@ -128,6 +128,8 @@ github.com/application-research/filclient v0.0.0-20220402115018-19d824498dff h1:
 github.com/application-research/filclient v0.0.0-20220402115018-19d824498dff/go.mod h1:PN59aCl3CAEkFZhVYaWDjnLFZDlp+uBafHdrqjj3skk=
 github.com/application-research/filclient v0.0.0-20220504204501-ca86574e3ee5 h1:GrN7CNX0LJeQvAU84qywOvR8MciySWAZNm76VBdPgOE=
 github.com/application-research/filclient v0.0.0-20220504204501-ca86574e3ee5/go.mod h1:QSOQ2dcnSvucj23jOg535mvTMezoNV0bdJbIySoDaOg=
+github.com/application-research/filclient v0.0.0-20220602175911-a6b8faf9f1cd h1:IF5gUAti2Dnqe6GoQS7oxAcj6Gy+RXYKEyM5tPFtJ3c=
+github.com/application-research/filclient v0.0.0-20220602175911-a6b8faf9f1cd/go.mod h1:QSOQ2dcnSvucj23jOg535mvTMezoNV0bdJbIySoDaOg=
 github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402 h1:8l0IQrh8vwqihv5jNhKCYB+YGH5hGGFL7od/2ETWrZw=
 github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402/go.mod h1:86iZMWoyMLfLpYyd0aMPyECUpFwf8oZRjS5jJ9quZ7I=
 github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hCbHZ8TKRvWD2dDTCfh9M9ya+I9JpbB7O8o=
