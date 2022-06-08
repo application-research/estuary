@@ -25,11 +25,6 @@ jobs:
     - uses: actions/checkout@v1
       with:
         submodules: true
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y jq hwloc ocl-icd-opencl-dev libhwloc-dev pkg-config
-        curl https://sh.rustup.rs -sSf | bash -s -- -y
     - name: Build binary for ${{ matrix.version }}
       run: |
         docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "make"
@@ -60,11 +55,6 @@ jobs:
     - uses: actions/checkout@v1
       with:
         submodules: true
-    - name: Install dependencies
-      run: |
-        apt-get update
-        apt-get install -y jq hwloc ocl-icd-opencl-dev libhwloc-dev pkg-config
-        curl https://sh.rustup.rs -sSf | bash -s -- -y
     - name: Build binary for ${{ matrix.version }}
       run: |
         docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS='-C target-cpu=native -g' FFI_BUILD_FROM_SOURCE=1 make"
