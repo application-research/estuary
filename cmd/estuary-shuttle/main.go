@@ -477,7 +477,7 @@ func main() {
 			}
 		})
 
-		debounceCache, err := lru.New(2000)
+		eventDebounceCache, err := lru.New(int(cfg.FilClient.EventRateLimiter.CacheSize))
 		if err != nil {
 			return err
 		}
@@ -501,25 +501,20 @@ func main() {
 			}
 
 			go func() {
-				canSendUpdate := true
-				cachedTime, ok := debounceCache.Get(st.TransferID)
+				cachedTime, ok := eventDebounceCache.Get(st.TransferID)
 				if ok {
 					ct, ctOk := cachedTime.(time.Time)
-					if ctOk && ct.Add(10*time.Second).Before(time.Now()) {
-						canSendUpdate = false
+					if ctOk && ct.Add(cfg.FilClient.EventRateLimiter.TTL*time.Second).Before(time.Now()) {
+						return
 					}
 				}
 
-				// only send update if the last update was over 10secs ago or this is the first update
-				if canSendUpdate {
-					debounceCache.Add(st.TransferID, time.Now())
-
-					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-						Chanid:   st.TransferID,
-						DealDBID: dbid,
-						State:    &st,
-					})
-				}
+				eventDebounceCache.Add(st.TransferID, time.Now())
+				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					Chanid:   st.TransferID,
+					DealDBID: dbid,
+					State:    &st,
+				})
 			}()
 		})
 		if err != nil {
