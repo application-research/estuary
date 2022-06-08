@@ -608,7 +608,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, s.Node.Blockstore, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, filename, s.CM.Replication)
 	if err != nil {
 		return err
 	}
@@ -628,7 +628,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}()
 	return c.JSON(200, map[string]interface{}{"content": cont})
-
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -759,7 +758,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, bs, nd.Cid(), filename, replication)
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -814,7 +813,7 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
+func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -894,15 +893,10 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-
-	if err = cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local"); err != nil {
-		return err
-	}
-
-	return nil
+	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local")
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, filename string, replication int) (*Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
@@ -920,7 +914,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, bs, root, func(int64) {}); err != nil {
+	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
 		return nil, err
 	}
 
@@ -960,7 +954,6 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 			return err
 		}
 	}
-
 	return nil
 }
 
