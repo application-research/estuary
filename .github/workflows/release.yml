@@ -30,7 +30,7 @@ jobs:
         submodules: true
     - name: Build binary for ${{ matrix.version }}
       run: |
-        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/bash -c "make"
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/bash -c "CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS='-C target-cpu=native -g' FFI_BUILD_FROM_SOURCE=1 make"
     - name: Prepare build artifact for stashing
       run: |
         tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
