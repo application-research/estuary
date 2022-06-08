@@ -50,17 +50,18 @@ jobs:
             OS: darwin
             ARCH: amd64
     steps:
-    - name: Set up Go 1.18
+    - name: Set up Go 1.17
       uses: actions/setup-go@v1
       id: go
       with:
-        go-version: 1.18
+        go-version: 1.17
     - uses: actions/checkout@v1
       with:
         submodules: true
     - name: Install dependencies
       run: |
-        brew install bzr jq pkg-config rustup hwloc
+        brew install bzr jq pkg-config hwloc
+        curl https://sh.rustup.rs -sSf | bash -s -- -y
     - name: Build binary for macOS
       run: |
         export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
