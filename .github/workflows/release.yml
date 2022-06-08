@@ -62,6 +62,7 @@ jobs:
       run: |
         brew install bzr jq pkg-config hwloc
         curl https://sh.rustup.rs -sSf | bash -s -- -y
+        source $HOME/.cargo/env
         cargo install cargo-lipo
     - name: Build binary for macOS
       run: |
@@ -78,3 +79,98 @@ jobs:
       with:
         name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
         path: ./release
+
+  # A Github release is created whenever the git reference contains a tag, starting with 'v*' (e.g. v0.4.2)
+  # And the previous build jobs have been successful
+  create_release:
+    runs-on: ubuntu-20.04
+    needs: [build_linux_amd64, build_macos_amd64]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1.0.0
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: true
+        prerelease: false
+    # since jobs can not share any variables we have to copy the URL of the created Github release
+    # into a file and stash it as an artifact
+    - name: Copy release URL into file
+      run: |
+        mkdir release
+        printf "%s" "${{ steps.create_release.outputs.upload_url }}" > release/url.txt
+    - name: Stash file containing the release URL as an artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: release-url
+        path: ./release
+
+  # In this job we upload the release artifacts to the corresponding release
+  upload:
+    runs-on: ubuntu-20.04
+    needs: create_release # release must be created before this job can start
+    strategy:
+      matrix:
+        version: ['linux-amd64', 'darwin-amd64']
+        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
+        # instead of using Linux' naming convention (version items).
+        include:
+          - version: linux-amd64
+            OS: linux
+            ARCH: amd64
+          - version: darwin-amd64
+            OS: darwin
+            ARCH: amd64
+    steps:
+    # Since Github actions (currently) doesn't provide a slugged version of the git tag we have to
+    # create it by ourselves. It is then made available to other steps in this job as a step.outputs
+    # variable
+    - name: Get the version (git tag)
+      id: get_version
+      run: |
+        echo ${GITHUB_REF/refs\/tags\//}
+        echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+    - name: Retrieve stashed intermediary build artifact
+      uses: actions/download-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
+    # rename the retrieved intermediary artifact and prepare zip file
+    - name: Prepare release artifact
+      env:
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
+      run: |
+        mv ./estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}/* .
+        test -f ./estuary && chmod +x ./estuary #only on linux & darwin needed
+        zip -j estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip ./*
+    # Download the previously uploaded artifact which contains the release URL
+    - name: Retrieve stashed release URL
+      uses: actions/download-artifact@v1
+      with:
+        name: release-url
+    # Write content of downloaded file (a string which contains the release URL) into a step.outputs variable
+    - name: Read release URL
+      id: get_release_url
+      run: echo ::set-output name=URL::$(cat release-url/url.txt)
+    # This step is only needed because the upload-release-asset currently doesn't support
+    # environment variables. Therefore they must be written and referenced through step.outputs
+    - name: Prepare artifact metadata
+      id: prepare_artifact_metadata
+      env:
+        VERSION: ${{ steps.get_version.outputs.VERSION }}
+      run: |
+        echo ::set-output name=ARTIFACT_PATH::./estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip
+        echo ::set-output name=ARTIFACT_NAME::estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip
+    # Finally upload the artifact to the corresponding release
+    - name: Upload Release Artifact ${{ matrix.version }}
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.get_release_url.outputs.URL }}
+        asset_path: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_PATH }}
+        asset_name: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_NAME }}
+        asset_content_type: application/gzip
