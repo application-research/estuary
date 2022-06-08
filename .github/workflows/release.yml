@@ -59,9 +59,7 @@ jobs:
         submodules: true
     - name: Install dependencies
       run: |
-        brew install bzr jq pkg-config hwloc
-        curl https://sh.rustup.rs -sSf | bash -s -- -y
-        source $HOME/.cargo/env
+        brew install bzr jq pkg-config rustup hwloc
         cargo install cargo-lipo
     - name: Build binary for macOS
       run: |
