@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build_linux:
+  build_linux_amd64:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
@@ -25,6 +25,46 @@ jobs:
     - uses: actions/checkout@v1
       with:
         submodules: true
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y jq hwloc ocl-icd-opencl-dev libhwloc-dev pkg-config
+        curl https://sh.rustup.rs -sSf | bash -s -- -y
+    - name: Build binary for ${{ matrix.version }}
+      run: |
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "make"
+    - name: Prepare build artifact for stashing
+      run: |
+        tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
+        mkdir release
+        mv ./estuary.tar.gz ./release
+    # The build artifact can be identified by the trailing sha of the git commit
+    - name: Stash the build artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
+        path: ./release
+
+  build_linux_arm64:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        version: ['linux/arm64']
+        include:
+        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
+        # instead of using Linux' naming convention (version items).
+          - version: linux/arm64
+            OS: linux
+            ARCH: arm64
+    steps:
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Install dependencies
+      run: |
+        apt-get update
+        apt-get install -y jq hwloc ocl-icd-opencl-dev libhwloc-dev pkg-config
+        curl https://sh.rustup.rs -sSf | bash -s -- -y
     - name: Build binary for ${{ matrix.version }}
       run: |
         docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS='-C target-cpu=native -g' FFI_BUILD_FROM_SOURCE=1 make"
@@ -40,7 +80,7 @@ jobs:
         name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
         path: ./release
 
-  build_macos:
+  build_macos_amd64:
     runs-on: macos-latest
     strategy:
       matrix:
@@ -49,6 +89,45 @@ jobs:
           - version: darwin-amd64
             OS: darwin
             ARCH: amd64
+    steps:
+    - name: Set up Go 1.17
+      uses: actions/setup-go@v1
+      id: go
+      with:
+        go-version: 1.17
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Install dependencies
+      run: |
+        brew install bzr jq pkg-config hwloc
+        curl https://sh.rustup.rs -sSf | bash -s -- -y
+        cargo install cargo-lipo
+    - name: Build binary for macOS
+      run: |
+        export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
+        make
+    - name: Prepare build artifact for stashing
+      run: |
+        tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
+        mkdir release
+        mv ./estuary.tar.gz ./release
+    # The build artifact can be identified by the trailing sha of the git commit
+    - name: Stash the build artifact
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
+        path: ./release
+
+  build_macos_arm64:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        version: ['darwin-arm64']
+        include:
+          - version: darwin-arm64
+            OS: darwin
+            ARCH: arm64
     steps:
     - name: Set up Go 1.17
       uses: actions/setup-go@v1
