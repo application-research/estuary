@@ -7,23 +7,24 @@ import (
 )
 
 type Estuary struct {
-	AppVersion             string  `json:"app_version"`
-	DatabaseConnString     string  `json:"database_conn_string"`
-	StagingDataDir         string  `json:"staging_data_dir"`
-	ServerCacheDir         string  `json:"server_cache_dir"`
-	DataDir                string  `json:"data_dir"`
-	ApiListen              string  `json:"api_listen"`
-	EnableAutoRetrieve     bool    `json:"enable_autoretrieve"`
-	LightstepToken         string  `json:"lightstep_token"`
-	Hostname               string  `json:"hostname"`
-	Node                   Node    `json:"node"`
-	Jaeger                 Jaeger  `json:"jaeger"`
-	Deal                   Deal    `json:"deal"`
-	Content                Content `json:"content"`
-	LowMem                 bool    `json:"low_mem"`
-	DisableFilecoinStorage bool    `json:"disable_filecoin_storage"`
-	Replication            int     `json:"replication"`
-	Logging                Logging `json:"logging"`
+	AppVersion             string    `json:"app_version"`
+	DatabaseConnString     string    `json:"database_conn_string"`
+	StagingDataDir         string    `json:"staging_data_dir"`
+	ServerCacheDir         string    `json:"server_cache_dir"`
+	DataDir                string    `json:"data_dir"`
+	ApiListen              string    `json:"api_listen"`
+	EnableAutoRetrieve     bool      `json:"enable_autoretrieve"`
+	LightstepToken         string    `json:"lightstep_token"`
+	Hostname               string    `json:"hostname"`
+	Node                   Node      `json:"node"`
+	Jaeger                 Jaeger    `json:"jaeger"`
+	Deal                   Deal      `json:"deal"`
+	Content                Content   `json:"content"`
+	LowMem                 bool      `json:"low_mem"`
+	DisableFilecoinStorage bool      `json:"disable_filecoin_storage"`
+	Replication            int       `json:"replication"`
+	Logging                Logging   `json:"logging"`
+	FilClient              FilClient `json:"fil_client"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
