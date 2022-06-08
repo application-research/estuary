@@ -546,6 +546,28 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}
 
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() {
+		bdWriter := &bytes.Buffer{}
+		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+
+		bdSize, err := io.Copy(ioutil.Discard, bdReader)
+		if err != nil {
+			return err
+		}
+
+		if bdSize > util.DefaultContentSizeLimit {
+			return &util.HttpError{
+				Code:    400,
+				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+			}
+		}
+
+		c.Request().Body = ioutil.NopCloser(bdWriter)
+	}
+
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
 		return err
@@ -702,12 +724,21 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-
 	defer form.RemoveAll()
 
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
+	}
+
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
+		}
 	}
 
 	filename := mpf.Filename
@@ -2928,6 +2959,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
+			Flags:                 u.Flags,
 		},
 		AuthExpiry: u.authToken.Expiry,
 	})

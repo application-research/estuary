@@ -12,6 +12,8 @@ import (
 	unixfs "github.com/ipfs/go-unixfs"
 )
 
+const DefaultContentSizeLimit = 34_000_000_000
+
 type ContentType int64
 
 const (

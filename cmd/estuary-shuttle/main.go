@@ -850,6 +850,12 @@ type User struct {
 	AuthToken       string `json:"-"` // this struct shouldnt ever be serialized, but just in case...
 	StorageDisabled bool
 	AuthExpiry      time.Time
+
+	Flags int
+}
+
+func (u *User) FlagSplitContent() bool {
+	return u.Flags&8 != 0
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
@@ -906,6 +912,7 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		AuthToken:       token,
 		AuthExpiry:      out.AuthExpiry,
 		StorageDisabled: out.Settings.ContentAddingDisabled,
+		Flags:           out.Settings.Flags,
 	}
 
 	d.authCache.Add(token, usr)
@@ -1091,12 +1098,21 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
+		}
+	}
+
 	fname := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
 	}
-
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
@@ -1202,6 +1218,28 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 			Code:    400,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
+	}
+
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() {
+		bdWriter := &bytes.Buffer{}
+		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+
+		bdSize, err := io.Copy(ioutil.Discard, bdReader)
+		if err != nil {
+			return err
+		}
+
+		if bdSize > util.DefaultContentSizeLimit {
+			return &util.HttpError{
+				Code:    400,
+				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+			}
+		}
+
+		c.Request().Body = ioutil.NopCloser(bdWriter)
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
