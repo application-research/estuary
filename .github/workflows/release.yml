@@ -44,14 +44,11 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        version: ['darwin-amd64', 'darwin-arm64']
+        version: ['darwin-amd64']
         include:
           - version: darwin-amd64
             OS: darwin
             ARCH: amd64
-          - version: darwin-arm64
-            OS: darwin
-            ARCH: arm64
     steps:
     - name: Set up Go 1.18
       uses: actions/setup-go@v1
