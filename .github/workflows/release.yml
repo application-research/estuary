@@ -30,14 +30,13 @@ jobs:
         docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "make"
     - name: Prepare build artifact for stashing
       run: |
-        tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
         mkdir release
-        mv ./estuary.tar.gz ./release
+        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
       with:
-        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
         path: ./release
 
   build_macos_amd64:
@@ -70,14 +69,13 @@ jobs:
         make
     - name: Prepare build artifact for stashing
       run: |
-        tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
         mkdir release
-        mv ./estuary.tar.gz ./release
+        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
       with:
-        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}.tar.gz
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
         path: ./release
 
   # A Github release is created whenever the git reference contains a tag, starting with 'v*' (e.g. v0.4.2)
