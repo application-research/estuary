@@ -3291,7 +3291,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, cm.Node.Blockstore, c, func(int64) {}); err != nil {
+		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {}); err != nil {
 			return err
 		}
 
