@@ -1247,7 +1247,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		if err := cm.splitContent(ctx, content, cm.contentSizeLimit); err != nil {
 			return err
 		}
-		done(time.Minute * 15)
+		// no need to requeue dagsplit root content
 		return nil
 	}
 
@@ -3267,15 +3267,15 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 
 	for i, c := range boxCids {
 		content := &Content{
-			Cid:          util.DbCID{c},
-			Name:         fmt.Sprintf("%s-%d", cont.Name, i),
-			Active:       false,
-			Pinning:      true,
-			UserID:       cont.UserID,
-			Replication:  cont.Replication,
-			Location:     "local",
-			DagSplit:     true,
-			AggregatedIn: cont.ID,
+			Cid:         util.DbCID{CID: c},
+			Name:        fmt.Sprintf("%s-%d", cont.Name, i),
+			Active:      true,
+			Pinning:     true,
+			UserID:      cont.UserID,
+			Replication: cont.Replication,
+			Location:    "local",
+			DagSplit:    true,
+			SplitFrom:   cont.ID,
 		}
 
 		if err := cm.DB.Create(content).Error; err != nil {
@@ -3285,10 +3285,18 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, cm.Node.Blockstore, c, func(int64) {}); err != nil {
 			return err
 		}
+
+		//queue splited contents
+		go func() {
+			log.Infow("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
+			cm.ToCheck <- content.ID
+		}()
 	}
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"active":    false,
+		"size":      0,
 	}).Error; err != nil {
 		return err
 	}
