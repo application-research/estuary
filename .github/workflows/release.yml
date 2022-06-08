@@ -63,15 +63,13 @@ jobs:
         submodules: true
     - name: Install dependencies
       run: |
-        brew install jq
-        brew install hwloc
-        brew install opencl
+        brew install bzr jq pkg-config rustup hwloc
     - name: Install code generators
       run: make install-deps
     - name: Build binary for macOS
       run: |
         export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
-        make dist
+        make
     - name: Prepare build artifact for stashing
       run: |
         tar -cvzf estuary.tar.gz ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy
