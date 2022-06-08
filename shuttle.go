@@ -340,6 +340,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			Phase:   "start-data-transfer-remote",
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 			Content: cd.Content,
+			UserID:  cd.UserID,
 		}); oerr != nil {
 			return oerr
 		}

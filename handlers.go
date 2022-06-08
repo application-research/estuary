@@ -185,7 +185,7 @@ func (s *Server) ServeAPI() error {
 	deals.POST("/estimate", s.handleEstimateDealCost)
 	deals.GET("/proposal/:propcid", s.handleGetProposal)
 	deals.GET("/info/:dealid", s.handleGetDealInfo)
-	deals.GET("/failures", s.handleStorageFailures)
+	deals.GET("/failures", withUser(s.handleStorageFailures))
 
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
@@ -214,7 +214,7 @@ func (s *Server) ServeAPI() error {
 
 	public.GET("/stats", s.handlePublicStats)
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
-	public.GET("/deals/failures", s.handleStorageFailures)
+	public.GET("/deals/failures", s.handlePublicStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
 	public.GET("/miners", s.handlePublicGetMinerStats)
 
@@ -4213,39 +4213,62 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 	return c.JSON(200, map[string]interface{}{})
 }
 
-// handleStorageFailures godoc
+// handlePublicStorageFailures godoc
 // @Summary      Get storage failures
 // @Description  This endpoint returns a list of storage failures
 // @Tags         deals
 // @Produce      json
+// @Router       /public/deals/failures [get]
+func (s *Server) handlePublicStorageFailures(c echo.Context) error {
+	recs, err := s.getStorageFailure(c, nil)
+	if err != nil {
+		return err
+	}
+	return c.JSON(200, recs)
+}
+
+// handleStorageFailures godoc
+// @Summary      Get storage failures for user
+// @Description  This endpoint returns a list of storage failures for user
+// @Tags         deals
+// @Produce      json
 // @Router       /deals/failures [get]
-func (s *Server) handleStorageFailures(c echo.Context) error {
+func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
+	recs, err := s.getStorageFailure(c, u)
+	if err != nil {
+		return err
+	}
+	return c.JSON(200, recs)
+}
+
+func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		limit = nlim
 	}
 
 	q := s.DB.Model(dfeRecord{}).Limit(limit).Order("created_at desc")
+	if u != nil {
+		q = q.Where("user_id=?", u.ID)
+	}
 
 	if bef := c.QueryParam("before"); bef != "" {
 		beftime, err := time.Parse(time.RFC3339, bef)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		q = q.Where("created_at <= ?", beftime)
 	}
 
 	var recs []dfeRecord
 	if err := q.Scan(&recs).Error; err != nil {
-		return err
+		return nil, err
 	}
-
-	return c.JSON(200, recs)
+	return recs, nil
 }
 
 // handleCreateContent godoc
