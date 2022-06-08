@@ -39,35 +39,6 @@ jobs:
         name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
         path: ./release
 
-  build_linux_arm64:
-    runs-on: ubuntu-20.04
-    strategy:
-      matrix:
-        version: ['linux/arm64']
-        include:
-        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
-        # instead of using Linux' naming convention (version items).
-          - version: linux/arm64
-            OS: linux
-            ARCH: arm64
-    steps:
-    - uses: actions/checkout@v1
-      with:
-        submodules: true
-    - name: Build binary for ${{ matrix.version }}
-      run: |
-        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build jlogelin/estuary-base:linux-arm64 /bin/sh -c "CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS='-C target-cpu=native -g' FFI_BUILD_FROM_SOURCE=1 make"
-    - name: Prepare build artifact for stashing
-      run: |
-        mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
-    # The build artifact can be identified by the trailing sha of the git commit
-    - name: Stash the build artifact
-      uses: actions/upload-artifact@v1
-      with:
-        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
-        path: ./release
-
   build_macos_amd64:
     runs-on: macos-latest
     strategy:
@@ -109,7 +80,7 @@ jobs:
   # And the previous build jobs have been successful
   create_release:
     runs-on: ubuntu-20.04
-    needs: [build_linux_amd64, build_macos_amd64, build_linux_arm64]
+    needs: [build_linux_amd64, build_macos_amd64]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
     - name: Create Release
@@ -140,7 +111,7 @@ jobs:
     needs: create_release # release must be created before this job can start
     strategy:
       matrix:
-        version: ['linux-amd64', 'darwin-amd64', 'linux-arm64']
+        version: ['linux-amd64', 'darwin-amd64']
         # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
         # instead of using Linux' naming convention (version items).
         include:
@@ -150,9 +121,6 @@ jobs:
           - version: darwin-amd64
             OS: darwin
             ARCH: amd64
-          - version: linux-arm64
-            OS: linux
-            ARCH: arm64
     steps:
     # Since Github actions (currently) doesn't provide a slugged version of the git tag we have to
     # create it by ourselves. It is then made available to other steps in this job as a step.outputs
