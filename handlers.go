@@ -564,7 +564,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
 		State string `json: "State"`
 	}
-	return c.JSON(200, StateResponse{State: s.Node.Peering.State()})
+	return c.JSON(200, StateResponse{State: ""})
 }
 
 // handleAddIpfs godoc

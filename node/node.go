@@ -116,7 +116,7 @@ type Node struct {
 	Wallet *wallet.LocalWallet
 
 	Bwc     *metrics.BandwidthCounter
-	Peering *peering.PeeringService
+	Peering *peering.EstuaryPeeringService
 	Config  *config.Node
 }
 
@@ -177,7 +177,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	h, err := libp2p.New(opts...)
 
 	//	peering service
-	hPeer := peering.NewPeeringService(h)
+	hPeer := peering.NewEstuaryPeeringService(h)
 
 	peeringPeerList := cfg.PeeringPeers
 	peeringPeerList = append(peeringPeerList, bootStrapPeeringPeers...)
