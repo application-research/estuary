@@ -16,7 +16,7 @@ require (
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-data-transfer v1.15.1
-	github.com/filecoin-project/go-fil-commcid v0.1.0
+	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.20.1
 	github.com/filecoin-project/go-jsonrpc v0.1.5
 	github.com/filecoin-project/go-padreader v0.0.1
@@ -89,7 +89,10 @@ require (
 	gorm.io/gorm v1.21.15
 )
 
-require github.com/pkg/errors v0.9.1
+require (
+	github.com/ipfs/go-ipfs v0.11.0
+	github.com/pkg/errors v0.9.1
+)
 
 require (
 	github.com/BurntSushi/toml v0.4.1 // indirect
