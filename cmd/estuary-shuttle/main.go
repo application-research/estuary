@@ -988,7 +988,7 @@ func (s *Shuttle) ServeAPI() error {
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/health", s.handleHealth)
-	e.GET("/net/addrs", s.handleNetAddrs)
+	e.GET("/net/addrs", s.handleGetNetAddress)
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUser))
 
 	e.GET("/gw/:path", func(e echo.Context) error {
@@ -1750,14 +1750,14 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 	})
 }
 
-// handleNetAddrs godoc
+// handleGetNetAddress godoc
 // @Summary      Net Addrs
 // @Description  This endpoint is used to get net addrs
 // @Tags         net
 // @Produce      json
 // @Success      200  {array}  string
 // @Router       /net/addrs [get]
-func (s *Shuttle) handleNetAddrs(c echo.Context) error {
+func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 	id := s.Node.Host.ID()
 	addrs := s.Node.Host.Addrs()
 
