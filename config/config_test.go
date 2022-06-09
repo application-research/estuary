@@ -37,7 +37,6 @@ func checkNodeConfig(t *testing.T, node *Node) {
 
 	assert.NotEmpty(node.ListenAddrs)
 	assert.NotEmpty(node.ListenAddrs[0])
-	assert.NotEmpty(node.PeeringPeers)
 
 	assert.Greater(node.ConnectionManager.LowWater, 0)
 	assert.Greater(node.ConnectionManager.HighWater, node.ConnectionManager.LowWater)
@@ -69,7 +68,6 @@ func TestShuttleDefaultSanity(t *testing.T) {
 	assert.NotEmpty(config.DatabaseConnString)
 	assert.NotEmpty(config.ApiListen)
 	assert.NotEmpty(config.EstuaryRemote.Api)
-	assert.NotEmpty(config.Node.PeeringPeers)
 
 	checkNodeConfig(t, &config.Node)
 }
