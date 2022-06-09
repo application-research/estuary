@@ -970,14 +970,6 @@ func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCach
 
 	netask, err := cm.FilClient.GetAsk(ctx, m)
 	if err != nil {
-		var clientErr *filclient.Error
-		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
-			cm.recordDealFailure(&DealFailureError{
-				Miner:   m,
-				Phase:   "query-ask",
-				Message: err.Error(),
-			})
-		}
 		span.RecordError(err)
 		return nil, err
 	}
@@ -1055,12 +1047,14 @@ func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
 type contentDeal struct {
 	gorm.Model
 	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
+	UserID           uint       `json:"user_id" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
 	DealUUID         string     `json:"dealUuid"`
 	Miner            string     `json:"miner"`
 	DealID           int64      `json:"dealId"`
 	Failed           bool       `json:"failed"`
 	Verified         bool       `json:"verified"`
+	Slashed          bool       `json:"slashed"`
 	FailedAt         time.Time  `json:"failedAt,omitempty"`
 	DTChan           string     `json:"dtChan" gorm:"index"`
 	TransferStarted  time.Time  `json:"transferStarted"`
@@ -1247,7 +1241,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		if err := cm.splitContent(ctx, content, cm.contentSizeLimit); err != nil {
 			return err
 		}
-		done(time.Minute * 15)
+		// no need to requeue dagsplit root content
 		return nil
 	}
 
@@ -1312,7 +1306,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 			if err != nil {
 				var dfe *DealFailureError
 				if xerrors.As(err, &dfe) {
-					cm.recordDealFailure(dfe)
 					return
 				} else {
 					errs[i] = err
@@ -1500,10 +1493,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 		if deal.State.SlashEpoch > 0 {
 			// Deal slashed!
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
 				Phase:   "check-chain-deal",
 				Message: fmt.Sprintf("deal %d was slashed at epoch %d", d.DealID, deal.State.SlashEpoch),
+				Content: d.Content,
+				UserID:  d.UserID,
 			})
 			return DEAL_CHECK_UNKNOWN, nil
 		}
@@ -1523,7 +1522,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			}
 			return DEAL_CHECK_SECTOR_ON_CHAIN, nil
 		}
-
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
@@ -1566,6 +1564,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 				Phase:   "check-status",
 				Message: "was unable to check deal status with miner and now deal has expired",
 				Content: d.Content,
+				UserID:  d.UserID,
 			})
 			return DEAL_CHECK_UNKNOWN, nil
 		}
@@ -1625,6 +1624,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 					Phase:   "check-status",
 					Message: "deal did not make it on chain in time (but has publish deal cid set)",
 					Content: d.Content,
+					UserID:  d.UserID,
 				})
 				return DEAL_CHECK_UNKNOWN, nil
 			}
@@ -1646,9 +1646,9 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 				Phase:   "check-status",
 				Message: "miner returned nil response proposal and deal expired",
 				Content: d.Content,
+				UserID:  d.UserID,
 			})
 			return DEAL_CHECK_UNKNOWN, nil
-
 		}
 		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner %s for deal %s deal status check: %s",
 			statusCheckID, maddr.String(), provds.Message)
@@ -1661,6 +1661,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			Phase:   "check-status",
 			Message: "deal did not make it on chain in time",
 			Content: d.Content,
+			UserID:  d.UserID,
 		})
 		return DEAL_CHECK_UNKNOWN, nil
 	}
@@ -1704,7 +1705,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, d.DTChan); err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
-
 			return DEAL_CHECK_PROGRESS, nil
 		}
 	}
@@ -1716,6 +1716,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			Phase:   "data-transfer",
 			Message: fmt.Sprintf("transfer failed: %s", status.Message),
 			Content: content.ID,
+			UserID:  d.UserID,
 		})
 
 		// TODO: returning unknown==error here feels excessive
@@ -1729,6 +1730,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			Phase:   "data-transfer",
 			Message: fmt.Sprintf("transfer cancelled: %s", status.Message),
 			Content: content.ID,
+			UserID:  d.UserID,
 		})
 		return DEAL_CHECK_UNKNOWN, nil
 	case datatransfer.Failing:
@@ -1756,6 +1758,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 				Phase:   "data-transfer",
 				Message: fmt.Sprintf("error while checking transfer: %s", err),
 				Content: content.ID,
+				UserID:  d.UserID,
 			})
 			return DEAL_CHECK_UNKNOWN, nil // TODO: returning unknown==error here feels excessive
 		}
@@ -1764,7 +1767,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	default:
 		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", status.Status, status.Message)
 	}
-
 	return DEAL_CHECK_PROGRESS, nil
 }
 
@@ -1786,7 +1788,6 @@ func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (b
 		if time.Since(d.CreatedAt) > time.Hour*24*14 {
 			return true, nil
 		}
-
 		return false, err
 	}
 
@@ -1798,7 +1799,6 @@ func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (b
 	if prop.Proposal.StartEpoch < head.Height() {
 		return true, nil
 	}
-
 	return false, nil
 }
 
@@ -1826,7 +1826,6 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	if !ok {
 		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
 	}
-
 	return tsr.State, nil
 }
 
@@ -1862,7 +1861,6 @@ func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *content
 			return nil, err
 		}
 	}
-
 	return chanst, nil
 }
 
@@ -1922,7 +1920,6 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 	if len(retval.IDs) != len(params.Deals) {
 		return 0, fmt.Errorf("return value from publish deals did not match length of params")
 	}
-
 	return retval.IDs[dealix], nil
 }
 
@@ -1939,8 +1936,10 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 			Phase:   "fault",
 			Message: fmt.Sprintf("miner faulted on deal: %d", d.DealID),
 			Content: d.Content,
+			UserID:  d.UserID,
 		})
 	}
+
 	log.Infow("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
 	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 		"failed":    true,
@@ -1948,7 +1947,6 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 	}).Error; err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -2020,6 +2018,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 					Phase:   "query-ask",
 					Message: err.Error(),
 					Content: content.ID,
+					UserID:  content.UserID,
 				})
 			}
 			log.Warnf("failed to get ask for miner %s: %s\n", m, err)
@@ -2038,6 +2037,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				Phase:   "miner-search",
 				Message: fmt.Sprintf("miners price is too high: %s (verified = %v)", types.FIL(price), verified),
 				Content: content.ID,
+				UserID:  content.UserID,
 			})
 			continue
 		}
@@ -2087,6 +2087,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				Phase:   "send-proposal",
 				Message: err.Error(),
 				Content: content.ID,
+				UserID:  content.UserID,
 			})
 			continue
 		}
@@ -2099,10 +2100,11 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		dealUUID := uuid.New()
 		cd := &contentDeal{
 			Content:  content.ID,
-			PropCid:  util.DbCID{propnd.Cid()},
+			PropCid:  util.DbCID{CID: propnd.Cid()},
 			DealUUID: dealUUID.String(),
 			Miner:    ms[i].String(),
 			Verified: verified,
+			UserID:   content.UserID,
 		}
 
 		if err := cm.DB.Create(cd).Error; err != nil {
@@ -2145,6 +2147,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				Phase:   phase,
 				Message: err.Error(),
 				Content: content.ID,
+				UserID:  content.UserID,
 			})
 			continue
 		}
@@ -2180,7 +2183,6 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 
 	}
-
 	return nil
 }
 
@@ -2200,7 +2202,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	var announceAddr multiaddr.Multiaddr
 	if contentLoc == "local" {
 		if len(cm.Node.Config.AnnounceAddrs) == 0 {
-			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured")
+			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured for estuary node")
 		}
 
 		addrstr := cm.Node.Config.AnnounceAddrs[0] + "/p2p/" + cm.Node.Host.ID().String()
@@ -2276,9 +2278,9 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 				Phase:   "query-ask",
 				Message: err.Error(),
 				Content: content.ID,
+				UserID:  content.UserID,
 			})
 		}
-
 		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
 	}
 
@@ -2307,6 +2309,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 			Phase:   "send-proposal",
 			Message: err.Error(),
 			Content: content.ID,
+			UserID:  content.UserID,
 		})
 		return 0, err
 	}
@@ -2319,10 +2322,11 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	dealUUID := uuid.New()
 	deal := &contentDeal{
 		Content:  content.ID,
-		PropCid:  util.DbCID{propnd.Cid()},
+		PropCid:  util.DbCID{CID: propnd.Cid()},
 		DealUUID: dealUUID.String(),
 		Miner:    miner.String(),
 		Verified: verified,
+		UserID:   content.UserID,
 	}
 
 	if err := cm.DB.Create(deal).Error; err != nil {
@@ -2365,6 +2369,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 			Phase:   phase,
 			Message: err.Error(),
 			Content: content.ID,
+			UserID:  content.UserID,
 		})
 		return 0, err
 	}
@@ -2406,6 +2411,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 			Phase:   "start-data-transfer",
 			Message: err.Error(),
 			Content: cont.ID,
+			UserID:  cont.UserID,
 		}); oerr != nil {
 			return oerr
 		}
@@ -2475,6 +2481,7 @@ type DealFailureError struct {
 	Phase   string
 	Message string
 	Content uint
+	UserID  uint
 }
 
 type dfeRecord struct {
@@ -2484,6 +2491,7 @@ type dfeRecord struct {
 	Message      string `json:"message"`
 	Content      uint   `json:"content" gorm:"index"`
 	MinerVersion string `json:"minerVersion"`
+	UserID       uint   `json:"user_id" gorm:"index"`
 }
 
 func (dfe *DealFailureError) Record() *dfeRecord {
@@ -2492,6 +2500,7 @@ func (dfe *DealFailureError) Record() *dfeRecord {
 		Phase:   dfe.Phase,
 		Message: dfe.Message,
 		Content: dfe.Content,
+		UserID:  dfe.UserID,
 	}
 }
 
@@ -3267,28 +3276,36 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 
 	for i, c := range boxCids {
 		content := &Content{
-			Cid:          util.DbCID{c},
-			Name:         fmt.Sprintf("%s-%d", cont.Name, i),
-			Active:       false,
-			Pinning:      true,
-			UserID:       cont.UserID,
-			Replication:  cont.Replication,
-			Location:     "local",
-			DagSplit:     true,
-			AggregatedIn: cont.ID,
+			Cid:         util.DbCID{CID: c},
+			Name:        fmt.Sprintf("%s-%d", cont.Name, i),
+			Active:      true,
+			Pinning:     true,
+			UserID:      cont.UserID,
+			Replication: cont.Replication,
+			Location:    "local",
+			DagSplit:    true,
+			SplitFrom:   cont.ID,
 		}
 
 		if err := cm.DB.Create(content).Error; err != nil {
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, cm.Node.Blockstore, c, func(int64) {}); err != nil {
+		if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {}); err != nil {
 			return err
 		}
+
+		//queue splited contents
+		go func() {
+			log.Infow("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
+			cm.ToCheck <- content.ID
+		}()
 	}
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"active":    false,
+		"size":      0,
 	}).Error; err != nil {
 		return err
 	}
