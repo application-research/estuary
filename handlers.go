@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/libp2p/go-libp2p-core/network"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -22,6 +20,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/libp2p/go-libp2p-core/network"
 
 	drpc "github.com/application-research/estuary/drpc"
 	esmetrics "github.com/application-research/estuary/metrics"
@@ -200,11 +201,10 @@ func (s *Server) ServeAPI() error {
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/create", withUser(s.handleCreateCollection))
 	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
-	cols.GET("/content/:coluuid", withUser(s.handleGetCollectionContents))
+	cols.GET("/content", withUser(s.handleGetCollectionContents))
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
-	colfs.GET("/list", withUser(s.handleColfsListDir))
 	colfs.POST("/add", withUser(s.handleColfsAdd))
 
 	pinning := e.Group("/pinning")
@@ -3372,7 +3372,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	contents := []Content{}
+	contents := []ContentWithPath{}
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
@@ -3441,30 +3441,121 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 // handleGetCollectionContents godoc
 // @Summary      Get contents in a collection
-// @Description  This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
-// @Param        coluuid     path     string  true     "coluuid"
+// @Description  This endpoint is used to get contents in a collection. If no colpath query param is passed
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Router       /collections/content/{coluuid} [get]
+// @Param        coluuid query string true "Collection UUID"
+// @Param        colpath query string false "Directory"
+// @Router       /collections/content [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	coluuid := c.Param("coluuid")
+	coluuid := c.QueryParam("coluuid")
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return err
 	}
 
-	contents := []Content{}
+	// TODO: optimize this a good deal
+	var refs []ContentWithPath
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*").
-		Scan(&contents).Error; err != nil {
+		Select("contents.*, collection_refs.path as path"). // TODO: change content.name to content.filename
+		Scan(&refs).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(200, contents)
+	dir := c.QueryParam("colpath")
+	if dir == "" {
+		return c.JSON(http.StatusOK, refs)
+	}
+
+	// if colpath is set, do the content listing
+	dir = filepath.Clean(dir)
+
+	dirs := make(map[string]bool)
+	var out []collectionListResponse
+	for _, r := range refs {
+		if r.Path == "" || r.Name == "" {
+			continue
+		}
+
+		path := r.Path
+
+		relp, err := filepath.Rel(dir, path)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
+		}
+
+		// trying to list a CID dir, not allowed
+		if relp == "." && r.Type == util.Directory {
+			return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
+		}
+
+		// if the relative path requires pathing up, its definitely not in this dir
+		if strings.HasPrefix(relp, "..") {
+			continue
+		}
+
+		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
+		if err != nil { // Can't cast to unixfs node, set type as raw
+			out = append(out, collectionListResponse{
+				Name:   filepath.Base(relp),
+				Type:   Raw,
+				Size:   r.Size,
+				ContID: r.ID,
+				Cid:    &r.Cid,
+			})
+			continue
+		}
+
+		// if CID is a dir, set type as dir and mark dir as listed so we don't list it again
+		if r.Type == util.Directory {
+			if !dirs[relp] {
+				dirs[relp] = true
+				out = append(out, collectionListResponse{
+					Name:   relp,
+					Type:   Dir,
+					Size:   r.Size,
+					ContID: r.ID,
+					Cid:    &r.Cid,
+				})
+			}
+			continue
+		}
+
+		// if relative path has a /, the file is in a subdirectory
+		// print the directory the file is in if we haven't already
+		if strings.Contains(relp, "/") {
+			parts := strings.Split(relp, "/")
+			subDir := parts[0]
+			if !dirs[subDir] {
+				dirs[subDir] = true
+				out = append(out, collectionListResponse{
+					Name: parts[0],
+					Type: Dir,
+				})
+				continue
+			}
+		}
+
+		var contentType CidType
+		contentType = File
+		if r.Type == util.Directory {
+			contentType = Dir
+		}
+		out = append(out, collectionListResponse{
+			Name:   r.Name,
+			Type:   contentType,
+			Size:   r.Size,
+			ContID: r.ID,
+			Cid:    &util.DbCID{r.Cid.CID},
+		})
+
+	}
+
+	return c.JSON(http.StatusOK, out)
 }
 
 // handleDeleteCollection godoc
@@ -4952,15 +5043,6 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-type collectionListQueryRes struct {
-	ContID   uint
-	Cid      util.DbCID
-	Size     int64
-	Path     *string
-	Type     util.ContentType
-	Filename *string
-}
-
 type CidType string
 
 const (
@@ -4975,127 +5057,6 @@ type collectionListResponse struct {
 	Size   int64       `json:"size"`
 	ContID uint        `json:"contId"`
 	Cid    *util.DbCID `json:"cid,omitempty"`
-}
-
-// handleColfsListDir godoc
-// @Summary      Create a new collection
-// @Description  This endpoint creates a new collection
-// @Tags         collections
-// @Produce      json
-// @Param        coluuid query string true "Collection ID"
-// @Param        colpath query string true "Directory"
-// @Router       /collections/fs/list [get]
-func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
-	coluuid := c.QueryParam("coluuid")
-	dir := c.QueryParam("colpath")
-
-	var col Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
-		return err
-	}
-
-	if col.UserID != u.ID {
-		return &util.HttpError{
-			Code:    401,
-			Message: util.ERR_NOT_AUTHORIZED,
-		}
-	}
-
-	if dir == "" {
-		dir = "/"
-	}
-
-	dir = filepath.Clean(dir)
-
-	// TODO: optimize this a good deal
-	var refs []collectionListQueryRes
-	if err := s.DB.Model(CollectionRef{}).
-		Joins("left join contents on contents.id = collection_refs.content").
-		Where("collection = ?", col.ID).
-		Select("contents.id as cont_id, contents.cid as cid, contents.name as filename, collection_refs.path, size, contents.type").
-		Scan(&refs).Error; err != nil {
-		return err
-	}
-
-	dirs := make(map[string]bool)
-	out := make([]collectionListResponse, 0)
-	for _, r := range refs {
-		if r.Path == nil || r.Filename == nil {
-			continue
-		}
-
-		path := *r.Path
-
-		relp, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
-
-		// trying to list a CID dir, not allowed
-		if relp == "." && r.Type == util.Directory {
-			return fmt.Errorf("listing CID directories is not allowed")
-		}
-
-		// if the relative path requires pathing up, its definitely not in this dir
-		if strings.HasPrefix(relp, "..") {
-			continue
-		}
-
-		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		if err != nil { // Can't cast to unixfs node, set type as raw
-			out = append(out, collectionListResponse{
-				Name:   filepath.Base(relp),
-				Type:   Raw,
-				Size:   r.Size,
-				ContID: r.ContID,
-				Cid:    &r.Cid,
-			})
-			continue
-		}
-
-		if r.Type == util.Directory { // if CID is a dir
-			if !dirs[relp] {
-				dirs[relp] = true
-				out = append(out, collectionListResponse{
-					Name:   relp,
-					Type:   Dir,
-					Size:   r.Size,
-					ContID: r.ContID,
-					Cid:    &r.Cid,
-				})
-			}
-			continue
-		}
-
-		if !strings.Contains(relp, "/") {
-			var contentType CidType
-			contentType = File
-			if r.Type == util.Directory {
-				contentType = Dir
-			}
-			out = append(out, collectionListResponse{
-				// Name: filepath.Base(relp),
-				Name:   *r.Filename,
-				Type:   contentType,
-				Size:   r.Size,
-				ContID: r.ContID,
-				Cid:    &util.DbCID{r.Cid.CID},
-			})
-			continue
-		}
-
-		parts := strings.Split(relp, "/") // if it is a subcollection
-		if !dirs[parts[0]] {
-			dirs[parts[0]] = true
-			out = append(out, collectionListResponse{
-				Name: parts[0],
-				Type: Dir,
-			})
-			continue
-		}
-	}
-
-	return c.JSON(200, out)
 }
 
 func sanitizePath(p string) (string, error) {
