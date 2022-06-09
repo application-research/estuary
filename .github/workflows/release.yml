@@ -142,6 +142,7 @@ jobs:
         mv ./estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}/* .
         test -f ./estuary && chmod +x ./estuary #only on linux & darwin needed
         zip -j estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip ./*
+        sha256sum estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip > estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip.sha256
     # Download the previously uploaded artifact which contains the release URL
     - name: Retrieve stashed release URL
       uses: actions/download-artifact@v1
@@ -160,6 +161,8 @@ jobs:
       run: |
         echo ::set-output name=ARTIFACT_PATH::./estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip
         echo ::set-output name=ARTIFACT_NAME::estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip
+        echo ::set-output name=ARTIFACT_PATH_SHA::./estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip.sha256
+        echo ::set-output name=ARTIFACT_NAME_SHA::estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.zip.sha256
     # Finally upload the artifact to the corresponding release
     - name: Upload Release Artifact ${{ matrix.version }}
       uses: actions/upload-release-asset@v1.0.1
@@ -169,4 +172,14 @@ jobs:
         upload_url: ${{ steps.get_release_url.outputs.URL }}
         asset_path: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_PATH }}
         asset_name: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_NAME }}
+        asset_content_type: application/gzip
+    
+    - name: Upload Release Artifact Sums ${{ matrix.version }}
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.get_release_url.outputs.URL }}
+        asset_path: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_PATH_SHA }}
+        asset_name: ${{ steps.prepare_artifact_metadata.outputs.ARTIFACT_NAME_SHA }}
         asset_content_type: application/gzip
