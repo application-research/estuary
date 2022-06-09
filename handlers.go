@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/libp2p/go-libp2p-core/network"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -269,6 +271,15 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
+	//	peering
+	adminPeering := admin.Group("/peering")
+	adminPeering.POST("/peers/add", s.handlePeeringPeersAdd)
+	adminPeering.POST("/peers/remove", s.handlePeeringPeersRemove)
+	adminPeering.GET("/peers/list", s.handlePeeringPeersList)
+	adminPeering.GET("/start", s.handlePeeringStart)
+	adminPeering.GET("/stop", s.handlePeeringStop)
+	adminPeering.GET("/status", s.handlePeeringStatus)
+
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
 
@@ -430,6 +441,130 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+// handlePeeringPeersAdd godoc
+// @Summary      Add peers on Peering Service
+// @Description  This endpoint can be used to add a Peer from the Peering Service
+func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
+	var params []peering.PeeringPeer
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	for _, peerParam := range params {
+
+		var multiAddrs []multiaddr.Multiaddr
+		for _, addr := range peerParam.Addrs {
+			a, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				return &util.HttpError{
+					Code:    400,
+					Message: util.ERR_PEERING_PEERS_ADD_ERROR,
+				}
+			}
+			multiAddrs = append(multiAddrs, a)
+		}
+
+		peerParamId, _ := peer.Decode(peerParam.ID)
+		//	add the peer(s)
+		s.Node.Peering.AddPeer(
+			peer.AddrInfo{
+				peerParamId,
+				multiAddrs,
+			})
+	}
+	return c.JSON(200, params)
+}
+
+// handlePeeringPeersRemove godoc
+// @Summary      Remove peers on Peering Service
+// @Description  This endpoint can be used to remove a Peer from the Peering Service
+func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
+	var params []peer.ID
+
+	type PeeringPeerRemoveMessage struct {
+		Message     string    `json: Message`
+		PeersRemove []peer.ID `json: Peers`
+	}
+
+	if err := c.Bind(&params); err != nil {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+		}
+	}
+
+	for _, peerId := range params {
+		s.Node.Peering.RemovePeer(peerId)
+	}
+
+	return c.JSON(200, PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+}
+
+// handlePeeringPeersList godoc
+// @Summary      List all Peering peers
+// @Description  This endpoint can be used to list all peers on Peering Service
+func (s *Server) handlePeeringPeersList(c echo.Context) error {
+	var connectionCheck []peering.PeeringPeer
+	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
+
+		var peerAddrInfoAddrsStr []string
+		for _, addrInfo := range peerAddrInfo.Addrs {
+			peerAddrInfoAddrsStr = append(peerAddrInfoAddrsStr, addrInfo.String())
+		}
+		connectionCheck = append(connectionCheck, peering.PeeringPeer{
+			ID:        peerAddrInfo.ID.Pretty(),
+			Addrs:     peerAddrInfoAddrsStr,
+			Connected: (s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected),
+		})
+	}
+	return c.JSON(200, connectionCheck)
+}
+
+// handlePeeringStart godoc
+// @Summary      Start Peering
+// @Description  This endpoint can be used to start the Peering Service
+func (s *Server) handlePeeringStart(c echo.Context) error {
+	type GenericResponse struct {
+		Message string `json: "Message"`
+	}
+	err := s.Node.Peering.Start()
+	if err != nil {
+		fmt.Println(err)
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_START_ERROR,
+		}
+	}
+	return c.JSON(200, GenericResponse{Message: "Peering Started."})
+}
+
+// handlePeeringStop godoc
+// @Summary      Stop Peering
+// @Description  This endpoint can be used to stop the Peering Service
+func (s *Server) handlePeeringStop(c echo.Context) error {
+	type GenericResponse struct {
+		Message string `json: "Message"`
+	}
+	err := s.Node.Peering.Stop()
+	if err != nil {
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
+		}
+	}
+	return c.JSON(200, GenericResponse{Message: "Peering Stopped."})
+}
+
+// handlePeeringStatus godoc
+// @Summary      Check Peering Status
+// @Description  This endpoint can be used to check the Peering status
+func (s *Server) handlePeeringStatus(c echo.Context) error {
+	type StateResponse struct {
+		State string `json: "State"`
+	}
+	return c.JSON(200, StateResponse{State: s.Node.Peering.State()})
 }
 
 // handleAddIpfs godoc

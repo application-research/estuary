@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"github.com/application-research/estuary/node/modules/peering"
 	"path/filepath"
 )
 
@@ -98,6 +99,7 @@ func NewShuttle(appVersion string) *Shuttle {
 				"/ip4/0.0.0.0/tcp/6745",
 				"/ip4/0.0.0.0/udp/6746/quic",
 			},
+			PeeringPeers:              []peering.PeeringPeer{},
 			EnableWebsocketListenAddr: false,
 
 			WriteLogDir:       "",

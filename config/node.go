@@ -1,11 +1,16 @@
 package config
 
-import rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+import (
+	"encoding/json"
+	"github.com/application-research/estuary/node/modules/peering"
+	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+)
 
 type Node struct {
-	ListenAddrs               []string `json:"listen_addrs"`
-	AnnounceAddrs             []string `json:"announce_addrs"`
-	EnableWebsocketListenAddr bool     `json:"enable_websocket_listen_addr"`
+	ListenAddrs               []string              `json:"listen_addrs"`
+	AnnounceAddrs             []string              `json:"announce_addrs"`
+	PeeringPeers              []peering.PeeringPeer `json:"peering_peers"`
+	EnableWebsocketListenAddr bool                  `json:"enable_websocket_listen_addr"`
 
 	Blockstore string `json:"blockstore"`
 
@@ -25,6 +30,11 @@ type Node struct {
 	Bitswap           Bitswap           `json:"bitswap"`
 	Limits            Limits            `json:"limits"`
 	ConnectionManager ConnectionManager `json:"connection_manager"`
+}
+
+func (cfg *Node) GetPeeringPeersStr() string {
+	out, _ := json.Marshal(cfg.PeeringPeers)
+	return string(out)
 }
 
 func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {

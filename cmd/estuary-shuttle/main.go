@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/application-research/estuary/node/modules/peering"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -109,6 +110,18 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.Node.EnableWebsocketListenAddr = cctx.Bool("libp2p-websockets")
 		case "announce-addr":
 			cfg.Node.AnnounceAddrs = cctx.StringSlice("announce-addr")
+		case "peering-peers":
+			//	The peer is an array of multiaddress so we need to allow
+			//	the user to specify ID and Addrs
+			var peers []peering.PeeringPeer
+			peeringPeersStr := cctx.String("peering-peers")
+
+			err := json.Unmarshal([]byte(peeringPeersStr), &peers)
+			if err != nil {
+				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
+			}
+			cfg.Node.PeeringPeers = peers
+
 		case "host":
 			cfg.Hostname = cctx.String("host")
 		case "disable-local-content-adding":
@@ -273,9 +286,14 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
-			Usage: "specify multiaddrs that this node can be connected to on",
+			Name: "announce-addr",
+			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
+		},
+		&cli.StringFlag{
+			Name:  "peering-peers",
+			Usage: "specify peering peers that this node can be connected to",
+			Value: cfg.Node.GetPeeringPeersStr(),
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",

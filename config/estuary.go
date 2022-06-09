@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/application-research/estuary/node/modules/peering"
 	"path/filepath"
 
 	"github.com/application-research/estuary/build"
@@ -90,6 +91,7 @@ func NewEstuary(appVersion string) *Estuary {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
+			PeeringPeers:      []peering.PeeringPeer{},
 			WriteLogDir:       "",
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
