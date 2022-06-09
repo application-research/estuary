@@ -110,6 +110,15 @@ info:
   title: Estuary API
   version: 0.0.0
 paths:
+  /admin/system/config:
+    get:
+      description: This endpoint is used to get system configs.
+      produces:
+        - application/json
+      responses: {}
+      summary: Get systems(estuary/shuttle) config
+      tags:
+        - admin
   /admin/users:
     get:
       description: This endpoint is used to get all users.
@@ -314,6 +323,14 @@ paths:
           name: file
           required: true
           type: file
+        - description: Collection UUID
+          in: path
+          name: coluuid
+          type: string
+        - description: Collection path
+          in: path
+          name: colpath
+          type: string
       produces:
         - application/json
       responses: {}

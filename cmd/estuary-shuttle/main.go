@@ -1100,8 +1100,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:   c.FormValue("coluuid"),
-		CollectionPath: c.FormValue("colpath"),
+		CollectionID:   c.QueryParam("coluuid"),
+		CollectionPath: c.QueryParam("colpath"),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1373,6 +1373,7 @@ func (s *Shuttle) addrsForShuttle() []string {
 }
 
 func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
+	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, fname, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,

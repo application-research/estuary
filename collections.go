@@ -17,7 +17,7 @@ type Collection struct {
 type CollectionRef struct {
 	ID         uint `gorm:"primaryKey"`
 	CreatedAt  time.Time
-	Collection uint `gorm:"index:,option:CONCURRENTLY"`
-	Content    uint `gorm:"index:,option:CONCURRENTLY"`
-	Path       *string
+	Collection uint    `gorm:"index:,option:CONCURRENTLY; not null"`
+	Content    uint    `gorm:"index:,option:CONCURRENTLY;not null"`
+	Path       *string `gorm:"not null"`
 }

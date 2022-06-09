@@ -24,6 +24,19 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/system/config": {
+            "get": {
+                "description": "This endpoint is used to get system configs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get systems(estuary/shuttle) config",
+                "responses": {}
+            }
+        },
         "/admin/users": {
             "get": {
                 "description": "This endpoint is used to get all users.",
@@ -333,6 +346,18 @@ const docTemplate = `{
                         "name": "file",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection path",
+                        "name": "colpath",
+                        "in": "path"
                     }
                 ],
                 "responses": {}
