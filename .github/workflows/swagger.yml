@@ -1,7 +1,6 @@
 name: Swagger docs
 
 on:
-  push:
   pull_request:
     branches: [ "master" ]
 
