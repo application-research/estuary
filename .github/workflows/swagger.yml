@@ -1,0 +1,22 @@
+name: Swagger docs
+
+on: push
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Build
+      run: make generate-swagger 
+
+    - name: Check for new files
+      run: echo "NEW_FILES=$(git diff | cat | wc -m)" >> $GITHUB_ENV
+
+    - name: Add docs
+      uses: maxgfr/github-commit-push-file@main
+      with:
+        commit_name: 'docs: update swagger docs'
+      if: env.NEW_FILES != 0

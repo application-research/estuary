@@ -24,6 +24,19 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/system/config": {
+            "get": {
+                "description": "This endpoint is used to get system configs.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get systems(estuary/shuttle) config",
+                "responses": {}
+            }
+        },
         "/admin/users": {
             "get": {
                 "description": "This endpoint is used to get all users.",
@@ -941,15 +954,38 @@ const docTemplate = `{
         },
         "/deals/failures": {
             "get": {
-                "description": "This endpoint returns a list of storage failures",
+                "description": "This endpoint returns a list of storage failures for user",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "deals"
                 ],
-                "summary": "Get storage failures",
+                "summary": "Get storage failures for user",
                 "responses": {}
+            }
+        },
+        "/net/addrs": {
+            "get": {
+                "description": "This endpoint is used to get net addrs",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "net"
+                ],
+                "summary": "Net Addrs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
             }
         },
         "/pinning/pins": {
@@ -1094,6 +1130,19 @@ const docTemplate = `{
                         "required": true
                     }
                 ],
+                "responses": {}
+            }
+        },
+        "/public/deals/failures": {
+            "get": {
+                "description": "This endpoint returns a list of storage failures",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Get storage failures",
                 "responses": {}
             }
         },
