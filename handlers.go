@@ -644,6 +644,8 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param        file formData file true "File to upload"
+// @Param        coluuid path string false "Collection UUID"
+// @Param        colpath path string false "Collection path"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -709,7 +711,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	coluuid := c.FormValue("coluuid")
+	coluuid := c.QueryParam("coluuid")
 	var col *Collection
 	if coluuid != "" {
 		var srchCol Collection
@@ -720,8 +722,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		col = &srchCol
 	}
 
-	var path *string
-	if cp := c.FormValue("colpath"); cp != "" {
+	defaultPath := "/"
+	path := &defaultPath
+	if cp := c.QueryParam("colpath"); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
@@ -4315,15 +4318,16 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	if req.CollectionID != "" {
-		var path *string
-		if req.CollectionPath != "" {
-			sp, err := sanitizePath(req.CollectionPath)
-			if err != nil {
-				return err
-			}
-
-			path = &sp
+		if req.CollectionPath == "" {
+			req.CollectionPath = "/"
 		}
+
+		sp, err := sanitizePath(req.CollectionPath)
+		if err != nil {
+			return err
+		}
+
+		path := &sp
 
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
@@ -4846,7 +4850,7 @@ func (s *Server) handleColfsListDir(c echo.Context, u *User) error {
 	}
 
 	dirs := make(map[string]bool)
-	var out []collectionListResponse
+	out := make([]collectionListResponse, 0)
 	for _, r := range refs {
 		if r.Path == nil || r.Filename == nil {
 			continue

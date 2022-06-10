@@ -323,6 +323,14 @@ paths:
           name: file
           required: true
           type: file
+        - description: Collection UUID
+          in: path
+          name: coluuid
+          type: string
+        - description: Collection path
+          in: path
+          name: colpath
+          type: string
       produces:
         - application/json
       responses: {}

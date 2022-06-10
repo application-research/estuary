@@ -346,6 +346,18 @@ const docTemplate = `{
                         "name": "file",
                         "in": "formData",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection path",
+                        "name": "colpath",
+                        "in": "path"
                     }
                 ],
                 "responses": {}
