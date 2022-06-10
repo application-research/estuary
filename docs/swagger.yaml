@@ -128,6 +128,19 @@ paths:
       summary: Get all users
       tags:
         - admin
+  /collections/{coluuid}:
+    delete:
+      description: This endpoint is used to delete an existing collection.
+      parameters:
+        - description: Collection ID
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      responses: {}
+      summary: Deletes a collection
+      tags:
+        - collections
   /collections/{coluuid}/commit:
     post:
       description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
@@ -148,18 +161,6 @@ paths:
       tags:
         - collections
   /collections/add-content:
-    delete:
-      description: This endpoint is used to delete an existing collection.
-      parameters:
-        - description: Collection ID
-          in: path
-          name: coluuid
-          required: true
-          type: string
-      responses: {}
-      summary: Deletes a collection
-      tags:
-        - collections
     post:
       consumes:
         - application/json
@@ -769,7 +770,7 @@ paths:
         - net
   /pinning/pins:
     get:
-      description: This endpoint lists all pinned objects
+      description: This endpoint lists all pin status objects
       produces:
         - application/json
       responses:
@@ -785,7 +786,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: List all pinned objects
+      summary: List all pin status objects
       tags:
         - pinning
     post:
@@ -807,28 +808,13 @@ paths:
       summary: Add and pin object
       tags:
         - pinning
-  /pinning/pins/{id}:
-    post:
-      description: This endpoint replaces a pinned object.
-      parameters:
-        - description: id
-          in: path
-          name: id
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses: {}
-      summary: Replace a pinned object
-      tags:
-        - pinning
-  /pinning/pins/{requestid}:
+  /pinning/pins/{pinid}:
     delete:
       description: This endpoint deletes a pinned object.
       parameters:
-        - description: requestid
+        - description: Pin ID
           in: path
-          name: requestid
+          name: pinid
           required: true
           type: string
       produces:
@@ -838,17 +824,31 @@ paths:
       tags:
         - pinning
     get:
-      description: This endpoint returns a pinned object.
+      description: This endpoint returns a pin status object.
       parameters:
         - description: cid
           in: path
-          name: requestid
+          name: pinid
           required: true
           type: string
       produces:
         - application/json
       responses: {}
-      summary: Get a pinned objects
+      summary: Get a pin status object
+      tags:
+        - pinning
+    post:
+      description: This endpoint replaces a pinned object.
+      parameters:
+        - description: Pin ID
+          in: path
+          name: pinid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Replace a pinned object
       tags:
         - pinning
   /public/by-cid/{cid}:

@@ -78,23 +78,6 @@
             }
           }
         }
-      },
-      "delete": {
-        "description": "This endpoint is used to delete an existing collection.",
-        "tags": [
-          "collections"
-        ],
-        "summary": "Deletes a collection",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Collection ID",
-            "name": "coluuid",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {}
       }
     },
     "/collections/content/{coluuid}": {
@@ -288,6 +271,25 @@
             }
           }
         }
+      }
+    },
+    "/collections/{coluuid}": {
+      "delete": {
+        "description": "This endpoint is used to delete an existing collection.",
+        "tags": [
+          "collections"
+        ],
+        "summary": "Deletes a collection",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Collection ID",
+            "name": "coluuid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
       }
     },
     "/collections/{coluuid}/commit": {
@@ -995,14 +997,14 @@
     },
     "/pinning/pins": {
       "get": {
-        "description": "This endpoint lists all pinned objects",
+        "description": "This endpoint lists all pin status objects",
         "produces": [
           "application/json"
         ],
         "tags": [
           "pinning"
         ],
-        "summary": "List all pinned objects",
+        "summary": "List all pin status objects",
         "responses": {
           "400": {
             "description": "Bad Request",
@@ -1052,7 +1054,27 @@
         "responses": {}
       }
     },
-    "/pinning/pins/{id}": {
+    "/pinning/pins/{pinid}": {
+      "get": {
+        "description": "This endpoint returns a pin status object.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "pinning"
+        ],
+        "summary": "Get a pin status object",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "cid",
+            "name": "pinid",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {}
+      },
       "post": {
         "description": "This endpoint replaces a pinned object.",
         "produces": [
@@ -1065,30 +1087,8 @@
         "parameters": [
           {
             "type": "string",
-            "description": "id",
-            "name": "id",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {}
-      }
-    },
-    "/pinning/pins/{requestid}": {
-      "get": {
-        "description": "This endpoint returns a pinned object.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "pinning"
-        ],
-        "summary": "Get a pinned objects",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "cid",
-            "name": "requestid",
+            "description": "Pin ID",
+            "name": "pinid",
             "in": "path",
             "required": true
           }
@@ -1107,8 +1107,8 @@
         "parameters": [
           {
             "type": "string",
-            "description": "requestid",
-            "name": "requestid",
+            "description": "Pin ID",
+            "name": "pinid",
             "in": "path",
             "required": true
           }
