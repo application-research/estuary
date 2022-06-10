@@ -110,6 +110,15 @@ info:
   title: Estuary API
   version: 0.0.0
 paths:
+  /admin/system/config:
+    get:
+      description: This endpoint is used to get system configs.
+      produces:
+        - application/json
+      responses: {}
+      summary: Get systems(estuary/shuttle) config
+      tags:
+        - admin
   /admin/users:
     get:
       description: This endpoint is used to get all users.
@@ -728,13 +737,28 @@ paths:
         - deals
   /deals/failures:
     get:
-      description: This endpoint returns a list of storage failures
+      description: This endpoint returns a list of storage failures for user
       produces:
         - application/json
       responses: {}
-      summary: Get storage failures
+      summary: Get storage failures for user
       tags:
         - deals
+  /net/addrs:
+    get:
+      description: This endpoint is used to get net addrs
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              type: string
+            type: array
+      summary: Net Addrs
+      tags:
+        - net
   /pinning/pins:
     get:
       description: This endpoint lists all pinned objects
@@ -834,6 +858,15 @@ paths:
       summary: Get Content by Cid
       tags:
         - public
+  /public/deals/failures:
+    get:
+      description: This endpoint returns a list of storage failures
+      produces:
+        - application/json
+      responses: {}
+      summary: Get storage failures
+      tags:
+        - deals
   /public/info:
     get:
       description: This endpoint returns information about the node
