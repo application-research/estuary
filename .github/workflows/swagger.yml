@@ -17,4 +17,4 @@ jobs:
     - name: Add docs
       uses: actions-go/push@master
       with:
-        commit_name: 'docs: update swagger docs'
+        commit-message: 'docs: update swagger docs'
