@@ -467,10 +467,9 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 			a, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
 				log.Errorf("handlePeeringPeersAdd error: %s", err)
-				return &util.HttpError{
-					Code:    400,
-					Message: util.ERR_PEERING_PEERS_ADD_ERROR,
-				}
+				return c.JSON(http.StatusBadRequest,
+					util.PeeringPeerAddMessage{
+						"Adding Peer(s) on Peering failed, the addr is invalid" + addr, params})
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
