@@ -18,26 +18,32 @@ type EstuaryPeeringService struct {
 
 type EstuaryPeeringNotifee peering.PeeringService
 
+//	NewEstuaryPeeringService Construct a new Estuary Peering Service
 func NewEstuaryPeeringService(host host.Host) *EstuaryPeeringService {
 	return &EstuaryPeeringService{peering.NewPeeringService(host)}
 }
 
+// Start this function starts the EstuaryPeeringService
 func (ps *EstuaryPeeringService) Start() error {
-	return ps.Start()
+	return ps.PeeringService.Start()
 }
 
+// Stop this function stop the EstuaryPeeringService
 func (ps *EstuaryPeeringService) Stop() error {
-	return ps.Stop()
+	return ps.PeeringService.Stop()
 }
 
+// ListPeers this function lists all peers on the current EstuaryPeeringService
 func (ps *EstuaryPeeringService) ListPeers() []peer.AddrInfo {
-	return ps.ListPeers()
+	return ps.PeeringService.ListPeers()
 }
 
+// AddPeer this function adds a peer on the current EstuaryPeeringService
 func (ps *EstuaryPeeringService) AddPeer(info peer.AddrInfo) {
-	ps.AddPeer(info)
+	ps.PeeringService.AddPeer(info)
 }
 
+// RemovePeer this function removes a peer on the current EstuaryPeeringService
 func (ps *EstuaryPeeringService) RemovePeer(peerId peer.ID) {
-	ps.RemovePeer(peerId)
+	ps.PeeringService.RemovePeer(peerId)
 }

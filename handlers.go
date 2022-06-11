@@ -278,9 +278,9 @@ func (s *Server) ServeAPI() error {
 
 	//	peering
 	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers/add", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers/remove", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers/list", s.handlePeeringPeersList)
+	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
+	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
+	adminPeering.GET("/peers", s.handlePeeringPeersList)
 	adminPeering.POST("/start", s.handlePeeringStart)
 	adminPeering.POST("/stop", s.handlePeeringStop)
 	adminPeering.GET("/status", s.handlePeeringStatus)
@@ -453,7 +453,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 // @Description  This endpoint can be used to add a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
-// @Router       /admin/peering/peers/add [post]
+// @Router       /admin/peering/peers [post]
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
@@ -491,7 +491,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
-// @Router       /admin/peering/peers/remove [delete]
+// @Router       /admin/peering/peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
@@ -515,7 +515,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // @Description  This endpoint can be used to list all peers on Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
-// @Router       /admin/peering/list [get]
+// @Router       /admin/peering/peers [get]
 func (s *Server) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
 	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
