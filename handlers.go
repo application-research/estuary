@@ -451,6 +451,9 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/peers/add [post]
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
@@ -463,6 +466,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		for _, addr := range peerParam.Addrs {
 			a, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
+				log.Errorf("handlePeeringPeersAdd error: %s", err)
 				return &util.HttpError{
 					Code:    400,
 					Message: util.ERR_PEERING_PEERS_ADD_ERROR,
@@ -479,21 +483,20 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 				multiAddrs,
 			})
 	}
-	return c.JSON(http.StatusOK, params)
+	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{"Added the following Peers on Peering", params})
 }
 
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/peers/remove [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
-	type PeeringPeerRemoveMessage struct {
-		Message     string    `json: Message`
-		PeersRemove []peer.ID `json: Peers`
-	}
-
 	if err := c.Bind(&params); err != nil {
+		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
@@ -504,12 +507,15 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 		s.Node.Peering.RemovePeer(peerId)
 	}
 
-	return c.JSON(http.StatusOK, PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
 }
 
 // handlePeeringPeersList godoc
 // @Summary      List all Peering peers
 // @Description  This endpoint can be used to list all peers on Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/list [get]
 func (s *Server) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
 	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
@@ -530,6 +536,9 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/start [post]
 func (s *Server) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
 	if err != nil {
@@ -545,6 +554,9 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/stop [post]
 func (s *Server) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
 	if err != nil {
@@ -560,6 +572,9 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // handlePeeringStatus godoc
 // @Summary      Check Peering Status
 // @Description  This endpoint can be used to check the Peering status
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/status [get]
 func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
 		State string `json: "State"`

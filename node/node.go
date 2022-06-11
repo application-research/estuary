@@ -194,7 +194,6 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		peerServ.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
 	}
 
-	//	We only want to start if there are peering_peers configured
 	errOnPeerStar := peerServ.Start()
 	if errOnPeerStar != nil {
 		log.Warn(errOnPeerStar)
