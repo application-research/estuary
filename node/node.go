@@ -177,10 +177,9 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	h, err := libp2p.New(opts...)
 
 	//	peering service
-	hPeer := peering.NewEstuaryPeeringService(h)
+	peerServ := peering.NewEstuaryPeeringService(h)
 
-	peeringPeerList := cfg.PeeringPeers
-	peeringPeerList = append(peeringPeerList, bootStrapPeeringPeers...)
+	peeringPeerList := append(cfg.PeeringPeers, bootStrapPeeringPeers...)
 
 	//	add the peers
 	for _, addrInfo := range peeringPeerList {
@@ -192,11 +191,14 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse peering peers multi addr ID: %w", err)
 		}
-		hPeer.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
+		peerServ.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
 	}
 
 	//	We only want to start if there are peering_peers configured
-	hPeer.Start()
+	errOnPeerStar := peerServ.Start()
+	if errOnPeerStar != nil {
+		log.Warn(errOnPeerStar)
+	}
 
 	if err != nil {
 		return nil, err
@@ -300,7 +302,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		Bwc:        bwc,
 		Config:     cfg,
 		StorageDir: stordir,
-		Peering:    hPeer,
+		Peering:    peerServ,
 	}, nil
 }
 
@@ -315,7 +317,10 @@ func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
 func toMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
 	var multiAddrs []multiaddr.Multiaddr
 	for _, addr := range addrs {
-		a, _ := toMultiAddress(addr)
+		a, err := toMultiAddress(addr)
+		if err != nil {
+			log.Errorf("toMultiAddresses failed: %s", err)
+		}
 		multiAddrs = append(multiAddrs, a)
 	}
 	return multiAddrs, nil

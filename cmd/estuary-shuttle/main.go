@@ -291,9 +291,10 @@ func main() {
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 		&cli.StringFlag{
-			Name:  "peering-peers",
-			Usage: "specify peering peers that this node can be connected to",
-			Value: cfg.Node.GetPeeringPeersStr(),
+			Name:    "peering-peers",
+			Usage:   "specify peering peers that this node can be connected to",
+			Value:   cfg.Node.GetPeeringPeersStr(),
+			EnvVars: []string{"PEERING_PEERS"},
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",

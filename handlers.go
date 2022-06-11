@@ -72,6 +72,11 @@ import (
 	_ "github.com/application-research/estuary/docs"
 )
 
+//	generic response models
+type GenericResponse struct {
+	Message string `json: "Message"`
+}
+
 // @title Estuary API
 // @version 0.0.0
 // @description This is the API for the Estuary application.
@@ -274,10 +279,10 @@ func (s *Server) ServeAPI() error {
 	//	peering
 	adminPeering := admin.Group("/peering")
 	adminPeering.POST("/peers/add", s.handlePeeringPeersAdd)
-	adminPeering.POST("/peers/remove", s.handlePeeringPeersRemove)
+	adminPeering.DELETE("/peers/remove", s.handlePeeringPeersRemove)
 	adminPeering.GET("/peers/list", s.handlePeeringPeersList)
-	adminPeering.GET("/start", s.handlePeeringStart)
-	adminPeering.GET("/stop", s.handlePeeringStop)
+	adminPeering.POST("/start", s.handlePeeringStart)
+	adminPeering.POST("/stop", s.handlePeeringStop)
 	adminPeering.GET("/status", s.handlePeeringStatus)
 
 	admnetw := admin.Group("/net")
@@ -474,7 +479,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 				multiAddrs,
 			})
 	}
-	return c.JSON(200, params)
+	return c.JSON(http.StatusOK, params)
 }
 
 // handlePeeringPeersRemove godoc
@@ -499,7 +504,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 		s.Node.Peering.RemovePeer(peerId)
 	}
 
-	return c.JSON(200, PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+	return c.JSON(http.StatusOK, PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
 }
 
 // handlePeeringPeersList godoc
@@ -519,42 +524,37 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 			Connected: (s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected),
 		})
 	}
-	return c.JSON(200, connectionCheck)
+	return c.JSON(http.StatusOK, connectionCheck)
 }
 
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
 func (s *Server) handlePeeringStart(c echo.Context) error {
-	type GenericResponse struct {
-		Message string `json: "Message"`
-	}
 	err := s.Node.Peering.Start()
 	if err != nil {
-		fmt.Println(err)
+		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_PEERING_PEERS_START_ERROR,
 		}
 	}
-	return c.JSON(200, GenericResponse{Message: "Peering Started."})
+	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Started."})
 }
 
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
 func (s *Server) handlePeeringStop(c echo.Context) error {
-	type GenericResponse struct {
-		Message string `json: "Message"`
-	}
 	err := s.Node.Peering.Stop()
 	if err != nil {
+		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
 			Code:    400,
 			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
 		}
 	}
-	return c.JSON(200, GenericResponse{Message: "Peering Stopped."})
+	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Stopped."})
 }
 
 // handlePeeringStatus godoc
