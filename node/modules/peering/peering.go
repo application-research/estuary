@@ -6,12 +6,14 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
+// A struct that is used to store the information of a peer.
 type PeeringPeer struct {
 	ID        string   `json:"ID"`
 	Addrs     []string `json:"Addrs"`
 	Connected bool     `json:"Connected,omitempty"`
 }
 
+// A wrapper for the `PeeringService` struct.
 type EstuaryPeeringService struct {
 	*peering.PeeringService
 }

@@ -307,6 +307,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	}, nil
 }
 
+// Converting the public key to a multiaddress.
 func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
 	a, err := multiaddr.NewMultiaddr(addr)
 	if err != nil {
@@ -315,6 +316,7 @@ func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
 	return a, nil
 }
 
+// It takes a slice of strings and returns a slice of multiaddresses
 func toMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
 	var multiAddrs []multiaddr.Multiaddr
 	for _, addr := range addrs {
