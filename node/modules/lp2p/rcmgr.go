@@ -168,5 +168,3 @@ func (r rcmgrMetrics) AllowMemory(size int) {
 func (r rcmgrMetrics) BlockMemory(size int) {
 	r.Mem(size, "block")
 }
-
-var _ rcmgr.MetricsReporter = (*rcmgrMetrics)(nil)
