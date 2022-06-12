@@ -16,8 +16,6 @@ type EstuaryPeeringService struct {
 	*peering.PeeringService
 }
 
-type EstuaryPeeringNotifee peering.PeeringService
-
 //	NewEstuaryPeeringService Construct a new Estuary Peering Service
 func NewEstuaryPeeringService(host host.Host) *EstuaryPeeringService {
 	return &EstuaryPeeringService{peering.NewPeeringService(host)}
