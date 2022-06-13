@@ -17,6 +17,92 @@
   "host": "api.estuary.tech",
   "basePath": "/",
   "paths": {
+    "/admin/peering/peers": {
+      "get": {
+        "description": "This endpoint can be used to list all peers on Peering Service",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "List all Peering peers",
+        "responses": {}
+      },
+      "post": {
+        "description": "This endpoint can be used to add a Peer from the Peering Service",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "Add peers on Peering Service",
+        "responses": {}
+      },
+      "delete": {
+        "description": "This endpoint can be used to remove a Peer from the Peering Service",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "Remove peers on Peering Service",
+        "responses": {}
+      }
+    },
+    "/admin/peering/start": {
+      "post": {
+        "description": "This endpoint can be used to start the Peering Service",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "Start Peering",
+        "responses": {}
+      }
+    },
+    "/admin/peering/status": {
+      "get": {
+        "description": "This endpoint can be used to check the Peering status",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "Check Peering Status",
+        "responses": {}
+      }
+    },
+    "/admin/peering/stop": {
+      "post": {
+        "description": "This endpoint can be used to stop the Peering Service",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "admin",
+          "peering",
+          "peers"
+        ],
+        "summary": "Stop Peering",
+        "responses": {}
+      }
+    },
     "/admin/system/config": {
       "get": {
         "description": "This endpoint is used to get system configs.",

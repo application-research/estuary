@@ -110,6 +110,70 @@ info:
   title: Estuary API
   version: 0.0.0
 paths:
+  /admin/peering/peers:
+    delete:
+      description: This endpoint can be used to remove a Peer from the Peering Service
+      produces:
+        - application/json
+      responses: {}
+      summary: Remove peers on Peering Service
+      tags:
+        - admin
+        - peering
+        - peers
+    get:
+      description: This endpoint can be used to list all peers on Peering Service
+      produces:
+        - application/json
+      responses: {}
+      summary: List all Peering peers
+      tags:
+        - admin
+        - peering
+        - peers
+    post:
+      description: This endpoint can be used to add a Peer from the Peering Service
+      produces:
+        - application/json
+      responses: {}
+      summary: Add peers on Peering Service
+      tags:
+        - admin
+        - peering
+        - peers
+  /admin/peering/start:
+    post:
+      description: This endpoint can be used to start the Peering Service
+      produces:
+        - application/json
+      responses: {}
+      summary: Start Peering
+      tags:
+        - admin
+        - peering
+        - peers
+  /admin/peering/status:
+    get:
+      description: This endpoint can be used to check the Peering status
+      produces:
+        - application/json
+      responses: {}
+      summary: Check Peering Status
+      tags:
+        - admin
+        - peering
+        - peers
+  /admin/peering/stop:
+    post:
+      description: This endpoint can be used to stop the Peering Service
+      produces:
+        - application/json
+      responses: {}
+      summary: Stop Peering
+      tags:
+        - admin
+        - peering
+        - peers
   /admin/system/config:
     get:
       description: This endpoint is used to get system configs.
