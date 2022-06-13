@@ -460,8 +460,21 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		return err
 	}
 
+	//	validate the IDs and Addrs here
+	var validPeersAddInfo []peer.AddrInfo
 	for _, peerParam := range params {
 
+		//	validate the PeerID
+		peerParamId, err := peer.Decode(peerParam.ID)
+
+		if err != nil {
+			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
+			return c.JSON(http.StatusBadRequest,
+				util.PeeringPeerAddMessage{
+					"Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID, params})
+		}
+
+		//	validate the Addrs for each PeerID
 		var multiAddrs []multiaddr.Multiaddr
 		for _, addr := range peerParam.Addrs {
 			a, err := multiaddr.NewMultiaddr(addr)
@@ -474,22 +487,20 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 			multiAddrs = append(multiAddrs, a)
 		}
 
-		peerParamId, err := peer.Decode(peerParam.ID)
-
-		if err != nil {
-			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
-			return c.JSON(http.StatusBadRequest,
-				util.PeeringPeerAddMessage{
-					"Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID, params})
-		}
-
-		//	add the peer(s)
-		s.Node.Peering.AddPeer(
+		//	Only add it here if all is valid.
+		validPeersAddInfo = append(validPeersAddInfo,
 			peer.AddrInfo{
 				peerParamId,
 				multiAddrs,
 			})
 	}
+
+	//	if no error return from the validation, go thru the validPeers here and add each of them
+	//	to Peering.
+	for _, validPeerAddInfo := range validPeersAddInfo {
+		s.Node.Peering.AddPeer(validPeerAddInfo)
+	}
+
 	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{"Added the following Peers on Peering", params})
 }
 
