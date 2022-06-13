@@ -4,11 +4,13 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
+	peering "github.com/application-research/estuary/node/modules/peering"
 	"io/ioutil"
 	"os"
 	"strings"
 
 	"github.com/application-research/estuary/config"
+
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
 	migratebs "github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
@@ -52,6 +54,11 @@ var bootstrappers = []string{
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
 	"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+}
+
+var bootStrapPeeringPeers = []peering.PeeringPeer{
+	{ID: "12D3KooWEGeZ19Q79NdzS6CJBoCwFZwujqi5hoK8BtRcLa48fJdu", Addrs: []string{"/ip4/145.40.96.233/tcp/4001"}},
+	{ID: "12D3KooWBnmsaeNRP6SCdNbhzaNHihQQBPDhmDvjVGsR1EbswncV", Addrs: []string{"/ip4/18.1.1.2/tcp/4001", "/ip4/147.75.87.85/tcp/4001"}},
 }
 
 var BootstrapPeers []peer.AddrInfo
@@ -108,9 +115,9 @@ type Node struct {
 
 	Wallet *wallet.LocalWallet
 
-	Bwc *metrics.BandwidthCounter
-
-	Config *config.Node
+	Bwc     *metrics.BandwidthCounter
+	Peering *peering.EstuaryPeeringService
+	Config  *config.Node
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
@@ -168,6 +175,32 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	}
 
 	h, err := libp2p.New(opts...)
+
+	//	peering service
+	peerServ := peering.NewEstuaryPeeringService(h)
+
+	peeringPeerList := append(cfg.PeeringPeers, bootStrapPeeringPeers...)
+
+	//	add the peers
+	for _, addrInfo := range peeringPeerList {
+		addrs, err := toMultiAddresses(addrInfo.Addrs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse peering peers multi addr: %w", err)
+		}
+		addrInfoId, err := peer.Decode(addrInfo.ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse peering peers multi addr ID: %w", err)
+		}
+		fmt.Println("add")
+		fmt.Println(peerServ)
+		peerServ.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
+	}
+
+	errOnPeerStar := peerServ.Start()
+	if errOnPeerStar != nil {
+		log.Warn(errOnPeerStar)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +303,30 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		Bwc:        bwc,
 		Config:     cfg,
 		StorageDir: stordir,
+		Peering:    peerServ,
 	}, nil
+}
+
+// Converting the public key to a multiaddress.
+func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
+	a, err := multiaddr.NewMultiaddr(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse string multi addr: %w", err)
+	}
+	return a, nil
+}
+
+// It takes a slice of strings and returns a slice of multiaddresses
+func toMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
+	var multiAddrs []multiaddr.Multiaddr
+	for _, addr := range addrs {
+		a, err := toMultiAddress(addr)
+		if err != nil {
+			log.Errorf("toMultiAddresses failed: %s", err)
+		}
+		multiAddrs = append(multiAddrs, a)
+	}
+	return multiAddrs, nil
 }
 
 func parseBsCfg(bscfg string) (string, []string, string, error) {

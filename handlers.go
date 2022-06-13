@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/libp2p/go-libp2p-core/network"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -69,6 +71,11 @@ import (
 
 	_ "github.com/application-research/estuary/docs"
 )
+
+//	generic response models
+type GenericResponse struct {
+	Message string `json: "Message"`
+}
 
 // @title Estuary API
 // @version 0.0.0
@@ -269,6 +276,15 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
+	//	peering
+	adminPeering := admin.Group("/peering")
+	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
+	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
+	adminPeering.GET("/peers", s.handlePeeringPeersList)
+	adminPeering.POST("/start", s.handlePeeringStart)
+	adminPeering.POST("/stop", s.handlePeeringStop)
+	adminPeering.GET("/status", s.handlePeeringStatus)
+
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
 
@@ -430,6 +446,158 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(200, out)
+}
+
+// handlePeeringPeersAdd godoc
+// @Summary      Add peers on Peering Service
+// @Description  This endpoint can be used to add a Peer from the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/peers [post]
+func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
+	var params []peering.PeeringPeer
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	//	validate the IDs and Addrs here
+	var validPeersAddInfo []peer.AddrInfo
+	for _, peerParam := range params {
+
+		//	validate the PeerID
+		peerParamId, err := peer.Decode(peerParam.ID)
+
+		if err != nil {
+			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
+			return c.JSON(http.StatusBadRequest,
+				util.PeeringPeerAddMessage{
+					"Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID, params})
+		}
+
+		//	validate the Addrs for each PeerID
+		var multiAddrs []multiaddr.Multiaddr
+		for _, addr := range peerParam.Addrs {
+			a, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				log.Errorf("handlePeeringPeersAdd error: %s", err)
+				return c.JSON(http.StatusBadRequest,
+					util.PeeringPeerAddMessage{
+						"Adding Peer(s) on Peering failed, the addr is invalid: " + addr, params})
+			}
+			multiAddrs = append(multiAddrs, a)
+		}
+
+		//	Only add it here if all is valid.
+		validPeersAddInfo = append(validPeersAddInfo,
+			peer.AddrInfo{
+				peerParamId,
+				multiAddrs,
+			})
+	}
+
+	//	if no error return from the validation, go thru the validPeers here and add each of them
+	//	to Peering.
+	for _, validPeerAddInfo := range validPeersAddInfo {
+		s.Node.Peering.AddPeer(validPeerAddInfo)
+	}
+
+	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{"Added the following Peers on Peering", params})
+}
+
+// handlePeeringPeersRemove godoc
+// @Summary      Remove peers on Peering Service
+// @Description  This endpoint can be used to remove a Peer from the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/peers [delete]
+func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
+	var params []peer.ID
+
+	if err := c.Bind(&params); err != nil {
+		log.Errorf("handlePeeringPeersRemove error: %s", err)
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+		}
+	}
+
+	for _, peerId := range params {
+		s.Node.Peering.RemovePeer(peerId)
+	}
+
+	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+}
+
+// handlePeeringPeersList godoc
+// @Summary      List all Peering peers
+// @Description  This endpoint can be used to list all peers on Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/peers [get]
+func (s *Server) handlePeeringPeersList(c echo.Context) error {
+	var connectionCheck []peering.PeeringPeer
+	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
+
+		var peerAddrInfoAddrsStr []string
+		for _, addrInfo := range peerAddrInfo.Addrs {
+			peerAddrInfoAddrsStr = append(peerAddrInfoAddrsStr, addrInfo.String())
+		}
+		connectionCheck = append(connectionCheck, peering.PeeringPeer{
+			ID:        peerAddrInfo.ID.Pretty(),
+			Addrs:     peerAddrInfoAddrsStr,
+			Connected: (s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected),
+		})
+	}
+	return c.JSON(http.StatusOK, connectionCheck)
+}
+
+// handlePeeringStart godoc
+// @Summary      Start Peering
+// @Description  This endpoint can be used to start the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/start [post]
+func (s *Server) handlePeeringStart(c echo.Context) error {
+	err := s.Node.Peering.Start()
+	if err != nil {
+		log.Errorf("handlePeeringStart error: %s", err)
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_START_ERROR,
+		}
+	}
+	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Started."})
+}
+
+// handlePeeringStop godoc
+// @Summary      Stop Peering
+// @Description  This endpoint can be used to stop the Peering Service
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/stop [post]
+func (s *Server) handlePeeringStop(c echo.Context) error {
+	err := s.Node.Peering.Stop()
+	if err != nil {
+		log.Errorf("handlePeeringStop error: %s", err)
+		return &util.HttpError{
+			Code:    400,
+			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
+		}
+	}
+	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Stopped."})
+}
+
+// handlePeeringStatus godoc
+// @Summary      Check Peering Status
+// @Description  This endpoint can be used to check the Peering status
+// @Tags         admin,peering,peers
+// @Produce      json
+// @Router       /admin/peering/status [get]
+func (s *Server) handlePeeringStatus(c echo.Context) error {
+	type StateResponse struct {
+		State string `json: "State"`
+	}
+	return c.JSON(200, StateResponse{State: ""})
 }
 
 // handleAddIpfs godoc

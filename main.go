@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/application-research/estuary/node/modules/peering"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -191,6 +192,17 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
 			}
 			cfg.Node.AnnounceAddrs = []string{cctx.String("announce")}
+		case "peering-peers":
+			//	The peer is an array of multiaddress so we need to allow
+			//	the user to specify ID and Addrs
+			var peers []peering.PeeringPeer
+			peeringPeersStr := cctx.String("peering-peers")
+
+			err := json.Unmarshal([]byte(peeringPeersStr), &peers)
+			if err != nil {
+				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
+			}
+			cfg.Node.PeeringPeers = peers
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -291,6 +303,11 @@ func main() {
 			Name:    "announce",
 			Usage:   "announce address for the libp2p server to listen on",
 			EnvVars: []string{"ESTUARY_ANNOUNCE"},
+		},
+		&cli.StringFlag{
+			Name:    "peering-peers",
+			Usage:   "peering addresses for the libp2p server to listen on",
+			EnvVars: []string{"ESTUARY_PEERING_PEERS"},
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
