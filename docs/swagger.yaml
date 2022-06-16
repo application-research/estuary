@@ -248,14 +248,18 @@ paths:
       summary: Add contents to a collection
       tags:
         - collections
-  /collections/content/{coluuid}:
+  /collections/content:
     get:
-      description: This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.
+      description: This endpoint is used to get contents in a collection. If no colpath query param is passed
       parameters:
-        - description: coluuid
-          in: path
+        - description: Collection UUID
+          in: query
           name: coluuid
           required: true
+          type: string
+        - description: Directory
+          in: query
+          name: colpath
           type: string
       produces:
         - application/json
@@ -322,26 +326,6 @@ paths:
         - application/json
       responses: {}
       summary: Add a file to a collection
-      tags:
-        - collections
-  /collections/fs/list:
-    get:
-      description: This endpoint creates a new collection
-      parameters:
-        - description: Collection ID
-          in: query
-          name: coluuid
-          required: true
-          type: string
-        - description: Directory
-          in: query
-          name: colpath
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses: {}
-      summary: Create a new collection
       tags:
         - collections
   /collections/list:

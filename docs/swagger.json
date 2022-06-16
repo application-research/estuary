@@ -166,9 +166,9 @@
         }
       }
     },
-    "/collections/content/{coluuid}": {
+    "/collections/content": {
       "get": {
-        "description": "This endpoint is used to get contents in a collection. When a collection is created, this collection object is retrievable along with its content via this endpoint.",
+        "description": "This endpoint is used to get contents in a collection. If no colpath query param is passed",
         "produces": [
           "application/json"
         ],
@@ -179,10 +179,16 @@
         "parameters": [
           {
             "type": "string",
-            "description": "coluuid",
+            "description": "Collection UUID",
             "name": "coluuid",
-            "in": "path",
+            "in": "query",
             "required": true
+          },
+          {
+            "type": "string",
+            "description": "Directory",
+            "name": "colpath",
+            "in": "query"
           }
         ],
         "responses": {
@@ -273,35 +279,6 @@
             "type": "string",
             "description": "Path to file",
             "name": "path",
-            "in": "query",
-            "required": true
-          }
-        ],
-        "responses": {}
-      }
-    },
-    "/collections/fs/list": {
-      "get": {
-        "description": "This endpoint creates a new collection",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "collections"
-        ],
-        "summary": "Create a new collection",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Collection ID",
-            "name": "coluuid",
-            "in": "query",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "Directory",
-            "name": "colpath",
             "in": "query",
             "required": true
           }
