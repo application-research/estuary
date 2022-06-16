@@ -691,6 +691,8 @@ func (cm *ContentManager) startup() error {
 }
 
 func (cm *ContentManager) reBuildStagingZones() error {
+	log.Info("rebuilding staging zones.......")
+
 	var stages []Content
 	if err := cm.DB.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
 		return err

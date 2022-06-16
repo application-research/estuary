@@ -4,10 +4,11 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
-	peering "github.com/application-research/estuary/node/modules/peering"
 	"io/ioutil"
 	"os"
 	"strings"
+
+	peering "github.com/application-research/estuary/node/modules/peering"
 
 	"github.com/application-research/estuary/config"
 
@@ -191,8 +192,6 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse peering peers multi addr ID: %w", err)
 		}
-		fmt.Println("add")
-		fmt.Println(peerServ)
 		peerServ.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
 	}
 
