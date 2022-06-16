@@ -309,45 +309,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		return nil, err
 	}
 
-	var stages []Content
-	if err := db.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
-		return nil, err
-	}
-
-	zones := make(map[uint][]*contentStagingZone)
-	for _, c := range stages {
-		z := &contentStagingZone{
-			ZoneOpened: c.CreatedAt,
-			CloseTime:  c.CreatedAt.Add(maxStagingZoneLifetime),
-			MinSize:    minStagingZoneSizeLimit,
-			MaxSize:    maxStagingZoneSizeLimit,
-			MaxItems:   maxBucketItems,
-			User:       c.UserID,
-			ContID:     c.ID,
-			Location:   c.Location,
-		}
-
-		minClose := time.Now().Add(stagingZoneKeepalive)
-		if z.CloseTime.Before(minClose) {
-			z.CloseTime = minClose
-		}
-
-		var inzone []Content
-		if err := db.Find(&inzone, "aggregated_in = ?", c.ID).Error; err != nil {
-			return nil, err
-		}
-
-		z.Contents = inzone
-
-		for _, zc := range inzone {
-			// TODO: do some sanity checking that we havent messed up and added
-			// too many items to this staging zone
-			z.CurSize += zc.Size
-		}
-
-		zones[c.UserID] = append(zones[c.UserID], z)
-	}
-
 	cm := &ContentManager{
 		Provider:                   prov,
 		DB:                         db,
@@ -360,7 +321,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:                    tbs,
 		ToCheck:                    make(chan uint, 100000),
 		retrievalsInProgress:       make(map[uint]*util.RetrievalProgress),
-		buckets:                    zones,
+		buckets:                    make(map[uint][]*contentStagingZone),
 		pinJobs:                    make(map[uint]*pinner.PinningOperation),
 		pinMgr:                     pinmgr,
 		remoteTransferStatus:       cache,
@@ -385,6 +346,10 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 }
 
 func (cm *ContentManager) ContentWatcher() {
+	if err := cm.reBuildStagingZones(); err != nil {
+		log.Fatalf("failed to recheck existing content: %s", err)
+	}
+
 	if err := cm.startup(); err != nil {
 		log.Errorf("failed to recheck existing content: %s", err)
 	}
@@ -723,6 +688,49 @@ func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) 
 
 func (cm *ContentManager) startup() error {
 	return cm.queueAllContent()
+}
+
+func (cm *ContentManager) reBuildStagingZones() error {
+	var stages []Content
+	if err := cm.DB.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
+		return err
+	}
+
+	zones := make(map[uint][]*contentStagingZone)
+	for _, c := range stages {
+		z := &contentStagingZone{
+			ZoneOpened: c.CreatedAt,
+			CloseTime:  c.CreatedAt.Add(maxStagingZoneLifetime),
+			MinSize:    minStagingZoneSizeLimit,
+			MaxSize:    maxStagingZoneSizeLimit,
+			MaxItems:   maxBucketItems,
+			User:       c.UserID,
+			ContID:     c.ID,
+			Location:   c.Location,
+		}
+
+		minClose := time.Now().Add(stagingZoneKeepalive)
+		if z.CloseTime.Before(minClose) {
+			z.CloseTime = minClose
+		}
+
+		var inzone []Content
+		if err := cm.DB.Find(&inzone, "aggregated_in = ?", c.ID).Error; err != nil {
+			return err
+		}
+
+		z.Contents = inzone
+
+		for _, zc := range inzone {
+			// TODO: do some sanity checking that we havent messed up and added
+			// too many items to this staging zone
+			z.CurSize += zc.Size
+		}
+
+		zones[c.UserID] = append(zones[c.UserID], z)
+	}
+	cm.buckets = zones
+	return nil
 }
 
 func (cm *ContentManager) queueAllContent() error {
