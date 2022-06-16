@@ -217,7 +217,7 @@ const maxStagingZoneLifetime = time.Hour * 8
 const maxContentAge = time.Hour * 24 * 7
 
 // staging zones will remain open for at least this long after the last piece of content is added to them (unless they are full)
-const stagingZoneKeepalive = time.Minute * 40
+const stagingZoneKeepAlive = time.Minute * 40
 
 const minDealSize = 256 << 20
 
@@ -283,7 +283,7 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
 
-	nowPlus := time.Now().Add(stagingZoneKeepalive)
+	nowPlus := time.Now().Add(stagingZoneKeepAlive)
 	if cb.CloseTime.Before(nowPlus) {
 		cb.CloseTime = nowPlus
 	}
@@ -347,7 +347,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 
 func (cm *ContentManager) ContentWatcher() {
 	if err := cm.reBuildStagingZones(); err != nil {
-		log.Fatalf("failed to recheck existing content: %s", err)
+		log.Fatalf("failed to rebuild staging zones: %s", err)
 	}
 
 	if err := cm.startup(); err != nil {
@@ -711,24 +711,22 @@ func (cm *ContentManager) reBuildStagingZones() error {
 			Location:   c.Location,
 		}
 
-		minClose := time.Now().Add(stagingZoneKeepalive)
+		minClose := time.Now().Add(stagingZoneKeepAlive)
 		if z.CloseTime.Before(minClose) {
 			z.CloseTime = minClose
 		}
 
-		var inzone []Content
-		if err := cm.DB.Find(&inzone, "aggregated_in = ?", c.ID).Error; err != nil {
+		var inZones []Content
+		if err := cm.DB.Find(&inZones, "aggregated_in = ?", c.ID).Error; err != nil {
 			return err
 		}
+		z.Contents = inZones
 
-		z.Contents = inzone
-
-		for _, zc := range inzone {
+		for _, zc := range inZones {
 			// TODO: do some sanity checking that we havent messed up and added
 			// too many items to this staging zone
 			z.CurSize += zc.Size
 		}
-
 		zones[c.UserID] = append(zones[c.UserID], z)
 	}
 	cm.buckets = zones
