@@ -119,6 +119,8 @@ type ContentManager struct {
 	inflightCidsLk sync.Mutex
 
 	VerifiedDeal bool
+
+	DisableFilecoinStorage bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -336,6 +338,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		VerifiedDeal:               cfg.Deal.Verified,
 		Replication:                cfg.Replication,
 		tracer:                     otel.Tracer("replicator"),
+		DisableFilecoinStorage:     cfg.DisableFilecoinStorage,
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -348,6 +351,11 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 func (cm *ContentManager) ContentWatcher() {
 	if err := cm.reBuildStagingZones(); err != nil {
 		log.Fatalf("failed to rebuild staging zones: %s", err)
+	}
+
+	// do not process content for stagrage is DisableFilecoinStorage is enabled
+	if cm.DisableFilecoinStorage {
+		return
 	}
 
 	if err := cm.startup(); err != nil {
