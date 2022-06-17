@@ -353,7 +353,7 @@ func (cm *ContentManager) ContentWatcher() {
 		log.Fatalf("failed to rebuild staging zones: %s", err)
 	}
 
-	// do not process content for stagrage is DisableFilecoinStorage is enabled
+	// do not process content for storage if DisableFilecoinStorage is enabled
 	if cm.DisableFilecoinStorage {
 		return
 	}
