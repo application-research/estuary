@@ -824,7 +824,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	}
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
