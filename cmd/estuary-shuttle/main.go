@@ -975,7 +975,7 @@ func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 			log.Warnw("User not authorized", "user", u.ID, "perms", u.Perms, "required", level)
 
 			return &util.HttpError{
-				Code:    401,
+				Code:    http.StatusUnauthorized,
 				Message: util.ERR_NOT_AUTHORIZED,
 			}
 		}
@@ -1103,7 +1103,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 
 	logging.SetLogLevel(body.System, body.Level)
 
-	return c.JSON(200, map[string]interface{}{})
+	return c.JSON(http.StatusOK, map[string]interface{}{})
 }
 
 // handleAdd godoc
@@ -1117,7 +1117,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -1137,7 +1137,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
 		}
@@ -1206,7 +1206,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		log.Warnf("failed to provide: %+v", err)
 	}
 
-	return c.JSON(200, &util.ContentAddResponse{
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
@@ -1250,7 +1250,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -1268,7 +1268,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
-				Code:    400,
+				Code:    http.StatusBadRequest,
 				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
@@ -1345,7 +1345,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		log.Warn(err)
 	}
 
-	return c.JSON(200, &util.ContentAddResponse{
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:       root.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
@@ -1765,7 +1765,7 @@ func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
 }
 
 func (s *Shuttle) handleHealth(c echo.Context) error {
-	return c.JSON(200, map[string]string{
+	return c.JSON(http.StatusOK, map[string]string{
 		"status": "ok",
 	})
 }
@@ -1781,7 +1781,7 @@ func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 	id := s.Node.Host.ID()
 	addrs := s.Node.Host.Addrs()
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"id":        id,
 		"addresses": addrs,
 	})
@@ -2007,7 +2007,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		rferrstr = rootFetchErr.Error()
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"pins":          pins,
 		"cid":           cc,
 		"traverseError": errstr,
@@ -2035,11 +2035,11 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 
 	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Shuttle) handleGetViewer(c echo.Context, u *User) error {
-	return c.JSON(200, &util.ViewerResponse{
+	return c.JSON(http.StatusOK, &util.ViewerResponse{
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perms,
@@ -2097,7 +2097,7 @@ func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, transfers)
+	return c.JSON(http.StatusOK, transfers)
 }
 
 func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
@@ -2111,7 +2111,7 @@ func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, minerTransferDiagnostics)
+	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
 type garbageCheckBody struct {
@@ -2147,7 +2147,7 @@ func (s *Shuttle) handleGetWantlist(c echo.Context) error {
 	}
 
 	wl := s.Node.Bitswap.WantlistForPeer(p)
-	return c.JSON(200, wl)
+	return c.JSON(http.StatusOK, wl)
 }
 
 type importDealBody struct {
@@ -2231,7 +2231,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, &util.ContentAddResponse{
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:       cc.String(),
 		EstuaryId: contid,
 		Providers: s.addrsForShuttle(),
@@ -2241,12 +2241,12 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 func (s *Shuttle) handleRcmgrStats(e echo.Context) error {
 	rcm := s.Node.Host.Network().ResourceManager()
 
-	return e.JSON(200, rcm.(rcmgr.ResourceManagerState).Stat())
+	return e.JSON(http.StatusOK, rcm.(rcmgr.ResourceManagerState).Stat())
 }
 
 func (s *Shuttle) handleGetSystemConfig(e echo.Context) error {
 	resp := map[string]interface{}{
 		"data": s.shuttleConfig,
 	}
-	return e.JSON(200, resp)
+	return e.JSON(http.StatusOK, resp)
 }

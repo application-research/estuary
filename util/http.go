@@ -1,6 +1,7 @@
 package util
 
 import (
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -85,7 +86,7 @@ func ExtractAuth(c echo.Context) (string, error) {
 	//	undefined will be the auth value if ESTUARY_TOKEN cookie is removed.
 	if auth == "" || auth == "undefined" {
 		return "", &HttpError{
-			Code:    403,
+			Code:    http.StatusForbidden,
 			Message: ERR_AUTH_MISSING,
 		}
 	}
@@ -93,14 +94,14 @@ func ExtractAuth(c echo.Context) (string, error) {
 	parts := strings.Split(auth, " ")
 	if len(parts) != 2 {
 		return "", &HttpError{
-			Code:    403,
+			Code:    http.StatusForbidden,
 			Message: ERR_INVALID_AUTH,
 		}
 	}
 
 	if parts[0] != "Bearer" {
 		return "", &HttpError{
-			Code:    403,
+			Code:    http.StatusForbidden,
 			Message: ERR_AUTH_MISSING_BEARER,
 		}
 	}
@@ -109,7 +110,7 @@ func ExtractAuth(c echo.Context) (string, error) {
 		//	if auth is not missing, check format first before extracting
 		if !isValidAuth(parts[1]) {
 			return "", &HttpError{
-				Code:    403,
+				Code:    http.StatusForbidden,
 				Message: ERR_WRONG_AUTH_FORMAT,
 			}
 		}

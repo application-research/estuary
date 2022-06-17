@@ -445,7 +445,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		out = append(out, st)
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 // handlePeeringPeersAdd godoc
@@ -516,7 +516,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
 		}
 	}
@@ -562,7 +562,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_PEERING_PEERS_START_ERROR,
 		}
 	}
@@ -580,7 +580,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
 		}
 	}
@@ -597,7 +597,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
 		State string `json: "State"`
 	}
-	return c.JSON(200, StateResponse{State: ""})
+	return c.JSON(http.StatusOK, StateResponse{State: ""})
 }
 
 // handleAddIpfs godoc
@@ -612,7 +612,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -690,7 +690,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(202, pinstatus)
+	return c.JSON(http.StatusAccepted, pinstatus)
 }
 
 // handleAddCar godoc
@@ -708,7 +708,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -726,7 +726,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
-				Code:    400,
+				Code:    http.StatusBadRequest,
 				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
@@ -795,7 +795,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
-	return c.JSON(200, map[string]interface{}{"content": cont})
+	return c.JSON(http.StatusOK, map[string]interface{}{"content": cont})
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -830,7 +830,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 			}
 		}
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
@@ -850,7 +850,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
 		}
@@ -968,7 +968,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
-	return c.JSON(200, &util.ContentAddResponse{
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:       nd.Cid().String(),
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
@@ -1165,7 +1165,7 @@ func (s *Server) handleListContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, contents)
+	return c.JSON(http.StatusOK, contents)
 }
 
 type expandedContent struct {
@@ -1222,7 +1222,7 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 		}
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 type onChainDealState struct {
@@ -1258,7 +1258,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    403,
+			Code:    http.StatusForbidden,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
@@ -1314,7 +1314,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"content":       content,
 		"deals":         ds,
 		"failuresCount": failCount,
@@ -1341,7 +1341,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, dstatus)
+	return c.JSON(http.StatusOK, dstatus)
 }
 
 // handleGetDealStatusByPropCid godoc
@@ -1369,7 +1369,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, dstatus)
+	return c.JSON(http.StatusOK, dstatus)
 }
 
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
@@ -1492,7 +1492,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		out = append(out, resp)
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 // handleQueryAsk godoc
@@ -1517,7 +1517,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, toDBAsk(ask))
+	return c.JSON(http.StatusOK, toDBAsk(ask))
 }
 
 type dealRequest struct {
@@ -1538,7 +1538,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 	if u.Perm < util.PermLevelAdmin {
 		return util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_INVALID_AUTH,
 		}
 	}
@@ -1563,7 +1563,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"deal": id,
 	})
 }
@@ -1585,7 +1585,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, status)
+	return c.JSON(http.StatusOK, status)
 }
 
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
@@ -1594,7 +1594,7 @@ func (s *Server) handleTransferStatusByID(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, status)
+	return c.JSON(http.StatusOK, status)
 }
 
 // handleTransferInProgress godoc
@@ -1611,7 +1611,7 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, transfers)
+	return c.JSON(http.StatusOK, transfers)
 }
 
 func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
@@ -1625,7 +1625,7 @@ func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, minerTransferDiagnostics)
+	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
 func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
@@ -1718,7 +1718,7 @@ func (s *Server) handleTransferStart(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, chanid)
+	return c.JSON(http.StatusOK, chanid)
 }
 
 // handleDealStatus godoc
@@ -1762,7 +1762,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return xerrors.Errorf("getting deal status: %w", err)
 	}
 
-	return c.JSON(200, status)
+	return c.JSON(http.StatusOK, status)
 }
 
 // handleGetProposal godoc
@@ -1788,7 +1788,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, prop)
+	return c.JSON(http.StatusOK, prop)
 }
 
 // handleGetDealInfo godoc
@@ -1809,7 +1809,7 @@ func (s *Server) handleGetDealInfo(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, deal)
+	return c.JSON(http.StatusOK, deal)
 }
 
 type getInvitesResp struct {
@@ -1828,7 +1828,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, invites)
+	return c.JSON(http.StatusOK, invites)
 }
 
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
@@ -1841,7 +1841,7 @@ func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{
+	return c.JSON(http.StatusOK, map[string]string{
 		"code": invite.Code,
 	})
 }
@@ -1852,7 +1852,7 @@ func (s *Server) handleAdminBalance(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, balance)
+	return c.JSON(http.StatusOK, balance)
 }
 
 func (s *Server) handleAdminAddEscrow(c echo.Context) error {
@@ -1866,7 +1866,7 @@ func (s *Server) handleAdminAddEscrow(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, resp)
+	return c.JSON(http.StatusOK, resp)
 }
 
 type adminStatsResponse struct {
@@ -1932,7 +1932,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &adminStatsResponse{
+	return c.JSON(http.StatusOK, &adminStatsResponse{
 		TotalDealAttempted:   dealsTotal,
 		TotalDealsSuccessful: dealsSuccessful,
 		TotalDealsFailed:     dealsFailed,
@@ -1974,7 +1974,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 			"shuttles": shts,
 		},
 	}
-	return c.JSON(200, resp)
+	return c.JSON(http.StatusOK, resp)
 }
 
 type minerResp struct {
@@ -2006,7 +2006,7 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 		out[i].Version = m.Version
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
@@ -2015,7 +2015,7 @@ func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, stats)
+	return c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
@@ -2024,7 +2024,7 @@ func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, sml)
+	return c.JSON(http.StatusOK, sml)
 }
 
 type minerSetInfoParams struct {
@@ -2044,7 +2044,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
@@ -2058,7 +2058,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
@@ -2071,7 +2071,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 type suspendMinerBody struct {
@@ -2091,7 +2091,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
@@ -2108,7 +2108,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
@@ -2124,7 +2124,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_MINER_NOT_OWNED,
 		}
 	}
@@ -2133,7 +2133,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -2151,7 +2151,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 type contentDealStats struct {
@@ -2225,7 +2225,7 @@ func (s *Server) handleDealStats(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(200, sbc)
+	return c.JSON(http.StatusOK, sbc)
 }
 
 type lmdbStat struct {
@@ -2259,7 +2259,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &diskSpaceInfo{
+	return c.JSON(http.StatusOK, &diskSpaceInfo{
 		BstoreSize: st.Blocks * uint64(st.Bsize),
 		BstoreFree: st.Bavail * uint64(st.Bsize),
 		/*
@@ -2287,7 +2287,7 @@ func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"records":  infos,
 		"failures": failures,
 	})
@@ -2303,7 +2303,7 @@ func (s *Server) handleRetrievalCheck(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, "We did a thing")
+	return c.JSON(http.StatusOK, "We did a thing")
 
 }
 
@@ -2349,7 +2349,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &priceEstimateResponse{
+	return c.JSON(http.StatusOK, &priceEstimateResponse{
 		TotalStr: types.FIL(*estimate.Total).String(),
 		Total:    estimate.Total.String(),
 		Asks:     estimate.Asks,
@@ -2374,7 +2374,7 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, merrs)
+	return c.JSON(http.StatusOK, merrs)
 }
 
 type minerStatsResp struct {
@@ -2438,7 +2438,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	var m storageMiner
 	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return c.JSON(200, &minerStatsResp{
+			return c.JSON(http.StatusOK, &minerStatsResp{
 				Miner:         maddr,
 				UsedByEstuary: false,
 			})
@@ -2456,7 +2456,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &minerStatsResp{
+	return c.JSON(http.StatusOK, &minerStatsResp{
 		Miner:           maddr,
 		UsedByEstuary:   true,
 		DealCount:       dealscount,
@@ -2515,7 +2515,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, deals)
+	return c.JSON(http.StatusOK, deals)
 }
 
 type bandwidthResponse struct {
@@ -2542,7 +2542,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
@@ -2557,7 +2557,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, &bandwidthResponse{
+	return c.JSON(http.StatusOK, &bandwidthResponse{
 		TotalOut: bw,
 	})
 }
@@ -2583,7 +2583,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    403,
+			Code:    http.StatusForbidden,
 			Message: util.ERR_NOT_AUTHORIZED,
 		}
 	}
@@ -2593,7 +2593,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, sub)
+	return c.JSON(http.StatusOK, sub)
 }
 
 // handleGetContentFailures godoc
@@ -2615,14 +2615,14 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, errs)
+	return c.JSON(http.StatusOK, errs)
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
 	s.CM.bucketLk.Lock()
 	defer s.CM.bucketLk.Unlock()
 
-	return c.JSON(200, s.CM.buckets)
+	return c.JSON(http.StatusOK, s.CM.buckets)
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
@@ -2631,7 +2631,7 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, conts)
+	return c.JSON(http.StatusOK, conts)
 }
 
 func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
@@ -2651,7 +2651,7 @@ func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, res)
+	return c.JSON(http.StatusOK, res)
 }
 
 func (s *Server) handleOffloadContent(c echo.Context) error {
@@ -2665,7 +2665,7 @@ func (s *Server) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"blocksRemoved": removed,
 	})
 }
@@ -2700,7 +2700,7 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleRefreshContent(c echo.Context) error {
@@ -2713,7 +2713,7 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleReadLocalContent(c echo.Context) error {
@@ -2809,7 +2809,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
-					Code:    401,
+					Code:    http.StatusUnauthorized,
 					Message: util.ERR_NOT_AUTHORIZED,
 				}
 			}
@@ -2822,7 +2822,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 			log.Warnw("User not authorized", "user", u.ID, "perm", u.Perm, "required", level)
 
 			return &util.HttpError{
-				Code:    401,
+				Code:    http.StatusUnauthorized,
 				Message: util.ERR_NOT_AUTHORIZED,
 			}
 		}
@@ -2898,7 +2898,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &loginResponse{
+	return c.JSON(http.StatusOK, &loginResponse{
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
 	})
@@ -2943,7 +2943,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &loginResponse{
+	return c.JSON(http.StatusOK, &loginResponse{
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
 	})
@@ -2963,7 +2963,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 type changeAddressParams struct {
@@ -2981,7 +2981,7 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		log.Warnf("invalid filecoin address in change address request body: %w", err)
 
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: "invalid address in request body",
 		}
 	}
@@ -2990,7 +2990,7 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 type userStatsResponse struct {
@@ -3014,7 +3014,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, stats)
+	return c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []string) (*AuthToken, error) {
@@ -3054,7 +3054,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, &util.ViewerResponse{
+	return c.JSON(http.StatusOK, &util.ViewerResponse{
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
@@ -3134,7 +3134,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 }
 
 func (s *Server) handleHealth(c echo.Context) error {
-	return c.JSON(200, map[string]string{
+	return c.JSON(http.StatusOK, map[string]string{
 		"status": "ok",
 	})
 }
@@ -3195,7 +3195,7 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, &getApiKeysResp{
+	return c.JSON(http.StatusOK, &getApiKeysResp{
 		Token:  authToken.Token,
 		Expiry: authToken.Expiry,
 	})
@@ -3225,7 +3225,7 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
 		})
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 type createCollectionBody struct {
@@ -3261,7 +3261,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, col)
+	return c.JSON(http.StatusOK, col)
 }
 
 // handleListCollections godoc
@@ -3281,7 +3281,7 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, cols)
+	return c.JSON(http.StatusOK, cols)
 }
 
 type addContentToCollectionParams struct {
@@ -3353,7 +3353,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 // handleCommitCollection godoc
@@ -3436,7 +3436,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, pinstatus)
+	return c.JSON(http.StatusOK, pinstatus)
 }
 
 // handleGetCollectionContents godoc
@@ -3650,7 +3650,7 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 		return resp[i].Id < resp[j].Id
 	})
 
-	return c.JSON(200, resp)
+	return c.JSON(http.StatusOK, resp)
 }
 
 type publicStatsResponse struct {
@@ -3674,7 +3674,7 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, val)
+	return c.JSON(http.StatusOK, val)
 }
 
 func (s *Server) computePublicStats() (*publicStatsResponse, error) {
@@ -3695,7 +3695,7 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 }
 
 func (s *Server) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(200, s.CM.getStagingZoneSnapshot(c.Request().Context()))
+	return c.JSON(http.StatusOK, s.CM.getStagingZoneSnapshot(c.Request().Context()))
 }
 
 // handleGetStagingZoneForUser godoc
@@ -3705,7 +3705,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Produce      json
 // @Router       /content/staging-zones [get]
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
-	return c.JSON(200, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
+	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
 // handleUserExportData godoc
@@ -3721,7 +3721,7 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, export)
+	return c.JSON(http.StatusOK, export)
 }
 
 // handleNetPeers godoc
@@ -3732,7 +3732,7 @@ func (s *Server) handleUserExportData(c echo.Context, u *User) error {
 // @Success      200  {array}  string
 // @Router       /public/net/peers [get]
 func (s *Server) handleNetPeers(c echo.Context) error {
-	return c.JSON(200, s.Node.Host.Network().Peers())
+	return c.JSON(http.StatusOK, s.Node.Host.Network().Peers())
 }
 
 // handleNetAddrs godoc
@@ -3746,7 +3746,7 @@ func (s *Server) handleNetAddrs(c echo.Context) error {
 	id := s.Node.Host.ID()
 	addrs := s.Node.Host.Addrs()
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"id":        id,
 		"addresses": addrs,
 	})
@@ -3789,7 +3789,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, val)
+	return c.JSON(http.StatusOK, val)
 }
 
 func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
@@ -3976,7 +3976,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
 		out = append(out, dp)
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 type setDealMakingBody struct {
@@ -3990,7 +3990,7 @@ func (s *Server) handleSetDealMaking(c echo.Context) error {
 	}
 
 	s.CM.setDealMakingEnabled(body.Enabled)
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleContentHealthCheck(c echo.Context) error {
@@ -4050,7 +4050,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	if cont.Location != "local" {
-		return c.JSON(200, map[string]interface{}{
+		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
 			"content":            cont,
 			"error":              "requested content was not local to this instance, cannot check health right now",
@@ -4167,7 +4167,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		out["aggregatedContentLocations"] = aggrLocs
 		out["fixedAggregateLocation"] = fixedAggregateLocation
 	}
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
@@ -4233,7 +4233,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		rferrstr = rootFetchErr.Error()
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"contents":             contents,
 		"cid":                  cc,
 		"traverseError":        errstr,
@@ -4253,7 +4253,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &util.InitShuttleResponse{
+	return c.JSON(http.StatusOK, &util.InitShuttleResponse{
 		Handle: shuttle.Handle,
 		Token:  shuttle.Token,
 	})
@@ -4278,7 +4278,7 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) handleShuttleConnection(c echo.Context) error {
@@ -4366,7 +4366,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, &util.AutoretrieveInitResponse{
+	return c.JSON(http.StatusOK, &util.AutoretrieveInitResponse{
 		Handle:         autoretrieve.Handle,
 		Token:          autoretrieve.Token,
 		LastConnection: autoretrieve.LastConnection,
@@ -4398,7 +4398,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 		})
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
@@ -4431,7 +4431,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		AddrInfo:       addrInfo,
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 type allDealsQuery struct {
@@ -4449,7 +4449,7 @@ func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 		Error; err != nil {
 		return err
 	}
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 type logLevelBody struct {
@@ -4465,7 +4465,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 
 	logging.SetLogLevel(body.System, body.Level)
 
-	return c.JSON(200, map[string]interface{}{})
+	return c.JSON(http.StatusOK, map[string]interface{}{})
 }
 
 // handlePublicStorageFailures godoc
@@ -4479,7 +4479,7 @@ func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(200, recs)
+	return c.JSON(http.StatusOK, recs)
 }
 
 // handleStorageFailures godoc
@@ -4493,7 +4493,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-	return c.JSON(200, recs)
+	return c.JSON(http.StatusOK, recs)
 }
 
 func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error) {
@@ -4597,7 +4597,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
-	return c.JSON(200, util.ContentCreateResponse{
+	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }
@@ -4638,7 +4638,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 
 	if len(sigb) < 2 {
 		return &util.HttpError{
-			Code:    400,
+			Code:    http.StatusBadRequest,
 			Message: util.ERR_INVALID_INPUT,
 		}
 	}
@@ -4677,7 +4677,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		}
 	}
 
-	return c.JSON(200, map[string]interface{}{
+	return c.JSON(http.StatusOK, map[string]interface{}{
 		"success": true,
 	})
 }
@@ -4723,7 +4723,7 @@ func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{
+	return c.JSON(http.StatusOK, map[string]string{
 		"hexmsg": hex.EncodeToString(s.msgForMinerClaim(m, u.ID)),
 	})
 }
@@ -4776,7 +4776,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(200, out)
+	return c.JSON(http.StatusOK, out)
 }
 
 func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
@@ -4830,7 +4830,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 			childRes = append(childRes, res)
 		}
 
-		return c.JSON(200, map[string]interface{}{
+		return c.JSON(http.StatusOK, map[string]interface{}{
 			"children": childRes,
 		})
 	}
@@ -4847,7 +4847,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 type publicNodeInfo struct {
@@ -4861,7 +4861,7 @@ type publicNodeInfo struct {
 // @Produce      json
 // @Router       /public/info [get]
 func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
-	return c.JSON(200, &publicNodeInfo{
+	return c.JSON(http.StatusOK, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,
 	})
 }
@@ -4944,7 +4944,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	return c.JSON(200, util.ContentCreateResponse{
+	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
 }
@@ -4961,7 +4961,7 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
 				return &util.HttpError{
-					Code:    401,
+					Code:    http.StatusUnauthorized,
 					Message: util.ERR_NOT_AUTHORIZED,
 				}
 			}
@@ -5101,7 +5101,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if col.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified collection",
 		}
@@ -5114,7 +5114,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    401,
+			Code:    http.StatusUnauthorized,
 			Message: util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified content",
 		}
@@ -5137,7 +5137,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		log.Errorf("failed to add content to requested collection: %s", err)
 	}
 
-	return c.JSON(200, map[string]string{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleRunGc(c echo.Context) error {
