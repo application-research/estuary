@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/application-research/estuary/node/modules/peering"
 	"os"
 	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/application-research/estuary/node/modules/peering"
 
 	"go.opencensus.io/stats/view"
 
@@ -630,9 +631,7 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		if !cfg.DisableFilecoinStorage {
-			go cm.ContentWatcher()
-		}
+		go cm.ContentWatcher()
 
 		if !cm.contentAddingDisabled {
 			go func() {
