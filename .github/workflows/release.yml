@@ -27,7 +27,7 @@ jobs:
         submodules: true
     - name: Build binary for ${{ matrix.version }}
       run: |
-        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} jlogelin/estuary-base:latest /bin/sh -c "make"
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} ${{ secrets.DOCKERHUB_ORG }}/estuary-base:latest /bin/sh -c "make"
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
