@@ -1,0 +1,47 @@
+#!/bin/bash
+
+POSITIONAL_ARGS=()
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -l|--language)
+      LANGUAGE="$2"
+      shift # past argument
+      shift # past value
+      ;;
+    -o|--output)
+      OUTPUT="$2"
+      shift # past argument
+      shift # past value
+      ;;
+    -*|--*)
+      echo "Unknown option $1"
+      echo "usage: generate-sdk-client --language rust --output /local/out/"
+      exit 1
+      ;;
+    *)
+      POSITIONAL_ARGS+=("$1") # save positional arg
+      shift # past argument
+      ;;
+  esac
+done
+
+set -- "${POSITIONAL_ARGS[@]}" 
+# echo "LANGUAGE = ${LANGUAGE}"
+
+if [ -z "${LANGUAGE}" ]
+then
+      echo "--language option is not specified, choose one of [ go, rust, python, typescript, javascript, kotlin, perl, bash, java, csharp, ruby ]"
+      exit 1
+fi
+
+[ "${OUTPUT}" ] && OUTPUT_DIR=$OUTPUT || OUTPUT_DIR="output"
+
+# echo "OUTPUT_DIR = ${OUTPUT_DIR}"
+# mkdir -p ${OUTPUT_DIR}/estuary-${LANGUAGE}-sdk
+# mkdir -p ./local
+docker run --rm -v "${PWD}:/local" openapitools/openapi-generator-cli generate \
+    -i https://raw.githubusercontent.com/application-research/estuary/master/docs/swagger.yaml \
+    -g ${LANGUAGE} \
+    -o /local/${OUTPUT_DIR}/estuary-${LANGUAGE}-sdk \
+    --skip-validate-spec
