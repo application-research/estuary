@@ -38,4 +38,4 @@ jobs:
         with:
           context: .
           push: true
-          tags: jlogelin/estuary:latest , jlogelin/estuary:${{ steps.get_version.outputs.VERSION }}
+          tags: ${{ secrets.DOCKERHUB_ORG }}/estuary:latest , ${{ secrets.DOCKERHUB_ORG }}/estuary:${{ steps.get_version.outputs.VERSION }}
