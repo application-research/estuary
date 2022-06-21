@@ -4926,8 +4926,17 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 
 	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
 
+	root, err := cid.Decode(req.Root)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"error": map[string]interface{}{
+				"reason": err,
+			},
+		})
+	}
+
 	content := &Content{
-		Cid:         util.DbCID{req.Root},
+		Cid:         util.DbCID{root},
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,

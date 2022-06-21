@@ -45,10 +45,8 @@ type ShuttleListResponse struct {
 }
 
 type ShuttleCreateContentBody struct {
-	Root         cid.Cid  `json:"root"`
-	Name         string   `json:"name"`
+	ContentCreateBody
 	Collections  []string `json:"collections"`
-	Location     string   `json:"location"`
 	DagSplitRoot uint     `json:"dagSplitRoot"`
 	User         uint     `json:"user"`
 }
