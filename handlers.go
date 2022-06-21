@@ -3657,6 +3657,7 @@ type publicStatsResponse struct {
 	TotalStorage     int64 `json:"totalStorage"`
 	TotalFilesStored int64 `json:"totalFiles"`
 	DealsOnChain     int64 `json:"dealsOnChain"`
+	TotalObjectsRef  int64 `json:"totalObjectsRef"`
 }
 
 // handlePublicStats godoc
@@ -3669,6 +3670,14 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
+
+	//	handle the extensive looks up differently. Cache them for 1 hour.
+	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
+		return s.computePublicStatsWithExtensiveLookups()
+	})
+
+	// reuse the original stats and add the ones from the extensive lookup function.
+	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 
 	if err != nil {
 		return err
@@ -3688,6 +3697,22 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 	}
 
 	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain).Error; err != nil {
+		return nil, err
+	}
+
+	//	this can be resource expensive but we are already caching it.
+	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef).Error; err != nil {
+		return nil, err
+	}
+
+	return &stats, nil
+}
+
+func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, error) {
+	var stats publicStatsResponse
+
+	//	this can be resource expensive but we are already caching it.
+	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef).Error; err != nil {
 		return nil, err
 	}
 
