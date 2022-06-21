@@ -3700,11 +3700,6 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	//	this can be resource expensive but we are already caching it.
-	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef).Error; err != nil {
-		return nil, err
-	}
-
 	return &stats, nil
 }
 
