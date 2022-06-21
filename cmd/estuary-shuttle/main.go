@@ -1421,10 +1421,13 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	}
 
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
-		Root:         root,
-		Name:         fname,
+		ContentCreateBody: util.ContentCreateBody{
+			Root:     root.String(),
+			Name:     fname,
+			Location: s.shuttleHandle,
+		},
+
 		Collections:  cols,
-		Location:     s.shuttleHandle,
 		DagSplitRoot: dagsplitroot,
 		User:         uid,
 	})
