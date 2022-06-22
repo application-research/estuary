@@ -149,7 +149,6 @@ func (pm *PinManager) PinQueueSize() int {
 	for _, pq := range pm.pinQueue {
 		count += len(pq)
 	}
-
 	return count
 }
 
@@ -157,7 +156,6 @@ func (pm *PinManager) Add(op *PinningOperation) {
 	go func() {
 		pm.pinQueueIn <- op
 	}()
-
 }
 
 var maxTimeout = 24 * time.Hour

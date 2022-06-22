@@ -83,7 +83,7 @@ func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
 		}
 
 		if ai == nil {
-			log.Warnf("no address info for shuttle %s: %s", cont.Location, err)
+			log.Warnf("no address info for shuttle: %s", cont.Location)
 			return nil
 		}
 
@@ -107,7 +107,6 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-
 	dsess := merkledag.NewSession(ctx, dserv)
 
 	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
@@ -133,7 +132,6 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	if err := s.Node.Provider.Provide(op.Obj); err != nil {
 		log.Warnf("providing failed: %s", err)
 	}
-
 	return nil
 }
 
@@ -161,7 +159,6 @@ func (cm *ContentManager) refreshPinQueue() error {
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -181,8 +178,8 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	}
 
 	cont := Content{
-		Cid: util.DbCID{obj},
 
+		Cid:         util.DbCID{CID: obj},
 		Name:        name,
 		UserID:      user,
 		Active:      false,
@@ -192,12 +189,6 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		PinMeta: metab,
 
 		Location: loc,
-
-		/*
-			Size        int64  `json:"size"`
-			Offloaded   bool   `json:"offloaded"`
-		*/
-
 	}
 	if err := cm.DB.Create(&cont).Error; err != nil {
 		return nil, err
@@ -470,7 +461,6 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-
 		q = q.Where("created_at <= ?", beftime)
 	}
 
@@ -490,10 +480,8 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			if err != nil {
 				return err
 			}
-
 			ids = append(ids, id)
 		}
-
 		q = q.Where("id in ?", ids)
 	}
 
@@ -640,7 +628,6 @@ func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool,
     }
 
 }
-*/
 
 // handleAddPin  godoc
 // @Summary      Add and pin object
@@ -724,7 +711,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 // @Param        pinid  path  string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
 func (s *Server) handleGetPin(e echo.Context, u *User) error {
-	id, err := strconv.Atoi(e.Param("pinid"))
+	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
 	}
@@ -771,8 +758,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		}
 	}
 
-	ctx := e.Request().Context()
-	id, err := strconv.Atoi(e.Param("pinid"))
+	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
 	}
@@ -822,7 +808,6 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-
 	return e.JSON(http.StatusAccepted, status)
 }
 
@@ -834,9 +819,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
 func (s *Server) handleDeletePin(e echo.Context, u *User) error {
-	// TODO: need to cancel any in-progress pinning operation
-	ctx := e.Request().Context()
-	id, err := strconv.Atoi(e.Param("pinid"))
+	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
 	}
@@ -864,27 +847,25 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 
 func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status string) {
 	cm.pinLk.Lock()
-	op, ok := cm.pinJobs[cont]
+	op, ok := cm.pinJobs[contID]
+
 	cm.pinLk.Unlock()
 	if !ok {
-		log.Warnw("got pin status update for unknown content", "content", cont, "status", status, "shuttle", handle)
-		return
+		return fmt.Errorf("got pin status update for unknown content: %d, status: %s, location: %s", contID, status, location)
 	}
 
 	op.SetStatus(status)
 	if status == "failed" {
 		var c Content
-		if err := cm.DB.First(&c, "id = ?", cont).Error; err != nil {
-			log.Errorf("failed to look up content: %s", err)
-			return
+		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
+			return errors.Wrap(err, "failed to look up content")
 		}
 
 		if c.Active {
-			log.Errorf("got failed pin status message from shuttle %s where content(%d) was already active, refusing to do anything", handle, cont)
-			return
+			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
 		}
 
-		if err := cm.DB.Model(Content{}).Where("id = ?", cont).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"active":  false,
 			"pinning": false,
 			"failed":  true,
@@ -929,7 +910,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	objects := make([]*Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{o.Cid},
+			Cid:  util.DbCID{CID: o.Cid},
 			Size: o.Size,
 		})
 	}

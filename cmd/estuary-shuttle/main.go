@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/application-research/estuary/node/modules/peering"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -18,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util/gateway"
@@ -1187,7 +1187,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	pin := &Pin{
 		Content: contid,
-		Cid:     util.DbCID{nd.Cid()},
+		Cid:     util.DbCID{CID: nd.Cid()},
 		UserID:  u.ID,
 
 		Active:  false,
@@ -1326,7 +1326,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	pin := &Pin{
 		Content: contid,
-		Cid:     util.DbCID{root},
+		Cid:     util.DbCID{CID: root},
 		UserID:  u.ID,
 
 		Active:  false,
@@ -1905,7 +1905,7 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 
 	count := 0
 	for c := range keys {
-		del, err := s.deleteIfNotPinned(ctx, &Object{Cid: util.DbCID{c}})
+		del, err := s.deleteIfNotPinned(ctx, &Object{Cid: util.DbCID{CID: c}})
 		if err != nil {
 			return err
 		}
