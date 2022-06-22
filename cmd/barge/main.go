@@ -378,7 +378,7 @@ func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClie
 		fmt.Println("failed to connect to pin delegates: ", err)
 	}
 
-	pins := []string{st.Requestid}
+	pins := []string{st.RequestID}
 	for range time.Tick(time.Second * 2) {
 		var pinning, queued, pinned, failed int
 		for _, p := range pins {
@@ -750,7 +750,7 @@ var plumbSplitAddFileCmd = &cli.Command{
 				fmt.Println("failed to connect to pin delegates: ", err)
 			}
 
-			pins = append(pins, st.Requestid)
+			pins = append(pins, st.RequestID)
 		}
 
 		for range time.Tick(time.Second * 2) {
@@ -1383,7 +1383,7 @@ var bargeSyncCmd = &cli.Command{
 				if err := r.DB.Create(&Pin{
 					File:      nnp.FileID,
 					Cid:       nnp.Cid,
-					RequestID: pin.Requestid,
+					RequestID: pin.RequestID,
 					Status:    pin.Status,
 				}).Error; err != nil {
 					return err
@@ -1445,7 +1445,7 @@ var bargeSyncCmd = &cli.Command{
 				p := &Pin{
 					File:      f.FileID,
 					Cid:       fcid.String(),
-					RequestID: resp.Requestid,
+					RequestID: resp.RequestID,
 					Status:    resp.Status,
 				}
 
