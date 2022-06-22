@@ -3811,8 +3811,15 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
 		return s.computeDealMetrics()
 	})
+
 	if err != nil {
 		return err
+	}
+
+	//	Make sure we don't return a nil val.
+	dealMetrics := val.([]*dealMetricsInfo)
+	if len(dealMetrics) < 1 {
+		return c.JSON(http.StatusOK, []*dealMetricsInfo{})
 	}
 
 	return c.JSON(http.StatusOK, val)
