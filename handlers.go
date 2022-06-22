@@ -73,11 +73,6 @@ import (
 	_ "github.com/application-research/estuary/docs"
 )
 
-//	generic response models
-type GenericResponse struct {
-	Message string `json: "Message"`
-}
-
 // @title Estuary API
 // @version 0.0.0
 // @description This is the API for the Estuary application.
@@ -471,7 +466,10 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
 			return c.JSON(http.StatusBadRequest,
 				util.PeeringPeerAddMessage{
-					"Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID, params})
+					Message:  "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
+					PeersAdd: params,
+				},
+			)
 		}
 
 		//	validate the Addrs for each PeerID
@@ -482,7 +480,10 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 				log.Errorf("handlePeeringPeersAdd error: %s", err)
 				return c.JSON(http.StatusBadRequest,
 					util.PeeringPeerAddMessage{
-						"Adding Peer(s) on Peering failed, the addr is invalid: " + addr, params})
+						Message:  "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
+						PeersAdd: params,
+					},
+				)
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
@@ -490,8 +491,8 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		//	Only add it here if all is valid.
 		validPeersAddInfo = append(validPeersAddInfo,
 			peer.AddrInfo{
-				peerParamId,
-				multiAddrs,
+				ID:    peerParamId,
+				Addrs: multiAddrs,
 			})
 	}
 
@@ -500,8 +501,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	for _, validPeerAddInfo := range validPeersAddInfo {
 		s.Node.Peering.AddPeer(validPeerAddInfo)
 	}
-
-	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{"Added the following Peers on Peering", params})
+	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{Message: "Added the following Peers on Peering", PeersAdd: params})
 }
 
 // handlePeeringPeersRemove godoc
@@ -524,8 +524,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	for _, peerId := range params {
 		s.Node.Peering.RemovePeer(peerId)
 	}
-
-	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{Message: "Removed the following Peers from Peering", PeersRemove: params})
 }
 
 // handlePeeringPeersList godoc
@@ -566,7 +565,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 			Message: util.ERR_PEERING_PEERS_START_ERROR,
 		}
 	}
-	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Started."})
+	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Started."})
 }
 
 // handlePeeringStop godoc
@@ -584,7 +583,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
 		}
 	}
-	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Stopped."})
+	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Stopped."})
 }
 
 // handlePeeringStatus godoc
@@ -595,7 +594,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // @Router       /admin/peering/status [get]
 func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
-		State string `json: "State"`
+		State string `json:"state"`
 	}
 	return c.JSON(http.StatusOK, StateResponse{State: ""})
 }
