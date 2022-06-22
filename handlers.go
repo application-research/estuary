@@ -4445,7 +4445,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	autoretrieve.LastConnection = time.Now().UTC()
+	autoretrieve.LastConnection = time.Now()
 	if err := s.DB.Save(&autoretrieve).Error; err != nil {
 		return err
 	}

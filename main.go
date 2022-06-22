@@ -131,7 +131,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 
 	defer ticker.Stop()
 	for {
-		lastTickTime = time.Now().UTC().Add(-tickInterval)
+		lastTickTime = time.Now().Add(-tickInterval)
 
 		// Find all autoretrieve servers that are online (that sent heartbeat)
 		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
@@ -250,6 +250,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 }
 
 func main() {
+	//set global time to UTC
+	utc, _ := time.LoadLocation("UTC")
+	time.Local = utc
+
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
 	logging.SetLogLevel("paych", "debug")

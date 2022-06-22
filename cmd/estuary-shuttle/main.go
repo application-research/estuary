@@ -157,6 +157,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 }
 
 func main() {
+	// set global time to UTC
+	utc, _ := time.LoadLocation("UTC")
+	time.Local = utc
+
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("shuttle", "debug")
 	logging.SetLogLevel("paych", "debug")
