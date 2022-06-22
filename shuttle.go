@@ -136,8 +136,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		if ups == nil {
 			return ErrNilParams
 		}
-		cm.UpdatePinStatus(handle, ups.DBID, ups.Status)
-		return nil
+		return cm.UpdatePinStatus(handle, ups.DBID, ups.Status)
 	case drpc.OP_PinComplete:
 		param := msg.Params.PinComplete
 		if param == nil {

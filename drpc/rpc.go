@@ -1,6 +1,7 @@
 package drpc
 
 import (
+	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -58,7 +59,7 @@ type AddPin struct {
 	DBID   uint
 	UserId uint
 	Cid    cid.Cid
-	Peers  []peer.AddrInfo
+	Peers  []*peer.AddrInfo
 }
 
 const CMD_TakeContent = "TakeContent"
@@ -176,7 +177,7 @@ const OP_UpdatePinStatus = "UpdatePinStatus"
 
 type UpdatePinStatus struct {
 	DBID   uint
-	Status string
+	Status types.PinningStatus
 }
 
 type PinObj struct {

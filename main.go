@@ -83,6 +83,8 @@ type Content struct {
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
+	Replace bool   `json:"replace" gorm:"default:0"`
+	Origins string `json:"origins"`
 
 	Failed bool `json:"failed"`
 
@@ -578,7 +580,7 @@ func main() {
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 		})
 		go pinmgr.Run(50)
@@ -639,6 +641,8 @@ func main() {
 
 		if !cm.contentAddingDisabled {
 			go func() {
+				// TODO - resume pin removal request
+
 				// wait for shuttles to reconnect
 				// This is a bit of a hack, and theres probably a better way to
 				// solve this. but its good enough for now

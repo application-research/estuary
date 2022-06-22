@@ -19,6 +19,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	trace "go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -26,44 +27,56 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (cm *ContentManager) pinStatus(cont Content) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
+	delegates := cm.pinDelegatesForContent(cont)
+
 	cm.pinLk.Lock()
 	po, ok := cm.pinJobs[cont.ID]
 	cm.pinLk.Unlock()
 	if !ok {
-		var meta map[string]interface{}
+		meta := make(map[string]interface{}, 0)
 		if cont.PinMeta != "" {
 			if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
 				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 			}
 		}
 
-		ps := &types.IpfsPinStatus{
-			Requestid: fmt.Sprintf("%d", cont.ID),
-			Status:    "pinning",
+		originStrs := make([]string, 0)
+		for _, o := range origins {
+			ai, err := peer.AddrInfoToP2pAddrs(o)
+			if err == nil {
+				for _, a := range ai {
+					originStrs = append(originStrs, a.String())
+				}
+			}
+		}
+
+		ps := &types.IpfsPinStatusResponse{
+			RequestID: fmt.Sprintf("%d", cont.ID),
+			Status:    types.PinningStatusPinning,
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
-				Cid:  cont.Cid.CID.String(),
-				Name: cont.Name,
-				Meta: meta,
+				CID:     cont.Cid.CID.String(),
+				Name:    cont.Name,
+				Meta:    meta,
+				Origins: originStrs,
 			},
-			Delegates: cm.pinDelegatesForContent(cont),
-			Info:      nil, // TODO: all sorts of extra info we could add...
+			Delegates: delegates,
+			Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
 		}
 
 		if cont.Active {
-			ps.Status = "pinned"
-		}
-		if cont.Failed {
-			ps.Status = "failed"
+			ps.Status = types.PinningStatusPinned
 		}
 
+		if cont.Failed {
+			ps.Status = types.PinningStatusFailed
+		}
 		return ps, nil
 	}
 
 	status := po.PinStatus()
-	status.Delegates = cm.pinDelegatesForContent(cont)
-
+	status.Delegates = delegates
 	return status, nil
 }
 
@@ -99,8 +112,17 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	ctx, span := s.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
+	// remove replacement async - move this out
+	if op.Replace > 0 {
+		go func() {
+			if err := s.CM.removeContent(ctx, op.Replace, true); err != nil {
+				log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
+			}
+		}()
+	}
+
 	for _, pi := range op.Peers {
-		if err := s.Node.Host.Connect(ctx, pi); err != nil {
+		if err := s.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
 	}
@@ -117,12 +139,6 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		s.CM.ToCheck <- op.ContId
 	}
 
-	if op.Replace > 0 {
-		if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-			log.Infof("failed to remove content in replacement: %d", op.Replace)
-		}
-	}
-
 	// this provide call goes out immediately
 	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
 		log.Warnf("provider broadcast failed: %s", err)
@@ -133,6 +149,10 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		log.Warnf("providing failed: %s", err)
 	}
 	return nil
+}
+
+func (s *Server) PinStatusFunc(contID uint, location string, status types.PinningStatus) error {
+	return s.CM.UpdatePinStatus(location, contID, status)
 }
 
 func (cm *ContentManager) refreshPinQueue() error {
@@ -150,10 +170,16 @@ func (cm *ContentManager) refreshPinQueue() error {
 	// anyways
 	makeDeal := true
 	for _, c := range toPin {
+		var origins []*peer.AddrInfo
+		// when refreshing pinning queue, use content origins if available
+		if c.Origins != "" {
+			_ = json.Unmarshal([]byte(c.Origins), &origins)
+		}
+
 		if c.Location == "local" {
-			cm.addPinToQueue(c, nil, 0, makeDeal)
+			cm.addPinToQueue(c, origins, 0, makeDeal)
 		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, nil, 0, c.Location, makeDeal); err != nil {
+			if err := cm.pinContentOnShuttle(context.TODO(), c, origins, 0, c.Location, makeDeal); err != nil {
 				log.Errorf("failed to send pin message to shuttle: %s", err)
 				time.Sleep(time.Millisecond * 100)
 			}
@@ -162,33 +188,47 @@ func (cm *ContentManager) refreshPinQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, peers []peer.AddrInfo, replace uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatus, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
-	var metab string
+	if replaceID > 0 {
+		// mark as replace since it will removed and so it should not be fetched anymore
+		if err := cm.DB.Model(&Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
+			return nil, err
+		}
+	}
+
+	var metaStr string
 	if meta != nil {
 		b, err := json.Marshal(meta)
 		if err != nil {
 			return nil, err
 		}
-		metab = string(b)
+		metaStr = string(b)
+	}
+
+	var originsStr string
+	if origins != nil {
+		b, err := json.Marshal(origins)
+		if err != nil {
+			return nil, err
+		}
+		originsStr = string(b)
 	}
 
 	cont := Content{
-
 		Cid:         util.DbCID{CID: obj},
 		Name:        name,
 		UserID:      user,
 		Active:      false,
 		Replication: cm.Replication,
-
-		Pinning: true,
-		PinMeta: metab,
-
-		Location: loc,
+		Pinning:     true,
+		PinMeta:     metaStr,
+		Location:    loc,
+		Origins:     originsStr,
 	}
 	if err := cm.DB.Create(&cont).Error; err != nil {
 		return nil, err
@@ -208,17 +248,16 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	}
 
 	if loc == "local" {
-		cm.addPinToQueue(cont, peers, replace, makeDeal)
+		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
 	} else {
-		if err := cm.pinContentOnShuttle(ctx, cont, peers, replace, loc, makeDeal); err != nil {
+		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
 			return nil, err
 		}
 	}
-
-	return cm.pinStatus(cont)
+	return cm.pinStatus(cont, origins)
 }
 
-func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, replace uint, makeDeal bool) {
+func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
 	if cont.Location != "local" {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
@@ -230,10 +269,11 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 		Name:     cont.Name,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
-		Status:   "queued",
-		Replace:  replace,
+		Status:   types.PinningStatusQueued,
+		Replace:  replaceID,
 		Location: cont.Location,
 		MakeDeal: makeDeal,
+		Meta:     cont.PinMeta,
 	}
 
 	cm.pinLk.Lock()
@@ -244,7 +284,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []peer.AddrInfo, rep
 	cm.pinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []peer.AddrInfo, replace uint, handle string, makeDeal bool) error {
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
 		attribute.String("CID", cont.Cid.CID.String()),
@@ -272,10 +312,11 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 		Name:     cont.Name,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
-		Status:   "queued",
-		Replace:  replace,
+		Status:   types.PinningStatusQueued,
+		Replace:  replaceID,
 		Location: handle,
 		MakeDeal: makeDeal,
+		Meta:     cont.PinMeta,
 	}
 
 	cm.pinLk.Lock()
@@ -431,13 +472,14 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 
 	qcids := e.QueryParam("cid")
 	qname := e.QueryParam("name")
+	qmatch := e.QueryParam("match")
 	qstatus := e.QueryParam("status")
 	qbefore := e.QueryParam("before")
 	qafter := e.QueryParam("after")
 	qlimit := e.QueryParam("limit")
 	qreqids := e.QueryParam("requestid")
 
-	q := s.DB.Model(Content{}).Where("user_id = ? and not aggregate", u.ID).Order("created_at desc")
+	q := s.DB.Model(Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID
@@ -446,14 +488,22 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			if err != nil {
 				return err
 			}
-			cids = append(cids, util.DbCID{c})
+			cids = append(cids, util.DbCID{CID: c})
 		}
-
 		q = q.Where("cid in ?", cids)
 	}
 
 	if qname != "" {
-		q = q.Where("name = ?", qname)
+		switch strings.ToLower(qmatch) {
+		case "ipartial":
+			q = q.Where("lower(name) like ?", fmt.Sprintf("%%%s%%", strings.ToLower(qname)))
+		case "partial":
+			q = q.Where("name like ?", fmt.Sprintf("%%%s%%", qname))
+		case "iexact":
+			q = q.Where("lower(name) = ?", strings.ToLower(qname))
+		default: //exact
+			q = q.Where("name = ?", qname)
+		}
 	}
 
 	if qbefore != "" {
@@ -485,7 +535,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		q = q.Where("id in ?", ids)
 	}
 
-	var lim int
+	lim := 10 // default from spec
 	if qlimit != "" {
 		limit, err := strconv.Atoi(qlimit)
 		if err != nil {
@@ -494,36 +544,33 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		lim = limit
 	}
 
-	if lim == 0 {
-		lim = 500
-	}
-
-	var allowed map[string]bool
+	pinStatuses := make(map[types.PinningStatus]bool)
 	if qstatus != "" {
-		allowed = make(map[string]bool)
-		/*
-		   - queued     # pinning operation is waiting in the queue; additional info can be returned in info[status_details]
-		   - pinning    # pinning in progress; additional info can be returned in info[status_details]
-		   - pinned     # pinned successfully
-		   - failed     # pinning service was unable to finish pinning operation; additional info can be found in info[status_details]
-		*/
 		statuses := strings.Split(qstatus, ",")
 		for _, s := range statuses {
-			switch s {
-			case "queued", "pinning", "pinned", "failed":
-				allowed[s] = true
+			ps := types.PinningStatus(s)
+			switch ps {
+			case types.PinningStatusQueued, types.PinningStatusPinning, types.PinningStatusPinned, types.PinningStatusFailed:
+				pinStatuses[ps] = true
 			default:
-				return fmt.Errorf("unrecognized pin status in query: %q", s)
+				return &util.HttpError{
+					Code:    http.StatusBadRequest,
+					Reason:  util.ERR_INVALID_PINNING_STATUS,
+					Details: fmt.Sprintf("unrecognized pin status in query: %q", s),
+				}
 			}
 		}
 	}
 
-	// certain sets of statuses we can use the database to filter for
-	oq, dblimit, err := filterForStatusQuery(q, allowed)
+	q, dblimit, err := filterForStatusQuery(q, pinStatuses)
 	if err != nil {
 		return err
 	}
-	q = oq
+
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		return err
+	}
 
 	if dblimit {
 		q = q.Limit(lim)
@@ -534,40 +581,31 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		return err
 	}
 
-	var out []*types.IpfsPinStatus
+	out := make([]*types.IpfsPinStatusResponse, 0)
 	for _, c := range contents {
-		if lim > 0 && len(out) >= lim {
-			break
-		}
-
-		st, err := s.CM.pinStatus(c)
+		st, err := s.CM.pinStatus(c, nil)
 		if err != nil {
 			return err
 		}
-		if allowed == nil || allowed[st.Status] {
-			out = append(out, st)
-		}
+		out = append(out, st)
 	}
 
-	if len(out) == 0 {
-		out = make([]*types.IpfsPinStatus, 0)
-	}
-	return e.JSON(http.StatusOK, map[string]interface{}{
-		"count":   len(out),
-		"results": out,
+	return e.JSON(http.StatusOK, types.IpfsListPinStatusResponse{
+		Count:   int(count),
+		Results: out,
 	})
 }
 
-func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool, error) {
+func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*gorm.DB, bool, error) {
+	// TODO maybe we should move all these statuses to a status column in contents
 	if len(statuses) == 0 || len(statuses) == 4 {
-		// if not filtering by status, we return *all* pins, in that case we can use the query to limit results
-		return q, true, nil
+		return q, true, nil // if no status filter or all statuses are specified, return all pins
 	}
 
-	pinned := statuses["pinned"]
-	failed := statuses["failed"]
-	pinning := statuses["pinning"]
-	queued := statuses["queued"]
+	pinned := statuses[types.PinningStatusPinned]
+	failed := statuses[types.PinningStatusFailed]
+	pinning := statuses[types.PinningStatusPinning]
+	queued := statuses[types.PinningStatusQueued]
 
 	if len(statuses) == 1 {
 		switch {
@@ -575,8 +613,10 @@ func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool,
 			return q.Where("active"), true, nil
 		case failed:
 			return q.Where("failed"), true, nil
+		case pinning:
+			return q.Where("pinning"), true, nil
 		default:
-			return q, false, nil
+			return q.Where("not active and not pinning and not failed"), true, nil
 		}
 	}
 
@@ -585,48 +625,39 @@ func filterForStatusQuery(q *gorm.DB, statuses map[string]bool) (*gorm.DB, bool,
 			return q.Where("active or failed"), true, nil
 		}
 
-		if pinning && queued {
-			return q.Where("not active and not failed"), true, nil
+		if pinned && queued {
+			return q.Where("active and not failed and not pinning"), true, nil
 		}
-		// fallthrough to the rest of the logic
+
+		if pinned && pinning {
+			return q.Where("active or pinning"), true, nil
+		}
+
+		if pinning && failed {
+			return q.Where("pinning or failed"), true, nil
+		}
+
+		if pinning && queued {
+			return q.Where("pinning and not active and not failed"), true, nil
+		}
+
+		if failed && queued {
+			return q.Where("failed and not active and not pinning"), true, nil
+		}
 	}
 
-	var canUseDBLimit bool = true
-	// If the query is trying to distinguish between pinning and queued, we cannot do that solely via a database query
-	if (statuses["queued"] && !statuses["pinning"]) || (statuses["pinning"] && !statuses["queued"]) {
-		canUseDBLimit = false
+	if !statuses[types.PinningStatusFailed] {
+		return q.Where("not failed"), true, nil
 	}
 
-	if !statuses["failed"] {
-		q = q.Where("not failed")
+	if !statuses[types.PinningStatusPinned] {
+		return q.Where("not active"), true, nil
 	}
 
-	if !statuses["pinned"] {
-		q = q.Where("not active")
+	if !statuses[types.PinningStatusPinning] {
+		return q.Where("not pinning"), true, nil
 	}
-
-	return q, canUseDBLimit, nil
-}
-
-/*
-{
-
-    "cid": "QmCIDToBePinned",
-    "name": "PreciousData.pdf",
-    "origins":
-
-[
-
-    "/ip4/203.0.113.142/tcp/4001/p2p/QmSourcePeerId",
-    "/ip4/203.0.113.114/udp/4001/quic/p2p/QmSourcePeerId"
-
-],
-"meta":
-
-    {
-        "app_id": "99986338-1113-4706-8302-4420da6158aa"
-    }
-
+	return q.Where("active or pinning or failed"), true, nil
 }
 
 // handleAddPin  godoc
@@ -679,29 +710,26 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		}
 	}
 
-	var addrInfos []peer.AddrInfo
+	var origins []*peer.AddrInfo
 	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
 			return err
 		}
-
-		addrInfos = append(addrInfos, *ai)
+		origins = append(origins, ai)
 	}
 
-	obj, err := cid.Decode(pin.Cid)
+	obj, err := cid.Decode(pin.CID)
 	if err != nil {
 		return err
 	}
 
 	makeDeal := true
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, addrInfos, 0, pin.Meta, makeDeal)
+	// TODO pinning should be async
+	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
-
-	status.Pin.Meta = pin.Meta
-
 	return e.JSON(http.StatusAccepted, status)
 }
 
@@ -790,23 +818,22 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		}
 	}
 
-	var addrInfos []peer.AddrInfo
+	var origins []*peer.AddrInfo
 	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
 			return err
 		}
-
-		addrInfos = append(addrInfos, *ai)
+		origins = append(origins, ai)
 	}
 
-	obj, err := cid.Decode(pin.Cid)
+	pinCID, err := cid.Decode(pin.CID)
 	if err != nil {
 		return err
 	}
 
 	makeDeal := true
-	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, nil, addrInfos, uint(id), pin.Meta, makeDeal)
+	status, err := s.CM.pinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -827,7 +854,14 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
+	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content with ID(%d) was not found", pinID),
+			}
+		}
 		return err
 	}
 
@@ -839,15 +873,21 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		}
 	}
 
-	// TODO: what if we delete a pin that was in progress?
-	if err := s.CM.unpinContent(ctx, uint(id)); err != nil {
+	// mark as replace since it will removed and so it should not be fetched anymore
+	if err := s.DB.Model(&Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
 		return err
 	}
 
+	// unpin async
+	go func() {
+		if err := s.CM.unpinContent(e.Request().Context(), uint(pinID)); err != nil {
+			log.Errorf("could not unpinContent(%d): %s", err, pinID)
+		}
+	}()
 	return e.NoContent(http.StatusAccepted)
 }
 
-func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status string) {
+func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
 	cm.pinLk.Lock()
 	op, ok := cm.pinJobs[contID]
 
@@ -856,8 +896,7 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 		return fmt.Errorf("got pin status update for unknown content: %d, status: %s, location: %s", contID, status, location)
 	}
 
-	op.SetStatus(status)
-	if status == "failed" {
+	if status == types.PinningStatusFailed {
 		var c Content
 		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
 			return errors.Wrap(err, "failed to look up content")
@@ -875,6 +914,8 @@ func (cm *ContentManager) UpdatePinStatus(handle string, cont uint, status strin
 			log.Errorf("failed to mark content as failed in database: %s", err)
 		}
 	}
+	op.SetStatus(status)
+	return nil
 }
 
 func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) error {

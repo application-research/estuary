@@ -664,14 +664,13 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		}
 	}
 
-	var addrInfos []peer.AddrInfo
+	var origins []*peer.AddrInfo
 	for _, p := range params.Peers {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
 			return err
 		}
-
-		addrInfos = append(addrInfos, *ai)
+		origins = append(origins, ai)
 	}
 
 	rcid, err := cid.Decode(params.Root)
@@ -690,11 +689,10 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	}
 
 	makeDeal := true
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil, makeDeal)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusAccepted, pinstatus)
 }
 
@@ -3397,6 +3395,28 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		return err
 	}
 
+	// transform listen addresses (/ip/1.2.3.4/tcp/80) into full p2p multiaddresses
+	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
+	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
+	for _, listenAddr := range s.Node.Host.Addrs() {
+		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
+		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
+		if err != nil {
+			return err
+		}
+		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
+	}
+
+	// transform multiaddresses into AddrInfo objects
+	var origins []*peer.AddrInfo
+	for _, p := range fullP2pMultiAddrs {
+		ai, err := peer.AddrInfoFromP2pAddr(p)
+		if err != nil {
+			return err
+		}
+		origins = append(origins, ai)
+	}
+
 	bserv := blockservice.New(s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -3421,33 +3441,14 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
-	err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error
-	if err != nil {
-		return err
-	}
-
-	// transform listen addresses (/ip/1.2.3.4/tcp/80) in full p2p multiaddresses
-	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
-	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
-	for _, listenAddr := range s.Node.Host.Addrs() {
-		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
-		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
-		if err != nil {
-			return err
-		}
-		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
-	}
-
-	// transform multiaddresses into AddrInfo objects
-	peers, err := peer.AddrInfosFromP2pAddrs(fullP2pMultiAddrs...)
-	if err != nil {
+	if err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
 		return err
 	}
 
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil, makeDeal)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -4614,8 +4615,10 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 			return err
 		}
 
-		if col.UserID != u.ID {
-			return fmt.Errorf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID)
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
 		}
 	}
 

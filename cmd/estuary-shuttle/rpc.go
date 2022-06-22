@@ -6,6 +6,7 @@ import (
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -112,7 +113,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
-						Status: "failed",
+						Status: types.PinningStatusFailed,
 					},
 				},
 			}); err != nil {
@@ -154,11 +155,10 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 	}
 
 	op := &pinner.PinningOperation{
-		Obj:    data,
-		ContId: contid,
-		UserId: user,
-		Status: "queued",
-
+		Obj:         data,
+		ContId:      contid,
+		UserId:      user,
+		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
 	}
 

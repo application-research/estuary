@@ -2,6 +2,7 @@ package pinner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -18,11 +19,13 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *PinningOperation, PinProgressCB) error
 
 type PinProgressCB func(int64)
-type PinStatusFunc func(uint, string)
+type PinStatusFunc func(contID uint, loocation string, status types.PinningStatus) error
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
-		scf = func(uint, string) {}
+		scf = func(contID uint, loocation string, status types.PinningStatus) error {
+			return nil
+		}
 	}
 	if opts == nil {
 		opts = DefaultOpts
@@ -49,16 +52,14 @@ type PinManagerOpts struct {
 }
 
 type PinManager struct {
-	pinQueueIn  chan *PinningOperation
-	pinQueueOut chan *PinningOperation
-	pinComplete chan *PinningOperation
-	pinQueue    map[uint][]*PinningOperation
-	activePins  map[uint]int
-	pinQueueLk  sync.Mutex
-
+	pinQueueIn       chan *PinningOperation
+	pinQueueOut      chan *PinningOperation
+	pinComplete      chan *PinningOperation
+	pinQueue         map[uint][]*PinningOperation
+	activePins       map[uint]int
+	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
-	StatusChangeFunc func(uint, string)
-
+	StatusChangeFunc PinStatusFunc
 	maxActivePerUser int
 }
 
@@ -68,10 +69,10 @@ type PinManager struct {
 type PinningOperation struct {
 	Obj   cid.Cid
 	Name  string
-	Peers []peer.AddrInfo
-	Meta  map[string]interface{}
+	Peers []*peer.AddrInfo
+	Meta  string
 
-	Status string
+	Status types.PinningStatus
 
 	UserId  uint
 	ContId  uint
@@ -98,7 +99,7 @@ func (po *PinningOperation) fail(err error) {
 	po.lk.Lock()
 	po.FetchErr = err
 	po.EndTime = time.Now()
-	po.Status = "failed"
+	po.Status = types.PinningStatusFailed
 	po.LastUpdate = time.Now()
 	po.lk.Unlock()
 }
@@ -109,10 +110,10 @@ func (po *PinningOperation) complete() {
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
-	po.Status = "pinned"
+	po.Status = types.PinningStatusPinned
 }
 
-func (po *PinningOperation) SetStatus(st string) {
+func (po *PinningOperation) SetStatus(st types.PinningStatus) {
 	po.lk.Lock()
 	defer po.lk.Unlock()
 
@@ -120,19 +121,38 @@ func (po *PinningOperation) SetStatus(st string) {
 	po.LastUpdate = time.Now()
 }
 
-func (po *PinningOperation) PinStatus() *types.IpfsPinStatus {
+func (po *PinningOperation) PinStatus() *types.IpfsPinStatusResponse {
 	po.lk.Lock()
 	defer po.lk.Unlock()
 
-	return &types.IpfsPinStatus{
-		Requestid: fmt.Sprint(po.ContId),
+	meta := make(map[string]interface{}, 0)
+	if po.Meta != "" {
+		if err := json.Unmarshal([]byte(po.Meta), &meta); err != nil {
+			log.Warnf("content %d has invalid meta: %s", po.ContId, err)
+		}
+	}
+
+	originStrs := make([]string, 0)
+	for _, o := range po.Peers {
+		ai, err := peer.AddrInfoToP2pAddrs(o)
+		if err == nil {
+			for _, a := range ai {
+				originStrs = append(originStrs, a.String())
+			}
+		}
+	}
+
+	return &types.IpfsPinStatusResponse{
+		RequestID: fmt.Sprint(po.ContId),
 		Status:    po.Status,
 		Created:   po.Started,
 		Pin: types.IpfsPin{
-			Cid:  po.Obj.String(),
-			Name: po.Name,
-			Meta: po.Meta,
+			CID:     po.Obj.String(),
+			Name:    po.Name,
+			Origins: originStrs,
+			Meta:    meta,
 		},
+		Info: make(map[string]interface{}, 0),
 		/* Ref: https://github.com/ipfs/go-pinning-service-http-client/issues/12
 		Info: map[string]interface{}{
 			"obj_fetched":  po.NumFetched,
@@ -164,8 +184,10 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
-	op.SetStatus("pinning")
-	pm.StatusChangeFunc(op.ContId, "pinning")
+	op.SetStatus(types.PinningStatusPinning)
+	if err := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinning); err != nil {
+		return err
+	}
 
 	if err := pm.RunPinFunc(ctx, op, func(size int64) {
 		op.lk.Lock()
@@ -174,12 +196,13 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 		op.SizeFetched += size
 	}); err != nil {
 		op.fail(err)
-		pm.StatusChangeFunc(op.ContId, "failed")
+		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusFailed); err2 != nil {
+			return err2
+		}
 		return errors.Wrap(err, "shuttle RunPinFunc failed")
 	}
 	op.complete()
-	pm.StatusChangeFunc(op.ContId, "pinned")
-	return nil
+	return pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinned)
 }
 
 func (pm *PinManager) popNextPinOp() *PinningOperation {

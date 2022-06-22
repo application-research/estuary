@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/types"
+
 	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util/gateway"
@@ -49,7 +51,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/chain/types"
+	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
@@ -1479,7 +1481,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	defer span.End()
 
 	for _, pi := range op.Peers {
-		if err := d.Node.Host.Connect(ctx, pi); err != nil {
+		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
 	}
@@ -1637,9 +1639,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	return nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
+func (d *Shuttle) onPinStatusUpdate(cont uint, locatioon string, status types.PinningStatus) error {
 	log.Infof("updating pin status: %d %s", cont, status)
-	if status == "failed" {
+	if status == types.PinningStatusFailed {
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
@@ -1662,6 +1664,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 			log.Errorf("failed to send pin status update: %s", err)
 		}
 	}()
+	return nil
 }
 
 func (s *Shuttle) refreshPinQueue() error {
@@ -1685,14 +1688,14 @@ func (s *Shuttle) refreshPinQueue() error {
 	return nil
 }
 
-func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
+func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 	op := &pinner.PinningOperation{
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
 		Peers:   peers,
 		Started: p.CreatedAt,
-		Status:  "queued",
+		Status:  types.PinningStatusQueued,
 		Replace: replace,
 	}
 
@@ -2183,7 +2186,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	var cc cid.Cid
 	var deals []*api.MarketDeal
 	for _, id := range body.DealIDs {
-		deal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(id), types.EmptyTSK)
+		deal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(id), lotusTypes.EmptyTSK)
 		if err != nil {
 			return fmt.Errorf("getting deal info from chain: %w", err)
 		}
