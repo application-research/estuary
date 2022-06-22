@@ -979,8 +979,8 @@ func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 			log.Warnw("User not authorized", "user", u.ID, "perms", u.Perms, "required", level)
 
 			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Message: util.ERR_NOT_AUTHORIZED,
+				Code:   http.StatusUnauthorized,
+				Reason: util.ERR_NOT_AUTHORIZED,
 			}
 		}
 	}
@@ -1121,8 +1121,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -1142,7 +1142,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
 		}
 	}
@@ -1254,8 +1254,8 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -1273,7 +1273,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
-				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
 		}

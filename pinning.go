@@ -656,8 +656,8 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -730,15 +730,29 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", uint(id)).Error; err != nil {
+	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content with ID(%d) was not found", pinID),
+			}
+		}
 		return err
 	}
 
-	st, err := s.CM.pinStatus(content)
+	if content.UserID != u.ID {
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
+		}
+	}
+
+	st, err := s.CM.pinStatus(content, nil)
 	if err != nil {
 		return err
 	}
-
 	return e.JSON(http.StatusOK, st)
 }
 
@@ -752,8 +766,8 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -769,13 +783,22 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
+	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content with ID(%d) was not found", pinID),
+			}
+		}
 		return err
 	}
+
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -822,10 +845,12 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	if err := s.DB.First(&content, "id = ?", id).Error; err != nil {
 		return err
 	}
+
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 

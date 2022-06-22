@@ -356,9 +356,12 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	return func(c echo.Context) error {
 		u, ok := c.Get("user").(*User)
 		if !ok {
-			return fmt.Errorf("endpoint not called with proper authentication")
+			return &util.HttpError{
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_AUTH,
+				Details: "endpoint not called with proper authentication",
+			}
 		}
-
 		return f(c, u)
 	}
 }
@@ -516,8 +519,8 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_REMOVE_ERROR,
 		}
 	}
 
@@ -561,8 +564,8 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_START_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_START_ERROR,
 		}
 	}
 	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Started."})
@@ -579,8 +582,8 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_STOP_ERROR,
 		}
 	}
 	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Stopped."})
@@ -611,8 +614,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -707,8 +710,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -726,7 +729,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
-				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
 		}
@@ -829,8 +832,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 			}
 		}
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_CONTENT_ADDING_DISABLED,
 		}
 	}
 
@@ -850,7 +853,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
 		}
 	}
@@ -1258,7 +1261,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	if content.UserID != u.ID {
 		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -1537,8 +1541,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 	if u.Perm < util.PermLevelAdmin {
 		return util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_INVALID_AUTH,
+			Code:   http.StatusForbidden,
+			Reason: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -2043,8 +2047,8 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2090,8 +2094,8 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2123,8 +2127,8 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2541,8 +2545,9 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -2583,7 +2588,8 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	if content.UserID != u.ID {
 		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -2752,8 +2758,9 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_TOKEN,
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_TOKEN,
+				Details: "api key does not exists",
 			}
 		}
 		return nil, err
@@ -2761,8 +2768,8 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 
 	if authToken.Expiry.Before(time.Now()) {
 		return nil, &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_TOKEN_EXPIRED,
+			Code:    http.StatusUnauthorized,
+			Reason:  util.ERR_TOKEN_EXPIRED,
 			Details: fmt.Sprintf("token for user %d expired %s", authToken.User, authToken.Expiry),
 		}
 	}
@@ -2771,8 +2778,9 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_TOKEN,
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_TOKEN,
+				Details: "no user exists for the spicified api key",
 			}
 		}
 		return nil, err
@@ -2808,8 +2816,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Message: util.ERR_NOT_AUTHORIZED,
+					Code:    http.StatusForbidden,
+					Reason:  util.ERR_NOT_AUTHORIZED,
+					Details: "api key is upload only",
 				}
 			}
 
@@ -2818,11 +2827,12 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			log.Warnw("User not authorized", "user", u.ID, "perm", u.Perm, "required", level)
+			log.Warnw("user not authorized", "user", u.ID, "perm", u.Perm, "required", level)
 
 			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Message: util.ERR_NOT_AUTHORIZED,
+				Code:    http.StatusForbidden,
+				Reason:  util.ERR_NOT_AUTHORIZED,
+				Details: "user not authorized",
 			}
 		}
 	}
@@ -2844,26 +2854,33 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_INVITE,
+				Code:   http.StatusNotFound,
+				Reason: util.ERR_INVALID_INVITE,
 			}
 		}
+		return err
 	}
 
 	if invite.ClaimedBy != 0 {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_INVITE_ALREADY_USED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVITE_ALREADY_USED,
 		}
 	}
 
 	username := strings.ToLower(reg.Username)
 
-	var exist User
-	if err := s.DB.First(&exist, "username = ?", username).Error; err == nil {
+	var exist *User
+	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	if exist != nil {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_USERNAME_TAKEN,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_USERNAME_TAKEN,
 		}
 	}
 
@@ -2873,13 +2890,12 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		PassHash: reg.PasswordHash,
 		Perm:     util.PermLevelUser,
 	}
-	if err := s.DB.Create(newUser).Error; err != nil {
-		herr := &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_USER_CREATION_FAILED,
-		}
 
-		return fmt.Errorf("user creation failed: %s: %w", err, herr)
+	if err := s.DB.Create(newUser).Error; err != nil {
+		return &util.HttpError{
+			Code:   http.StatusInternalServerError,
+			Reason: util.ERR_USER_CREATION_FAILED,
+		}
 	}
 
 	authToken := &AuthToken{
@@ -2923,8 +2939,8 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_USER_NOT_FOUND,
+				Code:   http.StatusForbidden,
+				Reason: util.ERR_USER_NOT_FOUND,
 			}
 		}
 		return err
@@ -2932,8 +2948,8 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 
 	if user.PassHash != body.PassHash {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_INVALID_PASSWORD,
+			Code:   http.StatusForbidden,
+			Reason: util.ERR_INVALID_PASSWORD,
 		}
 	}
 
@@ -2980,8 +2996,8 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		log.Warnf("invalid filecoin address in change address request body: %w", err)
 
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: "invalid address in request body",
+			Code:   http.StatusUnauthorized,
+			Reason: "invalid address in request body",
 		}
 	}
 
@@ -3567,15 +3583,28 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	coluuid := c.Param("coluuid")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
-		return c.String(404, "Collection not found")
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("collection with ID(%s) was not found", coluuid),
+			}
+		}
+	}
+
+	if col.UserID != u.ID {
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified collection",
+		}
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
 		return err
 	}
-
-	return c.NoContent(200)
+	return c.NoContent(http.StatusOK)
 }
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -4670,8 +4699,8 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 
 	if len(sigb) < 2 {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_INVALID_INPUT,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVALID_INPUT,
 		}
 	}
 
@@ -4689,7 +4718,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 	if len(sm) == 0 {
 		// This is a new miner, need to run some checks first
 		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
-			return c.JSON(400, map[string]interface{}{
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"success": false,
 				"error":   err.Error(),
 			})
@@ -5002,11 +5031,10 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
 				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Message: util.ERR_NOT_AUTHORIZED,
+					Code:   http.StatusUnauthorized,
+					Reason: util.ERR_NOT_AUTHORIZED,
 				}
 			}
-
 			return next(c)
 		}
 	}
@@ -5043,6 +5071,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 	return nil
 }
 
+// this is required as ipfs pinning spec has strong requirements on response format
 func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
@@ -5050,35 +5079,32 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		var herr *util.HttpError
-		if xerrors.As(err, &herr) {
-			errmap := map[string]string{
-				"reason": herr.Message,
-			}
-			if herr.Details != "" {
-				errmap["details"] = herr.Details
-			}
-			res := map[string]interface{}{
-				"error": errmap,
-			}
-			return c.JSON(herr.Code, res)
+		var httpRespErr *util.HttpError
+		if xerrors.As(err, &httpRespErr) {
+			log.Errorf("handler error: %s", err)
+			return c.JSON(httpRespErr.Code, &util.HttpErrorResponse{
+				Error: util.HttpError{
+					Reason:  httpRespErr.Reason,
+					Details: httpRespErr.Details,
+				},
+			})
 		}
 
 		var echoErr *echo.HTTPError
 		if xerrors.As(err, &echoErr) {
-			return c.JSON(echoErr.Code, map[string]interface{}{
-				"error": map[string]interface{}{
-					"reason": echoErr.Message,
+			return c.JSON(echoErr.Code, &util.HttpErrorResponse{
+				Error: util.HttpError{
+					Reason:  http.StatusText(echoErr.Code),
+					Details: echoErr.Message.(string),
 				},
 			})
 		}
 
 		log.Errorf("handler error: %s", err)
-
-		// TODO: returning all errors out to the user smells potentially bad
-		return c.JSON(500, map[string]interface{}{
-			"error": map[string]string{
-				"reason": err.Error(),
+		return c.JSON(http.StatusInternalServerError, &util.HttpErrorResponse{
+			Error: util.HttpError{
+				Reason:  http.StatusText(http.StatusInternalServerError),
+				Details: err.Error(),
 			},
 		})
 	}
@@ -5142,8 +5168,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if col.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified collection",
 		}
 	}
@@ -5155,8 +5181,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified content",
 		}
 	}

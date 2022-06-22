@@ -37,19 +37,25 @@ const (
 	ERR_PEERING_PEERS_REMOVE_ERROR = "ERR_PEERING_PEERS_REMOVE_ERROR"
 	ERR_PEERING_PEERS_START_ERROR  = "ERR_PEERING_PEERS_START_ERROR"
 	ERR_PEERING_PEERS_STOP_ERROR   = "ERR_PEERING_PEERS_STOP_ERROR"
+	ERR_CONTENT_NOT_FOUND          = "ERR_CONTENT_NOT_FOUND"
+	ERR_INVALID_PINNING_STATUS     = "ERR_INVALID_PINNING_STATUS"
 )
 
 type HttpError struct {
-	Code    int
-	Message string
-	Details string
+	Code    int    `json:"code,omitempty"`
+	Reason  string `json:"reason"`
+	Details string `json:"details"`
 }
 
 func (he HttpError) Error() string {
 	if he.Details == "" {
-		return he.Message
+		return he.Reason
 	}
-	return he.Message + ": " + he.Details
+	return he.Reason + ": " + he.Details
+}
+
+type HttpErrorResponse struct {
+	Error HttpError `json:"error"`
 }
 
 const (
@@ -67,6 +73,7 @@ func isValidAuth(authStr string) bool {
 	if !matchEst && !matchSecret {
 		return false
 	}
+
 	// only get the uuid from the string
 	uuidStr := strings.ReplaceAll(authStr, "SECRET", "")
 	uuidStr = strings.ReplaceAll(uuidStr, "EST", "")
@@ -77,7 +84,6 @@ func isValidAuth(authStr string) bool {
 	if err != nil {
 		return false
 	}
-
 	return true
 }
 
@@ -86,36 +92,28 @@ func ExtractAuth(c echo.Context) (string, error) {
 	//	undefined will be the auth value if ESTUARY_TOKEN cookie is removed.
 	if auth == "" || auth == "undefined" {
 		return "", &HttpError{
-			Code:    http.StatusForbidden,
-			Message: ERR_AUTH_MISSING,
+			Code:    http.StatusUnauthorized,
+			Reason:  ERR_AUTH_MISSING,
+			Details: "no api key was specified",
 		}
 	}
 
 	parts := strings.Split(auth, " ")
 	if len(parts) != 2 {
 		return "", &HttpError{
-			Code:    http.StatusForbidden,
-			Message: ERR_INVALID_AUTH,
+			Code:    http.StatusUnauthorized,
+			Reason:  ERR_INVALID_AUTH,
+			Details: "invalid api key was specified",
 		}
 	}
 
 	if parts[0] != "Bearer" {
 		return "", &HttpError{
-			Code:    http.StatusForbidden,
-			Message: ERR_AUTH_MISSING_BEARER,
+			Code:    http.StatusUnauthorized,
+			Reason:  ERR_AUTH_MISSING_BEARER,
+			Details: "invalid api key was specified",
 		}
 	}
-
-	/*
-		//	if auth is not missing, check format first before extracting
-		if !isValidAuth(parts[1]) {
-			return "", &HttpError{
-				Code:    http.StatusForbidden,
-				Message: ERR_WRONG_AUTH_FORMAT,
-			}
-		}
-	*/
-
 	return parts[1], nil
 }
 
@@ -147,30 +145,31 @@ type ViewerResponse struct {
 }
 
 func ErrorHandler(err error, ctx echo.Context) {
-	var herr *HttpError
-	if xerrors.As(err, &herr) {
-		res := map[string]string{
-			"error": herr.Message,
-		}
-		if herr.Details != "" {
-			res["details"] = herr.Details
-		}
-
+	var httpRespErr *HttpError
+	if xerrors.As(err, &httpRespErr) {
 		log.Errorf("handler error: %s", err)
-		ctx.JSON(herr.Code, res)
+		ctx.JSON(httpRespErr.Code, HttpErrorResponse{Error: *httpRespErr})
 		return
 	}
 
 	var echoErr *echo.HTTPError
 	if xerrors.As(err, &echoErr) {
-		ctx.JSON(echoErr.Code, map[string]interface{}{
-			"error": echoErr.Message,
+		ctx.JSON(echoErr.Code, HttpErrorResponse{
+			Error: HttpError{
+				Code:    echoErr.Code,
+				Reason:  http.StatusText(echoErr.Code),
+				Details: echoErr.Message.(string),
+			},
 		})
 		return
 	}
 
 	log.Errorf("handler error: %s", err)
-	_ = ctx.JSON(500, map[string]interface{}{
-		"error": err.Error(),
+	ctx.JSON(http.StatusInternalServerError, HttpErrorResponse{
+		Error: HttpError{
+			Code:    http.StatusInternalServerError,
+			Reason:  http.StatusText(http.StatusInternalServerError),
+			Details: err.Error(),
+		},
 	})
 }
