@@ -312,7 +312,7 @@ func (c *EstClient) CollectionsListDir(ctx context.Context, coluuid, path string
 
 func (c *EstClient) PinAdd(ctx context.Context, root cid.Cid, name string, origins []string, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
 	p := &types.IpfsPin{
-		Cid:     root.String(),
+		CID:     root.String(),
 		Name:    name,
 		Origins: origins,
 		Meta:    meta,
@@ -405,7 +405,7 @@ func (c *EstClient) PinStatusByCid(ctx context.Context, cids []string) (map[stri
 
 	out := make(map[string]*types.IpfsPinStatus)
 	for _, res := range resp.Results {
-		out[res.Pin.Cid] = res
+		out[res.Pin.CID] = res
 	}
 
 	return out, nil

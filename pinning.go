@@ -671,10 +671,12 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 			colpath = &p
 		}
 
-		cols = []*CollectionRef{&CollectionRef{
-			Collection: srchCol.ID,
-			Path:       colpath,
-		}}
+		cols = []*CollectionRef{
+			{
+				Collection: srchCol.ID,
+				Path:       colpath,
+			},
+		}
 	}
 
 	var addrInfos []peer.AddrInfo

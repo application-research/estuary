@@ -656,10 +656,12 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			filename = filepath.Base(colp)
 		}
 
-		cols = []*CollectionRef{&CollectionRef{
-			Collection: srchCol.ID,
-			Path:       &path,
-		}}
+		cols = []*CollectionRef{
+			{
+				Collection: srchCol.ID,
+				Path:       &path,
+			},
+		}
 	}
 
 	var addrInfos []peer.AddrInfo
@@ -686,6 +688,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
 	}
+
 	makeDeal := true
 	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil, makeDeal)
 	if err != nil {
@@ -1051,7 +1054,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
 		objlk.Unlock()
@@ -1074,7 +1077,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	defer span.End()
 
 	content := &Content{
-		Cid:         util.DbCID{root},
+		Cid:         util.DbCID{CID: root},
 		Name:        filename,
 		Active:      false,
 		Pinning:     true,
@@ -1248,13 +1251,13 @@ type dealStatus struct {
 // @Router       /content/status/{id} [get]
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
-	val, err := strconv.Atoi(c.Param("id"))
+	contID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", val, u.ID).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
 
@@ -2148,7 +2151,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 	name := c.QueryParam("name")
 
 	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
-		Address: util.DbAddr{m},
+		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
 		return err
@@ -2473,9 +2476,9 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 }
 
 type minerDealsResp struct {
-	ID               uint `json:"id"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID               uint       `json:"id"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 	Content          uint       `json:"content"`
 	PropCid          util.DbCID `json:"propCid"`
 	Miner            string     `json:"miner"`
@@ -2486,10 +2489,9 @@ type minerDealsResp struct {
 	DTChan           string     `json:"dtChan"`
 	TransferStarted  time.Time  `json:"transferStarted"`
 	TransferFinished time.Time  `json:"transferFinished"`
-
-	OnChainAt  time.Time  `json:"onChainAt"`
-	SealedAt   time.Time  `json:"sealedAt"`
-	ContentCid util.DbCID `json:"contentCid"`
+	OnChainAt        time.Time  `json:"onChainAt"`
+	SealedAt         time.Time  `json:"sealedAt"`
+	ContentCid       util.DbCID `json:"contentCid"`
 }
 
 // handleGetMinerDeals godoc
@@ -2533,13 +2535,13 @@ type bandwidthResponse struct {
 // @Param 		 content path string true "Content ID"
 // @Router       /content/bw-usage/{content} [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, cont).Error; err != nil {
+	if err := s.DB.First(&content, contID).Error; err != nil {
 		return err
 	}
 
@@ -2575,13 +2577,13 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 // @Success 	200 {object} string
 // @Router       /content/aggregated/{content} [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
 
@@ -2594,10 +2596,9 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 	}
 
 	var sub []Content
-	if err := s.DB.Find(&sub, "aggregated_in = ?", cont).Error; err != nil {
+	if err := s.DB.Find(&sub, "aggregated_in = ?", contID).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, sub)
 }
 
@@ -3345,7 +3346,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		}
 
 		var cont Content
-		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{cc}, u.ID).Error; err != nil {
+		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{CID: cc}, u.ID).Error; err != nil {
 			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
 		}
 
@@ -3450,7 +3451,6 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, pinstatus)
 }
 
@@ -3497,7 +3497,6 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 		}
 
 		path := r.Path
-
 		relp, err := filepath.Rel(dir, path)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
@@ -3565,11 +3564,9 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			Type:   contentType,
 			Size:   r.Size,
 			ContID: r.ID,
-			Cid:    &util.DbCID{r.Cid.CID},
+			Cid:    &util.DbCID{CID: r.Cid.CID},
 		})
-
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -3817,16 +3814,15 @@ type dealMetricsInfo struct {
 }
 
 type metricsDealJoin struct {
-	CreatedAt        time.Time
-	Failed           bool
-	FailedAt         time.Time
-	DealID           int64
-	Size             int64
+	CreatedAt        time.Time `json:"created_at"`
+	Failed           bool      `json:"failed"`
+	FailedAt         time.Time `json:"failed_at"`
+	DealID           int64     `json:"deal_id"`
+	Size             int64     `json:"size"`
 	TransferStarted  time.Time `json:"transferStarted"`
 	TransferFinished time.Time `json:"transferFinished"`
-
-	OnChainAt time.Time `json:"onChainAt"`
-	SealedAt  time.Time `json:"sealedAt"`
+	OnChainAt        time.Time `json:"onChainAt"`
+	SealedAt         time.Time `json:"sealedAt"`
 }
 
 // handleMetricsDealOnChain godoc
@@ -4725,7 +4721,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 		}
 
 		if err := s.DB.Create(&storageMiner{
-			Address: util.DbAddr{cmb.Miner},
+			Address: util.DbAddr{Addr: cmb.Miner},
 			Name:    cmb.Name,
 			Owner:   u.ID,
 		}).Error; err != nil {
@@ -4997,7 +4993,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	}
 
 	content := &Content{
-		Cid:         util.DbCID{root},
+		Cid:         util.DbCID{CID: root},
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,
@@ -5196,14 +5192,9 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		path = &p
 	}
 
-	if err := s.DB.Create(&CollectionRef{
-		Collection: col.ID,
-		Content:    content.ID,
-		Path:       path,
-	}).Error; err != nil {
-		log.Errorf("failed to add content to requested collection: %s", err)
+	if err := s.DB.Create(&CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
+		return errors.Wrap(err, "failed to add content to requested collection")
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -5235,7 +5226,6 @@ func (s *Server) handleGateway(c echo.Context) error {
 		s.gwayHandler.ServeHTTP(c.Response().Writer, req)
 		return nil
 	}
-
 	return c.Redirect(307, redir)
 }
 
@@ -5247,7 +5237,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	}
 
 	var cont Content
-	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{cc}).Error; err != nil {
+	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}
