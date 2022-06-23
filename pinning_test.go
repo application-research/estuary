@@ -22,9 +22,8 @@ func TestStatusFilterQuery(t *testing.T) {
 
 	s := map[types.PinningStatus]bool{}
 
-	resp, ok, err := filterForStatusQuery(db, s)
+	resp, err := filterForStatusQuery(db, s)
 	assert.NoError(err)
-	assert.True(ok)
 	assert.Equal("SELECT * FROM `conts`",
 		resp.Find([]Conts{}).Statement.SQL.String())
 
@@ -32,10 +31,9 @@ func TestStatusFilterQuery(t *testing.T) {
 		types.PinningStatusFailed: true,
 	}
 
-	resp, ok, err = filterForStatusQuery(db, s)
+	resp, err = filterForStatusQuery(db, s)
 	assert.NoError(err)
-	assert.True(ok)
-	assert.Equal("SELECT * FROM `conts` WHERE failed",
+	assert.Equal("SELECT * FROM `conts` WHERE failed and not active and not pinning",
 		resp.Find([]Conts{}).Statement.SQL.String())
 
 	s = map[types.PinningStatus]bool{
@@ -43,10 +41,9 @@ func TestStatusFilterQuery(t *testing.T) {
 		types.PinningStatusPinned: true,
 	}
 
-	resp, ok, err = filterForStatusQuery(db, s)
+	resp, err = filterForStatusQuery(db, s)
 	assert.NoError(err)
-	assert.True(ok)
-	assert.Equal("SELECT * FROM `conts` WHERE active or failed",
+	assert.Equal("SELECT * FROM `conts` WHERE (active or failed) and not pinning",
 		resp.Find([]Conts{}).Statement.SQL.String())
 
 	s = map[types.PinningStatus]bool{
@@ -54,10 +51,9 @@ func TestStatusFilterQuery(t *testing.T) {
 		types.PinningStatusPinned:  true,
 	}
 
-	resp, ok, err = filterForStatusQuery(db, s)
+	resp, err = filterForStatusQuery(db, s)
 	assert.NoError(err)
-	assert.False(ok)
-	assert.Equal("SELECT * FROM `conts` WHERE not failed",
+	assert.Equal("SELECT * FROM `conts` WHERE (active or pinning) and not failed",
 		resp.Find([]Conts{}).Statement.SQL.String())
 
 	s = map[types.PinningStatus]bool{
@@ -65,9 +61,8 @@ func TestStatusFilterQuery(t *testing.T) {
 		types.PinningStatusQueued:  true,
 	}
 
-	resp, ok, err = filterForStatusQuery(db, s)
+	resp, err = filterForStatusQuery(db, s)
 	assert.NoError(err)
-	assert.True(ok)
-	assert.Equal("SELECT * FROM `conts` WHERE not active and not failed",
+	assert.Equal("SELECT * FROM `conts` WHERE pinning and not active and not failed",
 		resp.Find([]Conts{}).Statement.SQL.String())
 }

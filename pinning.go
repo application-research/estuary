@@ -562,7 +562,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		}
 	}
 
-	q, dblimit, err := filterForStatusQuery(q, pinStatuses)
+	q, err := filterForStatusQuery(q, pinStatuses)
 	if err != nil {
 		return err
 	}
@@ -572,9 +572,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		return err
 	}
 
-	if dblimit {
-		q = q.Limit(lim)
-	}
+	q.Limit(lim)
 
 	var contents []Content
 	if err := q.Scan(&contents).Error; err != nil {
@@ -596,10 +594,10 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	})
 }
 
-func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*gorm.DB, bool, error) {
+func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*gorm.DB, error) {
 	// TODO maybe we should move all these statuses to a status column in contents
 	if len(statuses) == 0 || len(statuses) == 4 {
-		return q, true, nil // if no status filter or all statuses are specified, return all pins
+		return q, nil // if no status filter or all statuses are specified, return all pins
 	}
 
 	pinned := statuses[types.PinningStatusPinned]
@@ -610,54 +608,54 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 	if len(statuses) == 1 {
 		switch {
 		case pinned:
-			return q.Where("active"), true, nil
+			return q.Where("active and not failed and not pinning"), nil
 		case failed:
-			return q.Where("failed"), true, nil
+			return q.Where("failed and not active and not pinning"), nil
 		case pinning:
-			return q.Where("pinning"), true, nil
+			return q.Where("pinning and not active and not failed"), nil
 		default:
-			return q.Where("not active and not pinning and not failed"), true, nil
+			return q.Where("not active and not pinning and not failed"), nil
 		}
 	}
 
 	if len(statuses) == 2 {
 		if pinned && failed {
-			return q.Where("active or failed"), true, nil
+			return q.Where("(active or failed) and not pinning"), nil
 		}
 
 		if pinned && queued {
-			return q.Where("active and not failed and not pinning"), true, nil
+			return q.Where("active and not failed and not pinning"), nil
 		}
 
 		if pinned && pinning {
-			return q.Where("active or pinning"), true, nil
+			return q.Where("(active or pinning) and not failed"), nil
 		}
 
 		if pinning && failed {
-			return q.Where("pinning or failed"), true, nil
+			return q.Where("(pinning or failed) and not active"), nil
 		}
 
 		if pinning && queued {
-			return q.Where("pinning and not active and not failed"), true, nil
+			return q.Where("pinning and not active and not failed"), nil
 		}
 
 		if failed && queued {
-			return q.Where("failed and not active and not pinning"), true, nil
+			return q.Where("failed and not active and not pinning"), nil
 		}
 	}
 
 	if !statuses[types.PinningStatusFailed] {
-		return q.Where("not failed"), true, nil
+		return q.Where("not failed and (active or pinning)"), nil
 	}
 
 	if !statuses[types.PinningStatusPinned] {
-		return q.Where("not active"), true, nil
+		return q.Where("not active and (failed or pinning"), nil
 	}
 
 	if !statuses[types.PinningStatusPinning] {
-		return q.Where("not pinning"), true, nil
+		return q.Where("not pinning and (active or failed"), nil
 	}
-	return q.Where("active or pinning or failed"), true, nil
+	return q.Where("active or pinning or failed"), nil
 }
 
 // handleAddPin  godoc
