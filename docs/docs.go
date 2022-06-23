@@ -1675,7 +1675,7 @@ const docTemplate = `{
                 "details": {
                     "type": "string"
                 },
-                "message": {
+                "reason": {
                     "type": "string"
                 }
             }
