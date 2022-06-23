@@ -19,11 +19,11 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *PinningOperation, PinProgressCB) error
 
 type PinProgressCB func(int64)
-type PinStatusFunc func(contID uint, loocation string, status types.PinningStatus) error
+type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
-		scf = func(contID uint, loocation string, status types.PinningStatus) error {
+		scf = func(contID uint, location string, status types.PinningStatus) error {
 			return nil
 		}
 	}
