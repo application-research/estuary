@@ -310,15 +310,15 @@ func (c *EstClient) CollectionsListDir(ctx context.Context, coluuid, path string
 	return out, nil
 }
 
-func (c *EstClient) PinAdd(ctx context.Context, root cid.Cid, name string, origins []string, meta map[string]interface{}) (*types.IpfsPinStatus, error) {
+func (c *EstClient) PinAdd(ctx context.Context, root cid.Cid, name string, origins []string, meta map[string]interface{}) (*types.IpfsPinStatusResponse, error) {
 	p := &types.IpfsPin{
-		Cid:     root.String(),
+		CID:     root.String(),
 		Name:    name,
 		Origins: origins,
 		Meta:    meta,
 	}
 
-	var resp types.IpfsPinStatus
+	var resp types.IpfsPinStatusResponse
 	_, err := c.doRequest(ctx, "POST", "/pinning/pins", p, &resp)
 	if err != nil {
 		return nil, err
@@ -327,8 +327,8 @@ func (c *EstClient) PinAdd(ctx context.Context, root cid.Cid, name string, origi
 	return &resp, nil
 }
 
-func (c *EstClient) PinStatus(ctx context.Context, reqid string) (*types.IpfsPinStatus, error) {
-	var resp types.IpfsPinStatus
+func (c *EstClient) PinStatus(ctx context.Context, reqid string) (*types.IpfsPinStatusResponse, error) {
+	var resp types.IpfsPinStatusResponse
 	_, err := c.doRequest(ctx, "GET", "/pinning/pins/"+reqid, nil, &resp)
 	if err != nil {
 		return nil, err
@@ -339,7 +339,7 @@ func (c *EstClient) PinStatus(ctx context.Context, reqid string) (*types.IpfsPin
 
 type listPinsResp struct {
 	Count   int
-	Results []*types.IpfsPinStatus
+	Results []*types.IpfsPinStatusResponse
 }
 
 func shouldRetry(err error) bool {
@@ -381,31 +381,31 @@ func (c *EstClient) doRequestRetries(ctx context.Context, method, path string, b
 	}
 }
 
-func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[string]*types.IpfsPinStatus, error) {
+func (c *EstClient) PinStatuses(ctx context.Context, reqids []string) (map[string]*types.IpfsPinStatusResponse, error) {
 	var resp listPinsResp
 	_, err := c.doRequestRetries(ctx, "GET", "/pinning/pins?requestid="+strings.Join(reqids, ","), nil, &resp, 5)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make(map[string]*types.IpfsPinStatus)
+	out := make(map[string]*types.IpfsPinStatusResponse)
 	for _, res := range resp.Results {
-		out[res.Requestid] = res
+		out[res.RequestID] = res
 	}
 
 	return out, nil
 }
 
-func (c *EstClient) PinStatusByCid(ctx context.Context, cids []string) (map[string]*types.IpfsPinStatus, error) {
+func (c *EstClient) PinStatusByCid(ctx context.Context, cids []string) (map[string]*types.IpfsPinStatusResponse, error) {
 	var resp listPinsResp
 	_, err := c.doRequest(ctx, "GET", "/pinning/pins?cid="+strings.Join(cids, ","), nil, &resp)
 	if err != nil {
 		return nil, err
 	}
 
-	out := make(map[string]*types.IpfsPinStatus)
+	out := make(map[string]*types.IpfsPinStatusResponse)
 	for _, res := range resp.Results {
-		out[res.Pin.Cid] = res
+		out[res.Pin.CID] = res
 	}
 
 	return out, nil

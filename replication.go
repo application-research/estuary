@@ -289,7 +289,6 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool
 	if cb.CloseTime.Before(nowPlus) {
 		cb.CloseTime = nowPlus
 	}
-
 	return true, nil
 }
 

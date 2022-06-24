@@ -94,7 +94,7 @@ definitions:
         type: integer
       details:
         type: string
-      message:
+      reason:
         type: string
     type: object
 host: api.estuary.tech

@@ -6,6 +6,7 @@ import (
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -112,7 +113,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
-						Status: "failed",
+						Status: types.PinningStatusFailed,
 					},
 				},
 			}); err != nil {
@@ -142,9 +143,8 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
 			Content: contid,
-			Cid:     util.DbCID{data},
+			Cid:     util.DbCID{CID: data},
 			UserID:  user,
-
 			Active:  false,
 			Pinning: true,
 		}
@@ -155,11 +155,10 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 	}
 
 	op := &pinner.PinningOperation{
-		Obj:    data,
-		ContId: contid,
-		UserId: user,
-		Status: "queued",
-
+		Obj:         data,
+		ContId:      contid,
+		UserId:      user,
+		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
 	}
 
@@ -334,11 +333,10 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	}
 
 	pin := &Pin{
-		Content: cmd.DBID,
-		Cid:     util.DbCID{cmd.Root},
-		UserID:  cmd.UserID,
-		Size:    totalSize,
-
+		Content:   cmd.DBID,
+		Cid:       util.DbCID{CID: cmd.Root},
+		UserID:    cmd.UserID,
+		Size:      totalSize,
 		Active:    false,
 		Pinning:   true,
 		Aggregate: true,
@@ -609,7 +607,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		}
 
 		pin := &Pin{
-			Cid:       util.DbCID{c},
+			Cid:       util.DbCID{CID: c},
 			Content:   contid,
 			Active:    false,
 			Pinning:   true,

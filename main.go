@@ -83,6 +83,8 @@ type Content struct {
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
+	Replace bool   `json:"replace" gorm:"default:0"`
+	Origins string `json:"origins"`
 
 	Failed bool `json:"failed"`
 
@@ -131,7 +133,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 
 	defer ticker.Stop()
 	for {
-		lastTickTime = time.Now().UTC().Add(-tickInterval)
+		lastTickTime = time.Now().Add(-tickInterval)
 
 		// Find all autoretrieve servers that are online (that sent heartbeat)
 		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
@@ -250,6 +252,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 }
 
 func main() {
+	//set global time to UTC
+	utc, _ := time.LoadLocation("UTC")
+	time.Local = utc
+
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("estuary", "debug")
 	logging.SetLogLevel("paych", "debug")
@@ -574,7 +580,7 @@ func main() {
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, nil, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 		})
 		go pinmgr.Run(50)
@@ -635,6 +641,8 @@ func main() {
 
 		if !cm.contentAddingDisabled {
 			go func() {
+				// TODO - resume pin removal request
+
 				// wait for shuttles to reconnect
 				// This is a bit of a hack, and theres probably a better way to
 				// solve this. but its good enough for now

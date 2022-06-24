@@ -136,8 +136,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		if ups == nil {
 			return ErrNilParams
 		}
-		cm.UpdatePinStatus(handle, ups.DBID, ups.Status)
-		return nil
+		return cm.UpdatePinStatus(handle, ups.DBID, ups.Status)
 	case drpc.OP_PinComplete:
 		param := msg.Params.PinComplete
 		if param == nil {
@@ -287,17 +286,13 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	defer span.End()
 
 	opcr := PieceCommRecord{
-		Data:    util.DbCID{resp.Data},
-		Piece:   util.DbCID{resp.CommP},
+		Data:    util.DbCID{CID: resp.Data},
+		Piece:   util.DbCID{CID: resp.CommP},
 		Size:    resp.Size,
 		CarSize: resp.CarSize,
 	}
 
-	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
-		return err
-	}
-
-	return nil
+	return cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
 }
 
 func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStarted) error {

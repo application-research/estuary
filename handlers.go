@@ -73,11 +73,6 @@ import (
 	_ "github.com/application-research/estuary/docs"
 )
 
-//	generic response models
-type GenericResponse struct {
-	Message string `json: "Message"`
-}
-
 // @title Estuary API
 // @version 0.0.0
 // @description This is the API for the Estuary application.
@@ -361,9 +356,12 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	return func(c echo.Context) error {
 		u, ok := c.Get("user").(*User)
 		if !ok {
-			return fmt.Errorf("endpoint not called with proper authentication")
+			return &util.HttpError{
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_AUTH,
+				Details: "endpoint not called with proper authentication",
+			}
 		}
-
 		return f(c, u)
 	}
 }
@@ -471,7 +469,10 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
 			return c.JSON(http.StatusBadRequest,
 				util.PeeringPeerAddMessage{
-					"Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID, params})
+					Message:  "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
+					PeersAdd: params,
+				},
+			)
 		}
 
 		//	validate the Addrs for each PeerID
@@ -482,7 +483,10 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 				log.Errorf("handlePeeringPeersAdd error: %s", err)
 				return c.JSON(http.StatusBadRequest,
 					util.PeeringPeerAddMessage{
-						"Adding Peer(s) on Peering failed, the addr is invalid: " + addr, params})
+						Message:  "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
+						PeersAdd: params,
+					},
+				)
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
@@ -490,8 +494,8 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		//	Only add it here if all is valid.
 		validPeersAddInfo = append(validPeersAddInfo,
 			peer.AddrInfo{
-				peerParamId,
-				multiAddrs,
+				ID:    peerParamId,
+				Addrs: multiAddrs,
 			})
 	}
 
@@ -500,8 +504,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	for _, validPeerAddInfo := range validPeersAddInfo {
 		s.Node.Peering.AddPeer(validPeerAddInfo)
 	}
-
-	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{"Added the following Peers on Peering", params})
+	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{Message: "Added the following Peers on Peering", PeersAdd: params})
 }
 
 // handlePeeringPeersRemove godoc
@@ -516,16 +519,15 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	if err := c.Bind(&params); err != nil {
 		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_REMOVE_ERROR,
 		}
 	}
 
 	for _, peerId := range params {
 		s.Node.Peering.RemovePeer(peerId)
 	}
-
-	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{"Removed the following Peers from Peering", params})
+	return c.JSON(http.StatusOK, util.PeeringPeerRemoveMessage{Message: "Removed the following Peers from Peering", PeersRemove: params})
 }
 
 // handlePeeringPeersList godoc
@@ -562,11 +564,11 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_START_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_START_ERROR,
 		}
 	}
-	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Started."})
+	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Started."})
 }
 
 // handlePeeringStop godoc
@@ -580,11 +582,11 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 	if err != nil {
 		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_PEERING_PEERS_STOP_ERROR,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_PEERING_PEERS_STOP_ERROR,
 		}
 	}
-	return c.JSON(http.StatusOK, GenericResponse{Message: "Peering Stopped."})
+	return c.JSON(http.StatusOK, util.GenericResponse{Message: "Peering Stopped."})
 }
 
 // handlePeeringStatus godoc
@@ -595,7 +597,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // @Router       /admin/peering/status [get]
 func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
-		State string `json: "State"`
+		State string `json:"state"`
 	}
 	return c.JSON(http.StatusOK, StateResponse{State: ""})
 }
@@ -613,7 +615,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -654,20 +657,21 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			filename = filepath.Base(colp)
 		}
 
-		cols = []*CollectionRef{&CollectionRef{
-			Collection: srchCol.ID,
-			Path:       &path,
-		}}
+		cols = []*CollectionRef{
+			{
+				Collection: srchCol.ID,
+				Path:       &path,
+			},
+		}
 	}
 
-	var addrInfos []peer.AddrInfo
+	var origins []*peer.AddrInfo
 	for _, p := range params.Peers {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
 			return err
 		}
-
-		addrInfos = append(addrInfos, *ai)
+		origins = append(origins, ai)
 	}
 
 	rcid, err := cid.Decode(params.Root)
@@ -684,12 +688,12 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
 	}
+
 	makeDeal := true
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, addrInfos, 0, nil, makeDeal)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusAccepted, pinstatus)
 }
 
@@ -709,7 +713,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -727,7 +732,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
-				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
 		}
@@ -831,7 +836,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -851,7 +857,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
 		}
 	}
@@ -1049,7 +1055,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
 		objlk.Unlock()
@@ -1072,7 +1078,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	defer span.End()
 
 	content := &Content{
-		Cid:         util.DbCID{root},
+		Cid:         util.DbCID{CID: root},
 		Name:        filename,
 		Active:      false,
 		Pinning:     true,
@@ -1246,20 +1252,21 @@ type dealStatus struct {
 // @Router       /content/status/{id} [get]
 func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
-	val, err := strconv.Atoi(c.Param("id"))
+	contID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", val, u.ID).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -1538,8 +1545,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 	if u.Perm < util.PermLevelAdmin {
 		return util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_INVALID_AUTH,
+			Code:   http.StatusForbidden,
+			Reason: util.ERR_NOT_AUTHORIZED,
 		}
 	}
 
@@ -2044,8 +2051,8 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2091,8 +2098,8 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2124,8 +2131,8 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 
 	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_MINER_NOT_OWNED,
+			Code:   http.StatusUnauthorized,
+			Reason: util.ERR_MINER_NOT_OWNED,
 		}
 	}
 
@@ -2145,7 +2152,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 	name := c.QueryParam("name")
 
 	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
-		Address: util.DbAddr{m},
+		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
 		return err
@@ -2470,9 +2477,9 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 }
 
 type minerDealsResp struct {
-	ID               uint `json:"id"`
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ID               uint       `json:"id"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 	Content          uint       `json:"content"`
 	PropCid          util.DbCID `json:"propCid"`
 	Miner            string     `json:"miner"`
@@ -2483,10 +2490,9 @@ type minerDealsResp struct {
 	DTChan           string     `json:"dtChan"`
 	TransferStarted  time.Time  `json:"transferStarted"`
 	TransferFinished time.Time  `json:"transferFinished"`
-
-	OnChainAt  time.Time  `json:"onChainAt"`
-	SealedAt   time.Time  `json:"sealedAt"`
-	ContentCid util.DbCID `json:"contentCid"`
+	OnChainAt        time.Time  `json:"onChainAt"`
+	SealedAt         time.Time  `json:"sealedAt"`
+	ContentCid       util.DbCID `json:"contentCid"`
 }
 
 // handleGetMinerDeals godoc
@@ -2530,20 +2536,21 @@ type bandwidthResponse struct {
 // @Param 		 content path string true "Content ID"
 // @Router       /content/bw-usage/{content} [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, cont).Error; err != nil {
+	if err := s.DB.First(&content, contID).Error; err != nil {
 		return err
 	}
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
@@ -2571,28 +2578,28 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 // @Success 	200 {object} string
 // @Router       /content/aggregated/{content} [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var content Content
-	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
 		return err
 	}
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
 			Code:    http.StatusForbidden,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified content",
 		}
 	}
 
 	var sub []Content
-	if err := s.DB.Find(&sub, "aggregated_in = ?", cont).Error; err != nil {
+	if err := s.DB.Find(&sub, "aggregated_in = ?", contID).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, sub)
 }
 
@@ -2753,8 +2760,9 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_TOKEN,
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_TOKEN,
+				Details: "api key does not exists",
 			}
 		}
 		return nil, err
@@ -2762,8 +2770,8 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 
 	if authToken.Expiry.Before(time.Now()) {
 		return nil, &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_TOKEN_EXPIRED,
+			Code:    http.StatusUnauthorized,
+			Reason:  util.ERR_TOKEN_EXPIRED,
 			Details: fmt.Sprintf("token for user %d expired %s", authToken.User, authToken.Expiry),
 		}
 	}
@@ -2772,8 +2780,9 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_TOKEN,
+				Code:    http.StatusUnauthorized,
+				Reason:  util.ERR_INVALID_TOKEN,
+				Details: "no user exists for the spicified api key",
 			}
 		}
 		return nil, err
@@ -2809,8 +2818,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Message: util.ERR_NOT_AUTHORIZED,
+					Code:    http.StatusForbidden,
+					Reason:  util.ERR_NOT_AUTHORIZED,
+					Details: "api key is upload only",
 				}
 			}
 
@@ -2819,11 +2829,12 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			log.Warnw("User not authorized", "user", u.ID, "perm", u.Perm, "required", level)
+			log.Warnw("user not authorized", "user", u.ID, "perm", u.Perm, "required", level)
 
 			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Message: util.ERR_NOT_AUTHORIZED,
+				Code:    http.StatusForbidden,
+				Reason:  util.ERR_NOT_AUTHORIZED,
+				Details: "user not authorized",
 			}
 		}
 	}
@@ -2845,26 +2856,33 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_INVALID_INVITE,
+				Code:   http.StatusNotFound,
+				Reason: util.ERR_INVALID_INVITE,
 			}
 		}
+		return err
 	}
 
 	if invite.ClaimedBy != 0 {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_INVITE_ALREADY_USED,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVITE_ALREADY_USED,
 		}
 	}
 
 	username := strings.ToLower(reg.Username)
 
-	var exist User
-	if err := s.DB.First(&exist, "username = ?", username).Error; err == nil {
+	var exist *User
+	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+
+	if exist != nil {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_USERNAME_TAKEN,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_USERNAME_TAKEN,
 		}
 	}
 
@@ -2874,13 +2892,12 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		PassHash: reg.PasswordHash,
 		Perm:     util.PermLevelUser,
 	}
-	if err := s.DB.Create(newUser).Error; err != nil {
-		herr := &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_USER_CREATION_FAILED,
-		}
 
-		return fmt.Errorf("user creation failed: %s: %w", err, herr)
+	if err := s.DB.Create(newUser).Error; err != nil {
+		return &util.HttpError{
+			Code:   http.StatusInternalServerError,
+			Reason: util.ERR_USER_CREATION_FAILED,
+		}
 	}
 
 	authToken := &AuthToken{
@@ -2924,8 +2941,8 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:    http.StatusForbidden,
-				Message: util.ERR_USER_NOT_FOUND,
+				Code:   http.StatusForbidden,
+				Reason: util.ERR_USER_NOT_FOUND,
 			}
 		}
 		return err
@@ -2933,8 +2950,8 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 
 	if user.PassHash != body.PassHash {
 		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Message: util.ERR_INVALID_PASSWORD,
+			Code:   http.StatusForbidden,
+			Reason: util.ERR_INVALID_PASSWORD,
 		}
 	}
 
@@ -2981,8 +2998,8 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		log.Warnf("invalid filecoin address in change address request body: %w", err)
 
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: "invalid address in request body",
+			Code:   http.StatusUnauthorized,
+			Reason: "invalid address in request body",
 		}
 	}
 
@@ -3330,7 +3347,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		}
 
 		var cont Content
-		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{cc}, u.ID).Error; err != nil {
+		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{CID: cc}, u.ID).Error; err != nil {
 			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
 		}
 
@@ -3381,6 +3398,28 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		return err
 	}
 
+	// transform listen addresses (/ip/1.2.3.4/tcp/80) into full p2p multiaddresses
+	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
+	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
+	for _, listenAddr := range s.Node.Host.Addrs() {
+		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
+		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
+		if err != nil {
+			return err
+		}
+		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
+	}
+
+	// transform multiaddresses into AddrInfo objects
+	var origins []*peer.AddrInfo
+	for _, p := range fullP2pMultiAddrs {
+		ai, err := peer.AddrInfoFromP2pAddr(p)
+		if err != nil {
+			return err
+		}
+		origins = append(origins, ai)
+	}
+
 	bserv := blockservice.New(s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -3405,37 +3444,17 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
-	err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error
-	if err != nil {
-		return err
-	}
-
-	// transform listen addresses (/ip/1.2.3.4/tcp/80) in full p2p multiaddresses
-	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
-	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
-	for _, listenAddr := range s.Node.Host.Addrs() {
-		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
-		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
-		if err != nil {
-			return err
-		}
-		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
-	}
-
-	// transform multiaddresses into AddrInfo objects
-	peers, err := peer.AddrInfosFromP2pAddrs(fullP2pMultiAddrs...)
-	if err != nil {
+	if err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
 		return err
 	}
 
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), []*CollectionRef{}, peers, 0, nil, makeDeal)
+	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, pinstatus)
 }
 
@@ -3482,7 +3501,6 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 		}
 
 		path := r.Path
-
 		relp, err := filepath.Rel(dir, path)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
@@ -3550,11 +3568,9 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			Type:   contentType,
 			Size:   r.Size,
 			ContID: r.ID,
-			Cid:    &util.DbCID{r.Cid.CID},
+			Cid:    &util.DbCID{CID: r.Cid.CID},
 		})
-
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -3568,15 +3584,28 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	coluuid := c.Param("coluuid")
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
-		return c.String(404, "Collection not found")
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("collection with ID(%s) was not found", coluuid),
+			}
+		}
+	}
+
+	if col.UserID != u.ID {
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user is not owner of specified collection",
+		}
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
 		return err
 	}
-
-	return c.NoContent(200)
+	return c.NoContent(http.StatusOK)
 }
 
 func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -3789,16 +3818,15 @@ type dealMetricsInfo struct {
 }
 
 type metricsDealJoin struct {
-	CreatedAt        time.Time
-	Failed           bool
-	FailedAt         time.Time
-	DealID           int64
-	Size             int64
+	CreatedAt        time.Time `json:"created_at"`
+	Failed           bool      `json:"failed"`
+	FailedAt         time.Time `json:"failed_at"`
+	DealID           int64     `json:"deal_id"`
+	Size             int64     `json:"size"`
 	TransferStarted  time.Time `json:"transferStarted"`
 	TransferFinished time.Time `json:"transferFinished"`
-
-	OnChainAt time.Time `json:"onChainAt"`
-	SealedAt  time.Time `json:"sealedAt"`
+	OnChainAt        time.Time `json:"onChainAt"`
+	SealedAt         time.Time `json:"sealedAt"`
 }
 
 // handleMetricsDealOnChain godoc
@@ -4445,7 +4473,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	autoretrieve.LastConnection = time.Now().UTC()
+	autoretrieve.LastConnection = time.Now()
 	if err := s.DB.Save(&autoretrieve).Error; err != nil {
 		return err
 	}
@@ -4590,8 +4618,10 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 			return err
 		}
 
-		if col.UserID != u.ID {
-			return fmt.Errorf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID)
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
 		}
 	}
 
@@ -4671,8 +4701,8 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 
 	if len(sigb) < 2 {
 		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Message: util.ERR_INVALID_INPUT,
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVALID_INPUT,
 		}
 	}
 
@@ -4690,14 +4720,14 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
 	if len(sm) == 0 {
 		// This is a new miner, need to run some checks first
 		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
-			return c.JSON(400, map[string]interface{}{
+			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"success": false,
 				"error":   err.Error(),
 			})
 		}
 
 		if err := s.DB.Create(&storageMiner{
-			Address: util.DbAddr{cmb.Miner},
+			Address: util.DbAddr{Addr: cmb.Miner},
 			Name:    cmb.Name,
 			Owner:   u.ID,
 		}).Error; err != nil {
@@ -4969,7 +4999,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	}
 
 	content := &Content{
-		Cid:         util.DbCID{root},
+		Cid:         util.DbCID{CID: root},
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,
@@ -5003,11 +5033,10 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
 				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Message: util.ERR_NOT_AUTHORIZED,
+					Code:   http.StatusUnauthorized,
+					Reason: util.ERR_NOT_AUTHORIZED,
 				}
 			}
-
 			return next(c)
 		}
 	}
@@ -5044,6 +5073,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 	return nil
 }
 
+// this is required as ipfs pinning spec has strong requirements on response format
 func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		err := next(c)
@@ -5051,35 +5081,32 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			return nil
 		}
 
-		var herr *util.HttpError
-		if xerrors.As(err, &herr) {
-			errmap := map[string]string{
-				"reason": herr.Message,
-			}
-			if herr.Details != "" {
-				errmap["details"] = herr.Details
-			}
-			res := map[string]interface{}{
-				"error": errmap,
-			}
-			return c.JSON(herr.Code, res)
+		var httpRespErr *util.HttpError
+		if xerrors.As(err, &httpRespErr) {
+			log.Errorf("handler error: %s", err)
+			return c.JSON(httpRespErr.Code, &util.HttpErrorResponse{
+				Error: util.HttpError{
+					Reason:  httpRespErr.Reason,
+					Details: httpRespErr.Details,
+				},
+			})
 		}
 
 		var echoErr *echo.HTTPError
 		if xerrors.As(err, &echoErr) {
-			return c.JSON(echoErr.Code, map[string]interface{}{
-				"error": map[string]interface{}{
-					"reason": echoErr.Message,
+			return c.JSON(echoErr.Code, &util.HttpErrorResponse{
+				Error: util.HttpError{
+					Reason:  http.StatusText(echoErr.Code),
+					Details: echoErr.Message.(string),
 				},
 			})
 		}
 
 		log.Errorf("handler error: %s", err)
-
-		// TODO: returning all errors out to the user smells potentially bad
-		return c.JSON(500, map[string]interface{}{
-			"error": map[string]string{
-				"reason": err.Error(),
+		return c.JSON(http.StatusInternalServerError, &util.HttpErrorResponse{
+			Error: util.HttpError{
+				Reason:  http.StatusText(http.StatusInternalServerError),
+				Details: err.Error(),
 			},
 		})
 	}
@@ -5143,8 +5170,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if col.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified collection",
 		}
 	}
@@ -5156,8 +5183,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	if content.UserID != u.ID {
 		return &util.HttpError{
-			Code:    http.StatusUnauthorized,
-			Message: util.ERR_NOT_AUTHORIZED,
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
 			Details: "user is not owner of specified content",
 		}
 	}
@@ -5171,14 +5198,9 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		path = &p
 	}
 
-	if err := s.DB.Create(&CollectionRef{
-		Collection: col.ID,
-		Content:    content.ID,
-		Path:       path,
-	}).Error; err != nil {
-		log.Errorf("failed to add content to requested collection: %s", err)
+	if err := s.DB.Create(&CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
+		return errors.Wrap(err, "failed to add content to requested collection")
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -5210,7 +5232,6 @@ func (s *Server) handleGateway(c echo.Context) error {
 		s.gwayHandler.ServeHTTP(c.Response().Writer, req)
 		return nil
 	}
-
 	return c.Redirect(307, redir)
 }
 
@@ -5222,7 +5243,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	}
 
 	var cont Content
-	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{cc}).Error; err != nil {
+	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return "", nil
 		}

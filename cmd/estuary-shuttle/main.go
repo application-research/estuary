@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/application-research/estuary/node/modules/peering"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -17,6 +16,9 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/types"
 
 	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
@@ -49,7 +51,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
-	"github.com/filecoin-project/lotus/chain/types"
+	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
@@ -157,6 +159,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 }
 
 func main() {
+	// set global time to UTC
+	utc, _ := time.LoadLocation("UTC")
+	time.Local = utc
+
 	logging.SetLogLevel("dt-impl", "debug")
 	logging.SetLogLevel("shuttle", "debug")
 	logging.SetLogLevel("paych", "debug")
@@ -975,8 +981,8 @@ func (d *Shuttle) AuthRequired(level int) echo.MiddlewareFunc {
 			log.Warnw("User not authorized", "user", u.ID, "perms", u.Perms, "required", level)
 
 			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Message: util.ERR_NOT_AUTHORIZED,
+				Code:   http.StatusUnauthorized,
+				Reason: util.ERR_NOT_AUTHORIZED,
 			}
 		}
 	}
@@ -1118,7 +1124,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -1138,7 +1145,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
 		}
 	}
@@ -1183,7 +1190,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	pin := &Pin{
 		Content: contid,
-		Cid:     util.DbCID{nd.Cid()},
+		Cid:     util.DbCID{CID: nd.Cid()},
 		UserID:  u.ID,
 
 		Active:  false,
@@ -1251,7 +1258,8 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
-			Message: util.ERR_CONTENT_ADDING_DISABLED,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -1269,7 +1277,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		if bdSize > util.DefaultContentSizeLimit {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
-				Message: util.ERR_CONTENT_SIZE_OVER_LIMIT,
+				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
 				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
 			}
 		}
@@ -1322,7 +1330,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	pin := &Pin{
 		Content: contid,
-		Cid:     util.DbCID{root},
+		Cid:     util.DbCID{CID: root},
 		UserID:  u.ID,
 
 		Active:  false,
@@ -1475,7 +1483,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	defer span.End()
 
 	for _, pi := range op.Peers {
-		if err := d.Node.Host.Connect(ctx, pi); err != nil {
+		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
 	}
@@ -1633,9 +1641,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	return nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
+func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
 	log.Infof("updating pin status: %d %s", cont, status)
-	if status == "failed" {
+	if status == types.PinningStatusFailed {
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
@@ -1658,6 +1666,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, status string) {
 			log.Errorf("failed to send pin status update: %s", err)
 		}
 	}()
+	return nil
 }
 
 func (s *Shuttle) refreshPinQueue() error {
@@ -1681,14 +1690,14 @@ func (s *Shuttle) refreshPinQueue() error {
 	return nil
 }
 
-func (s *Shuttle) addPinToQueue(p Pin, peers []peer.AddrInfo, replace uint) {
+func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 	op := &pinner.PinningOperation{
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
 		Peers:   peers,
 		Started: p.CreatedAt,
-		Status:  "queued",
+		Status:  types.PinningStatusQueued,
 		Replace: replace,
 	}
 
@@ -1901,7 +1910,7 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 
 	count := 0
 	for c := range keys {
-		del, err := s.deleteIfNotPinned(ctx, &Object{Cid: util.DbCID{c}})
+		del, err := s.deleteIfNotPinned(ctx, &Object{Cid: util.DbCID{CID: c}})
 		if err != nil {
 			return err
 		}
@@ -2179,7 +2188,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	var cc cid.Cid
 	var deals []*api.MarketDeal
 	for _, id := range body.DealIDs {
-		deal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(id), types.EmptyTSK)
+		deal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(id), lotusTypes.EmptyTSK)
 		if err != nil {
 			return fmt.Errorf("getting deal info from chain: %w", err)
 		}

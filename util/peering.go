@@ -6,11 +6,16 @@ import (
 )
 
 type PeeringPeerAddMessage struct {
-	Message  string                `json: Message`
-	PeersAdd []peering.PeeringPeer `json: Peers`
+	Message  string                `json:"message"`
+	PeersAdd []peering.PeeringPeer `json:"peers"`
 }
 
 type PeeringPeerRemoveMessage struct {
-	Message     string    `json: Message`
-	PeersRemove []peer.ID `json: Peers`
+	Message     string    `json:"message"`
+	PeersRemove []peer.ID `json:"peers"`
+}
+
+//	generic response models
+type GenericResponse struct {
+	Message string `json:"message"`
 }

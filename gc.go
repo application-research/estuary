@@ -71,14 +71,14 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	return count > 0, nil
 }
 
-func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) error {
+func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bool) error {
 	ctx, span := cm.tracer.Start(ctx, "RemoveContent")
 	defer span.End()
 
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	if err := cm.DB.Delete(&Content{}, c).Error; err != nil {
+	if err := cm.DB.Delete(&Content{}, contID).Error; err != nil {
 		return fmt.Errorf("failed to delete content from db: %w", err)
 	}
 
@@ -86,11 +86,11 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 		Object uint
 	}
 
-	if err := cm.DB.Model(&ObjRef{}).Find(&objIds, "content = ?", c).Error; err != nil {
+	if err := cm.DB.Model(&ObjRef{}).Find(&objIds, "content = ?", contID).Error; err != nil {
 		return fmt.Errorf("failed to gather referenced object IDs: %w", err)
 	}
 
-	if err := cm.DB.Where("content = ?", c).Delete(&ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", contID).Delete(&ObjRef{}).Error; err != nil {
 		return fmt.Errorf("failed to delete related object references: %w", err)
 	}
 
@@ -142,7 +142,6 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, c uint, now bool) e
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -175,7 +174,6 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -188,6 +186,7 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) (boo
 
 	return cm.deleteIfNotPinnedLock(ctx, o)
 }
+
 func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *Object) (bool, error) {
 	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinnedLock")
 	defer span.End()
@@ -215,7 +214,6 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 		Delete(Object{}).Error; err != nil {
 		return err
 	}
-
 	return nil
 }
 

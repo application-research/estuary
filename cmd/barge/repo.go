@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/application-research/estuary/pinner/types"
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	leveldb "github.com/ipfs/go-ds-leveldb"
 	"github.com/ipfs/go-filestore"
@@ -50,7 +51,7 @@ type Pin struct {
 	File      uint `gorm:"index"`
 	Cid       string
 	RequestID string `gorm:"index"`
-	Status    string
+	Status    types.PinningStatus
 }
 
 func findRepo(cctx *cli.Context) (string, error) {

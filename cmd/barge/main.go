@@ -51,6 +51,7 @@ import (
 	cli "github.com/urfave/cli/v2"
 	"golang.org/x/xerrors"
 
+	"github.com/application-research/estuary/pinner/types"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 )
 
@@ -378,7 +379,7 @@ func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClie
 		fmt.Println("failed to connect to pin delegates: ", err)
 	}
 
-	pins := []string{st.Requestid}
+	pins := []string{st.RequestID}
 	for range time.Tick(time.Second * 2) {
 		var pinning, queued, pinned, failed int
 		for _, p := range pins {
@@ -389,13 +390,13 @@ func doAddPin(ctx context.Context, bstore blockstore.Blockstore, client *EstClie
 			}
 
 			switch status.Status {
-			case "pinned":
+			case types.PinningStatusPinned:
 				pinned++
-			case "failed":
+			case types.PinningStatusFailed:
 				failed++
-			case "pinning":
+			case types.PinningStatusPinning:
 				pinning++
-			case "queued":
+			case types.PinningStatusQueued:
 				queued++
 			}
 
@@ -750,7 +751,7 @@ var plumbSplitAddFileCmd = &cli.Command{
 				fmt.Println("failed to connect to pin delegates: ", err)
 			}
 
-			pins = append(pins, st.Requestid)
+			pins = append(pins, st.RequestID)
 		}
 
 		for range time.Tick(time.Second * 2) {
@@ -763,13 +764,13 @@ var plumbSplitAddFileCmd = &cli.Command{
 				}
 
 				switch status.Status {
-				case "pinned":
+				case types.PinningStatusPinned:
 					pinned++
-				case "failed":
+				case types.PinningStatusFailed:
 					failed++
-				case "pinning":
+				case types.PinningStatusPinning:
 					pinning++
-				case "queued":
+				case types.PinningStatusQueued:
 					queued++
 				}
 
@@ -1206,7 +1207,7 @@ var bargeStatusCmd = &cli.Command{
 				if len(pins) > 0 {
 					pin := pins[0]
 
-					if pin.Status == "pinned" {
+					if pin.Status == types.PinningStatusPinned {
 						// unchanged and pinned, no need to print anything
 						continue
 					}
@@ -1237,7 +1238,7 @@ type fileWithPin struct {
 
 	Cid       string
 	Path      string
-	Status    string
+	Status    types.PinningStatus
 	RequestID string
 }
 
@@ -1302,7 +1303,7 @@ var bargeSyncCmd = &cli.Command{
 				continue
 			}
 
-			if f.Status == "pinned" {
+			if f.Status == types.PinningStatusPinned {
 				// TODO: add flag to allow a forced rechecking
 				continue
 			}
@@ -1336,12 +1337,12 @@ var bargeSyncCmd = &cli.Command{
 				}
 
 				switch st.Status {
-				case "pinned":
+				case types.PinningStatusPinned:
 					pinComplete = append(pinComplete, fp)
 					if err := r.DB.Model(Pin{}).Where("id = ?", fp.PinID).UpdateColumn("status", st.Status).Error; err != nil {
 						return err
 					}
-				case "failed":
+				case types.PinningStatusFailed:
 					needsNewPin = append(needsNewPin, fp)
 					if err := r.DB.Delete(Pin{ID: fp.PinID}).Error; err != nil {
 						return err
@@ -1375,7 +1376,7 @@ var bargeSyncCmd = &cli.Command{
 					continue
 				}
 
-				if pin.Status == "failed" {
+				if pin.Status == types.PinningStatusFailed {
 					// dont bother recording
 					continue
 				}
@@ -1383,7 +1384,7 @@ var bargeSyncCmd = &cli.Command{
 				if err := r.DB.Create(&Pin{
 					File:      nnp.FileID,
 					Cid:       nnp.Cid,
-					RequestID: pin.Requestid,
+					RequestID: pin.RequestID,
 					Status:    pin.Status,
 				}).Error; err != nil {
 					return err
@@ -1445,7 +1446,7 @@ var bargeSyncCmd = &cli.Command{
 				p := &Pin{
 					File:      f.FileID,
 					Cid:       fcid.String(),
-					RequestID: resp.Requestid,
+					RequestID: resp.RequestID,
 					Status:    resp.Status,
 				}
 
@@ -1525,13 +1526,13 @@ var bargeSyncCmd = &cli.Command{
 				}
 
 				switch status.Status {
-				case "pinned":
+				case types.PinningStatusPinned:
 					newdone++
 					complete[req] = true
-					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).UpdateColumn("status", "pinned").Error; err != nil {
+					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).UpdateColumn("status", types.PinningStatusPinned).Error; err != nil {
 						return err
 					}
-				case "failed":
+				case types.PinningStatusFailed:
 					newdone++
 					failed[req] = true
 					if err := r.DB.Model(Pin{}).Where("request_id = ?", req).Delete(Pin{}).Error; err != nil {
