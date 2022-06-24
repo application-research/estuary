@@ -614,8 +614,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -711,8 +712,9 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -833,8 +835,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 			}
 		}
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 

@@ -1123,8 +1123,9 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -1256,8 +1257,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	if u.StorageDisabled || s.disableLocalAdding {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 

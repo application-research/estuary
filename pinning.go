@@ -672,8 +672,9 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
@@ -781,8 +782,9 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 	if s.CM.contentAddingDisabled || u.StorageDisabled {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_CONTENT_ADDING_DISABLED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 
