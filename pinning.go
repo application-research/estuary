@@ -173,7 +173,7 @@ func (cm *ContentManager) refreshPinQueue() error {
 		var origins []*peer.AddrInfo
 		// when refreshing pinning queue, use content origins if available
 		if c.Origins != "" {
-			_ = json.Unmarshal([]byte(c.Origins), &origins)
+			_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
 		if c.Location == "local" {
