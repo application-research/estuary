@@ -679,7 +679,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		log.Fatalf("could not run esturay app: %+v", err)
+		log.Fatalf("could not run estuary app: %+v", err)
 	}
 }
 
