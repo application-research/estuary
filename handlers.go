@@ -718,6 +718,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}
 
+	defer c.Request().Body.Close()
+
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() {
@@ -753,7 +755,6 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}()
 	}()
 
-	defer c.Request().Body.Close()
 	header, err := s.loadCar(ctx, sbs, c.Request().Body)
 	if err != nil {
 		return err
