@@ -2880,7 +2880,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	if exist != nil {
+	if exist != nil && strings.ToLower(exist.Username) == username {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,
