@@ -1490,7 +1490,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		attribute.Int("deal", int(d.ID)),
 	))
 	defer span.End()
-	log.Infow("checking deal", "miner", d.Miner, "content", d.Content, "dbid", d.ID)
+	log.Debugw("checking deal", "miner", d.Miner, "content", d.Content, "dbid", d.ID)
 
 	maddr, err := d.MinerAddr()
 	if err != nil {
@@ -1542,7 +1542,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	// case where deal isnt yet on chain...
 
-	log.Infow("checking deal status", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
+	log.Debugw("checking deal status", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
