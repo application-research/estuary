@@ -2,8 +2,9 @@ package config
 
 import (
 	"errors"
-	"github.com/application-research/estuary/node/modules/peering"
 	"path/filepath"
+
+	"github.com/application-research/estuary/node/modules/peering"
 )
 
 const DefaultWebsocketAddr = "/ip4/0.0.0.0/tcp/6747/ws"
@@ -157,7 +158,7 @@ func NewShuttle(appVersion string) *Shuttle {
 		FilClient: FilClient{
 			EventRateLimiter: EventRateLimiter{
 				CacheSize: 2000,
-				TTL:       10,
+				TTL:       30,
 			},
 		},
 	}
