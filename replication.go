@@ -1588,6 +1588,10 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
+	if provds == nil {
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup provider deal state")
+	}
+
 	if provds.State == storagemarket.StorageDealError {
 		log.Errorf("deal state for deal %s from miner %s is error: %s",
 			statusCheckID, maddr.String(), provds.Message)
@@ -1605,12 +1609,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if provds.DealID != 0 {
 		deal, err := cm.Api.StateMarketStorageDeal(ctx, provds.DealID, types.EmptyTSK)
-		if err != nil {
+		if err != nil || deal == nil {
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
+		}
+		if deal != nil {
 			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
 		}
 
 		pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
-		if err != nil {
+		if err != nil || pcr == nil {
 			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
 		}
 
