@@ -67,7 +67,7 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Infof("sending rpc message: %s", msg.Op)
+	log.Debugf("sending rpc message: %s", msg.Op)
 	select {
 	case d.outgoing <- msg:
 		return nil
@@ -109,7 +109,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// that notification
 
 			if err := d.sendRpcMessage(ctx, &drpc.Message{
-				Op: "UpdatePinStatus",
+				Op: drpc.OP_UpdatePinStatus,
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
@@ -650,9 +650,9 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			Chanid: req.ChanID.String(),
 			State:  st,
+			Failed: true,
 		})
 		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 	}
-
 	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }
