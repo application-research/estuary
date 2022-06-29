@@ -638,6 +638,7 @@ func main() {
 		}
 
 		go cm.ContentWatcher()
+		go cm.handleShuttleMessages(cctx.Context)
 
 		if !cm.contentAddingDisabled {
 			go func() {

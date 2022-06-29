@@ -117,6 +117,19 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
+func (cm *ContentManager) handleShuttleMessages(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-cm.IncomingRPCMessages:
+			if err := cm.processShuttleMessage(msg.Handle, msg); err != nil {
+				log.Errorf("failed to process message from shuttle: %s", err)
+			}
+		}
+	}
+}
+
 func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message) error {
 	ctx := context.TODO()
 

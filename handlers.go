@@ -4399,10 +4399,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			}
 
 			go func(msg *drpc.Message) {
-				if err := s.CM.processShuttleMessage(shuttle.Handle, msg); err != nil {
-					log.Errorf("failed to process message from shuttle: %s", err)
-					return
-				}
+				msg.Handle = shuttle.Handle
+				s.CM.IncomingRPCMessages <- msg
 			}(&msg)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
