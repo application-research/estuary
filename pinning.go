@@ -157,7 +157,7 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 
 func (cm *ContentManager) refreshPinQueue() error {
 	var toPin []Content
-	if err := cm.DB.Find(&toPin, "pinning and not active and not failed not aggregate").Error; err != nil {
+	if err := cm.DB.Find(&toPin, "pinning and not active and not failed and not aggregate").Error; err != nil {
 		return err
 	}
 
