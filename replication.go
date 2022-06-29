@@ -1612,9 +1612,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		if err != nil || deal == nil {
 			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
 		}
-		if deal != nil {
-			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
-		}
 
 		pcr, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil || pcr == nil {
