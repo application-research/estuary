@@ -1,8 +1,9 @@
 package config
 
 import (
-	"github.com/application-research/estuary/node/modules/peering"
 	"path/filepath"
+
+	"github.com/application-research/estuary/node/modules/peering"
 
 	"github.com/application-research/estuary/build"
 )
@@ -26,6 +27,7 @@ type Estuary struct {
 	Replication            int       `json:"replication"`
 	Logging                Logging   `json:"logging"`
 	FilClient              FilClient `json:"fil_client"`
+	ShuttleMessageHandlers int       `json:"shuttle_message_Handlers"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -138,5 +140,6 @@ func NewEstuary(appVersion string) *Estuary {
 				HighWater: 3000,
 			},
 		},
+		ShuttleMessageHandlers: 30,
 	}
 }
