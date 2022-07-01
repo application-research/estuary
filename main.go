@@ -244,6 +244,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+		case "shuttle-message-handlers":
+			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
 
 		default:
 		}
@@ -438,6 +440,11 @@ func main() {
 			Name:  "bitswap-target-message-size",
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
+		},
+		&cli.IntFlag{
+			Name:  "shuttle-message-handlers",
+			Usage: "sets shuttle message handler count",
+			Value: cfg.ShuttleMessageHandlers,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -638,6 +645,7 @@ func main() {
 		}
 
 		go cm.ContentWatcher()
+		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
 		if !cm.contentAddingDisabled {
 			go func() {

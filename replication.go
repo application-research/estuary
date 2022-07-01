@@ -121,6 +121,8 @@ type ContentManager struct {
 	VerifiedDeal bool
 
 	DisableFilecoinStorage bool
+
+	IncomingRPCMessages chan *drpc.Message
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -338,6 +340,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Replication:                cfg.Replication,
 		tracer:                     otel.Tracer("replicator"),
 		DisableFilecoinStorage:     cfg.DisableFilecoinStorage,
+		IncomingRPCMessages:        make(chan *drpc.Message),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
