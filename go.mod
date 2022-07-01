@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0
-	github.com/application-research/filclient v0.0.0-20220602175911-a6b8faf9f1cd
+	github.com/application-research/filclient v0.0.0-20220622165741-3ca6a3f3bc7a
 	github.com/application-research/go-bs-autobatch v0.0.0-20211215020302-c4c0b68ef402
 	github.com/cenkalti/backoff/v4 v4.1.2
 	github.com/cheggaaa/pb/v3 v3.0.8
