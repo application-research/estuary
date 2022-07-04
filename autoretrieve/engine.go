@@ -50,7 +50,7 @@ type AutoretrieveEngine struct {
 	mhLister     provider.MultihashLister
 	cblk         sync.Mutex
 	context      context.Context
-	tickInterval time.Duration
+	TickInterval time.Duration
 	db           *gorm.DB
 }
 

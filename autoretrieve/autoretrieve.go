@@ -35,6 +35,7 @@ type HeartbeatAutoretrieveResponse struct {
 	LastConnection    time.Time      `json:"lastConnection"`
 	LastAdvertisement time.Time      `json:"lastAdvertisement"`
 	AddrInfo          *peer.AddrInfo `json:"addrInfo"`
+	AdvertiseInterval string         `json:AdvertiseInterval`
 }
 
 type AutoretrieveListResponse struct {
@@ -45,10 +46,11 @@ type AutoretrieveListResponse struct {
 }
 
 type AutoretrieveInitResponse struct {
-	Handle         string         `json:"handle"`
-	Token          string         `json:"token"`
-	LastConnection time.Time      `json:"lastConnection"`
-	AddrInfo       *peer.AddrInfo `json:"addrInfo"`
+	Handle            string         `json:"handle"`
+	Token             string         `json:"token"`
+	LastConnection    time.Time      `json:"lastConnection"`
+	AddrInfo          *peer.AddrInfo `json:"addrInfo"`
+	AdvertiseInterval string         `json:AdvertiseInterval`
 }
 
 // EstuaryMhIterator contains objects to query the database
@@ -187,7 +189,7 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	})
 
 	newEngine.context = ctx
-	newEngine.tickInterval = tickInterval
+	newEngine.TickInterval = tickInterval
 	newEngine.db = db
 
 	// start engine
@@ -238,12 +240,12 @@ func (arEng *AutoretrieveEngine) Run() {
 	var curTime time.Time
 
 	// start ticker
-	ticker := time.NewTicker(arEng.tickInterval)
+	ticker := time.NewTicker(arEng.TickInterval)
 	defer ticker.Stop()
 
 	for {
 		curTime = time.Now()
-		lastTickTime = curTime.Add(-arEng.tickInterval)
+		lastTickTime = curTime.Add(-arEng.TickInterval)
 		// Find all autoretrieve servers that are online (that sent heartbeat)
 		err := arEng.db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
 		if err != nil {
