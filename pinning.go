@@ -81,7 +81,7 @@ func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*ty
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
-	if cont.Location == "local" {
+	if cont.Location == util.ContentLocationLocal {
 		var out []string
 		for _, a := range cm.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
@@ -247,7 +247,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	if loc == "local" {
+	if loc == util.ContentLocationLocal {
 		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
@@ -258,7 +258,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 }
 
 func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
 
@@ -372,8 +372,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-
-		return "local", nil
+		return util.ContentLocationLocal, nil
 	}
 
 	// TODO: take into account existing staging zones and their primary
@@ -424,8 +423,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont C
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-
-		return "local", nil
+		return util.ContentLocationLocal, nil
 	}
 
 	// prefer the shuttle the content is already on

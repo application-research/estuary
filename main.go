@@ -678,7 +678,7 @@ func main() {
 		go func() {
 			time.Sleep(time.Second * 10)
 
-			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+			if err := s.RestartAllTransfersForLocation(cctx.Context, util.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
@@ -838,7 +838,7 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 }
 
 func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
-	if loc == "local" {
+	if loc == util.ContentLocationLocal {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
