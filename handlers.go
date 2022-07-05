@@ -304,7 +304,7 @@ func (s *Server) ServeAPI() error {
 	ar.POST("/init", s.handleAutoretrieveInit)
 	ar.GET("/list", s.handleAutoretrieveList)
 
-	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat)
+	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat, s.withAutoretrieveAuth())
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
@@ -2763,7 +2763,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 			return nil, &util.HttpError{
 				Code:    http.StatusUnauthorized,
 				Reason:  util.ERR_INVALID_TOKEN,
-				Details: "api key does not exists",
+				Details: "api key does not exist",
 			}
 		}
 		return nil, err
@@ -5044,6 +5044,28 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
+}
+
+func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			auth, err := util.ExtractAuth(c)
+			if err != nil {
+				return err
+			}
+
+			var ar autoretrieve.Autoretrieve
+			if err := s.DB.First(&ar, "token = ?", auth).Error; err != nil {
+				log.Warnw("Autoretrieve server not authorized", "token", auth)
+				return &util.HttpError{
+					Code:    http.StatusUnauthorized,
+					Reason:  util.ERR_NOT_AUTHORIZED,
+					Details: "token not authorized",
+				}
+			}
+			return next(c)
+		}
+	}
 }
 
 func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
