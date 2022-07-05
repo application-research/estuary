@@ -155,33 +155,34 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 	return s.CM.UpdatePinStatus(location, contID, status)
 }
 
-func (cm *ContentManager) refreshPinQueue() error {
+func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string) error {
+	log.Debugf("trying to refresh pin queue for %s contents", contentLoc)
+
 	var toPin []Content
-	if err := cm.DB.Find(&toPin, "pinning and not active and not failed and not aggregate").Error; err != nil {
+	if err := cm.DB.Find(&toPin, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
 		return err
 	}
 
-	// TODO: this doesnt persist the replacement directives, so a queued
-	// replacement, if ongoing during a restart of the node, will still
-	// complete the pin when the process comes back online, but it wont delete
-	// the old pin.
-	// Need to fix this, probably best option is just to add a 'replace' field
-	// to content, could be interesting to see the graph of replacements
-	// anyways
 	makeDeal := true
 	for _, c := range toPin {
-		var origins []*peer.AddrInfo
-		// when refreshing pinning queue, use content origins if available
-		if c.Origins != "" {
-			_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
-		}
+		select {
+		case <-ctx.Done():
+			log.Debugf("refresh pin queue canceled for %s contents", contentLoc)
+			return nil
+		default:
+			var origins []*peer.AddrInfo
+			// when refreshing pinning queue, use content origins if available
+			if c.Origins != "" {
+				_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
+			}
 
-		if c.Location == "local" {
-			cm.addPinToQueue(c, origins, 0, makeDeal)
-		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, origins, 0, c.Location, makeDeal); err != nil {
-				log.Errorf("failed to send pin message to shuttle: %s", err)
-				time.Sleep(time.Millisecond * 100)
+			if c.Location == util.ContentLocationLocal {
+				cm.addPinToQueue(c, origins, 0, makeDeal)
+			} else {
+				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
+					log.Errorf("failed to send pin message to shuttle: %s", err)
+					time.Sleep(time.Millisecond * 100)
+				}
 			}
 		}
 	}
