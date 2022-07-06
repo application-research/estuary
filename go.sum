@@ -996,6 +996,8 @@ github.com/ipld/go-car v0.3.3-0.20211210032800-e6f244225a16/go.mod h1:/wkKF4908U
 github.com/ipld/go-car v0.3.3/go.mod h1:/wkKF4908ULT4dFIFIUZYcfjAnj+KFnJvlh8Hsz1FbQ=
 github.com/ipld/go-car v0.3.4-0.20220124154420-9c7956a6eb9d h1:IeWTbMLUHcmPnaXbuUtpE07WXmodz2oYZ+IM+jE1eN8=
 github.com/ipld/go-car v0.3.4-0.20220124154420-9c7956a6eb9d/go.mod h1:/wkKF4908ULT4dFIFIUZYcfjAnj+KFnJvlh8Hsz1FbQ=
+github.com/ipld/go-car v0.4.0 h1:U6W7F1aKF/OJMHovnOVdst2cpQE5GhmHibQkAixgNcQ=
+github.com/ipld/go-car v0.4.0/go.mod h1:Uslcn4O9cBKK9wqHm/cLTFacg6RAPv6LZx2mxd2Ypl4=
 github.com/ipld/go-car/v2 v2.1.1-0.20211211000942-be2525f6bf2d/go.mod h1:+2Yvf0Z3wzkv7NeI69i8tuZ+ft7jyjPYIWZzeVNeFcI=
 github.com/ipld/go-car/v2 v2.1.1/go.mod h1:+2Yvf0Z3wzkv7NeI69i8tuZ+ft7jyjPYIWZzeVNeFcI=
 github.com/ipld/go-car/v2 v2.1.2-0.20220124154420-9c7956a6eb9d h1:ZS+tQRulViCXtszhLwNZv44569uCjGiYlmR8Ks/tRBA=
