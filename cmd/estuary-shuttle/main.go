@@ -1655,7 +1655,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-			Op: "UpdatePinStatus",
+			Op: drpc.OP_UpdatePinStatus,
 			Params: drpc.MsgParams{
 				UpdatePinStatus: &drpc.UpdatePinStatus{
 					DBID:   cont,

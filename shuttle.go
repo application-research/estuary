@@ -357,11 +357,17 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		cm.updateTransferStatus(ctx, handle, cd.ID, &filclient.ChannelState{
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+			"failed":    true,
+			"failed_at": time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+
+		param.State = &filclient.ChannelState{
 			Status:  datatransfer.Failed,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
-		})
-		return nil
+		}
 	}
 	cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	return nil
