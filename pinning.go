@@ -156,15 +156,15 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 }
 
 func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string) error {
-	log.Debugf("trying to refresh pin queue for %s contents", contentLoc)
+	log.Infof("trying to refresh pin queue for %s contents", contentLoc)
 
-	var toPin []Content
-	if err := cm.DB.Find(&toPin, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
+	var contents []Content
+	if err := cm.DB.Find(&contents, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
 		return err
 	}
 
 	makeDeal := true
-	for _, c := range toPin {
+	for _, c := range contents {
 		select {
 		case <-ctx.Done():
 			log.Debugf("refresh pin queue canceled for %s contents", contentLoc)
