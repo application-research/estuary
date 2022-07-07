@@ -1697,10 +1697,9 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid); err != nil {
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal.ID); err != nil {
 		return err
 	}
-
 	return nil
 }
 

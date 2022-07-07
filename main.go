@@ -822,29 +822,32 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
+		if err := s.CM.RestartTransfer(ctx, loc, chid, d.ID); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
 		}
 	}
-
 	return nil
 }
 
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
-	if loc == util.ContentLocationLocal {
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, dealID uint) error {
+	if loc == "local" {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
 		}
 
 		if util.TransferTerminated(st) {
-			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
+				"failed":    true,
+				"failed_at": time.Now(),
+			}).Error; err != nil {
+				return err
+			}
+			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %d", st.Status)
 		}
-
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-
 	return cm.sendRestartTransferCmd(ctx, loc, chanid)
 }
 
