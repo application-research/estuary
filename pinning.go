@@ -129,7 +129,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-	dsess := merkledag.NewSession(ctx, dserv)
+	dsess := dserv.Session(ctx)
 
 	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
 		return err
