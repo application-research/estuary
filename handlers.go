@@ -711,10 +711,37 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
+		if s.CM.localContentAddingDisabled {
+			uep, err := s.getPreferredUploadEndpoints(u)
+			if err != nil {
+				log.Warnf("failed to get preferred upload endpoints: %s", err)
+			} else if len(uep) > 0 {
+				// propagate any query params
+				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add-car", uep[rand.Intn(len(uep))]), c.Request().Body)
+				if err != nil {
+					return err
+				}
+				req.Header = c.Request().Header.Clone()
+				req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return err
+				}
+
+				c.Response().WriteHeader(resp.StatusCode)
+
+				_, err = io.Copy(c.Response().Writer, resp.Body)
+				if err != nil {
+					log.Errorf("proxying content-add body errored: %s", err)
+				}
+			} else {
+				return &util.HttpError{
+					Code:    http.StatusBadRequest,
+					Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+					Details: "uploading content to this node is not allowed at the moment",
+				}
+			}
 		}
 	}
 
@@ -830,8 +857,25 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 			if err != nil {
 				log.Warnf("failed to get preferred upload endpoints: %s", err)
 			} else if len(uep) > 0 {
-				// details := fmt.Sprintf("this estuary instance has disabled adding new content, please redirect your request to one of the following endpoints: %v", uep)
-				return c.Redirect(http.StatusPermanentRedirect, uep[rand.Intn(len(uep))]) // redirect to a random preferred endpoint
+				// propagate any query params
+				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
+				if err != nil {
+					return err
+				}
+				req.Header = c.Request().Header.Clone()
+				req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return err
+				}
+
+				c.Response().WriteHeader(resp.StatusCode)
+
+				_, err = io.Copy(c.Response().Writer, resp.Body)
+				if err != nil {
+					log.Errorf("proxying content-add body errored: %s", err)
+				}
 			}
 		}
 		return &util.HttpError{

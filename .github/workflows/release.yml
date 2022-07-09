@@ -31,7 +31,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -67,7 +67,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
     
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
@@ -105,7 +105,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -185,7 +185,6 @@ jobs:
         test -f ./barge && chmod +x ./barge
         test -f ./benchest && chmod +x ./benchest
         test -f ./bsget && chmod +x ./bsget
-        test -f ./shuttle-proxy && chmod +x ./shuttle-proxy
         tar -czvf estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.tar.gz ./*
         sha256sum estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.tar.gz > estuary-$VERSION-${{ matrix.OS }}-${{ matrix.ARCH }}.tar.gz.sha256
     # Download the previously uploaded artifact which contains the release URL
