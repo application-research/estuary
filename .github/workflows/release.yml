@@ -31,7 +31,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./shuttle-proxy ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -67,7 +67,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./shuttle-proxy ./release
     
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
@@ -105,7 +105,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./shuttle-proxy ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./shuttle-proxy ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -182,7 +182,6 @@ jobs:
         mv ./estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}/* .
         test -f ./estuary && chmod +x ./estuary
         test -f ./estuary-shuttle && chmod +x ./estuary-shuttle
-        test -f ./barge && chmod +x ./barge
         test -f ./benchest && chmod +x ./benchest
         test -f ./bsget && chmod +x ./bsget
         test -f ./shuttle-proxy && chmod +x ./shuttle-proxy
