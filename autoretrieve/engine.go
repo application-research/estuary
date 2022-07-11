@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"net"
+	"net/url"
+	"regexp"
 	"sync"
 	"time"
 
@@ -13,6 +16,7 @@ import (
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/engine/chunker"
 	"github.com/filecoin-project/index-provider/metadata"
+	httpclient "github.com/filecoin-project/storetheindex/api/v0/ingest/client/http"
 	"github.com/filecoin-project/storetheindex/api/v0/ingest/schema"
 	"github.com/hashicorp/go-multierror"
 	"github.com/ipfs/go-cid"
@@ -21,6 +25,8 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipld/go-ipld-prime"
 	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"gorm.io/gorm"
 )
 
@@ -207,8 +213,104 @@ func (e *AutoretrieveEngine) Publish(ctx context.Context, adv schema.Advertiseme
 			log.Errorw("Failed to announce advertisement on pubsub channel ", "err", err)
 			return cid.Undef, err
 		}
+		err = e.httpAnnounce(ctx, c, e.announceURLs)
+		if err != nil {
+			log.Errorw("Failed to announce advertisement via http", "err", err)
+			return cid.Undef, err
+		}
 	}
 	return c, nil
+}
+
+func parseAddrType(host string) string {
+	addr := net.ParseIP(host)
+	if addr == nil {
+		re, _ := regexp.Compile(`^(([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9\-]*[A-Za-z0-9])$`)
+		if !re.MatchString(host) {
+			return ""
+		}
+		return "dns4"
+	}
+	if addr.To4() != nil {
+		return "ip4"
+	}
+	if addr.To16() != nil {
+		return "ip6"
+	}
+	return ""
+}
+
+func hostToMultiaddr(hostport string) (multiaddr.Multiaddr, error) {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		port = "80"
+		host = hostport
+	}
+	if len(host) > 255 {
+		return nil, fmt.Errorf("host name length cannot exceed 255")
+	}
+	addrType := parseAddrType(host)
+	if addrType == "" {
+		return nil, fmt.Errorf("unrecognized address: %q", host)
+	}
+	return multiaddr.NewMultiaddr(fmt.Sprintf("/%s/%s/tcp/%s", addrType, host, port))
+
+}
+
+func (e *AutoretrieveEngine) httpAnnounce(ctx context.Context, adCid cid.Cid, announceURLs []*url.URL) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	ai := &peer.AddrInfo{
+		ID: e.h.ID(),
+	}
+
+	// The publisher kind determines what addresses to put into the announce
+	// message.
+	switch e.pubKind {
+	case NoPublisher:
+		log.Info("Remote announcements disabled")
+		return nil
+	case DataTransferPublisher:
+		ai.Addrs = e.h.Addrs()
+	case HttpPublisher:
+		maddr, err := hostToMultiaddr(e.pubHttpListenAddr)
+		if err != nil {
+			return err
+		}
+		proto, _ := multiaddr.NewMultiaddr("/http")
+		ai.Addrs = append(ai.Addrs, multiaddr.Join(maddr, proto))
+	}
+
+	errChan := make(chan error)
+	for _, u := range announceURLs {
+		// Send HTTP announce to indexers concurrently. If context is canceled,
+		// then Announce requests will be canceled.
+		go func(announceURL *url.URL) {
+			log.Infow("Announcing advertisement over HTTP", "url", announceURL)
+			cl, err := httpclient.New(announceURL.String())
+			if err != nil {
+				errChan <- fmt.Errorf("failed to create http client for indexer %s: %w", announceURL, err)
+				return
+			}
+			err = cl.Announce(ctx, ai, adCid)
+			if err != nil {
+				errChan <- fmt.Errorf("failed to send http announce to indexer %s: %w", announceURL, err)
+				return
+			}
+			errChan <- nil
+		}(u)
+	}
+
+	var errs error
+	for i := 0; i < len(announceURLs); i++ {
+		err := <-errChan
+		if err != nil {
+			errs = multierror.Append(errs, err)
+		}
+	}
+	return errs
 }
 
 // RegisterMultihashLister registers a provider.MultihashLister that is used to look up the

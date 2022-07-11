@@ -144,6 +144,7 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	newEngine, err := New(
 		WithHost(libp2pHost), // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
+		WithDirectAnnounce("https://dev.cid.contact"),
 	)
 	if err != nil {
 		return nil, err
