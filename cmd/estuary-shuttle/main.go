@@ -76,6 +76,29 @@ var appVersion string
 
 var log = logging.Logger("shuttle").With("app_version", appVersion)
 
+func before(cctx *cli.Context) error {
+	level := "INFO"
+	if util.IsVeryVerbose {
+		level = "DEBUG"
+	}
+
+	logging.SetLogLevel("dt-impl", level)
+	logging.SetLogLevel("shuttle", level)
+	logging.SetLogLevel("paych", level)
+	logging.SetLogLevel("filclient", level)
+	logging.SetLogLevel("dt_graphsync", level)
+	logging.SetLogLevel("graphsync_allocator", level)
+	logging.SetLogLevel("dt-chanmon", level)
+	logging.SetLogLevel("markets", level)
+	logging.SetLogLevel("data_transfer_network", level)
+	logging.SetLogLevel("rpc", level)
+	logging.SetLogLevel("bs-wal", level)
+	logging.SetLogLevel("bs-migrate", level)
+	logging.SetLogLevel("rcmgr", level)
+
+	return nil
+}
+
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
 	for _, flag := range flags {
 		name := flag.Names()[0]
@@ -163,20 +186,6 @@ func main() {
 	utc, _ := time.LoadLocation("UTC")
 	time.Local = utc
 
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("shuttle", "debug")
-	logging.SetLogLevel("paych", "debug")
-	logging.SetLogLevel("filclient", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	logging.SetLogLevel("graphsync_allocator", "info")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("markets", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("rpc", "info")
-	logging.SetLogLevel("bs-wal", "info")
-	logging.SetLogLevel("bs-migrate", "info")
-	logging.SetLogLevel("rcmgr", "debug")
-
 	hDir, err := homedir.Dir()
 	if err != nil {
 		log.Fatalf("could not determine homedir for shuttle app: %+v", err)
@@ -187,7 +196,10 @@ func main() {
 
 	cfg := config.NewShuttle(appVersion)
 
+	app.Before = before
+
 	app.Flags = []cli.Flag{
+		util.FlagVeryVerbose,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",

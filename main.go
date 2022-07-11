@@ -159,6 +159,27 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	}
 }
 
+func before(cctx *cli.Context) error {
+	level := "INFO"
+	if util.IsVeryVerbose {
+		level = "DEBUG"
+	}
+
+	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("estuary", level)
+	_ = logging.SetLogLevel("paych", level)
+	_ = logging.SetLogLevel("filclient", level)
+	_ = logging.SetLogLevel("dt_graphsync", level)
+	_ = logging.SetLogLevel("dt-chanmon", level)
+	_ = logging.SetLogLevel("markets", level)
+	_ = logging.SetLogLevel("data_transfer_network", level)
+	_ = logging.SetLogLevel("rpc", level)
+	_ = logging.SetLogLevel("bs-wal", level)
+	_ = logging.SetLogLevel("provider.batched", level)
+	_ = logging.SetLogLevel("bs-migrate", level)
+	return nil
+}
+
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
 	for _, flag := range flags {
 		name := flag.Names()[0]
@@ -258,20 +279,6 @@ func main() {
 	utc, _ := time.LoadLocation("UTC")
 	time.Local = utc
 
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("estuary", "debug")
-	logging.SetLogLevel("paych", "debug")
-	logging.SetLogLevel("filclient", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	//logging.SetLogLevel("graphsync_allocator", "debug")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("markets", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("rpc", "info")
-	logging.SetLogLevel("bs-wal", "info")
-	logging.SetLogLevel("provider.batched", "info")
-	logging.SetLogLevel("bs-migrate", "info")
-
 	hDir, err := homedir.Dir()
 	if err != nil {
 		log.Fatalf("could not determine homedir for estuary app: %+v", err)
@@ -284,7 +291,10 @@ func main() {
 
 	app.Usage = "Estuary server CLI"
 
+	app.Before = before
+
 	app.Flags = []cli.Flag{
+		util.FlagVeryVerbose,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",

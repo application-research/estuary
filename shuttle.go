@@ -156,7 +156,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
-	log.Infof("handling shuttle message: %s", msg.Op)
+	log.Debugf("handling shuttle message: %s", msg.Op)
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
 		ups := msg.Params.UpdatePinStatus
@@ -331,12 +331,12 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 
-	log.Infow("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
 func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
-	log.Infof("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
+	log.Debugf("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
 
 	var cd contentDeal
 	if param.DealDBID != 0 {
