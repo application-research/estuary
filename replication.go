@@ -559,7 +559,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 		dataByLoc[loc] = ntot
 
 		// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
-		if ntot > curMax && loc != "local" {
+		if ntot > curMax && loc != util.ContentLocationLocal {
 			curMax = ntot
 			primary = loc
 		}
@@ -574,7 +574,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	}
 
 	log.Infow("consolidating content to single location for aggregation", "user", b.User, "primary", primary, "numItems", len(toMove), "primaryWeight", curMax)
-	if primary == "local" {
+	if primary == util.ContentLocationLocal {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
 		return cm.sendConsolidateContentCmd(ctx, primary, toMove)
@@ -638,7 +638,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-	if loc == "local" {
+	if loc == util.ContentLocationLocal {
 		obj := &Object{
 			Cid:  util.DbCID{ncid},
 			Size: int(size),
@@ -1455,7 +1455,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size i
 
 	log.Infof("splitting content %d (size: %d)", cont.ID, size)
 
-	if cont.Location == "local" {
+	if cont.Location == util.ContentLocationLocal {
 		go func() {
 			if err := cm.splitContentLocal(ctx, cont, size); err != nil {
 				log.Errorw("failed to split local content", "cont", cont.ID, "size", size, "err", err)
@@ -1690,7 +1690,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	// miner still has time...
 
 	if d.DTChan == "" {
-		if content.Location != "local" {
+		if content.Location != util.ContentLocationLocal {
 			log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
 			if time.Since(d.CreatedAt) > time.Hour {
 				return DEAL_CHECK_UNKNOWN, nil
@@ -1834,7 +1834,7 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
-	if content.Location == "local" {
+	if content.Location == util.ContentLocationLocal {
 		return cm.getLocalTransferStatus(ctx, d, content)
 	}
 
@@ -2222,7 +2222,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	rootCid := netprop.Piece.Root
 	size := netprop.Piece.RawBlockSize
 	var announceAddr multiaddr.Multiaddr
-	if contentLoc == "local" {
+	if contentLoc == util.ContentLocationLocal {
 		if len(cm.Node.Config.AnnounceAddrs) == 0 {
 			return nil, false, xerrors.Errorf("cannot serve deal data: no announce address configured for estuary node")
 		}
@@ -2269,7 +2269,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	}
 
 	cleanup := func() error {
-		if contentLoc == "local" {
+		if contentLoc == util.ContentLocationLocal {
 			return cm.FilClient.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken)
 		}
 		return cm.sendCleanupPreparedRequestCommand(ctx, contentLoc, dbid, authToken)
@@ -2417,7 +2417,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 		return err
 	}
 
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		return cm.sendStartTransferCommand(ctx, cont.Location, cd, cont.Cid.CID)
 	}
 
@@ -2596,7 +2596,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 		return cid.Undef, 0, 0, err
 	}
 
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		if err := cm.sendShuttleCommand(ctx, cont.Location, &drpc.Command{
 			Op: drpc.CMD_ComputeCommP,
 			Params: drpc.CmdParams{
@@ -2742,7 +2742,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 	log.Infof("refreshing content %d onto shuttle %s", cont, loc)
 
 	switch loc {
-	case "local":
+	case util.ContentLocationLocal:
 		if err := cm.retrieveContent(ctx, cont); err != nil {
 			return err
 		}
@@ -3074,7 +3074,7 @@ func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont Co
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"offloaded": false,
-		"location":  "local",
+		"location":  util.ContentLocationLocal,
 	}).Error; err != nil {
 		return err
 	}
@@ -3116,7 +3116,7 @@ func (cm *ContentManager) safeFetchData(ctx context.Context, c cid.Cid) (func(),
 }
 
 func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, error) {
-	if handle == "local" {
+	if handle == util.ContentLocationLocal {
 		return &peer.AddrInfo{
 			ID:    cm.Host.ID(),
 			Addrs: cm.Host.Addrs(),
@@ -3304,7 +3304,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 			Pinning:     true,
 			UserID:      cont.UserID,
 			Replication: cont.Replication,
-			Location:    "local",
+			Location:    util.ContentLocationLocal,
 			DagSplit:    true,
 			SplitFrom:   cont.ID,
 		}
