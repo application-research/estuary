@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -144,7 +145,7 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	newEngine, err := New(
 		WithHost(libp2pHost), // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
-		WithDirectAnnounce("https://dev.cid.contact"),
+		WithDirectAnnounce("https://cid.contact"), // TODO: make this a config option with default to https://cid.contact
 	)
 	if err != nil {
 		return nil, err
@@ -155,7 +156,9 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	// will come to fetch for advertisements "when it feels like it"
 	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
 
-		arHandle := contextID // contextID is the autoretrieve handle
+		// contextID = autoretrievehandle_randomnumber
+		arHandle := strings.Split(string(contextID), "_")[0]
+		// arHandle := contextID // contextID is the autoretrieve handle
 
 		// get the autoretrieve entry from the database
 		var ar Autoretrieve
@@ -200,7 +203,8 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 }
 
 func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
-	newContextID := []byte(ar.Handle)
+	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
+	newContextID := []byte(ar.Handle + "_" + string(rand.Intn(100000)))
 
 	retrievalAddresses := []string{}
 	providerID := ""

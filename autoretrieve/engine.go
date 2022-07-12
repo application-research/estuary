@@ -523,9 +523,10 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 	// Check for cid.Undef for the previous link. If this is the case, then
 	// this means there is a "cid too short" error in IPLD links serialization.
 	if prevAdvID != cid.Undef {
-		log.Info("Latest advertisement CID was undefined - no previous advertisement")
 		prev := ipld.Link(cidlink.Link{Cid: prevAdvID})
 		adv.PreviousID = &prev
+	} else {
+		log.Info("Latest advertisement CID was undefined - no previous advertisement")
 	}
 
 	// Sign the advertisement.
