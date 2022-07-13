@@ -3687,6 +3687,8 @@ type publicStatsResponse struct {
 	DealsOnChain       int64 `json:"dealsOnChain"`
 	TotalObjectsRef    int64 `json:"totalObjectsRef"`
 	TotalBytesUploaded int64 `json:"totalBytesUploaded"`
+	TotalUsers         int64 `json:"totalUsers"`
+	TotalStorageMiner  int64 `json:"totalStorageMiners"`
 }
 
 // handlePublicStats godoc
@@ -3708,6 +3710,8 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	// reuse the original stats and add the ones from the extensive lookup function.
 	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 	val.(*publicStatsResponse).TotalBytesUploaded = valExt.(*publicStatsResponse).TotalBytesUploaded
+	val.(*publicStatsResponse).TotalUsers = valExt.(*publicStatsResponse).TotalUsers
+	val.(*publicStatsResponse).TotalStorageMiner = valExt.(*publicStatsResponse).TotalStorageMiner
 
 	if err != nil {
 		return err
@@ -3742,6 +3746,14 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 	}
 
 	if err := s.DB.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Model(User{}).Count(&stats.TotalUsers).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Table("storage_miners").Count(&stats.TotalStorageMiner).Error; err != nil {
 		return nil, err
 	}
 
