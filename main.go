@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
@@ -148,6 +147,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "shuttle-message-handlers":
 			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
+		case "indexer-url":
+			cfg.Node.IndexerURL = cctx.String("indexer-url")
+		case "indexer-tick-interval":
+			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
 
 		default:
 		}
@@ -349,6 +352,16 @@ func main() {
 			Name:  "shuttle-message-handlers",
 			Usage: "sets shuttle message handler count",
 			Value: cfg.ShuttleMessageHandlers,
+		},
+		&cli.StringFlag{
+			Name:  "indexer-url",
+			Usage: "sets the indexer advertisement url",
+			Value: cfg.Node.IndexerURL,
+		},
+		&cli.IntFlag{
+			Name:  "indexer-tick-interval",
+			Usage: "sets the indexer advertisement interval in minutes",
+			Value: cfg.Node.IndexerTickInterval,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -566,17 +579,7 @@ func main() {
 			}()
 		}
 
-		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
-		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
-		if !ok {
-			updateInterval = "720"
-		}
-		intervalMinutes, err := strconv.Atoi(updateInterval)
-		if err != nil {
-			return err
-		}
-
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), time.Duration(intervalMinutes)*time.Minute, s.DB, s.Node.Host)
+		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host)
 		if err != nil {
 			return err
 		}
