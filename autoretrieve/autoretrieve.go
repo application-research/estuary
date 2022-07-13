@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/util"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
@@ -141,11 +142,11 @@ func findContentCids(db *gorm.DB, content util.Content) ([]cid.Cid, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *gorm.DB, libp2pHost host.Host) (*AutoretrieveEngine, error) {
+func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host) (*AutoretrieveEngine, error) {
 	newEngine, err := New(
 		WithHost(libp2pHost), // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
-		WithDirectAnnounce("https://cid.contact"), // TODO: make this a config option with default to https://cid.contact
+		WithDirectAnnounce(cfg.Node.IndexerURL),
 	)
 	if err != nil {
 		return nil, err
@@ -193,7 +194,7 @@ func NewAutoretrieveEngine(ctx context.Context, tickInterval time.Duration, db *
 	})
 
 	newEngine.context = ctx
-	newEngine.TickInterval = tickInterval
+	newEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
 	newEngine.db = db
 
 	// start engine

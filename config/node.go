@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+
 	"github.com/application-research/estuary/node/modules/peering"
 	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
 )
@@ -11,6 +12,9 @@ type Node struct {
 	AnnounceAddrs             []string              `json:"announce_addrs"`
 	PeeringPeers              []peering.PeeringPeer `json:"peering_peers"`
 	EnableWebsocketListenAddr bool                  `json:"enable_websocket_listen_addr"`
+
+	IndexerURL          string `json:indexer_url`
+	IndexerTickInterval int    `json:indexer_tick_interval`
 
 	Blockstore string `json:"blockstore"`
 
