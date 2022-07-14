@@ -2,11 +2,11 @@ package util
 
 import cli "github.com/urfave/cli/v2"
 
-var IsVeryVerbose bool
+var LogLevl string
 
-var FlagVeryVerbose = &cli.BoolFlag{
-	Name:        "vv",
-	Usage:       "enables very verbose mode, useful for debugging",
-	Value:       false,
-	Destination: &IsVeryVerbose,
+var FlagLogLevl = &cli.StringFlag{
+	Name:        "log-level",
+	Usage:       "sets the log level, defaults to INFO",
+	Value:       "INFO",
+	Destination: &LogLevl,
 }

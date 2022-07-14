@@ -77,10 +77,7 @@ var appVersion string
 var log = logging.Logger("shuttle").With("app_version", appVersion)
 
 func before(cctx *cli.Context) error {
-	level := "INFO"
-	if util.IsVeryVerbose {
-		level = "DEBUG"
-	}
+	level := util.LogLevl
 
 	logging.SetLogLevel("dt-impl", level)
 	logging.SetLogLevel("shuttle", level)
@@ -199,7 +196,7 @@ func main() {
 	app.Before = before
 
 	app.Flags = []cli.Flag{
-		util.FlagVeryVerbose,
+		util.FlagLogLevl,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",

@@ -160,10 +160,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 }
 
 func before(cctx *cli.Context) error {
-	level := "INFO"
-	if util.IsVeryVerbose {
-		level = "DEBUG"
-	}
+	level := util.LogLevl
 
 	_ = logging.SetLogLevel("dt-impl", level)
 	_ = logging.SetLogLevel("estuary", level)
@@ -294,7 +291,7 @@ func main() {
 	app.Before = before
 
 	app.Flags = []cli.Flag{
-		util.FlagVeryVerbose,
+		util.FlagLogLevl,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
