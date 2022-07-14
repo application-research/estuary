@@ -142,7 +142,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			return 0, err
 		}
 
-		if cont.Location == "local" {
+		if cont.Location == util.ContentLocationLocal {
 			local = append(local, cont.ID)
 		} else {
 			remote[cont.Location] = append(remote[cont.Location], cont.ID)
@@ -180,7 +180,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			}
 
 			for _, c := range children {
-				if cont.Location == "local" {
+				if cont.Location == util.ContentLocationLocal {
 					local = append(local, c.ID)
 				} else {
 					remote[cont.Location] = append(remote[cont.Location], c.ID)

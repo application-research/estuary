@@ -1490,7 +1490,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 
 	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-	dsess := merkledag.NewSession(ctx, dserv)
+	dsess := dserv.Session(ctx)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
 		// pinning failed, we wont try again. mark pin as dead
@@ -1655,7 +1655,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-			Op: "UpdatePinStatus",
+			Op: drpc.OP_UpdatePinStatus,
 			Params: drpc.MsgParams{
 				UpdatePinStatus: &drpc.UpdatePinStatus{
 					DBID:   cont,

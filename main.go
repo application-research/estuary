@@ -564,16 +564,10 @@ func main() {
 		go cm.ContentWatcher()
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
+		// refresh pin queue for local contents
 		if !cm.contentAddingDisabled {
 			go func() {
-				// TODO - resume pin removal request
-
-				// wait for shuttles to reconnect
-				// This is a bit of a hack, and theres probably a better way to
-				// solve this. but its good enough for now
-				time.Sleep(time.Second * 10)
-
-				if err := cm.refreshPinQueue(); err != nil {
+				if err := cm.refreshPinQueue(cctx.Context, util.ContentLocationLocal); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)
 				}
 			}()
@@ -590,7 +584,7 @@ func main() {
 		go func() {
 			time.Sleep(time.Second * 10)
 
-			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+			if err := s.RestartAllTransfersForLocation(cctx.Context, util.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
@@ -730,16 +724,15 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
+		if err := s.CM.RestartTransfer(ctx, loc, chid, d.ID); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
 		}
 	}
-
 	return nil
 }
 
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, dealID uint) error {
 	if loc == "local" {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
@@ -747,12 +740,16 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		}
 
 		if util.TransferTerminated(st) {
-			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
+				"failed":    true,
+				"failed_at": time.Now(),
+			}).Error; err != nil {
+				return err
+			}
+			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %d", st.Status)
 		}
-
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-
 	return cm.sendRestartTransferCmd(ctx, loc, chanid)
 }
 

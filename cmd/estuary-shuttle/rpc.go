@@ -109,7 +109,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// that notification
 
 			if err := d.sendRpcMessage(ctx, &drpc.Message{
-				Op: "UpdatePinStatus",
+				Op: drpc.OP_UpdatePinStatus,
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
@@ -650,9 +650,9 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			Chanid: req.ChanID.String(),
 			State:  st,
+			Failed: true,
 		})
 		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 	}
-
 	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }
