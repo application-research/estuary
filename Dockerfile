@@ -16,6 +16,5 @@ RUN apt-get update && \
 
 COPY --from=builder /app/estuary /usr/local/bin
 COPY --from=builder /app/estuary-shuttle /usr/local/bin
-COPY --from=builder /app/barge /usr/local/bin
 COPY --from=builder /app/benchest /usr/local/bin
 COPY --from=builder /app/bsget /usr/local/bin

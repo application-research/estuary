@@ -13,6 +13,7 @@ import (
 )
 
 const DefaultContentSizeLimit = 34_000_000_000
+const ContentLocationLocal = "local"
 
 type ContentType int64
 

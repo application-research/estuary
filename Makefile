@@ -73,11 +73,6 @@ shuttle:
 	go build $(GOFLAGS) -o estuary-shuttle ./cmd/estuary-shuttle
 BINS+=estuary-shuttle
 
-.PHONY: barge
-barge:
-	go build $(GOFLAGS) -o barge ./cmd/barge
-BINS+=barge
-
 .PHONY: benchest
 benchest:
 	go build $(GOFLAGS) -o benchest ./cmd/benchest

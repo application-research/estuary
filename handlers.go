@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -1114,7 +1115,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local")
+	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, util.ContentLocationLocal)
 }
 
 func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*Content, error) {
@@ -1128,7 +1129,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
-		Location:    "local",
+		Location:    util.ContentLocationLocal,
 	}
 
 	if err := cm.DB.Create(content).Error; err != nil {
@@ -3726,11 +3727,13 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 }
 
 type publicStatsResponse struct {
-	TotalStorage       int64 `json:"totalStorage"`
-	TotalFilesStored   int64 `json:"totalFiles"`
-	DealsOnChain       int64 `json:"dealsOnChain"`
-	TotalObjectsRef    int64 `json:"totalObjectsRef"`
-	TotalBytesUploaded int64 `json:"totalBytesUploaded"`
+	TotalStorage       sql.NullInt64 `json:"totalStorage"`
+	TotalFilesStored   sql.NullInt64 `json:"totalFiles"`
+	DealsOnChain       sql.NullInt64 `json:"dealsOnChain"`
+	TotalObjectsRef    sql.NullInt64 `json:"totalObjectsRef"`
+	TotalBytesUploaded sql.NullInt64 `json:"totalBytesUploaded"`
+	TotalUsers         sql.NullInt64 `json:"totalUsers"`
+	TotalStorageMiner  sql.NullInt64 `json:"totalStorageMiners"`
 }
 
 // handlePublicStats godoc
@@ -3752,12 +3755,24 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	// reuse the original stats and add the ones from the extensive lookup function.
 	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 	val.(*publicStatsResponse).TotalBytesUploaded = valExt.(*publicStatsResponse).TotalBytesUploaded
+	val.(*publicStatsResponse).TotalUsers = valExt.(*publicStatsResponse).TotalUsers
+	val.(*publicStatsResponse).TotalStorageMiner = valExt.(*publicStatsResponse).TotalStorageMiner
 
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, val)
+	jsonResponse := map[string]interface{}{
+		"totalStorage":       val.(*publicStatsResponse).TotalStorage.Int64,
+		"totalFilesStored":   val.(*publicStatsResponse).TotalFilesStored.Int64,
+		"dealsOnChain":       val.(*publicStatsResponse).DealsOnChain.Int64,
+		"totalObjectsRef":    val.(*publicStatsResponse).TotalObjectsRef.Int64,
+		"totalBytesUploaded": val.(*publicStatsResponse).TotalBytesUploaded.Int64,
+		"totalUsers":         val.(*publicStatsResponse).TotalUsers.Int64,
+		"totalStorageMiner":  val.(*publicStatsResponse).TotalStorageMiner.Int64,
+	}
+
+	return c.JSON(http.StatusOK, jsonResponse)
 }
 
 func (s *Server) computePublicStats() (*publicStatsResponse, error) {
@@ -3766,11 +3781,11 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
+	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored.Int64).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain).Error; err != nil {
+	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -3781,11 +3796,19 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 	var stats publicStatsResponse
 
 	//	this can be resource expensive but we are already caching it.
-	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef).Error; err != nil {
+	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef.Int64).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded).Error; err != nil {
+	if err := s.DB.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded.Int64).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Model(User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Table("storage_miners").Count(&stats.TotalStorageMiner.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -4153,7 +4176,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		fixedAggregateSize = true
 	}
 
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
 			"content":            cont,
@@ -5291,7 +5314,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", err
 	}
 
-	if cont.Location == "local" {
+	if cont.Location == util.ContentLocationLocal {
 		return "", nil
 	}
 
