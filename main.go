@@ -160,7 +160,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 }
 
 func before(cctx *cli.Context) error {
-	level := util.LogLevl
+	level := util.LogLevel
 
 	_ = logging.SetLogLevel("dt-impl", level)
 	_ = logging.SetLogLevel("estuary", level)
@@ -291,7 +291,7 @@ func main() {
 	app.Before = before
 
 	app.Flags = []cli.Flag{
-		util.FlagLogLevl,
+		util.FlagLogLevel,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
