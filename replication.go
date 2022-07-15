@@ -1249,6 +1249,13 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		return nil
 	}
 
+	// if it's a shuttle content and the shuttle is not online, do not proceed
+	if content.Location != util.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
+		log.Debugf("content shuttle: %s, is not online", content.Location)
+		done(time.Minute * 15)
+		return nil
+	}
+
 	if cm.contentInStagingZone(ctx, content) {
 		// This content is already scheduled to be aggregated and is waiting in a bucket
 		return nil
@@ -2289,6 +2296,11 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 
 	if content.Offloaded {
 		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
+
+	// if it's a shuttle content and the shuttle is not online, do not proceed
+	if content.Location != util.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
+		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
