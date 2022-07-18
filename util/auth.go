@@ -5,7 +5,7 @@ import (
 	"net/http"
 )
 
-func IsEntityOwner(uID, entityID uint, entity string) error {
+func isEntityOwner(uID, entityID uint, entity string) error {
 	if uID != entityID {
 		return HttpError{
 			Code:    http.StatusForbidden,
@@ -17,9 +17,9 @@ func IsEntityOwner(uID, entityID uint, entity string) error {
 }
 
 func IsCollectionOwner(uID, entityID uint) error {
-	return IsEntityOwner(uID, entityID, "collection")
+	return isEntityOwner(uID, entityID, "collection")
 }
 
 func IsContentOwner(uID, entityID uint) error {
-	return IsEntityOwner(uID, entityID, "content")
+	return isEntityOwner(uID, entityID, "content")
 }
