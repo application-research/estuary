@@ -58,7 +58,7 @@ GOFLAGS+=-ldflags="$(ldflags)"
 # export CGO_CFLAGS+=-Wno-stringop-overflow
 
 .PHONY: build
-build: deps estuary shuttle barge benchest bsget
+build: deps estuary shuttle benchest bsget
 
 .PHONY: deps
 deps: $(BUILD_DEPS)
