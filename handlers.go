@@ -4638,10 +4638,12 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 			return err
 		}
 
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
+		if col.UserID != u.ID {
+			return &util.HttpError{
+				Code:    http.StatusForbidden,
+				Reason:  util.ERR_NOT_AUTHORIZED,
+				Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
+			}
 		}
 	}
 
