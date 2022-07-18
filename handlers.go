@@ -1263,12 +1263,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var deals []contentDeal
@@ -2546,12 +2542,8 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
@@ -2588,12 +2580,8 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var sub []Content
@@ -3594,12 +3582,8 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 		}
 	}
 
-	if col.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified collection",
-		}
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
@@ -4638,12 +4622,8 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 			return err
 		}
 
-		if col.UserID != u.ID {
-			return &util.HttpError{
-				Code:    http.StatusForbidden,
-				Reason:  util.ERR_NOT_AUTHORIZED,
-				Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
-			}
+		if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+			return err
 		}
 	}
 
@@ -5190,12 +5170,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if col.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified collection",
-		}
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	var content Content
@@ -5203,12 +5179,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var path *string

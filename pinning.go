@@ -756,12 +756,8 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	st, err := s.CM.pinStatus(content, nil)
@@ -809,12 +805,8 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var origins []*peer.AddrInfo
@@ -864,12 +856,8 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore
