@@ -67,7 +67,7 @@ type Content struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Cid         util.DbCID       `json:"cid"`
-	Name        string           `json:"name"`
+	Filename    string           `json:"filename"`
 	UserID      uint             `json:"userId" gorm:"index"`
 	Description string           `json:"description"`
 	Size        int64            `json:"size"`

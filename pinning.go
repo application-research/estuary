@@ -57,7 +57,7 @@ func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*ty
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
 				CID:     cont.Cid.CID.String(),
-				Name:    cont.Name,
+				Name:    cont.Filename,
 				Meta:    meta,
 				Origins: originStrs,
 			},
@@ -189,7 +189,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -222,7 +222,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 
 	cont := Content{
 		Cid:         util.DbCID{CID: obj},
-		Name:        name,
+		Filename:    filename,
 		UserID:      user,
 		Active:      false,
 		Replication: cm.Replication,
@@ -267,7 +267,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, re
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
+		Name:     cont.Filename,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
@@ -310,7 +310,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
+		Name:     cont.Filename,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
