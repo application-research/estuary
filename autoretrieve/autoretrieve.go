@@ -59,6 +59,7 @@ type AutoretrieveInitResponse struct {
 // EstuaryMhIterator contains objects to query the database
 // incrementally, to avoid having all CIDs in memory at once
 type EstuaryMhIterator struct {
+	// we need contentOffset because one content might have more than one CID
 	contentOffset int // offset of the content in the Contents slice
 	cidOffset     int // offset of the cid related to the current content
 	Contents      []util.Content
@@ -66,34 +67,47 @@ type EstuaryMhIterator struct {
 	Db            *gorm.DB
 }
 
+func (m *EstuaryMhIterator) nextContent() {
+	m.cidOffset = 0   // reset CID offset for new content
+	m.contentOffset++ // add one to content offset
+
+	// get next content associated CIDs
+	nextContent := m.Contents[m.contentOffset]
+	var err error
+	m.ContentCids, err = findContentCids(m.Db, nextContent)
+	if err != nil {
+		log.Errorf("could not find CIDs associated with content of ID %d: %v", nextContent.ID, err)
+	} else {
+		log.Debugf("found %d new CIDs for content of ID %d", len(m.ContentCids), nextContent.ID)
+	}
+
+	// content without associated CIDs, keep going until you find one that does
+	if len(m.ContentCids) == 0 {
+		log.Errorf("content entry has no CIDs associated with it")
+		m.nextContent()
+	}
+
+}
+
 func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
+
+	// no contents to announce
 	if len(m.Contents) == 0 {
-		// no contents to announce
+		log.Debugf("no contents to announce when Next() was called")
 		return nil, io.EOF
 	}
 
-	if m.cidOffset == len(m.ContentCids) {
-		// finished publishing objects related to this offset, move to next
-		m.cidOffset = 0
-		m.contentOffset++
-	}
-
-	// finished publishing all cids
-	if m.contentOffset == len(m.Contents) {
-		return nil, io.EOF
-	}
-
-	if m.cidOffset == 0 { // we need to get another content's related CIDs
-		nextContent := m.Contents[m.contentOffset]
-		var err error
-		m.ContentCids, err = findContentCids(m.Db, nextContent)
-		if err != nil {
-			return nil, err
+	// finished publishing CIDs associated with this content
+	if m.cidOffset >= len(m.ContentCids) {
+		// finished publishing everything (last CID of last content published)
+		if m.contentOffset >= len(m.Contents) {
+			return nil, io.EOF
 		}
+		m.nextContent()
 	}
 
 	curCid := m.ContentCids[m.cidOffset]
-	m.cidOffset++
+	m.cidOffset++ // go to next CID
 
 	return curCid.Hash(), nil
 }
@@ -110,7 +124,7 @@ func findNewContents(db *gorm.DB, since time.Time) ([]util.Content, error) {
 		Scan(&newContents).
 		Error
 	if err != nil {
-		return nil, fmt.Errorf("unable to query new CIDs from database: %s", err)
+		return nil, fmt.Errorf("unable to query new contents from database: %s", err)
 	}
 
 	return newContents, nil
@@ -175,22 +189,16 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 			return nil, err
 		}
 
+		log.Debugf("found %d new contents", len(newContents))
 		if len(newContents) == 0 {
 			return nil, fmt.Errorf("no new contents")
 		}
 
-		var newContentCids []cid.Cid
-		newContentCids, err = findContentCids(db, newContents[0])
-		if err != nil {
-			return nil, err
-		}
-
-		log.Debugf("found %d new contents, announcing", len(newContents))
+		log.Infof("announcing %d contents", len(newContents))
 
 		return &EstuaryMhIterator{
-			Contents:    newContents,
-			ContentCids: newContentCids,
-			Db:          db,
+			Contents: newContents,
+			Db:       db,
 		}, nil
 	})
 
