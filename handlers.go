@@ -972,6 +972,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		log.Warnf("failed to get preferred upload endpoints: %s", err)
+		return err
 	} else if len(uep) > 0 {
 		// propagate any query params
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
@@ -991,6 +992,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		_, err = io.Copy(c.Response().Writer, resp.Body)
 		if err != nil {
 			log.Errorf("proxying content-add body errored: %s", err)
+			return err
 		}
 	} else {
 		return &util.HttpError{
