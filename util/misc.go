@@ -6,6 +6,7 @@ import (
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/multiformats/go-multihash"
+	"net/http"
 )
 
 func TransferTerminated(st *filclient.ChannelState) bool {
@@ -49,4 +50,15 @@ func CidIsUnwalkable(c cid.Cid) bool {
 	}
 
 	return false
+}
+
+func ErrorIfContentAddingDisabled(isContentAddingDisabled bool) error {
+	if isContentAddingDisabled {
+		return HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
+		}
+	}
+	return nil
 }
