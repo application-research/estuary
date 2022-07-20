@@ -707,11 +707,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := s.redirectIfLocalContentAddingDisabled(c, u); err != nil {
-		return err
-	}
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
+	}
+	if s.CM.localContentAddingDisabled {
+		return s.redirectIfLocalContentAddingDisabled(c, u)
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -820,12 +820,12 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if err := s.redirectIfLocalContentAddingDisabled(c, u); err != nil {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
-	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
-		return err
+	if s.CM.localContentAddingDisabled {
+		return s.redirectIfLocalContentAddingDisabled(c, u)
 	}
 
 	form, err := c.MultipartForm()
@@ -969,36 +969,34 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 }
 
 func (s *Server) redirectIfLocalContentAddingDisabled(c echo.Context, u *User) error {
-	if s.CM.localContentAddingDisabled {
-		uep, err := s.getPreferredUploadEndpoints(u)
+	uep, err := s.getPreferredUploadEndpoints(u)
+	if err != nil {
+		log.Warnf("failed to get preferred upload endpoints: %s", err)
+	} else if len(uep) > 0 {
+		// propagate any query params
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
 		if err != nil {
-			log.Warnf("failed to get preferred upload endpoints: %s", err)
-		} else if len(uep) > 0 {
-			// propagate any query params
-			req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
-			if err != nil {
-				return err
-			}
-			req.Header = c.Request().Header.Clone()
-			req.URL.RawQuery = c.Request().URL.Query().Encode()
+			return err
+		}
+		req.Header = c.Request().Header.Clone()
+		req.URL.RawQuery = c.Request().URL.Query().Encode()
 
-			resp, err := http.DefaultClient.Do(req)
-			if err != nil {
-				return err
-			}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
 
-			c.Response().WriteHeader(resp.StatusCode)
+		c.Response().WriteHeader(resp.StatusCode)
 
-			_, err = io.Copy(c.Response().Writer, resp.Body)
-			if err != nil {
-				log.Errorf("proxying content-add body errored: %s", err)
-			}
-		} else {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-				Details: "uploading content to this node is not allowed at the moment",
-			}
+		_, err = io.Copy(c.Response().Writer, resp.Body)
+		if err != nil {
+			log.Errorf("proxying content-add body errored: %s", err)
+		}
+	} else {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
 	return nil
