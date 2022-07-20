@@ -634,11 +634,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		// if colpath is "" or nil, put the file on the root dir (/filename)
+		// if dir is "" or nil, put the file on the root dir (/filename)
 		defaultPath := "/" + filename
 		colp := defaultPath
-		if params.CollectionPath != "" {
-			p, err := sanitizePath(params.CollectionPath)
+		if params.CollectionDir != "" {
+			p, err := sanitizePath(params.CollectionDir)
 			if err != nil {
 				return err
 			}
@@ -814,7 +814,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Accept       multipart/form-data
 // @Param        file formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
-// @Param        colpath path string false "Collection path"
+// @Param        dir path string false "Directory"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -885,7 +885,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	defaultPath := "/"
 	path := &defaultPath
-	if cp := c.QueryParam("colpath"); cp != "" {
+	if cp := c.QueryParam(ColDir); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
@@ -928,7 +928,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if col != nil {
-		fmt.Println("COLLECTION CREATION: ", col.ID, content.ID)
+		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -3475,7 +3475,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Param        coluuid query string true "Collection UUID"
-// @Param        colpath query string false "Directory"
+// @Param        dir query string false "Directory"
 // @Router       /collections/content [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	coluuid := c.QueryParam("coluuid")
@@ -3495,13 +3495,13 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 		return err
 	}
 
-	dir := c.QueryParam("colpath")
-	if dir == "" {
+	queryDir := c.QueryParam(ColDir)
+	if queryDir == "" {
 		return c.JSON(http.StatusOK, refs)
 	}
 
-	// if colpath is set, do the content listing
-	dir = filepath.Clean(dir)
+	// if queryDir is set, do the content listing
+	queryDir = filepath.Clean(queryDir)
 
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
@@ -3510,78 +3510,93 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			continue
 		}
 
-		path := r.Path
-		relp, err := filepath.Rel(dir, path)
+		relp, err := getRelativePath(r, queryDir)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
+			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
 		}
 
-		// trying to list a CID dir, not allowed
-		if relp == "." && r.Type == util.Directory {
-			return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
-		}
-
-		// if the relative path requires pathing up, its definitely not in this dir
+		// if the relative contentPath requires pathing up, its definitely not in this queryDir
 		if strings.HasPrefix(relp, "..") {
 			continue
 		}
 
-		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		if err != nil { // Can't cast to unixfs node, set type as raw
-			out = append(out, collectionListResponse{
-				Name:   filepath.Base(relp),
-				Type:   Raw,
-				Size:   r.Size,
-				ContID: r.ID,
-				Cid:    &r.Cid,
-			})
-			continue
-		}
-
-		// if CID is a dir, set type as dir and mark dir as listed so we don't list it again
-		if r.Type == util.Directory {
-			if !dirs[relp] {
-				dirs[relp] = true
-				out = append(out, collectionListResponse{
-					Name:   relp,
-					Type:   Dir,
-					Size:   r.Size,
-					ContID: r.ID,
-					Cid:    &r.Cid,
-				})
+		if relp == "." { // Query directory is the complete path containing the content.
+			// trying to list a CID queryDir, not allowed
+			if r.Type == util.Directory {
+				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
-			continue
-		}
 
-		// if relative path has a /, the file is in a subdirectory
-		// print the directory the file is in if we haven't already
-		if strings.Contains(relp, "/") {
-			parts := strings.Split(relp, "/")
-			subDir := parts[0]
+			out = append(out, collectionListResponse{
+				Name:    r.Name,
+				Size:    r.Size,
+				ContID:  r.ID,
+				Cid:     &util.DbCID{CID: r.Cid.CID},
+				Dir:     queryDir,
+				ColUuid: coluuid,
+			})
+		} else { // Query directory has a subdirectory, which contains the actual content.
+
+			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
+			//if r.Type == util.Directory {
+			//	log.Infof("Anjor r.Type == util.Directory = %s, %s", queryDir, coluuid)
+			//	if !dirs[relp] {
+			//		dirs[relp] = true
+			//		out = append(out, collectionListResponse{
+			//			Name:    relp,
+			//			Type:    Dir,
+			//			Size:    r.Size,
+			//			ContID:  r.ID,
+			//			Cid:     &r.Cid,
+			//			Dir:     queryDir,
+			//			ColUuid: coluuid,
+			//		})
+			//	}
+			//	continue
+			//}
+
+			// if relative contentPath has a /, the file is in a subdirectory
+			// print the directory the file is in if we haven't already
+			var subDir string
+			if strings.Contains(relp, "/") {
+				parts := strings.Split(relp, "/")
+				subDir = parts[0]
+			} else {
+				subDir = relp
+			}
 			if !dirs[subDir] {
 				dirs[subDir] = true
 				out = append(out, collectionListResponse{
-					Name: parts[0],
-					Type: Dir,
+					Name:    subDir,
+					Type:    Dir,
+					Dir:     queryDir,
+					ColUuid: coluuid,
 				})
 				continue
 			}
 		}
 
-		var contentType CidType
-		contentType = File
-		if r.Type == util.Directory {
-			contentType = Dir
-		}
-		out = append(out, collectionListResponse{
-			Name:   r.Name,
-			Type:   contentType,
-			Size:   r.Size,
-			ContID: r.ID,
-			Cid:    &util.DbCID{CID: r.Cid.CID},
-		})
+		//var contentType CidType
+		//contentType = File
+		//if r.Type == util.Directory {
+		//	contentType = Dir
+		//}
+		//out = append(out, collectionListResponse{
+		//	Name:    r.Name,
+		//	Type:    contentType,
+		//	Size:    r.Size,
+		//	ContID:  r.ID,
+		//	Cid:     &util.DbCID{CID: r.Cid.CID},
+		//	Dir:     queryDir,
+		//	ColUuid: coluuid,
+		//})
 	}
 	return c.JSON(http.StatusOK, out)
+}
+
+func getRelativePath(r ContentWithPath, queryDir string) (string, error) {
+	contentPath := r.Path
+	relp, err := filepath.Rel(queryDir, contentPath)
+	return relp, err
 }
 
 // handleDeleteCollection godoc
@@ -4664,11 +4679,11 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	if req.CollectionID != "" {
-		if req.CollectionPath == "" {
-			req.CollectionPath = "/"
+		if req.CollectionDir == "" {
+			req.CollectionDir = "/"
 		}
 
-		sp, err := sanitizePath(req.CollectionPath)
+		sp, err := sanitizePath(req.CollectionDir)
 		if err != nil {
 			return err
 		}
@@ -5139,17 +5154,20 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Raw  CidType = "raw"
-	File         = "file"
-	Dir          = "directory"
+	Raw    CidType = "raw"
+	File           = "file"
+	Dir            = "directory"
+	ColDir         = "dir"
 )
 
 type collectionListResponse struct {
-	Name   string      `json:"name"`
-	Type   CidType     `json:"type"`
-	Size   int64       `json:"size"`
-	ContID uint        `json:"contId"`
-	Cid    *util.DbCID `json:"cid,omitempty"`
+	Name    string      `json:"name"`
+	Type    CidType     `json:"type"`
+	Size    int64       `json:"size"`
+	ContID  uint        `json:"contId"`
+	Cid     *util.DbCID `json:"cid,omitempty"`
+	Dir     string      `json:"dir"`
+	ColUuid string      `json:"coluuid"`
 }
 
 func sanitizePath(p string) (string, error) {
