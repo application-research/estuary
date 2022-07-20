@@ -711,7 +711,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		return err
 	}
 	if s.CM.localContentAddingDisabled {
-		return s.redirectIfLocalContentAddingDisabled(c, u)
+		return s.redirectContentAdding(c, u)
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -825,7 +825,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if s.CM.localContentAddingDisabled {
-		return s.redirectIfLocalContentAddingDisabled(c, u)
+		return s.redirectContentAdding(c, u)
 	}
 
 	form, err := c.MultipartForm()
@@ -968,7 +968,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	})
 }
 
-func (s *Server) redirectIfLocalContentAddingDisabled(c echo.Context, u *User) error {
+func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		log.Warnf("failed to get preferred upload endpoints: %s", err)
