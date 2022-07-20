@@ -48,16 +48,16 @@ import (
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	merkledag "github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
-	car "github.com/ipld/go-car"
+	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -613,12 +613,8 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	var params util.ContentAddIpfsBody
@@ -711,39 +707,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		if s.CM.localContentAddingDisabled {
-			uep, err := s.getPreferredUploadEndpoints(u)
-			if err != nil {
-				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else if len(uep) > 0 {
-				// propagate any query params
-				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add-car", uep[rand.Intn(len(uep))]), c.Request().Body)
-				if err != nil {
-					return err
-				}
-				req.Header = c.Request().Header.Clone()
-				req.URL.RawQuery = c.Request().URL.Query().Encode()
-
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return err
-				}
-
-				c.Response().WriteHeader(resp.StatusCode)
-
-				_, err = io.Copy(c.Response().Writer, resp.Body)
-				if err != nil {
-					log.Errorf("proxying content-add body errored: %s", err)
-				}
-			} else {
-				return &util.HttpError{
-					Code:    http.StatusBadRequest,
-					Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-					Details: "uploading content to this node is not allowed at the moment",
-				}
-			}
-		}
+	if err := s.redirectIfLocalContentAddingDisabled(c, u); err != nil {
+		return err
+	}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -852,38 +820,12 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		if s.CM.localContentAddingDisabled {
-			uep, err := s.getPreferredUploadEndpoints(u)
-			if err != nil {
-				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else if len(uep) > 0 {
-				// propagate any query params
-				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
-				if err != nil {
-					return err
-				}
-				req.Header = c.Request().Header.Clone()
-				req.URL.RawQuery = c.Request().URL.Query().Encode()
+	if err := s.redirectIfLocalContentAddingDisabled(c, u); err != nil {
+		return err
+	}
 
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return err
-				}
-
-				c.Response().WriteHeader(resp.StatusCode)
-
-				_, err = io.Copy(c.Response().Writer, resp.Body)
-				if err != nil {
-					log.Errorf("proxying content-add body errored: %s", err)
-				}
-			}
-		}
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	form, err := c.MultipartForm()
@@ -1024,6 +966,42 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
 	})
+}
+
+func (s *Server) redirectIfLocalContentAddingDisabled(c echo.Context, u *User) error {
+	if s.CM.localContentAddingDisabled {
+		uep, err := s.getPreferredUploadEndpoints(u)
+		if err != nil {
+			log.Warnf("failed to get preferred upload endpoints: %s", err)
+		} else if len(uep) > 0 {
+			// propagate any query params
+			req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
+			if err != nil {
+				return err
+			}
+			req.Header = c.Request().Header.Clone()
+			req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			c.Response().WriteHeader(resp.StatusCode)
+
+			_, err = io.Copy(c.Response().Writer, resp.Body)
+			if err != nil {
+				log.Errorf("proxying content-add body errored: %s", err)
+			}
+		} else {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+				Details: "uploading content to this node is not allowed at the moment",
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -5347,4 +5325,8 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
 	}
 	return out, nil
+}
+
+func (s *Server) isContentAddingDisabled(u *User) bool {
+	return s.CM.contentAddingDisabled || u.StorageDisabled
 }

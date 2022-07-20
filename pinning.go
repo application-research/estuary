@@ -669,12 +669,8 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	ctx := e.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	var pin types.IpfsPin
@@ -775,12 +771,9 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	pinID, err := strconv.Atoi(e.Param("pinid"))
