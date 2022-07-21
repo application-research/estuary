@@ -1484,7 +1484,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	var out []getContentResponse
+	out := make([]getContentResponse, 0)
 	for i, cont := range contents {
 		resp := getContentResponse{
 			Content: &contents[i],

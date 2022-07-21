@@ -1651,7 +1651,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Infof("updating pin status: %d %s", cont, status)
+	log.Debugf("updating pin status: %d %s", cont, status)
 	if status == types.PinningStatusFailed {
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
