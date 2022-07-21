@@ -126,8 +126,6 @@ func (s *Server) ServeAPI() error {
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
 
-	e.GET("/test-error", s.handleTestError)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
@@ -136,7 +134,6 @@ func (s *Server) ServeAPI() error {
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
-	user.GET("/test-error", s.handleTestError)
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
@@ -365,11 +362,6 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 		}
 		return f(c, u)
 	}
-}
-
-// TODO: delete me when debugging done
-func (s *Server) handleTestError(c echo.Context) error {
-	return fmt.Errorf("i am a scary error, log me please more")
 }
 
 // handleStats godoc
