@@ -1167,8 +1167,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+		CollectionID:  c.QueryParam("coluuid"),
+		CollectionDir: c.QueryParam("colpath"),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1330,8 +1330,8 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	root := header.Roots[0]
 
 	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+		CollectionID:  c.QueryParam("coluuid"),
+		CollectionDir: c.QueryParam("colpath"),
 	})
 	if err != nil {
 		return err

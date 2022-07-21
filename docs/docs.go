@@ -194,7 +194,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Directory",
-                        "name": "colpath",
+                        "name": "dir",
                         "in": "query"
                     }
                 ],
@@ -420,8 +420,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Collection path",
-                        "name": "colpath",
+                        "description": "Directory",
+                        "name": "dir",
                         "in": "path"
                     }
                 ],
@@ -1615,9 +1615,6 @@ const docTemplate = `{
         "main.importDealBody": {
             "type": "object",
             "properties": {
-                "colpath": {
-                    "type": "string"
-                },
                 "coluuid": {
                     "type": "string"
                 },
@@ -1626,6 +1623,9 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "dir": {
+                    "type": "string"
                 },
                 "name": {
                     "type": "string"
@@ -1646,10 +1646,10 @@ const docTemplate = `{
         "util.ContentAddIpfsBody": {
             "type": "object",
             "properties": {
-                "colpath": {
+                "coluuid": {
                     "type": "string"
                 },
-                "coluuid": {
+                "dir": {
                     "type": "string"
                 },
                 "filename": {
