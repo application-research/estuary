@@ -77,8 +77,8 @@ var appVersion string
 var log = logging.Logger("shuttle").With("app_version", appVersion)
 
 const (
-	ColUuid := "coluuid"
-	ColDir := "dir"
+	ColUuid = "coluuid"
+	ColDir  = "dir"
 )
 
 func before(cctx *cli.Context) error {
