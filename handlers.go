@@ -3530,7 +3530,6 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 
 			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
 			//if r.Type == util.Directory {
-			//	log.Infof("Anjor r.Type == util.Directory = %s, %s", queryDir, coluuid)
 			//	if !dirs[relp] {
 			//		dirs[relp] = true
 			//		out = append(out, collectionListResponse{
