@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math/rand"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/application-research/estuary/config"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
+	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
@@ -109,20 +108,28 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	// will come to fetch for advertisements "when it feels like it"
 	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
 
+		// TODO: remove these comments
 		// contextID = autoretrievehandle_randomnumber
-		arHandle := strings.Split(string(contextID), "_")[0]
+		// arHandle := strings.Split(string(contextID), "_")[0]
 		// arHandle := contextID // contextID is the autoretrieve handle
 
 		// get the autoretrieve entry from the database
-		var ar Autoretrieve
-		err = db.Find(&ar, "handle = ?", arHandle).Error
+		var arList []Autoretrieve
+		err = db.Find(&arList).Error
 		if err != nil {
 			return nil, err
 		}
 
+		var newestAdvertisement time.Time // this is the oldest time possible (0001-01-01 00:00:00 +0000 UTC)
+		for _, ar := range arList {
+			if newestAdvertisement.Before(ar.LastAdvertisement) {
+				newestAdvertisement = ar.LastAdvertisement
+			}
+		}
+
 		// find all new content entries since the last time we advertised for this autoretrieve server
 		log.Debugf("Querying for new CIDs now (this could take a while)")
-		newCids, err := findNewCids(db, ar.LastAdvertisement)
+		newCids, err := findNewCids(db, newestAdvertisement)
 		if err != nil {
 			return nil, err
 		}
@@ -148,45 +155,70 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	return newEngine, nil
 }
 
-func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
-	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
-	newContextID := []byte(ar.Handle + "_" + strconv.Itoa(rand.Intn(100000)))
-
-	retrievalAddresses := []string{}
-	providerID := ""
-	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
+func getAddressesWithoutPeerID(addresses string) []string {
+	var retrievalAddresses []string
+	for _, fullAddr := range strings.Split(addresses, ",") {
 		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
 		if err != nil {
 			log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
 			continue
 		}
-		providerID = arAddrInfo.ID.String()
 		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
 	}
-	if providerID == "" {
-		return fmt.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
+
+	return retrievalAddresses
+}
+
+func updateLastAdvertisements(db *gorm.DB, connectedARs []Autoretrieve) error {
+	var allTokens []string
+	for _, ar := range connectedARs {
+		allTokens = append(allTokens, ar.Token)
 	}
-	if len(retrievalAddresses) == 0 {
-		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+	if err := db.Model(&Autoretrieve{}).Where("token IN ?", allTokens).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
+		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
-	log.Infof("sending announcement to %s", ar.Handle)
+	return nil
+}
+
+func (arEng *AutoretrieveEngine) announce(connectedARs []Autoretrieve) error {
+	// TODO: in the future we need to check if no new CIDs exist but new AR servers are online
+	// TODO: then we'd need to send a change advertisement (for that we need to store the contextID, see TODO below)
+	retrievalAddresses := []string{}
+	for _, ar := range connectedARs {
+		arAddresses := getAddressesWithoutPeerID(ar.Addresses)
+		retrievalAddresses = append(retrievalAddresses, arAddresses...)
+		if len(retrievalAddresses) == 0 {
+			return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+		}
+	}
+
+	// TODO: check if this can really be our host's peerID or if it has to be AR's
+	providerID := arEng.h.ID().String()
+	if providerID == "" {
+		return fmt.Errorf("no providerID for arEng, skipping announcement")
+	}
+
+	// contextID is just a random contextID for now
+	// TODO: in the future we'd store this and refer it when doing changes to advertisements
+	newContextID := []byte(uuid.New().String())
+
+	log.Infof("sending announcement to connected autoretrieve servers")
 	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
 	if err != nil {
 		return fmt.Errorf("could not announce new CIDs: %s", err)
 	}
 
-	// update lastAdvertisement time on database
-	if err := arEng.db.Model(&Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
-		return fmt.Errorf("unable to update advertisement time on database: %s", err)
+	if err := updateLastAdvertisements(arEng.db, connectedARs); err != nil {
+		return err
 	}
 
-	log.Infof("announced new CIDs: %s", adCid)
+	log.Infof("finished announcing new CIDs: %s", adCid)
 	return nil
 }
 
 func (arEng *AutoretrieveEngine) Run() {
-	var autoretrieves []Autoretrieve
+	var connectedARs []Autoretrieve
 	var lastTickTime time.Time
 	var curTime time.Time
 
@@ -197,13 +229,15 @@ func (arEng *AutoretrieveEngine) Run() {
 	for {
 		curTime = time.Now()
 		lastTickTime = curTime.Add(-arEng.TickInterval)
+
 		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := arEng.db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
+		err := arEng.db.Find(&connectedARs, "last_connection > ?", lastTickTime).Error
 		if err != nil {
 			log.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return
 		}
-		if len(autoretrieves) == 0 {
+
+		if len(connectedARs) == 0 {
 			log.Infof("no autoretrieve servers online")
 			// wait for next tick, or quit
 			select {
@@ -214,12 +248,11 @@ func (arEng *AutoretrieveEngine) Run() {
 			}
 		}
 
-		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
-		// send announcement with new CIDs for each autoretrieve server
-		for _, ar := range autoretrieves {
-			if err = arEng.announceForAR(ar); err != nil {
-				log.Error(err)
-			}
+		log.Infof("announcing new CIDs to %d autoretrieve servers", len(connectedARs))
+
+		// announce for all connected ARs
+		if err = arEng.announce(connectedARs); err != nil {
+			log.Error(err)
 		}
 
 		// wait for next tick, or quit
