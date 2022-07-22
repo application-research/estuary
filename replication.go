@@ -375,7 +375,7 @@ func (cm *ContentManager) ContentWatcher() {
 				continue
 			}
 
-			log.Infof("checking content: %d", content.ID)
+			log.Debugf("checking content: %d", content.ID)
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
 				cm.queueMgr.add(content.ID, dur)
 			})

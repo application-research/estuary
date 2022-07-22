@@ -187,7 +187,7 @@
           {
             "type": "string",
             "description": "Directory",
-            "name": "colpath",
+            "name": "dir",
             "in": "query"
           }
         ],
@@ -413,8 +413,8 @@
           },
           {
             "type": "string",
-            "description": "Collection path",
-            "name": "colpath",
+            "description": "Directory",
+            "name": "dir",
             "in": "path"
           }
         ],
@@ -1608,9 +1608,6 @@
     "main.importDealBody": {
       "type": "object",
       "properties": {
-        "colpath": {
-          "type": "string"
-        },
         "coluuid": {
           "type": "string"
         },
@@ -1619,6 +1616,9 @@
           "items": {
             "type": "integer"
           }
+        },
+        "dir": {
+          "type": "string"
         },
         "name": {
           "type": "string"
@@ -1639,10 +1639,10 @@
     "util.ContentAddIpfsBody": {
       "type": "object",
       "properties": {
-        "colpath": {
+        "coluuid": {
           "type": "string"
         },
-        "coluuid": {
+        "dir": {
           "type": "string"
         },
         "filename": {

@@ -24,8 +24,8 @@ const (
 )
 
 type ContentInCollection struct {
-	CollectionID   string `json:"coluuid"`
-	CollectionPath string `json:"colpath"`
+	CollectionID  string `json:"coluuid"`
+	CollectionDir string `json:"dir"`
 }
 
 type ContentAddIpfsBody struct {

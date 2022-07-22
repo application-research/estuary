@@ -48,16 +48,16 @@ import (
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	merkledag "github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
-	car "github.com/ipld/go-car"
+	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -126,8 +126,6 @@ func (s *Server) ServeAPI() error {
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
 
-	e.GET("/test-error", s.handleTestError)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
@@ -136,7 +134,6 @@ func (s *Server) ServeAPI() error {
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
-	user.GET("/test-error", s.handleTestError)
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
@@ -365,11 +362,6 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 		}
 		return f(c, u)
 	}
-}
-
-// TODO: delete me when debugging done
-func (s *Server) handleTestError(c echo.Context) error {
-	return fmt.Errorf("i am a scary error, log me please more")
 }
 
 // handleStats godoc
@@ -613,12 +605,8 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	var params util.ContentAddIpfsBody
@@ -638,11 +626,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		// if colpath is "" or nil, put the file on the root dir (/filename)
+		// if dir is "" or nil, put the file on the root dir (/filename)
 		defaultPath := "/" + filename
 		colp := defaultPath
-		if params.CollectionPath != "" {
-			p, err := sanitizePath(params.CollectionPath)
+		if params.CollectionDir != "" {
+			p, err := sanitizePath(params.CollectionDir)
 			if err != nil {
 				return err
 			}
@@ -711,39 +699,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		if s.CM.localContentAddingDisabled {
-			uep, err := s.getPreferredUploadEndpoints(u)
-			if err != nil {
-				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else if len(uep) > 0 {
-				// propagate any query params
-				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add-car", uep[rand.Intn(len(uep))]), c.Request().Body)
-				if err != nil {
-					return err
-				}
-				req.Header = c.Request().Header.Clone()
-				req.URL.RawQuery = c.Request().URL.Query().Encode()
-
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return err
-				}
-
-				c.Response().WriteHeader(resp.StatusCode)
-
-				_, err = io.Copy(c.Response().Writer, resp.Body)
-				if err != nil {
-					log.Errorf("proxying content-add body errored: %s", err)
-				}
-			} else {
-				return &util.HttpError{
-					Code:    http.StatusBadRequest,
-					Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-					Details: "uploading content to this node is not allowed at the moment",
-				}
-			}
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
+	}
+	if s.CM.localContentAddingDisabled {
+		return s.redirectContentAdding(c, u)
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -846,44 +806,18 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Accept       multipart/form-data
 // @Param        file formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
-// @Param        colpath path string false "Collection path"
+// @Param        dir path string false "Directory"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		if s.CM.localContentAddingDisabled {
-			uep, err := s.getPreferredUploadEndpoints(u)
-			if err != nil {
-				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else if len(uep) > 0 {
-				// propagate any query params
-				req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
-				if err != nil {
-					return err
-				}
-				req.Header = c.Request().Header.Clone()
-				req.URL.RawQuery = c.Request().URL.Query().Encode()
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
+	}
 
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return err
-				}
-
-				c.Response().WriteHeader(resp.StatusCode)
-
-				_, err = io.Copy(c.Response().Writer, resp.Body)
-				if err != nil {
-					log.Errorf("proxying content-add body errored: %s", err)
-				}
-			}
-		}
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if s.CM.localContentAddingDisabled {
+		return s.redirectContentAdding(c, u)
 	}
 
 	form, err := c.MultipartForm()
@@ -943,7 +877,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	defaultPath := "/"
 	path := &defaultPath
-	if cp := c.QueryParam("colpath"); cp != "" {
+	if cp := c.QueryParam(ColDir); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
@@ -986,7 +920,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if col != nil {
-		fmt.Println("COLLECTION CREATION: ", col.ID, content.ID)
+		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -1024,6 +958,42 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
 	})
+}
+
+func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
+	uep, err := s.getPreferredUploadEndpoints(u)
+	if err != nil {
+		log.Warnf("failed to get preferred upload endpoints: %s", err)
+		return err
+	} else if len(uep) > 0 {
+		// propagate any query params
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
+		if err != nil {
+			return err
+		}
+		req.Header = c.Request().Header.Clone()
+		req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		c.Response().WriteHeader(resp.StatusCode)
+
+		_, err = io.Copy(c.Response().Writer, resp.Body)
+		if err != nil {
+			log.Errorf("proxying content-add body errored: %s", err)
+			return err
+		}
+	} else {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
+		}
+	}
+	return nil
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -1506,7 +1476,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	var out []getContentResponse
+	out := make([]getContentResponse, 0)
 	for i, cont := range contents {
 		resp := getContentResponse{
 			Content: &contents[i],
@@ -3497,7 +3467,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Param        coluuid query string true "Collection UUID"
-// @Param        colpath query string false "Directory"
+// @Param        dir query string false "Directory"
 // @Router       /collections/content [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	coluuid := c.QueryParam("coluuid")
@@ -3517,13 +3487,13 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 		return err
 	}
 
-	dir := c.QueryParam("colpath")
-	if dir == "" {
+	queryDir := c.QueryParam(ColDir)
+	if queryDir == "" {
 		return c.JSON(http.StatusOK, refs)
 	}
 
-	// if colpath is set, do the content listing
-	dir = filepath.Clean(dir)
+	// if queryDir is set, do the content listing
+	queryDir = filepath.Clean(queryDir)
 
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
@@ -3532,78 +3502,93 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			continue
 		}
 
-		path := r.Path
-		relp, err := filepath.Rel(dir, path)
+		relp, err := getRelativePath(r, queryDir)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
+			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
 		}
 
-		// trying to list a CID dir, not allowed
-		if relp == "." && r.Type == util.Directory {
-			return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
-		}
-
-		// if the relative path requires pathing up, its definitely not in this dir
+		// if the relative contentPath requires pathing up, its definitely not in this queryDir
 		if strings.HasPrefix(relp, "..") {
 			continue
 		}
 
-		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		if err != nil { // Can't cast to unixfs node, set type as raw
-			out = append(out, collectionListResponse{
-				Name:   filepath.Base(relp),
-				Type:   Raw,
-				Size:   r.Size,
-				ContID: r.ID,
-				Cid:    &r.Cid,
-			})
-			continue
-		}
-
-		// if CID is a dir, set type as dir and mark dir as listed so we don't list it again
-		if r.Type == util.Directory {
-			if !dirs[relp] {
-				dirs[relp] = true
-				out = append(out, collectionListResponse{
-					Name:   relp,
-					Type:   Dir,
-					Size:   r.Size,
-					ContID: r.ID,
-					Cid:    &r.Cid,
-				})
+		if relp == "." { // Query directory is the complete path containing the content.
+			// trying to list a CID queryDir, not allowed
+			if r.Type == util.Directory {
+				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
-			continue
-		}
 
-		// if relative path has a /, the file is in a subdirectory
-		// print the directory the file is in if we haven't already
-		if strings.Contains(relp, "/") {
-			parts := strings.Split(relp, "/")
-			subDir := parts[0]
+			out = append(out, collectionListResponse{
+				Name:      r.Name,
+				Size:      r.Size,
+				ContID:    r.ID,
+				Cid:       &util.DbCID{CID: r.Cid.CID},
+				Dir:       queryDir,
+				ColUuid:   coluuid,
+				UpdatedAt: r.UpdatedAt,
+			})
+		} else { // Query directory has a subdirectory, which contains the actual content.
+
+			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
+			//if r.Type == util.Directory {
+			//	if !dirs[relp] {
+			//		dirs[relp] = true
+			//		out = append(out, collectionListResponse{
+			//			Name:    relp,
+			//			Type:    Dir,
+			//			Size:    r.Size,
+			//			ContID:  r.ID,
+			//			Cid:     &r.Cid,
+			//			Dir:     queryDir,
+			//			ColUuid: coluuid,
+			//		})
+			//	}
+			//	continue
+			//}
+
+			// if relative contentPath has a /, the file is in a subdirectory
+			// print the directory the file is in if we haven't already
+			var subDir string
+			if strings.Contains(relp, "/") {
+				parts := strings.Split(relp, "/")
+				subDir = parts[0]
+			} else {
+				subDir = relp
+			}
 			if !dirs[subDir] {
 				dirs[subDir] = true
 				out = append(out, collectionListResponse{
-					Name: parts[0],
-					Type: Dir,
+					Name:    subDir,
+					Type:    Dir,
+					Dir:     queryDir,
+					ColUuid: coluuid,
 				})
 				continue
 			}
 		}
 
-		var contentType CidType
-		contentType = File
-		if r.Type == util.Directory {
-			contentType = Dir
-		}
-		out = append(out, collectionListResponse{
-			Name:   r.Filename,
-			Type:   contentType,
-			Size:   r.Size,
-			ContID: r.ID,
-			Cid:    &util.DbCID{CID: r.Cid.CID},
-		})
+		//var contentType CidType
+		//contentType = File
+		//if r.Type == util.Directory {
+		//	contentType = Dir
+		//}
+		//out = append(out, collectionListResponse{
+		//	Name:    r.Name,
+		//	Type:    contentType,
+		//	Size:    r.Size,
+		//	ContID:  r.ID,
+		//	Cid:     &util.DbCID{CID: r.Cid.CID},
+		//	Dir:     queryDir,
+		//	ColUuid: coluuid,
+		//})
 	}
 	return c.JSON(http.StatusOK, out)
+}
+
+func getRelativePath(r ContentWithPath, queryDir string) (string, error) {
+	contentPath := r.Path
+	relp, err := filepath.Rel(queryDir, contentPath)
+	return relp, err
 }
 
 // handleDeleteCollection godoc
@@ -4686,11 +4671,11 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	if req.CollectionID != "" {
-		if req.CollectionPath == "" {
-			req.CollectionPath = "/"
+		if req.CollectionDir == "" {
+			req.CollectionDir = "/"
 		}
 
-		sp, err := sanitizePath(req.CollectionPath)
+		sp, err := sanitizePath(req.CollectionDir)
 		if err != nil {
 			return err
 		}
@@ -5161,17 +5146,21 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Raw  CidType = "raw"
-	File         = "file"
-	Dir          = "directory"
+	Raw    CidType = "raw"
+	File           = "file"
+	Dir            = "directory"
+	ColDir         = "dir"
 )
 
 type collectionListResponse struct {
-	Name   string      `json:"name"`
-	Type   CidType     `json:"type"`
-	Size   int64       `json:"size"`
-	ContID uint        `json:"contId"`
-	Cid    *util.DbCID `json:"cid,omitempty"`
+	Name      string      `json:"name"`
+	Type      CidType     `json:"type"`
+	Size      int64       `json:"size"`
+	ContID    uint        `json:"contId"`
+	Cid       *util.DbCID `json:"cid,omitempty"`
+	Dir       string      `json:"dir"`
+	ColUuid   string      `json:"coluuid"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 func sanitizePath(p string) (string, error) {
@@ -5347,4 +5336,8 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
 	}
 	return out, nil
+}
+
+func (s *Server) isContentAddingDisabled(u *User) bool {
+	return s.CM.contentAddingDisabled || u.StorageDisabled
 }

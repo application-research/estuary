@@ -32,7 +32,7 @@ jobs:
       run: |
         mkdir release
 
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -68,7 +68,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1
@@ -105,7 +105,7 @@ jobs:
     - name: Prepare build artifact for stashing
       run: |
         mkdir release
-        mv ./estuary ./estuary-shuttle ./barge ./benchest ./bsget ./release
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./release
     # The build artifact can be identified by the trailing sha of the git commit
     - name: Stash the build artifact
       uses: actions/upload-artifact@v1

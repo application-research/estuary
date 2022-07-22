@@ -64,7 +64,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
-	car "github.com/ipld/go-car"
+	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
@@ -75,6 +75,11 @@ import (
 var appVersion string
 
 var log = logging.Logger("shuttle").With("app_version", appVersion)
+
+const (
+	ColUuid = "coluuid"
+	ColDir  = "dir"
+)
 
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
@@ -1167,8 +1172,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+		CollectionID:  c.QueryParam(ColUuid),
+		CollectionDir: c.QueryParam(ColDir),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1329,9 +1334,10 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+
+	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
+		CollectionID:  c.QueryParam(ColUuid),
+		CollectionDir: c.QueryParam(ColDir),
 	})
 	if err != nil {
 		return err
@@ -1651,7 +1657,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Infof("updating pin status: %d %s", cont, status)
+	log.Debugf("updating pin status: %d %s", cont, status)
 	if status == types.PinningStatusFailed {
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
