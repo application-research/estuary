@@ -3519,12 +3519,13 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			}
 
 			out = append(out, collectionListResponse{
-				Name:    r.Name,
-				Size:    r.Size,
-				ContID:  r.ID,
-				Cid:     &util.DbCID{CID: r.Cid.CID},
-				Dir:     queryDir,
-				ColUuid: coluuid,
+				Name:      r.Name,
+				Size:      r.Size,
+				ContID:    r.ID,
+				Cid:       &util.DbCID{CID: r.Cid.CID},
+				Dir:       queryDir,
+				ColUuid:   coluuid,
+				UpdatedAt: r.UpdatedAt,
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
 
@@ -5152,13 +5153,14 @@ const (
 )
 
 type collectionListResponse struct {
-	Name    string      `json:"name"`
-	Type    CidType     `json:"type"`
-	Size    int64       `json:"size"`
-	ContID  uint        `json:"contId"`
-	Cid     *util.DbCID `json:"cid,omitempty"`
-	Dir     string      `json:"dir"`
-	ColUuid string      `json:"coluuid"`
+	Name      string      `json:"name"`
+	Type      CidType     `json:"type"`
+	Size      int64       `json:"size"`
+	ContID    uint        `json:"contId"`
+	Cid       *util.DbCID `json:"cid,omitempty"`
+	Dir       string      `json:"dir"`
+	ColUuid   string      `json:"coluuid"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 func sanitizePath(p string) (string, error) {
