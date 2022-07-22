@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/util"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
@@ -60,98 +59,36 @@ type AutoretrieveInitResponse struct {
 // incrementally, to avoid having all CIDs in memory at once
 type EstuaryMhIterator struct {
 	// we need contentOffset because one content might have more than one CID
-	contentOffset int // offset of the content in the Contents slice
-	cidOffset     int // offset of the cid related to the current content
-	Contents      []util.Content
-	ContentCids   []cid.Cid
-	Db            *gorm.DB
-}
-
-func (m *EstuaryMhIterator) nextContent() {
-	m.cidOffset = 0   // reset CID offset for new content
-	m.contentOffset++ // add one to content offset
-
-	// get next content associated CIDs
-	nextContent := m.Contents[m.contentOffset]
-	var err error
-	m.ContentCids, err = findContentCids(m.Db, nextContent)
-	if err != nil {
-		log.Errorf("could not find CIDs associated with content of ID %d: %v", nextContent.ID, err)
-	} else {
-		log.Debugf("found %d new CIDs for content of ID %d", len(m.ContentCids), nextContent.ID)
-	}
-
-	// content without associated CIDs, keep going until you find one that does
-	if len(m.ContentCids) == 0 {
-		log.Errorf("content entry has no CIDs associated with it")
-		m.nextContent()
-	}
-
+	offset int // offset of the cid related to the current content
+	Cids   []cid.Cid
 }
 
 func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
 
-	// no contents to announce
-	if len(m.Contents) == 0 {
-		log.Debugf("no contents to announce when Next() was called")
+	if m.offset >= len(m.Cids) {
 		return nil, io.EOF
 	}
 
-	// finished publishing CIDs associated with this content
-	if m.cidOffset >= len(m.ContentCids) {
-		// finished publishing everything (last CID of last content published)
-		if m.contentOffset >= len(m.Contents) {
-			return nil, io.EOF
-		}
-		m.nextContent()
-	}
-
-	curCid := m.ContentCids[m.cidOffset]
-	m.cidOffset++ // go to next CID
+	curCid := m.Cids[m.offset]
+	m.offset++ // go to next CID
 
 	return curCid.Hash(), nil
 }
 
-// findNewContents takes a time.Time struct `since` and queries all active
-// util.Content entries created after that time
-// Returns a list of the util.Contents created after `since`
+// findNewContents takes a time.Time struct `since` and queries all CIDs
+// associated to active util.Content entries created after that time
+// Returns a list of the cid.CID created after `since`
 // Returns an error if failed
-func findNewContents(db *gorm.DB, since time.Time) ([]util.Content, error) {
-	var newContents []util.Content
-	err := db.Model(&util.Content{}).
-		Where("active = true AND created_at >= ?", since).
-		Select("*").
-		Scan(&newContents).
-		Error
-	if err != nil {
-		return nil, fmt.Errorf("unable to query new contents from database: %s", err)
-	}
-
-	return newContents, nil
-}
-
-// findContentCids takes a util.Content struct and queries all util.Object entries
-// related to that content on the database through the obj_refs table
-// Returns a list of the CIDs of the found objects if successful
-// Returns an error if failed
-func findContentCids(db *gorm.DB, content util.Content) ([]cid.Cid, error) {
-	var newContentCids []cid.Cid
-	var newContentObjects []util.Object
-	err := db.Model(&util.ObjRef{}).
-		Joins("LEFT JOIN objects on objects.id = obj_refs.object").
-		Where("obj_refs.content = ?", content.ID).
-		Select("objects.cid").
-		Scan(&newContentObjects).
+func findNewCids(db *gorm.DB, since time.Time) ([]cid.Cid, error) {
+	var newCids []cid.Cid
+	err := db.Raw("select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?);", since).
+		Scan(&newCids).
 		Error
 	if err != nil {
 		return nil, fmt.Errorf("unable to query new CIDs from database: %s", err)
 	}
 
-	for _, obj := range newContentObjects {
-		newContentCids = append(newContentCids, obj.Cid.CID)
-	}
-
-	return newContentCids, nil
+	return newCids, nil
 }
 
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
@@ -184,21 +121,20 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 		}
 
 		// find all new content entries since the last time we advertised for this autoretrieve server
-		newContents, err := findNewContents(db, ar.LastAdvertisement)
+		log.Debugf("Querying for new CIDs now (this could take a while)")
+		newCids, err := findNewCids(db, ar.LastAdvertisement)
 		if err != nil {
 			return nil, err
 		}
 
-		log.Debugf("found %d new contents", len(newContents))
-		if len(newContents) == 0 {
-			return nil, fmt.Errorf("no new contents")
+		if len(newCids) == 0 {
+			return nil, fmt.Errorf("no new CIDs to announce")
 		}
 
-		log.Infof("announcing %d contents", len(newContents))
+		log.Infof("announcing %d new CIDs", len(newCids))
 
 		return &EstuaryMhIterator{
-			Contents: newContents,
-			Db:       db,
+			Cids: newCids,
 		}, nil
 	})
 
