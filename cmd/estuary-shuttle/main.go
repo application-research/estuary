@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
