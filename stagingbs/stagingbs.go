@@ -19,7 +19,7 @@ type StagingBSMgr struct {
 }
 
 func NewStagingBSMgr(dir string) (*StagingBSMgr, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, err
 	}
 

@@ -1922,6 +1922,7 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 
 	dealix := -1
 	for i, pd := range params.Deals {
+		pd := pd
 		nd, err := cborutil.AsIpld(&pd)
 		if err != nil {
 			return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)

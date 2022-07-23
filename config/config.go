@@ -41,7 +41,7 @@ func load(cfg interface{}, filename string) error {
 
 // save writes the config from `cfg` into `filename`.
 func save(cfg interface{}, filename string) error {
-	err := os.MkdirAll(filepath.Dir(filename), 0755)
+	err := os.MkdirAll(filepath.Dir(filename), 0750)
 	if err != nil {
 		return err
 	}

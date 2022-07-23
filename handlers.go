@@ -966,6 +966,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		log.Warnf("failed to get preferred upload endpoints: %s", err)
 		return err
 	} else if len(uep) > 0 {
+		//#nosec G404 - crypto/rand it's not necessary for this use case
 		// propagate any query params
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
 		if err != nil {
