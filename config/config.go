@@ -25,7 +25,7 @@ func encode(cfg interface{}, w io.Writer) error {
 }
 
 func load(cfg interface{}, filename string) error {
-	f, err := os.Open(filename)
+	f, err := os.Open(filepath.Clean(filename))
 	if err != nil {
 		if os.IsNotExist(err) {
 			err = ErrNotInitialized

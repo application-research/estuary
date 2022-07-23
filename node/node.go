@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 
 	peering "github.com/application-research/estuary/node/modules/peering"
@@ -549,7 +550,7 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate, nocache bool) 
 }
 
 func loadOrInitPeerKey(kf string) (crypto.PrivKey, error) {
-	data, err := ioutil.ReadFile(kf)
+	data, err := ioutil.ReadFile(filepath.Clean(kf))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
