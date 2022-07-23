@@ -15,6 +15,7 @@ import (
 
 var log = logging.Logger("util")
 
+//#nosec G101 -- This is a false positive
 const (
 	ERR_INVALID_TOKEN              = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED              = "ERR_TOKEN_EXPIRED"
