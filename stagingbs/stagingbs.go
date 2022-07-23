@@ -19,7 +19,7 @@ type StagingBSMgr struct {
 }
 
 func NewStagingBSMgr(dir string) (*StagingBSMgr, error) {
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, err
 	}
 
@@ -65,7 +65,10 @@ func (sbmgr *StagingBSMgr) CleanUp(bsid BSID) error {
 	bs, ok := sbmgr.open[bsid]
 	sbmgr.olk.Unlock()
 	if ok {
-		bs.Close()
+		err := bs.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	return os.RemoveAll(string(bsid))

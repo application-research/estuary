@@ -565,7 +565,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)

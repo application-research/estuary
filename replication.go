@@ -687,10 +687,13 @@ func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) 
 	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range conts {
-		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
+		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return dir, nil
@@ -1922,6 +1925,7 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 
 	dealix := -1
 	for i, pd := range params.Deals {
+		pd := pd
 		nd, err := cborutil.AsIpld(&pd)
 		if err != nil {
 			return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
