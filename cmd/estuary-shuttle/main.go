@@ -82,6 +82,7 @@ const (
 	ColDir  = "dir"
 )
 
+//#nosec G104 - it's not common to treat SetLogLevel error return
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
@@ -1132,6 +1133,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
