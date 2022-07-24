@@ -275,8 +275,13 @@ func RunBenchAddFile(name string, fi io.Reader, host string, estToken string) (*
 	if err != nil {
 		return nil, err
 	}
-	io.Copy(part, fi)
-	mw.Close()
+	if _, err = io.Copy(part, fi); err != nil {
+		return nil, err
+	}
+	err = mw.Close()
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequest("POST", fmt.Sprintf("https://%s/content/add", host), buf)
 	if err != nil {

@@ -401,7 +401,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -806,7 +809,9 @@ func (d *Shuttle) RunRpcConnection() error {
 func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
-	defer conn.Close()
+	if err := conn.Close(); err != nil {
+		return err
+	}
 
 	readDone := make(chan struct{})
 
@@ -843,11 +848,16 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 		case <-readDone:
 			return fmt.Errorf("read routine exited, assuming socket is closed")
 		case msg := <-d.outgoing:
-			conn.SetWriteDeadline(time.Now().Add(time.Second * 30))
+			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+
+			}
 			if err := websocket.JSON.Send(conn, msg); err != nil {
 				log.Errorf("failed to send message: %s", err)
 			}
-			conn.SetWriteDeadline(time.Time{})
+			if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+			}
 		}
 	}
 }

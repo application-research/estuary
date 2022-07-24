@@ -65,7 +65,10 @@ func (sbmgr *StagingBSMgr) CleanUp(bsid BSID) error {
 	bs, ok := sbmgr.open[bsid]
 	sbmgr.olk.Unlock()
 	if ok {
-		bs.Close()
+		err := bs.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	return os.RemoveAll(string(bsid))
