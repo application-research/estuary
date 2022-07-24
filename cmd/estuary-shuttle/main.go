@@ -1984,7 +1984,10 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

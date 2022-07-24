@@ -2754,7 +2754,10 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -3438,10 +3441,13 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		lastDirNode.AddRawLink(c.Name, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Name, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return err
+		}
 	}
 	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
 
