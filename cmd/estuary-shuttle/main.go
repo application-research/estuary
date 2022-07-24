@@ -82,6 +82,7 @@ const (
 	ColDir  = "dir"
 )
 
+//#nosec G104 - it's not common to treat SetLogLevel error return
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
