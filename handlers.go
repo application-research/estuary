@@ -3449,7 +3449,10 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 			return err
 		}
 	}
-	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
+
+	if err := dserv.Add(context.Background(), collectionNode); err != nil {
+		return err
+	} // add new CID to local blockstore
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()

@@ -430,7 +430,10 @@ func benchFetch(c string) (*fetchStats, error) {
 	}
 	firstByteAt := time.Now()
 
-	io.Copy(io.Discard, br)
+	_, err = io.Copy(io.Discard, br)
+	if err != nil {
+		return nil, fmt.Errorf("copying bytes failed: %w ", err)
+	}
 	endTime := time.Now()
 
 	return &fetchStats{
