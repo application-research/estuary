@@ -24,7 +24,7 @@ func encode(cfg interface{}, w io.Writer) error {
 	return err
 }
 
-func load(cfg interface{}, filename string) error {
+func load(cfg interface{}, filename string) (err error) {
 	f, err := os.Open(filepath.Clean(filename))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -32,11 +32,17 @@ func load(cfg interface{}, filename string) error {
 		}
 		return err
 	}
-	defer f.Close()
+
+	defer func() {
+		if errC := f.Close(); errC != nil {
+			err = errC
+		}
+	}()
+
 	if err := json.NewDecoder(f).Decode(cfg); err != nil {
 		return fmt.Errorf("failure to decode config: %s", err)
 	}
-	return nil
+	return err
 }
 
 // save writes the config from `cfg` into `filename`.

@@ -45,7 +45,10 @@ func getApp() *cli.App {
 
 func getFile(cctx *cli.Context) (io.Reader, string, error) {
 	buf := make([]byte, 1024*1024)
-	rand.Read(buf)
+	_, err := rand.Read(buf)
+	if err != nil {
+		return nil, "", err
+	}
 
 	return bytes.NewReader(buf), fmt.Sprintf("goodfile-%x", buf[:4]), nil
 }
@@ -149,7 +152,7 @@ var benchAddResultCmd = &cli.Command{
 			Value: "",
 		},
 	},
-	Action: func(cctx *cli.Context) error {
+	Action: func(cctx *cli.Context) (err error) {
 		if !cctx.Args().Present() {
 			return fmt.Errorf("must pass filename")
 		}
@@ -163,7 +166,11 @@ var benchAddResultCmd = &cli.Command{
 		if err != nil {
 			return err
 		}
-		defer fi.Close()
+		defer func() {
+			if errC := fi.Close(); errC != nil {
+				err = errC
+			}
+		}()
 
 		dec := json.NewDecoder(fi)
 		for {
