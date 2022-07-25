@@ -210,7 +210,7 @@ func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
 		&Collection{},
 		&CollectionRef{},
 		&Deal{},
-		DFERecord{},
+		&DFERecord{},
 		&PieceCommRecord{},
 		&ProposalRecord{},
 		&RetrievalFailureRecord{},
