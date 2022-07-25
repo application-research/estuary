@@ -11,6 +11,7 @@ type User struct {
 	gorm.Model
 	UUID     string `gorm:"unique"`
 	Username string `gorm:"unique"`
+	Salt     string 
 	PassHash string
 	DID      string
 
