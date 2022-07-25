@@ -1468,6 +1468,13 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
+	//defer Cid panic handler
+	defer func() {
+		if err := recover(); err != nil {
+			log.Warnf("failed to get content by cid", "error", err)
+		}
+	}()
+
 	v0 := cid.NewCidV0(obj.Hash())
 	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
