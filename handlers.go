@@ -2851,7 +2851,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 
 type registerBody struct {
 	Username     string `json:"username"`
-	PasswordHash string `json:"passwordHash"`
+	Password	 string `json:"passwordHash"`
 	InviteCode   string `json:"inviteCode"`
 }
 
@@ -2895,10 +2895,13 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
+	salt := uuid.New().String()
+
 	newUser := &User{
 		Username: username,
 		UUID:     uuid.New().String(),
-		PassHash: reg.PasswordHash,
+		Salt:     salt,
+		PassHash: util.GetPasswordHash(reg.Password, salt),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2932,7 +2935,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 type loginBody struct {
 	Username string `json:"username"`
-	PassHash string `json:"passwordHash"`
+	Password string `json:"passwordHash"`
 }
 
 type loginResponse struct {
@@ -2957,7 +2960,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	if user.PassHash != body.PassHash {
+	
+	
+	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2976,7 +2981,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 }
 
 type changePasswordParams struct {
-	NewPassHash string `json:"newPasswordHash"`
+	NewPassword string `json:"newPasswordHash"`
 }
 
 func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
@@ -2985,7 +2990,14 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("pass_hash", params.NewPassHash).Error; err != nil {
+	salt := uuid.New().String()
+	
+	updatedUserColumns := &User{
+		Salt:     salt,
+		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+	}
+
+	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
 		return err
 	}
 
