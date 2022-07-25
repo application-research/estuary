@@ -1334,8 +1334,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-
-	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
+	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
 		CollectionDir: c.QueryParam(ColDir),
 	})

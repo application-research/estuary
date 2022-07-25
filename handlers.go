@@ -2850,9 +2850,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 }
 
 type registerBody struct {
-	Username     string `json:"username"`
-	Password	 string `json:"passwordHash"`
-	InviteCode   string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"passwordHash"`
+	InviteCode string `json:"inviteCode"`
 }
 
 func (s *Server) handleRegisterUser(c echo.Context) error {
@@ -2960,8 +2960,6 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	
-	
 	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
@@ -2991,7 +2989,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	}
 
 	salt := uuid.New().String()
-	
+
 	updatedUserColumns := &User{
 		Salt:     salt,
 		PassHash: util.GetPasswordHash(params.NewPassword, salt),
@@ -3538,7 +3536,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			}
 
 			out = append(out, collectionListResponse{
-				Name:      r.Name,
+				Name:      r.Filename,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
