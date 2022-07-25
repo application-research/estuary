@@ -96,6 +96,7 @@ func (mgr *DBMgr) Shuttles() *ShuttlesQuery {
 	return NewShuttlesQuery(mgr.DB)
 }
 
+//#nosec G104
 func NewDBMgr(dbval string) (*DBMgr, error) {
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
@@ -128,10 +129,27 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	sqldb.SetMaxOpenConns(99)
 	sqldb.SetConnMaxIdleTime(time.Hour)
 
-	_, err = migrateSchemas(db)
-	if err != nil {
-		return nil, err
-	}
+	db.AutoMigrate(&Content{})
+	db.AutoMigrate(&Object{})
+	db.AutoMigrate(&ObjRef{})
+	db.AutoMigrate(&Collection{})
+	db.AutoMigrate(&CollectionRef{})
+
+	db.AutoMigrate(&Deal{})
+	db.AutoMigrate(&DFERecord{})
+	db.AutoMigrate(&PieceCommRecord{})
+	db.AutoMigrate(&ProposalRecord{})
+	db.AutoMigrate(&RetrievalFailureRecord{})
+	db.AutoMigrate(&RetrievalSuccessRecord{})
+
+	db.AutoMigrate(&MinerStorageAsk{})
+	db.AutoMigrate(&StorageMiner{})
+
+	db.AutoMigrate(&User{})
+	db.AutoMigrate(&AuthToken{})
+	db.AutoMigrate(&InviteCode{})
+
+	db.AutoMigrate(&Shuttle{})
 
 	var count int64
 	if err := db.Model(&StorageMiner{}).Count(&count).Error; err != nil {
@@ -200,35 +218,6 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	}
 
 	return &DBMgr{db}, nil
-}
-
-func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
-	schemas := []interface{}{
-		&Content{},
-		&Object{},
-		&ObjRef{},
-		&Collection{},
-		&CollectionRef{},
-		&Deal{},
-		&DFERecord{},
-		&PieceCommRecord{},
-		&ProposalRecord{},
-		&RetrievalFailureRecord{},
-		&RetrievalSuccessRecord{},
-		&MinerStorageAsk{},
-		&StorageMiner{},
-		&User{},
-		&AuthToken{},
-		&InviteCode{},
-		&Shuttle{},
-	}
-	for schema := range schemas {
-		err := db.AutoMigrate(schema)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return nil, nil
 }
 
 // USERS
