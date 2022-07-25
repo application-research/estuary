@@ -72,6 +72,7 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 
 	_ "github.com/application-research/estuary/docs"
+	"github.com/multiformats/go-multihash"
 )
 
 // @title Estuary API
@@ -1468,7 +1469,13 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	v0 := cid.NewCidV0(obj.Hash())
+	v0 := cid.Undef
+	dec, err := multihash.Decode(obj.Hash())
+	if err == nil {
+		if dec.Code == multihash.SHA2_256 || dec.Length == 32 {
+			v0 = cid.NewCidV0(obj.Hash())
+		}
+	}
 	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
 	var contents []Content
