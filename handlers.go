@@ -1471,7 +1471,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	//defer Cid panic handler
 	defer func() {
 		if err := recover(); err != nil {
-			log.Warnf("failed to get content by cid", "error", err)
+			log.Warnf("failed to get content by cid (%s)",obj.Hash(), err)
 		}
 	}()
 
