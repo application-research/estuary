@@ -2366,9 +2366,9 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 		return err
 	}
 
-	rounded := padreader.PaddedSize(body.Size)
+	pieceSize := padreader.PaddedSize(body.Size)
 
-	estimate, err := s.CM.estimatePrice(ctx, body.Replication, rounded.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	estimate, err := s.CM.estimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
 	if err != nil {
 		return err
 	}
