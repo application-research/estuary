@@ -2850,9 +2850,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 }
 
 type registerBody struct {
-	Username     string `json:"username"`
-	Password	 string `json:"passwordHash"`
-	InviteCode   string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"passwordHash"`
+	InviteCode string `json:"inviteCode"`
 }
 
 func (s *Server) handleRegisterUser(c echo.Context) error {
@@ -2960,9 +2960,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	
-	
-	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
+	//	validate password
+	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+		((user.Salt == "") && (user.PassHash != body.Password)) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2991,7 +2991,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	}
 
 	salt := uuid.New().String()
-	
+
 	updatedUserColumns := &User{
 		Salt:     salt,
 		PassHash: util.GetPasswordHash(params.NewPassword, salt),
