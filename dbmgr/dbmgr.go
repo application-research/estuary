@@ -96,7 +96,6 @@ func (mgr *DBMgr) Shuttles() *ShuttlesQuery {
 	return NewShuttlesQuery(mgr.DB)
 }
 
-//#nosec G104
 func NewDBMgr(dbval string) (*DBMgr, error) {
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
