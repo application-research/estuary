@@ -28,6 +28,7 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
@@ -265,6 +266,20 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "shuttle-message-handlers":
 			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
 
+		case "deal-protocol-version":
+			dprs := make(map[protocol.ID]bool, 0)
+			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
+				p, ok := config.DealProtocolsVersionsMap[dprv]
+				if !ok {
+					return fmt.Errorf("%s: is not a valid deal protocol version", dprv)
+				}
+				dprs[p] = true
+			}
+
+			if len(dprs) > 0 {
+				cfg.Deal.EnabledDealProtocolsVersions = dprs
+			}
+
 		default:
 		}
 	}
@@ -452,6 +467,10 @@ func main() {
 			Name:  "shuttle-message-handlers",
 			Usage: "sets shuttle message handler count",
 			Value: cfg.ShuttleMessageHandlers,
+		},
+		&cli.StringSliceFlag{
+			Name:  "deal-protocol-version",
+			Usage: "sets the deal protocol version. deafults to v110 (go-fil-markets) and v120 (boost)",
 		},
 	}
 	app.Commands = []*cli.Command{
