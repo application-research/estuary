@@ -129,7 +129,7 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	sqldb.SetMaxOpenConns(99)
 	sqldb.SetConnMaxIdleTime(time.Hour)
 
-	if _, err := migrateSchemas(db); err != nil {
+	if err := migrateSchemas(db); err != nil {
 		return nil, err
 	}
 
@@ -202,7 +202,7 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	return &DBMgr{db}, nil
 }
 
-func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
+func migrateSchemas(db *gorm.DB) error {
 	if err := db.AutoMigrate(
 		&Content{},
 		&Object{},
@@ -221,9 +221,9 @@ func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
 		&AuthToken{},
 		&InviteCode{},
 		&Shuttle{}); err != nil {
-		return nil, err
+		return err
 	}
-	return nil, nil
+	return nil
 }
 
 // USERS
