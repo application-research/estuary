@@ -54,7 +54,7 @@ func TestBenchest_AddFile(t *testing.T) {
 
 	args := os.Args[0:1]            // Name of the program.
 	args = append(args, "add-file") // Append a flag
-	args = append(args, "--host=shuttle-4.estuary.tech")
+	args = append(args, "--host=shuttle-1.estuary.tech")
 	run(args)
 
 	outC := make(chan string)

@@ -106,6 +106,13 @@ var peeringPeers = []peering.PeeringPeer{
 	{ID: "12D3KooWNuoVEfVLJvU3jWY2zLYjGUaathsecwT19jhByjnbQvkj", Addrs: []string{"/ip4/147.75.32.73/tcp/4001"}},
 	{ID: "12D3KooWSnniGsyAF663gvHdqhyfJMCjWJv54cGSzcPiEMAfanvU", Addrs: []string{"/ip4/145.40.89.195/tcp/4001"}},
 	{ID: "12D3KooWKytRAd2ujxhGzaLHKJuje8sVrHXvjGNvHXovpar5KaKQ", Addrs: []string{"/ip4/136.144.56.153/tcp/4001"}},
+
+	//	Estuary
+	{ID: "12D3KooWCVXs8P7iq6ao4XhfAmKWrEeuKFWCJgqe9jGDMTqHYBjw", Addrs: []string{"/ip4/139.178.68.217/tcp/6744"}},
+	{ID: "12D3KooWGBWx9gyUFTVQcKMTenQMSyE2ad9m7c9fpjS4NMjoDien", Addrs: []string{"/ip4/147.75.49.71/tcp/6745"}},
+	{ID: "12D3KooWFrnuj5o3tx4fGD2ZVJRyDqTdzGnU3XYXmBbWbc8Hs8Nd", Addrs: []string{"/ip4/147.75.86.255/tcp/6745"}},
+	{ID: "12D3KooWN8vAoGd6eurUSidcpLYguQiGZwt4eVgDvbgaS7kiGTup", Addrs: []string{"/ip4/3.134.223.177/tcp/6745"}},
+	{ID: "12D3KooWLV128pddyvoG6NBvoZw7sSrgpMTPtjnpu3mSmENqhtL7", Addrs: []string{"/ip4/35.74.45.12/udp/6746/quic"}},
 }
 
 var BootstrapPeers []peer.AddrInfo

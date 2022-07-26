@@ -32,7 +32,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Infof("handling rpc command: %s", cmd.Op)
+	log.Debugf("handling rpc command: %s", cmd.Op)
 	switch cmd.Op {
 	case drpc.CMD_AddPin:
 		return d.handleRpcAddPin(ctx, cmd.Params.AddPin)
