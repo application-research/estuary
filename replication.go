@@ -43,6 +43,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
@@ -52,6 +53,15 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+type dealMiner struct {
+	address             address.Address
+	dealProtocolVersion protocol.ID
+	ask                 *network.AskResponse
+	prop                *network.Proposal
+	isPushTransfer      bool
+	contentDeal         *contentDeal
+}
 
 // Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early dont run into issues
@@ -123,6 +133,8 @@ type ContentManager struct {
 	DisableFilecoinStorage bool
 
 	IncomingRPCMessages chan *drpc.Message
+
+	EnabledDealProtocolsVersions map[protocol.ID]bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -313,34 +325,35 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	}
 
 	cm := &ContentManager{
-		Provider:                   prov,
-		DB:                         db,
-		Api:                        api,
-		FilClient:                  fc,
-		Blockstore:                 tbs.Under().(node.EstuaryBlockstore),
-		Host:                       nd.Host,
-		Node:                       nd,
-		NotifyBlockstore:           nbs,
-		Tracker:                    tbs,
-		ToCheck:                    make(chan uint, 100000),
-		retrievalsInProgress:       make(map[uint]*util.RetrievalProgress),
-		buckets:                    make(map[uint][]*contentStagingZone),
-		pinJobs:                    make(map[uint]*pinner.PinningOperation),
-		pinMgr:                     pinmgr,
-		remoteTransferStatus:       cache,
-		shuttles:                   make(map[string]*ShuttleConnection),
-		contentSizeLimit:           util.DefaultContentSizeLimit,
-		hostname:                   cfg.Hostname,
-		inflightCids:               make(map[cid.Cid]uint),
-		FailDealOnTransferFailure:  cfg.Deal.FailOnTransferFailure,
-		isDealMakingDisabled:       cfg.Deal.Disable,
-		contentAddingDisabled:      cfg.Content.DisableGlobalAdding,
-		localContentAddingDisabled: cfg.Content.DisableLocalAdding,
-		VerifiedDeal:               cfg.Deal.Verified,
-		Replication:                cfg.Replication,
-		tracer:                     otel.Tracer("replicator"),
-		DisableFilecoinStorage:     cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:        make(chan *drpc.Message),
+		Provider:                     prov,
+		DB:                           db,
+		Api:                          api,
+		FilClient:                    fc,
+		Blockstore:                   tbs.Under().(node.EstuaryBlockstore),
+		Host:                         nd.Host,
+		Node:                         nd,
+		NotifyBlockstore:             nbs,
+		Tracker:                      tbs,
+		ToCheck:                      make(chan uint, 100000),
+		retrievalsInProgress:         make(map[uint]*util.RetrievalProgress),
+		buckets:                      make(map[uint][]*contentStagingZone),
+		pinJobs:                      make(map[uint]*pinner.PinningOperation),
+		pinMgr:                       pinmgr,
+		remoteTransferStatus:         cache,
+		shuttles:                     make(map[string]*ShuttleConnection),
+		contentSizeLimit:             util.DefaultContentSizeLimit,
+		hostname:                     cfg.Hostname,
+		inflightCids:                 make(map[cid.Cid]uint),
+		FailDealOnTransferFailure:    cfg.Deal.FailOnTransferFailure,
+		isDealMakingDisabled:         cfg.Deal.Disable,
+		contentAddingDisabled:        cfg.Content.DisableGlobalAdding,
+		localContentAddingDisabled:   cfg.Content.DisableLocalAdding,
+		VerifiedDeal:                 cfg.Deal.Verified,
+		Replication:                  cfg.Replication,
+		tracer:                       otel.Tracer("replicator"),
+		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
+		IncomingRPCMessages:          make(chan *drpc.Message),
+		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
@@ -2034,10 +2047,25 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		return err
 	}
 
-	var asks []*network.AskResponse
-	var ms []address.Address
-	var successes int
+	var dMiners []dealMiner
 	for _, m := range minerpool {
+		proto, err := cm.FilClient.DealProtocolForMiner(ctx, m)
+		if err != nil {
+			cm.recordDealFailure(&DealFailureError{
+				Miner:   m,
+				Phase:   "query-ask",
+				Message: err.Error(),
+				Content: content.ID,
+				UserID:  content.UserID,
+			})
+			continue
+		}
+
+		_, ok := cm.EnabledDealProtocolsVersions[proto]
+		if !ok {
+			continue
+		}
+
 		ask, err := cm.FilClient.GetAsk(ctx, m)
 		if err != nil {
 			var clientErr *filclient.Error
@@ -2071,57 +2099,31 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		ms = append(ms, m)
-		asks = append(asks, ask)
-		successes++
-		if len(ms) >= count {
+		dMiners = append(dMiners, dealMiner{address: m, dealProtocolVersion: proto, ask: ask})
+		if len(dMiners) >= count {
 			break
 		}
 	}
 
-	proposals := make([]*network.Proposal, len(ms))
-	for i, m := range ms {
-		if asks[i] == nil {
-			continue
-		}
-
-		price := asks[i].Ask.Ask.Price
+	for _, dMiner := range dMiners {
+		price := dMiner.ask.Ask.Ask.Price
 		if verified {
-			price = asks[i].Ask.Ask.VerifiedPrice
+			price = dMiner.ask.Ask.Ask.VerifiedPrice
 		}
 
-		prop, err := cm.FilClient.MakeDeal(ctx, m, content.Cid.CID, price, asks[i].Ask.Ask.MinPieceSize, dealDuration, verified)
+		prop, err := cm.FilClient.MakeDeal(ctx, dMiner.address, content.Cid.CID, price, dMiner.ask.Ask.Ask.MinPieceSize, dealDuration, verified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
-
-		proposals[i] = prop
+		dMiner.prop = prop
 
 		if err := cm.putProposalRecord(prop.DealProposal); err != nil {
 			return err
 		}
 	}
 
-	deals := make([]*contentDeal, len(ms))
-	responses := make([]*bool, len(ms))
-	for i, p := range proposals {
-		if p == nil {
-			continue
-		}
-
-		proto, err := cm.FilClient.DealProtocolForMiner(ctx, ms[i])
-		if err != nil {
-			cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
-				Phase:   "send-proposal",
-				Message: err.Error(),
-				Content: content.ID,
-				UserID:  content.UserID,
-			})
-			continue
-		}
-
-		propnd, err := cborutil.AsIpld(p.DealProposal)
+	for _, dMiner := range dMiners {
+		propnd, err := cborutil.AsIpld(dMiner.prop.DealProposal)
 		if err != nil {
 			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 		}
@@ -2131,7 +2133,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			Content:  content.ID,
 			PropCid:  util.DbCID{CID: propnd.Cid()},
 			DealUUID: dealUUID.String(),
-			Miner:    ms[i].String(),
+			Miner:    dMiner.address.String(),
 			Verified: verified,
 			UserID:   content.UserID,
 		}
@@ -2143,14 +2145,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		// Send the deal proposal to the storage provider
 		var cleanupDealPrep func() error
 		var propPhase bool
-		isPushTransfer := proto == filclient.DealProtocolv110
-		switch proto {
+		isPushTransfer := dMiner.dealProtocolVersion == filclient.DealProtocolv110
+
+		switch dMiner.dealProtocolVersion {
 		case filclient.DealProtocolv110:
-			propPhase, err = cm.FilClient.SendProposalV110(ctx, *p, propnd.Cid())
+			propPhase, err = cm.FilClient.SendProposalV110(ctx, *dMiner.prop, propnd.Cid())
 		case filclient.DealProtocolv120:
-			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *p, propnd.Cid(), dealUUID, cd.ID)
+			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *dMiner.prop, propnd.Cid(), dealUUID, cd.ID)
 		default:
-			err = fmt.Errorf("unrecognized deal protocol %s", proto)
+			err = fmt.Errorf("unrecognized deal protocol %s", dMiner.dealProtocolVersion)
 		}
 
 		if err != nil {
@@ -2172,7 +2175,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				phase = "propose"
 			}
 			cm.recordDealFailure(&DealFailureError{
-				Miner:   ms[i],
+				Miner:   dMiner.address,
 				Phase:   phase,
 				Message: err.Error(),
 				Content: content.ID,
@@ -2181,36 +2184,25 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		responses[i] = &isPushTransfer
-		deals[i] = cd
+		dMiner.isPushTransfer = isPushTransfer
+		dMiner.contentDeal = cd
 	}
 
 	// Now start up some data transfers!
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
-	for i, isPushTransfer := range responses {
-		if isPushTransfer == nil {
-			continue
-		}
-
+	for _, dMiner := range dMiners {
 		// If the data transfer is a pull transfer, we don't need to explicitly
 		// start the transfer (the Storage Provider will start pulling data as
 		// soon as it accepts the proposal)
-		if !(*isPushTransfer) {
+		if !dMiner.isPushTransfer {
 			continue
 		}
 
-		cd := deals[i]
-		if cd == nil {
-			log.Warnf("have no contentDeal for response we are about to start transfer on")
-			continue
-		}
-
-		err := cm.StartDataTransfer(ctx, cd)
+		err := cm.StartDataTransfer(ctx, dMiner.contentDeal)
 		if err != nil {
-			log.Errorw("failed to start data transfer", "err", err, "miner", ms[i])
+			log.Errorw("failed to start data transfer", "err", err, "miner", dMiner.address)
 			continue
 		}
-
 	}
 	return nil
 }
