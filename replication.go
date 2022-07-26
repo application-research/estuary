@@ -61,6 +61,7 @@ type dealMiner struct {
 	prop                *network.Proposal
 	isPushTransfer      bool
 	contentDeal         *contentDeal
+	sendProposalFailed  bool
 }
 
 // Making default deal duration be three weeks less than the maximum to ensure
@@ -2105,7 +2106,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 	}
 
-	for _, dMiner := range dMiners {
+	for i, dMiner := range dMiners {
 		price := dMiner.ask.Ask.Ask.Price
 		if verified {
 			price = dMiner.ask.Ask.Ask.VerifiedPrice
@@ -2115,14 +2116,14 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
-		dMiner.prop = prop
 
 		if err := cm.putProposalRecord(prop.DealProposal); err != nil {
 			return err
 		}
+		dMiners[i].prop = prop
 	}
 
-	for _, dMiner := range dMiners {
+	for i, dMiner := range dMiners {
 		propnd, err := cborutil.AsIpld(dMiner.prop.DealProposal)
 		if err != nil {
 			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
@@ -2157,6 +2158,9 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		}
 
 		if err != nil {
+			// ignore bad deal miner from deal miner list
+			dMiners[i].sendProposalFailed = true
+
 			// Clean up the database entry
 			if err := cm.DB.Delete(&contentDeal{}, cd).Error; err != nil {
 				return fmt.Errorf("failed to delete content deal from db: %w", err)
@@ -2184,13 +2188,18 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			continue
 		}
 
-		dMiner.isPushTransfer = isPushTransfer
-		dMiner.contentDeal = cd
+		dMiners[i].isPushTransfer = isPushTransfer
+		dMiners[i].contentDeal = cd
 	}
 
 	// Now start up some data transfers!
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
 	for _, dMiner := range dMiners {
+		// ignore deal miner with sendProposalFailed=true
+		if dMiner.sendProposalFailed {
+			continue
+		}
+
 		// If the data transfer is a pull transfer, we don't need to explicitly
 		// start the transfer (the Storage Provider will start pulling data as
 		// soon as it accepts the proposal)
@@ -2490,7 +2499,7 @@ func (cm *ContentManager) getProposalRecord(propCid cid.Cid) (*market.ClientDeal
 }
 
 func (cm *ContentManager) recordDealFailure(dfe *DealFailureError) error {
-	log.Infow("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
+	log.Debugf("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
 	rec := dfe.Record()
 	if dfe.Miner != address.Undef {
 		var m storageMiner
