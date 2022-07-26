@@ -37,9 +37,10 @@ type ContentAddIpfsBody struct {
 }
 
 type ContentAddResponse struct {
-	Cid       string   `json:"cid"`
-	EstuaryId uint     `json:"estuaryId"`
-	Providers []string `json:"providers"`
+	Cid          string   `json:"cid"`
+	RetrievalURL string   `json:"RetrievalURL"`
+	EstuaryId    uint     `json:"estuaryId"`
+	Providers    []string `json:"providers"`
 }
 
 type ContentCreateBody struct {
