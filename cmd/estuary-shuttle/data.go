@@ -54,10 +54,24 @@ func setupDatabase(dbval string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	db.AutoMigrate(&Pin{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
+	if err := migrateSchemas(db); err != nil {
+		return nil, err
+	}
 
 	return db, nil
+}
+
+func migrateSchemas(db *gorm.DB) error {
+	schemas := make([]interface{}, 3)
+	schemas = append(schemas,
+		&Pin{},
+		&Object{},
+		&ObjRef{})
+
+	for s := range schemas {
+		if err := db.AutoMigrate(s); err != nil {
+			return err
+		}
+	}
+	return nil
 }
