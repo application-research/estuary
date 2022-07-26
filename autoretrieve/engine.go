@@ -438,6 +438,11 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 			if err != nil {
 				return cid.Undef, fmt.Errorf("could not generate entries list: %s", err)
 			}
+
+			if lnk == nil {
+				return cid.Undef, fmt.Errorf("no CIDs")
+			}
+
 			cidsLnk = lnk.(cidlink.Link)
 
 			// Store the relationship between contextID and CID of the advertised

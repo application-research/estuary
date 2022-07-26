@@ -21,6 +21,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var ChunksInMemoryAtOnce = 1200 // query max of 6000 advertisement chunks at a time (do not overflow RAM usage)
+
 type Autoretrieve struct {
 	gorm.Model
 
@@ -59,29 +61,50 @@ type AutoretrieveInitResponse struct {
 // incrementally, to avoid having all CIDs in memory at once
 type EstuaryMhIterator struct {
 	// we need contentOffset because one content might have more than one CID
-	offset int // offset of the cid related to the current content
-	Cids   []cid.Cid
+	offset                 int // offset of the cid related to the current content
+	db                     *gorm.DB
+	startAdvertisementDate time.Time
+
+	cids        []cid.Cid
+	queryLimit  int
+	queryOffset int
 }
 
 func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
 
-	if m.offset >= len(m.Cids) {
-		return nil, io.EOF
+	// finished publishing last batch of CIDs, get more from database
+	if m.offset >= len(m.cids) {
+		log.Debugf("Querying for new CIDs (this could take a while): limit %d offset %d", m.queryLimit, m.queryOffset)
+		newCids, err := findNewCids(m.db, m.startAdvertisementDate, m.queryLimit, m.queryOffset)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(newCids) == 0 {
+			log.Debugf("Iterator finished")
+			log.Debugf("iterator: %+v", m)
+			return nil, io.EOF
+		}
+
+		m.queryOffset += m.queryLimit
+		m.offset = 0
+
+		m.cids = newCids
 	}
 
-	curCid := m.Cids[m.offset]
+	curCid := m.cids[m.offset]
 	m.offset++ // go to next CID
 
 	return curCid.Hash(), nil
 }
 
-// findNewContents takes a time.Time struct `since` and queries all CIDs
+// findNewContents takes a time.Time struct `lastAdvertisement` and queries all CIDs
 // associated to active util.Content entries created after that time
-// Returns a list of the cid.CID created after `since`
+// Returns a list of the cid.CID created after `lastAdvertisement`
 // Returns an error if failed
-func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
+func findNewCids(db *gorm.DB, lastAdvertisement time.Time, limit int, offset int) ([]cid.Cid, error) {
 	var newCids []cid.Cid
-	err := db.Raw("select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?);", lastAdvertisement).
+	err := db.Raw("select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?) limit ? offset ?;", lastAdvertisement, limit, offset).
 		Scan(&newCids).
 		Error
 	if err != nil {
@@ -120,21 +143,11 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 			return nil, err
 		}
 
-		// find all new content entries since the last time we advertised for this autoretrieve server
-		log.Debugf("Querying for new CIDs now (this could take a while)")
-		newCids, err := findNewCids(db, ar.LastAdvertisement)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(newCids) == 0 {
-			return nil, fmt.Errorf("no new CIDs to announce")
-		}
-
-		log.Infof("announcing %d new CIDs", len(newCids))
-
 		return &EstuaryMhIterator{
-			Cids: newCids,
+			queryLimit: newEngine.entChunkSize * ChunksInMemoryAtOnce, // this is how many CIDs we have in memory at once
+
+			db:                     db,
+			startAdvertisementDate: ar.LastAdvertisement,
 		}, nil
 	})
 
@@ -168,6 +181,16 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	}
 	if len(retrievalAddresses) == 0 {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+	}
+
+	// see if there are any new CIDs to announce (calling NotifyPut with no new CIDs will result in a panic)
+	newCids, err := findNewCids(arEng.db, ar.LastAdvertisement, 1, 0)
+	if err != nil {
+		return err
+	}
+	if len(newCids) == 0 {
+		log.Warnf("no new CIDs to announce, skipping")
+		return nil
 	}
 
 	log.Infof("sending announcement to %s", ar.Handle)
