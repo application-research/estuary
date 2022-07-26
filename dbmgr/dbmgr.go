@@ -203,8 +203,7 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 }
 
 func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
-	schemas := make([]interface{}, 17)
-	schemas = append(schemas,
+	if err := db.AutoMigrate(
 		&Content{},
 		&Object{},
 		&ObjRef{},
@@ -221,12 +220,8 @@ func migrateSchemas(db *gorm.DB) (*DBMgr, error) {
 		&User{},
 		&AuthToken{},
 		&InviteCode{},
-		&Shuttle{})
-
-	for s := range schemas {
-		if err := db.AutoMigrate(s); err != nil {
-			return nil, err
-		}
+		&Shuttle{}); err != nil {
+		return nil, err
 	}
 	return nil, nil
 }
