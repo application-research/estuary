@@ -407,7 +407,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
-			Filename: c.Name,
+			Filename: c.Filename,
 		}
 
 		if false {
@@ -1095,7 +1095,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        filename,
+		Filename:    filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
@@ -3447,7 +3447,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	// create DAG respecting directory structure
 	collectionNode := unixfs.EmptyDirNode()
 	for _, c := range contents {
-		dirs, err := util.DirsFromPath(c.Path, c.Name)
+		dirs, err := util.DirsFromPath(c.Path, c.Filename)
 		if err != nil {
 			return err
 		}
@@ -3456,7 +3456,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		lastDirNode.AddRawLink(c.Name, &ipld.Link{
+		lastDirNode.AddRawLink(c.Filename, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
@@ -3501,7 +3501,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path as path"). // TODO: change content.name to content.filename
+		Select("contents.*, collection_refs.path as path").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
@@ -3517,7 +3517,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == "" || r.Name == "" {
+		if r.Path == "" || r.Filename == "" {
 			continue
 		}
 
@@ -3538,7 +3538,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			}
 
 			out = append(out, collectionListResponse{
-				Name:      r.Name,
+				Name:      r.Filename,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
@@ -4677,7 +4677,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: rootCID},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      u.ID,
@@ -5037,7 +5037,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
+	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5050,7 +5050,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      req.User,

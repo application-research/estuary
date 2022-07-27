@@ -1164,7 +1164,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	fname := mpf.Filename
+	filename := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
@@ -1197,7 +1197,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, cic)
+	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1324,9 +1324,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	// TODO: how to specify filename?
-	fname := header.Roots[0].String()
+	filename := header.Roots[0].String()
 	if qpname := c.QueryParam("filename"); qpname != "" {
-		fname = qpname
+		filename = qpname
 	}
 
 	bserv := blockservice.New(bs, nil)
@@ -1334,7 +1334,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
+	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
 		CollectionDir: c.QueryParam(ColDir),
 	})
@@ -1389,13 +1389,13 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
-	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, fname, cic)
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
-		Name:                fname,
+		Filename:            filename,
 		Location:            s.shuttleHandle,
 	})
 	if err != nil {
@@ -1436,7 +1436,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1445,7 +1445,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
 			Root:     root.String(),
-			Name:     fname,
+			Filename: filename,
 			Location: s.shuttleHandle,
 		},
 
