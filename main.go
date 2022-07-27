@@ -622,7 +622,7 @@ func main() {
 			}()
 		}
 
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host)
+		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
 		if err != nil {
 			return err
 		}
