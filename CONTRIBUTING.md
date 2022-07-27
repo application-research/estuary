@@ -30,9 +30,9 @@ cd estuary
 make clean all
 ```
 
-Then run `./estuary setup` to initialize the database as well as the access token. **Make sure to save this token as it'll be used to do almost all API calls**.
+Then run `./estuary setup --username=<uname> --password=<pword>` to initialize the database as well as the access token. **Make sure to save this token as it'll be used to do almost all API calls**.
 ```bash
-$ ./estuary setup
+$ ./estuary setup --username=<uname> --password=<pword>
 Auth Token: ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY
 ```
 
