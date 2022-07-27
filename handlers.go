@@ -2886,9 +2886,10 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		exist = nil
 	}
 
-	if exist != nil && strings.ToLower(exist.Username) == username {
+	if exist != nil {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,
@@ -4156,7 +4157,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		// now, update size and cid
 		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{nd.Cid()},
+			"cid":  util.DbCID{CID: nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
 			return err
