@@ -343,7 +343,7 @@ type Content struct {
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	Cid         util.DbCID
-	Name        string
+	Filename    string
 	UserID      UserID
 	Description string
 	Size        int64
