@@ -2960,7 +2960,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
+	//	validate password
+	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+		((user.Salt == "") && (user.PassHash != body.Password)) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
