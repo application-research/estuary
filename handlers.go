@@ -967,7 +967,6 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		log.Warnf("failed to get preferred upload endpoints: %s", err)
 		return err
 	} else if len(uep) > 0 {
-		//#nosec G404 - crypto/rand it's not necessary for this use case
 		// propagate any query params
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
 		if err != nil {
@@ -2854,9 +2853,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 }
 
 type registerBody struct {
-	Username     string `json:"username"`
-	Password	 string `json:"passwordHash"`
-	InviteCode   string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"passwordHash"`
+	InviteCode string `json:"inviteCode"`
 }
 
 func (s *Server) handleRegisterUser(c echo.Context) error {
@@ -2964,8 +2963,6 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	
-	
 	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
@@ -2995,7 +2992,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	}
 
 	salt := uuid.New().String()
-	
+
 	updatedUserColumns := &User{
 		Salt:     salt,
 		PassHash: util.GetPasswordHash(params.NewPassword, salt),

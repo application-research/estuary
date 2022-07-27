@@ -807,12 +807,14 @@ func (d *Shuttle) RunRpcConnection() error {
 	}
 }
 
-func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
-	if err := conn.Close(); err != nil {
-		return err
-	}
+	defer func() {
+		if errC := conn.Close(); errC != nil {
+			err = errC
+		}
+	}()
 
 	readDone := make(chan struct{})
 
