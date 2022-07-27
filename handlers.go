@@ -3460,7 +3460,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		err := lastDirNode.AddRawLink(c.Filename, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Filename, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
