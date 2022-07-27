@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var ChunksInMemoryAtOnce = 1200 // query max of 6000 advertisement chunks at a time (do not overflow RAM usage)
+var ChunksInMemoryAtOnce = 1800 // query max of 6000 advertisement chunks at a time (do not overflow RAM usage)
 
 type Autoretrieve struct {
 	gorm.Model
