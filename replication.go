@@ -687,10 +687,13 @@ func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) 
 	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range conts {
-		dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Filename), &ipld.Link{
+		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Filename), &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return dir, nil
@@ -1522,13 +1525,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 				return DEAL_CHECK_UNKNOWN, err
 			}
 
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
 				Phase:   "check-chain-deal",
 				Message: fmt.Sprintf("deal %d was slashed at epoch %d", d.DealID, deal.State.SlashEpoch),
 				Content: d.Content,
 				UserID:  d.UserID,
-			})
+			}); err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
@@ -1584,13 +1589,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 		}
 		if expired {
 			// deal expired, miner didnt start it in time
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
 				Phase:   "check-status",
 				Message: "was unable to check deal status with miner and now deal has expired",
 				Content: d.Content,
 				UserID:  d.UserID,
-			})
+			}); err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
@@ -1648,13 +1655,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			log.Infof("failed to find message on chain: %s", *provds.PublishCid)
 			if provds.Proposal.StartEpoch < head.Height() {
 				// deal expired, miner didn`t start it in time
-				cm.recordDealFailure(&DealFailureError{
+				if err := cm.recordDealFailure(&DealFailureError{
 					Miner:   maddr,
 					Phase:   "check-status",
 					Message: "deal did not make it on chain in time (but has publish deal cid set)",
 					Content: d.Content,
 					UserID:  d.UserID,
-				})
+				}); err != nil {
+					return DEAL_CHECK_UNKNOWN, err
+				}
 				return DEAL_CHECK_UNKNOWN, nil
 			}
 			return DEAL_CHECK_PROGRESS, nil
@@ -1670,13 +1679,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	if provds.Proposal == nil {
 		log.Errorw("response from miner has nil Proposal", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 		if time.Since(d.CreatedAt) > time.Hour*24*14 {
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   maddr,
 				Phase:   "check-status",
 				Message: "miner returned nil response proposal and deal expired",
 				Content: d.Content,
 				UserID:  d.UserID,
-			})
+			}); err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 		return DEAL_CHECK_UNKNOWN, fmt.Errorf("bad response from miner %s for deal %s deal status check: %s",
@@ -1685,13 +1696,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	if provds.Proposal.StartEpoch < head.Height() {
 		// deal expired, miner didnt start it in time
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "check-status",
 			Message: "deal did not make it on chain in time",
 			Content: d.Content,
 			UserID:  d.UserID,
-		})
+		}); err != nil {
+			return DEAL_CHECK_UNKNOWN, err
+		}
 		return DEAL_CHECK_UNKNOWN, nil
 	}
 	// miner still has time...
@@ -1740,13 +1753,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	switch status.Status {
 	case datatransfer.Failed:
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "data-transfer",
 			Message: fmt.Sprintf("transfer failed: %s", status.Message),
 			Content: content.ID,
 			UserID:  d.UserID,
-		})
+		}); err != nil {
+			return DEAL_CHECK_UNKNOWN, err
+		}
 
 		// TODO: returning unknown==error here feels excessive
 		// but since 'Failed' is a terminal state, we kinda just have to make a new deal altogether
@@ -1754,13 +1769,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 	case datatransfer.Cancelled:
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "data-transfer",
 			Message: fmt.Sprintf("transfer cancelled: %s", status.Message),
 			Content: content.ID,
 			UserID:  d.UserID,
-		})
+		}); err != nil {
+			return DEAL_CHECK_UNKNOWN, err
+		}
 		return DEAL_CHECK_UNKNOWN, nil
 	case datatransfer.Failing:
 		// I guess we just wait until its failed all the way?
@@ -1922,6 +1939,7 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 
 	dealix := -1
 	for i, pd := range params.Deals {
+		pd := pd
 		nd, err := cborutil.AsIpld(&pd)
 		if err != nil {
 			return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
@@ -1960,13 +1978,15 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 			log.Errorf("failed to get miner address from deal (%s): %w", d.Miner, err)
 		}
 
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   maddr,
 			Phase:   "fault",
 			Message: fmt.Sprintf("miner faulted on deal: %d", d.DealID),
 			Content: d.Content,
 			UserID:  d.UserID,
-		})
+		}); err != nil {
+			return err
+		}
 	}
 
 	log.Infow("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
@@ -2042,13 +2062,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 		if err != nil {
 			var clientErr *filclient.Error
 			if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
-				cm.recordDealFailure(&DealFailureError{
+				if err := cm.recordDealFailure(&DealFailureError{
 					Miner:   m,
 					Phase:   "query-ask",
 					Message: err.Error(),
 					Content: content.ID,
 					UserID:  content.UserID,
-				})
+				}); err != nil {
+					return err
+				}
 			}
 			log.Warnf("failed to get ask for miner %s: %s\n", m, err)
 			continue
@@ -2061,13 +2083,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 		if cm.priceIsTooHigh(price, verified) {
 			log.Infow("miners price is too high", "miner", m, "price", price)
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   m,
 				Phase:   "miner-search",
 				Message: fmt.Sprintf("miners price is too high: %s (verified = %v)", types.FIL(price), verified),
 				Content: content.ID,
 				UserID:  content.UserID,
-			})
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -2111,13 +2135,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 
 		proto, err := cm.FilClient.DealProtocolForMiner(ctx, ms[i])
 		if err != nil {
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   ms[i],
 				Phase:   "send-proposal",
 				Message: err.Error(),
 				Content: content.ID,
 				UserID:  content.UserID,
-			})
+			}); err != nil {
+				return xerrors.Errorf("failed to record deal failure: %w", err)
+			}
 			continue
 		}
 
@@ -2171,13 +2197,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			if propPhase {
 				phase = "propose"
 			}
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   ms[i],
 				Phase:   phase,
 				Message: err.Error(),
 				Content: content.ID,
 				UserID:  content.UserID,
-			})
+			}); err != nil {
+				return fmt.Errorf("failed to record deal failure %w", err)
+			}
 			continue
 		}
 
@@ -2307,13 +2335,15 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 	if err != nil {
 		var clientErr *filclient.Error
 		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
-			cm.recordDealFailure(&DealFailureError{
+			if err := cm.recordDealFailure(&DealFailureError{
 				Miner:   miner,
 				Phase:   "query-ask",
 				Message: err.Error(),
 				Content: content.ID,
 				UserID:  content.UserID,
-			})
+			}); err != nil {
+				return 0, xerrors.Errorf("failed to record deal failure: %w", err)
+			}
 		}
 		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
 	}
@@ -2338,13 +2368,15 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 
 	proto, err := cm.FilClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
 			Phase:   "send-proposal",
 			Message: err.Error(),
 			Content: content.ID,
 			UserID:  content.UserID,
-		})
+		}); err != nil {
+			return 0, xerrors.Errorf("failed to record deal failure: %w", err)
+		}
 		return 0, err
 	}
 
@@ -2398,13 +2430,15 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 		if propPhase {
 			phase = "propose"
 		}
-		cm.recordDealFailure(&DealFailureError{
+		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
 			Phase:   phase,
 			Message: err.Error(),
 			Content: content.ID,
 			UserID:  content.UserID,
-		})
+		}); err != nil {
+			return 0, fmt.Errorf("failed to record deal failure: %w", err)
+		}
 		return 0, err
 	}
 
@@ -2906,13 +2940,15 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 			span.RecordError(err)
 
 			log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
-			cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
 				Content: content.ID,
 				Cid:     content.Cid,
-			})
+			}); err != nil {
+				return xerrors.Errorf("failed to record deal failure: %w", err)
+			}
 			continue
 		}
 		log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
@@ -2920,13 +2956,15 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		if err := cm.tryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
 			span.RecordError(err)
 			log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
-			cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := cm.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
 				Content: content.ID,
 				Cid:     content.Cid,
-			})
+			}); err != nil {
+				return xerrors.Errorf("failed to record deal failure: %w", err)
+			}
 			continue
 		}
 

@@ -565,7 +565,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -710,29 +713,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
-
-	db.AutoMigrate(&contentDeal{})
-	db.AutoMigrate(&dfeRecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&util.RetrievalFailureRecord{})
-	db.AutoMigrate(&retrievalSuccessRecord{})
-
-	db.AutoMigrate(&minerStorageAsk{})
-	db.AutoMigrate(&storageMiner{})
-
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
-
-	db.AutoMigrate(&Shuttle{})
-
-	db.AutoMigrate(&Autoretrieve{})
+	if err = migrateSchemas(db); err != nil {
+		return nil, err
+	}
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
@@ -752,6 +735,31 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 
 	}
 	return db, nil
+}
+
+func migrateSchemas(db *gorm.DB) error {
+	if err := db.AutoMigrate(
+		&Content{},
+		&Object{},
+		&ObjRef{},
+		&Collection{},
+		&CollectionRef{},
+		&contentDeal{},
+		&dfeRecord{},
+		&PieceCommRecord{},
+		&proposalRecord{},
+		&util.RetrievalFailureRecord{},
+		&retrievalSuccessRecord{},
+		&minerStorageAsk{},
+		&storageMiner{},
+		&User{},
+		&AuthToken{},
+		&InviteCode{},
+		&Shuttle{},
+		&Autoretrieve{}); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Server struct {
