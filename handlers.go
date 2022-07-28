@@ -877,14 +877,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	defaultPath := "/"
-	path := &defaultPath
+	path := defaultPath
 	if cp := c.QueryParam(ColDir); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
 		}
 
-		path = &sp
+		path = sp
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -919,13 +919,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
+	fullPath := filepath.Join(path, content.Filename)
 
 	if col != nil {
 		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
-			Path:       path,
+			Path:       &fullPath,
 		}).Error; err != nil {
 			log.Errorf("failed to add content to requested collection: %s", err)
 		}
