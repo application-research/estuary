@@ -98,12 +98,12 @@ func (s *Server) ServeAPI() error {
 
 	e.Binder = new(binder)
 
-	if s.estuaryCfg.Logging.ApiEndpointLogging {
+	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(s.tracingMiddleware)
-	e.Use(util.AppVersionMiddleware(s.estuaryCfg.AppVersion))
+	e.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -310,7 +310,7 @@ func (s *Server) ServeAPI() error {
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(s.estuaryCfg.ApiListen)
+	return e.Start(s.cfg.ApiListen)
 }
 
 type binder struct{}
@@ -781,7 +781,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	go func() {
 		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck <- cont.ID
+		s.CM.toCheck(cont.ID)
 	}()
 
 	go func() {
@@ -937,7 +937,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	go func() {
-		s.CM.ToCheck <- content.ID
+		s.CM.toCheck(content.ID)
 	}()
 
 	if c.QueryParam("lazy-provide") != "true" {
@@ -1172,7 +1172,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.ToCheck <- content.ID
+	s.CM.toCheck(content.ID)
 	return nil
 }
 
@@ -1585,7 +1585,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
+	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
@@ -1996,7 +1996,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 
 	resp := map[string]interface{}{
 		"data": map[string]interface{}{
-			"primary":  s.estuaryCfg,
+			"primary":  s.cfg,
 			"shuttles": shts,
 		},
 	}
@@ -3105,10 +3105,10 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
 			Replication:           s.CM.Replication,
-			Verified:              s.CM.VerifiedDeal,
-			DealDuration:          dealDuration,
-			MaxStagingWait:        maxStagingZoneLifetime,
-			FileStagingThreshold:  int64(individualDealThreshold),
+			Verified:              s.cfg.Deal.Verified,
+			DealDuration:          s.cfg.Deal.Duration,
+			MaxStagingWait:        s.cfg.StagingBucket.MaxLifeTime,
+			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,
 			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,

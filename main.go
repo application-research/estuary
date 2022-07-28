@@ -239,7 +239,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "no-storage-cron":
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
 		case "disable-deal-making":
-			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
+			cfg.Deal.Disabled = cctx.Bool("disable-deal-making")
 		case "verified-deal":
 			cfg.Deal.Verified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
@@ -264,7 +264,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "shuttle-message-handlers":
 			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
-
+		case "staging-bucket":
+			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		default:
 		}
 	}
@@ -376,7 +377,7 @@ func main() {
 		&cli.BoolFlag{
 			Name:  "disable-deal-making",
 			Usage: "do not create any new deals (existing deals will still be processed)",
-			Value: cfg.Deal.Disable,
+			Value: cfg.Deal.Disabled,
 		},
 		&cli.BoolFlag{
 			Name:  "verified-deal",
@@ -453,6 +454,11 @@ func main() {
 			Usage: "sets shuttle message handler count",
 			Value: cfg.ShuttleMessageHandlers,
 		},
+		&cli.BoolFlag{
+			Name:  "staging-bucket",
+			Usage: "enable staging bucket",
+			Value: cfg.StagingBucket.Enabled,
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -478,7 +484,7 @@ func main() {
 
 				username := "admin"
 				password := ""
-				salt:= ""
+				salt := ""
 
 				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
@@ -487,7 +493,7 @@ func main() {
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:	  salt,
+					Salt:     salt,
 					PassHash: util.GetPasswordHash(password, salt),
 					Perm:     100,
 				}
@@ -595,7 +601,7 @@ func main() {
 			tracer:      otel.Tracer("api"),
 			cacher:      memo.NewCacher(),
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			estuaryCfg:  cfg,
+			cfg:         cfg,
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -656,17 +662,8 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		go cm.ContentWatcher()
+		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-
-		// refresh pin queue for local contents
-		if !cm.contentAddingDisabled {
-			go func() {
-				if err := cm.refreshPinQueue(cctx.Context, util.ContentLocationLocal); err != nil {
-					log.Errorf("failed to refresh pin queue: %s", err)
-				}
-			}()
-		}
 
 		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
 		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
@@ -763,7 +760,7 @@ func migrateSchemas(db *gorm.DB) error {
 }
 
 type Server struct {
-	estuaryCfg *config.Estuary
+	cfg        *config.Estuary
 	tracer     trace.Tracer
 	Node       *node.Node
 	DB         *gorm.DB

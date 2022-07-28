@@ -101,7 +101,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		private:  hello.Private,
 	}
 
-	// when a shuttle connects, refresh its pin queue
+	// If global content adding is enabled, refresh shuttle pin queue
 	if !cm.contentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
