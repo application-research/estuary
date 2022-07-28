@@ -968,7 +968,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		return err
 	} else if len(uep) > 0 {
 		// propagate any query params
-		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
+		req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
 		if err != nil {
 			return err
 		}
