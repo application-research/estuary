@@ -128,27 +128,9 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	sqldb.SetMaxOpenConns(99)
 	sqldb.SetConnMaxIdleTime(time.Hour)
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
-
-	db.AutoMigrate(&Deal{})
-	db.AutoMigrate(&DFERecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&ProposalRecord{})
-	db.AutoMigrate(&RetrievalFailureRecord{})
-	db.AutoMigrate(&RetrievalSuccessRecord{})
-
-	db.AutoMigrate(&MinerStorageAsk{})
-	db.AutoMigrate(&StorageMiner{})
-
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
-
-	db.AutoMigrate(&Shuttle{})
+	if err := migrateSchemas(db); err != nil {
+		return nil, err
+	}
 
 	var count int64
 	if err := db.Model(&StorageMiner{}).Count(&count).Error; err != nil {
@@ -217,6 +199,30 @@ func NewDBMgr(dbval string) (*DBMgr, error) {
 	}
 
 	return &DBMgr{db}, nil
+}
+
+func migrateSchemas(db *gorm.DB) error {
+	if err := db.AutoMigrate(
+		&Content{},
+		&Object{},
+		&ObjRef{},
+		&Collection{},
+		&CollectionRef{},
+		&Deal{},
+		&DFERecord{},
+		&PieceCommRecord{},
+		&ProposalRecord{},
+		&RetrievalFailureRecord{},
+		&RetrievalSuccessRecord{},
+		&MinerStorageAsk{},
+		&StorageMiner{},
+		&User{},
+		&AuthToken{},
+		&InviteCode{},
+		&Shuttle{}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // USERS
@@ -337,7 +343,7 @@ type Content struct {
 	DeletedAt gorm.DeletedAt `gorm:"index"`
 
 	Cid         util.DbCID
-	Name        string
+	Filename    string
 	UserID      UserID
 	Description string
 	Size        int64

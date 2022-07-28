@@ -46,7 +46,7 @@ type ContentCreateBody struct {
 	ContentInCollection
 
 	Root     string      `json:"root"`
-	Name     string      `json:"name"`
+	Filename string      `json:"filename"`
 	Location string      `json:"location"`
 	Type     ContentType `json:"type"`
 }

@@ -407,7 +407,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
-			Filename: c.Name,
+			Filename: c.Filename,
 		}
 
 		if false {
@@ -967,6 +967,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		log.Warnf("failed to get preferred upload endpoints: %s", err)
 		return err
 	} else if len(uep) > 0 {
+		//#nosec G404 - crypto/rand it's not necessary for this use case
 		// propagate any query params
 		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
 		if err != nil {
@@ -1095,7 +1096,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        filename,
+		Filename:    filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
@@ -2760,7 +2761,10 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2850,9 +2854,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 }
 
 type registerBody struct {
-	Username     string `json:"username"`
-	Password	 string `json:"passwordHash"`
-	InviteCode   string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"passwordHash"`
+	InviteCode string `json:"inviteCode"`
 }
 
 func (s *Server) handleRegisterUser(c echo.Context) error {
@@ -2960,9 +2964,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	
-	
-	if user.PassHash != util.GetPasswordHash(body.Password, user.Salt) {
+	//	validate password
+	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+		((user.Salt == "") && (user.PassHash != body.Password)) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2991,7 +2995,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 	}
 
 	salt := uuid.New().String()
-	
+
 	updatedUserColumns := &User{
 		Salt:     salt,
 		PassHash: util.GetPasswordHash(params.NewPassword, salt),
@@ -3447,7 +3451,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	// create DAG respecting directory structure
 	collectionNode := unixfs.EmptyDirNode()
 	for _, c := range contents {
-		dirs, err := util.DirsFromPath(c.Path, c.Name)
+		dirs, err := util.DirsFromPath(c.Path, c.Filename)
 		if err != nil {
 			return err
 		}
@@ -3456,12 +3460,18 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		lastDirNode.AddRawLink(c.Name, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Filename, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return err
+		}
 	}
-	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
+
+	if err := dserv.Add(context.Background(), collectionNode); err != nil {
+		return err
+	} // add new CID to local blockstore
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
@@ -3501,7 +3511,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path as path"). // TODO: change content.name to content.filename
+		Select("contents.*, collection_refs.path as path").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
@@ -3517,7 +3527,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == "" || r.Name == "" {
+		if r.Path == "" || r.Filename == "" {
 			continue
 		}
 
@@ -3538,7 +3548,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			}
 
 			out = append(out, collectionListResponse{
-				Name:      r.Name,
+				Name:      r.Filename,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
@@ -4576,6 +4586,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
@@ -4677,7 +4688,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: rootCID},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      u.ID,
@@ -5037,7 +5048,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
+	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5050,7 +5061,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      req.User,
