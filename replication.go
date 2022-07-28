@@ -2151,15 +2151,14 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 			if propPhase {
 				phase = "propose"
 			}
+
 			cm.recordDealFailure(&DealFailureError{
 				Miner:   m.address,
 				Phase:   phase,
 				Message: err.Error(),
 				Content: content.ID,
 				UserID:  content.UserID,
-			}); err != nil {
-				return fmt.Errorf("failed to record deal failure %w", err)
-			}
+			})
 			continue
 		}
 
