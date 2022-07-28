@@ -13,6 +13,7 @@ import (
 )
 
 const DefaultContentSizeLimit = 34_000_000_000
+const ContentLocationLocal = "local"
 
 type ContentType int64
 
@@ -23,8 +24,8 @@ const (
 )
 
 type ContentInCollection struct {
-	CollectionID   string `json:"coluuid"`
-	CollectionPath string `json:"colpath"`
+	CollectionID  string `json:"coluuid"`
+	CollectionDir string `json:"dir"`
 }
 
 type ContentAddIpfsBody struct {
@@ -45,7 +46,7 @@ type ContentCreateBody struct {
 	ContentInCollection
 
 	Root     string      `json:"root"`
-	Name     string      `json:"name"`
+	Filename string      `json:"filename"`
 	Location string      `json:"location"`
 	Type     ContentType `json:"type"`
 }

@@ -111,23 +111,6 @@ ____________________________________O/_______
 ```
 
 NB: The above commands can be repeated to create and run more shuttle nodes. 
-If you want this shuttle to be part of the shuttle-proxy, then the `--host` option should be set and must point to the shuttle host. Also, the `open` column of the shuttle table in the database will have to be set to `true(1)`
-
-### Initialize & Start a Shuttle-proxy
-
-First build the binary for the shuttle-proxy
-
-```bash
-$ make shuttle-proxy
-```
-
-Then run the shuttle-proxy
-
-```bash
-$ ./shuttle-proxy --logging --controller=http://localhost:3004
-```
-
-NB: Make sure the Estuary node and at least one Estuary-shuttle node is running before running the shuttle-proxy. The `--controller` should point to your Estuary host
 
 ### API
 

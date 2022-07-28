@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -47,16 +48,16 @@ import (
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
-	merkledag "github.com/ipfs/go-merkledag"
+	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
-	car "github.com/ipld/go-car"
+	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	promhttp "github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -71,6 +72,7 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger"
 
 	_ "github.com/application-research/estuary/docs"
+	"github.com/multiformats/go-multihash"
 )
 
 // @title Estuary API
@@ -125,8 +127,6 @@ func (s *Server) ServeAPI() error {
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
 
-	e.GET("/test-error", s.handleTestError)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
@@ -135,7 +135,6 @@ func (s *Server) ServeAPI() error {
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
-	user.GET("/test-error", s.handleTestError)
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
@@ -366,11 +365,6 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 	}
 }
 
-// TODO: delete me when debugging done
-func (s *Server) handleTestError(c echo.Context) error {
-	return fmt.Errorf("i am a scary error, log me please more")
-}
-
 // handleStats godoc
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
@@ -413,7 +407,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
-			Filename: c.Name,
+			Filename: c.Filename,
 		}
 
 		if false {
@@ -612,12 +606,8 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	var params util.ContentAddIpfsBody
@@ -637,11 +627,11 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			return err
 		}
 
-		// if colpath is "" or nil, put the file on the root dir (/filename)
+		// if dir is "" or nil, put the file on the root dir (/filename)
 		defaultPath := "/" + filename
 		colp := defaultPath
-		if params.CollectionPath != "" {
-			p, err := sanitizePath(params.CollectionPath)
+		if params.CollectionDir != "" {
+			p, err := sanitizePath(params.CollectionDir)
 			if err != nil {
 				return err
 			}
@@ -710,35 +700,34 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
+	}
+	if s.CM.localContentAddingDisabled {
+		return s.redirectContentAdding(c, u)
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() {
-		bdWriter := &bytes.Buffer{}
-		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+	// if !u.FlagSplitContent() {
+	// 	bdWriter := &bytes.Buffer{}
+	// 	bdReader := io.TeeReader(c.Request().Body, bdWriter)
 
-		bdSize, err := io.Copy(ioutil.Discard, bdReader)
-		if err != nil {
-			return err
-		}
+	// 	bdSize, err := io.Copy(ioutil.Discard, bdReader)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		if bdSize > util.DefaultContentSizeLimit {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
-			}
-		}
+	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 		return &util.HttpError{
+	// 			Code:    http.StatusBadRequest,
+	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 		}
+	// 	}
 
-		c.Request().Body = ioutil.NopCloser(bdWriter)
-	}
+	// 	c.Request().Body = ioutil.NopCloser(bdWriter)
+	// }
 
 	bsid, sbs, err := s.StagingMgr.AllocNew()
 	if err != nil {
@@ -818,27 +807,18 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Accept       multipart/form-data
 // @Param        file formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
-// @Param        colpath path string false "Collection path"
+// @Param        dir path string false "Directory"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled || s.CM.localContentAddingDisabled {
-		if s.CM.localContentAddingDisabled {
-			uep, err := s.getPreferredUploadEndpoints(u)
-			if err != nil {
-				log.Warnf("failed to get preferred upload endpoints: %s", err)
-			} else if len(uep) > 0 {
-				// details := fmt.Sprintf("this estuary instance has disabled adding new content, please redirect your request to one of the following endpoints: %v", uep)
-				return c.Redirect(http.StatusPermanentRedirect, uep[rand.Intn(len(uep))]) // redirect to a random preferred endpoint
-			}
-		}
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
+	}
+
+	if s.CM.localContentAddingDisabled {
+		return s.redirectContentAdding(c, u)
 	}
 
 	form, err := c.MultipartForm()
@@ -898,7 +878,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	defaultPath := "/"
 	path := &defaultPath
-	if cp := c.QueryParam("colpath"); cp != "" {
+	if cp := c.QueryParam(ColDir); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
@@ -941,7 +921,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	if col != nil {
-		fmt.Println("COLLECTION CREATION: ", col.ID, content.ID)
+		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -979,6 +959,43 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		EstuaryId: content.ID,
 		Providers: s.CM.pinDelegatesForContent(*content),
 	})
+}
+
+func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
+	uep, err := s.getPreferredUploadEndpoints(u)
+	if err != nil {
+		log.Warnf("failed to get preferred upload endpoints: %s", err)
+		return err
+	} else if len(uep) > 0 {
+		//#nosec G404 - crypto/rand it's not necessary for this use case
+		// propagate any query params
+		req, err := http.NewRequest("POST", fmt.Sprintf("%s/content/add", uep[rand.Intn(len(uep))]), c.Request().Body)
+		if err != nil {
+			return err
+		}
+		req.Header = c.Request().Header.Clone()
+		req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return err
+		}
+
+		c.Response().WriteHeader(resp.StatusCode)
+
+		_, err = io.Copy(c.Response().Writer, resp.Body)
+		if err != nil {
+			log.Errorf("proxying content-add body errored: %s", err)
+			return err
+		}
+	} else {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
+			Details: "uploading content to this node is not allowed at the moment",
+		}
+	}
+	return nil
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -1070,7 +1087,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, "local")
+	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, util.ContentLocationLocal)
 }
 
 func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*Content, error) {
@@ -1079,12 +1096,12 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        filename,
+		Filename:    filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
-		Location:    "local",
+		Location:    util.ContentLocationLocal,
 	}
 
 	if err := cm.DB.Create(content).Error; err != nil {
@@ -1262,12 +1279,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var deals []contentDeal
@@ -1457,7 +1470,13 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	v0 := cid.NewCidV0(obj.Hash())
+	v0 := cid.Undef
+	dec, err := multihash.Decode(obj.Hash())
+	if err == nil {
+		if dec.Code == multihash.SHA2_256 || dec.Length == 32 {
+			v0 = cid.NewCidV0(obj.Hash())
+		}
+	}
 	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
 
 	var contents []Content
@@ -1465,7 +1484,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		return err
 	}
 
-	var out []getContentResponse
+	out := make([]getContentResponse, 0)
 	for i, cont := range contents {
 		resp := getContentResponse{
 			Content: &contents[i],
@@ -1697,10 +1716,9 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid); err != nil {
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal.ID); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -2546,12 +2564,8 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
@@ -2588,12 +2602,8 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var sub []Content
@@ -2751,7 +2761,10 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2841,9 +2854,9 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 }
 
 type registerBody struct {
-	Username     string `json:"username"`
-	PasswordHash string `json:"passwordHash"`
-	InviteCode   string `json:"inviteCode"`
+	Username   string `json:"username"`
+	Password   string `json:"passwordHash"`
+	InviteCode string `json:"inviteCode"`
 }
 
 func (s *Server) handleRegisterUser(c echo.Context) error {
@@ -2879,17 +2892,20 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	if exist != nil {
+	if exist != nil && strings.ToLower(exist.Username) == username {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,
 		}
 	}
 
+	salt := uuid.New().String()
+
 	newUser := &User{
 		Username: username,
 		UUID:     uuid.New().String(),
-		PassHash: reg.PasswordHash,
+		Salt:     salt,
+		PassHash: util.GetPasswordHash(reg.Password, salt),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2923,7 +2939,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 type loginBody struct {
 	Username string `json:"username"`
-	PassHash string `json:"passwordHash"`
+	Password string `json:"passwordHash"`
 }
 
 type loginResponse struct {
@@ -2948,7 +2964,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	if user.PassHash != body.PassHash {
+	//	validate password
+	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+		((user.Salt == "") && (user.PassHash != body.Password)) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2967,7 +2985,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 }
 
 type changePasswordParams struct {
-	NewPassHash string `json:"newPasswordHash"`
+	NewPassword string `json:"newPasswordHash"`
 }
 
 func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
@@ -2976,7 +2994,14 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("pass_hash", params.NewPassHash).Error; err != nil {
+	salt := uuid.New().String()
+
+	updatedUserColumns := &User{
+		Salt:     salt,
+		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+	}
+
+	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
 		return err
 	}
 
@@ -3426,7 +3451,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	// create DAG respecting directory structure
 	collectionNode := unixfs.EmptyDirNode()
 	for _, c := range contents {
-		dirs, err := util.DirsFromPath(c.Path, c.Name)
+		dirs, err := util.DirsFromPath(c.Path, c.Filename)
 		if err != nil {
 			return err
 		}
@@ -3435,12 +3460,18 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		lastDirNode.AddRawLink(c.Name, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Filename, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return err
+		}
 	}
-	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
+
+	if err := dserv.Add(context.Background(), collectionNode); err != nil {
+		return err
+	} // add new CID to local blockstore
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
@@ -3465,7 +3496,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Param        coluuid query string true "Collection UUID"
-// @Param        colpath query string false "Directory"
+// @Param        dir query string false "Directory"
 // @Router       /collections/content [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	coluuid := c.QueryParam("coluuid")
@@ -3480,98 +3511,113 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	if err := s.DB.Model(CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path as path"). // TODO: change content.name to content.filename
+		Select("contents.*, collection_refs.path as path").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
 
-	dir := c.QueryParam("colpath")
-	if dir == "" {
+	queryDir := c.QueryParam(ColDir)
+	if queryDir == "" {
 		return c.JSON(http.StatusOK, refs)
 	}
 
-	// if colpath is set, do the content listing
-	dir = filepath.Clean(dir)
+	// if queryDir is set, do the content listing
+	queryDir = filepath.Clean(queryDir)
 
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == "" || r.Name == "" {
+		if r.Path == "" || r.Filename == "" {
 			continue
 		}
 
-		path := r.Path
-		relp, err := filepath.Rel(dir, path)
+		relp, err := getRelativePath(r, queryDir)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, fmt.Errorf("listing CID directories is not allowed"))
+			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
 		}
 
-		// trying to list a CID dir, not allowed
-		if relp == "." && r.Type == util.Directory {
-			return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
-		}
-
-		// if the relative path requires pathing up, its definitely not in this dir
+		// if the relative contentPath requires pathing up, its definitely not in this queryDir
 		if strings.HasPrefix(relp, "..") {
 			continue
 		}
 
-		// TODO: maybe find a way to reuse s.Node or s.gwayHandler.dserv
-		if err != nil { // Can't cast to unixfs node, set type as raw
-			out = append(out, collectionListResponse{
-				Name:   filepath.Base(relp),
-				Type:   Raw,
-				Size:   r.Size,
-				ContID: r.ID,
-				Cid:    &r.Cid,
-			})
-			continue
-		}
-
-		// if CID is a dir, set type as dir and mark dir as listed so we don't list it again
-		if r.Type == util.Directory {
-			if !dirs[relp] {
-				dirs[relp] = true
-				out = append(out, collectionListResponse{
-					Name:   relp,
-					Type:   Dir,
-					Size:   r.Size,
-					ContID: r.ID,
-					Cid:    &r.Cid,
-				})
+		if relp == "." { // Query directory is the complete path containing the content.
+			// trying to list a CID queryDir, not allowed
+			if r.Type == util.Directory {
+				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
-			continue
-		}
 
-		// if relative path has a /, the file is in a subdirectory
-		// print the directory the file is in if we haven't already
-		if strings.Contains(relp, "/") {
-			parts := strings.Split(relp, "/")
-			subDir := parts[0]
+			out = append(out, collectionListResponse{
+				Name:      r.Filename,
+				Size:      r.Size,
+				ContID:    r.ID,
+				Cid:       &util.DbCID{CID: r.Cid.CID},
+				Dir:       queryDir,
+				ColUuid:   coluuid,
+				UpdatedAt: r.UpdatedAt,
+			})
+		} else { // Query directory has a subdirectory, which contains the actual content.
+
+			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
+			//if r.Type == util.Directory {
+			//	if !dirs[relp] {
+			//		dirs[relp] = true
+			//		out = append(out, collectionListResponse{
+			//			Name:    relp,
+			//			Type:    Dir,
+			//			Size:    r.Size,
+			//			ContID:  r.ID,
+			//			Cid:     &r.Cid,
+			//			Dir:     queryDir,
+			//			ColUuid: coluuid,
+			//		})
+			//	}
+			//	continue
+			//}
+
+			// if relative contentPath has a /, the file is in a subdirectory
+			// print the directory the file is in if we haven't already
+			var subDir string
+			if strings.Contains(relp, "/") {
+				parts := strings.Split(relp, "/")
+				subDir = parts[0]
+			} else {
+				subDir = relp
+			}
 			if !dirs[subDir] {
 				dirs[subDir] = true
 				out = append(out, collectionListResponse{
-					Name: parts[0],
-					Type: Dir,
+					Name:    subDir,
+					Type:    Dir,
+					Dir:     queryDir,
+					ColUuid: coluuid,
 				})
 				continue
 			}
 		}
 
-		var contentType CidType
-		contentType = File
-		if r.Type == util.Directory {
-			contentType = Dir
-		}
-		out = append(out, collectionListResponse{
-			Name:   r.Name,
-			Type:   contentType,
-			Size:   r.Size,
-			ContID: r.ID,
-			Cid:    &util.DbCID{CID: r.Cid.CID},
-		})
+		//var contentType CidType
+		//contentType = File
+		//if r.Type == util.Directory {
+		//	contentType = Dir
+		//}
+		//out = append(out, collectionListResponse{
+		//	Name:    r.Name,
+		//	Type:    contentType,
+		//	Size:    r.Size,
+		//	ContID:  r.ID,
+		//	Cid:     &util.DbCID{CID: r.Cid.CID},
+		//	Dir:     queryDir,
+		//	ColUuid: coluuid,
+		//})
 	}
 	return c.JSON(http.StatusOK, out)
+}
+
+func getRelativePath(r ContentWithPath, queryDir string) (string, error) {
+	contentPath := r.Path
+	relp, err := filepath.Rel(queryDir, contentPath)
+	return relp, err
 }
 
 // handleDeleteCollection godoc
@@ -3594,12 +3640,8 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 		}
 	}
 
-	if col.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified collection",
-		}
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
@@ -3683,11 +3725,13 @@ func (s *Server) handleAdminGetUsers(c echo.Context) error {
 }
 
 type publicStatsResponse struct {
-	TotalStorage       int64 `json:"totalStorage"`
-	TotalFilesStored   int64 `json:"totalFiles"`
-	DealsOnChain       int64 `json:"dealsOnChain"`
-	TotalObjectsRef    int64 `json:"totalObjectsRef"`
-	TotalBytesUploaded int64 `json:"totalBytesUploaded"`
+	TotalStorage       sql.NullInt64 `json:"totalStorage"`
+	TotalFilesStored   sql.NullInt64 `json:"totalFiles"`
+	DealsOnChain       sql.NullInt64 `json:"dealsOnChain"`
+	TotalObjectsRef    sql.NullInt64 `json:"totalObjectsRef"`
+	TotalBytesUploaded sql.NullInt64 `json:"totalBytesUploaded"`
+	TotalUsers         sql.NullInt64 `json:"totalUsers"`
+	TotalStorageMiner  sql.NullInt64 `json:"totalStorageMiners"`
 }
 
 // handlePublicStats godoc
@@ -3709,12 +3753,24 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	// reuse the original stats and add the ones from the extensive lookup function.
 	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 	val.(*publicStatsResponse).TotalBytesUploaded = valExt.(*publicStatsResponse).TotalBytesUploaded
+	val.(*publicStatsResponse).TotalUsers = valExt.(*publicStatsResponse).TotalUsers
+	val.(*publicStatsResponse).TotalStorageMiner = valExt.(*publicStatsResponse).TotalStorageMiner
 
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, val)
+	jsonResponse := map[string]interface{}{
+		"totalStorage":       val.(*publicStatsResponse).TotalStorage.Int64,
+		"totalFilesStored":   val.(*publicStatsResponse).TotalFilesStored.Int64,
+		"dealsOnChain":       val.(*publicStatsResponse).DealsOnChain.Int64,
+		"totalObjectsRef":    val.(*publicStatsResponse).TotalObjectsRef.Int64,
+		"totalBytesUploaded": val.(*publicStatsResponse).TotalBytesUploaded.Int64,
+		"totalUsers":         val.(*publicStatsResponse).TotalUsers.Int64,
+		"totalStorageMiner":  val.(*publicStatsResponse).TotalStorageMiner.Int64,
+	}
+
+	return c.JSON(http.StatusOK, jsonResponse)
 }
 
 func (s *Server) computePublicStats() (*publicStatsResponse, error) {
@@ -3723,11 +3779,11 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored).Error; err != nil {
+	if err := s.DB.Model(Content{}).Where("active and not aggregate").Count(&stats.TotalFilesStored.Int64).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain).Error; err != nil {
+	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -3738,11 +3794,19 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 	var stats publicStatsResponse
 
 	//	this can be resource expensive but we are already caching it.
-	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef).Error; err != nil {
+	if err := s.DB.Table("obj_refs").Count(&stats.TotalObjectsRef.Int64).Error; err != nil {
 		return nil, err
 	}
 
-	if err := s.DB.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded).Error; err != nil {
+	if err := s.DB.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded.Int64).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Model(User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
+		return nil, err
+	}
+
+	if err := s.DB.Table("storage_miners").Count(&stats.TotalStorageMiner.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -4110,7 +4174,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		fixedAggregateSize = true
 	}
 
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
 			"content":            cont,
@@ -4398,10 +4462,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			}
 
 			go func(msg *drpc.Message) {
-				if err := s.CM.processShuttleMessage(shuttle.Handle, msg); err != nil {
-					log.Errorf("failed to process message from shuttle: %s", err)
-					return
-				}
+				msg.Handle = shuttle.Handle
+				s.CM.IncomingRPCMessages <- msg
 			}(&msg)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
@@ -4524,6 +4586,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
@@ -4618,16 +4681,14 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 			return err
 		}
 
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: fmt.Sprintf("attempted to create content in collection %s not owned by the user (%d)", c, u.ID),
+		if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+			return err
 		}
 	}
 
 	content := &Content{
 		Cid:         util.DbCID{CID: rootCID},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      u.ID,
@@ -4640,11 +4701,11 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 	}
 
 	if req.CollectionID != "" {
-		if req.CollectionPath == "" {
-			req.CollectionPath = "/"
+		if req.CollectionDir == "" {
+			req.CollectionDir = "/"
 		}
 
-		sp, err := sanitizePath(req.CollectionPath)
+		sp, err := sanitizePath(req.CollectionDir)
 		if err != nil {
 			return err
 		}
@@ -4987,7 +5048,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
+	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5000,7 +5061,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Name:        req.Name,
+		Filename:    req.Filename,
 		Active:      false,
 		Pinning:     false,
 		UserID:      req.User,
@@ -5115,17 +5176,21 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Raw  CidType = "raw"
-	File         = "file"
-	Dir          = "directory"
+	Raw    CidType = "raw"
+	File           = "file"
+	Dir            = "directory"
+	ColDir         = "dir"
 )
 
 type collectionListResponse struct {
-	Name   string      `json:"name"`
-	Type   CidType     `json:"type"`
-	Size   int64       `json:"size"`
-	ContID uint        `json:"contId"`
-	Cid    *util.DbCID `json:"cid,omitempty"`
+	Name      string      `json:"name"`
+	Type      CidType     `json:"type"`
+	Size      int64       `json:"size"`
+	ContID    uint        `json:"contId"`
+	Cid       *util.DbCID `json:"cid,omitempty"`
+	Dir       string      `json:"dir"`
+	ColUuid   string      `json:"coluuid"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 func sanitizePath(p string) (string, error) {
@@ -5168,12 +5233,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if col.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified collection",
-		}
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	var content Content
@@ -5181,12 +5242,8 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var path *string
@@ -5250,7 +5307,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", err
 	}
 
-	if cont.Location == "local" {
+	if cont.Location == util.ContentLocationLocal {
 		return "", nil
 	}
 
@@ -5309,4 +5366,8 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
 	}
 	return out, nil
+}
+
+func (s *Server) isContentAddingDisabled(u *User) bool {
+	return s.CM.contentAddingDisabled || u.StorageDisabled
 }

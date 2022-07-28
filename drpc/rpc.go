@@ -155,6 +155,7 @@ type Message struct {
 	Op           string
 	Params       MsgParams
 	TraceCarrier *TraceCarrier `json:",omitempty"`
+	Handle       string
 }
 
 // HasTraceCarrier returns true iff Message `m` contains a trace.

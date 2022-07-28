@@ -32,7 +32,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Infof("handling rpc command: %s", cmd.Op)
+	log.Debugf("handling rpc command: %s", cmd.Op)
 	switch cmd.Op {
 	case drpc.CMD_AddPin:
 		return d.handleRpcAddPin(ctx, cmd.Params.AddPin)
@@ -67,7 +67,7 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Infof("sending rpc message: %s", msg.Op)
+	log.Debugf("sending rpc message: %s", msg.Op)
 	select {
 	case d.outgoing <- msg:
 		return nil
@@ -109,7 +109,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// that notification
 
 			if err := d.sendRpcMessage(ctx, &drpc.Message{
-				Op: "UpdatePinStatus",
+				Op: drpc.OP_UpdatePinStatus,
 				Params: drpc.MsgParams{
 					UpdatePinStatus: &drpc.UpdatePinStatus{
 						DBID:   contid,
@@ -401,7 +401,6 @@ func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.
 	if err != nil {
 		return fmt.Errorf("preparing for data request: %w", err)
 	}
-
 	return nil
 }
 
@@ -416,7 +415,6 @@ func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc
 	if err != nil {
 		return fmt.Errorf("cleaning up prepared request: %w", err)
 	}
-
 	return nil
 }
 
@@ -468,7 +466,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	if st.State != nil {
 		extra = fmt.Sprintf("%d %s", st.State.Status, st.State.Message)
 	}
-	log.Infof("sending transfer status update: %d %s", st.DealDBID, extra)
+	log.Debugf("sending transfer status update: %d %s", st.DealDBID, extra)
 	if err := d.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_TransferStatus,
 		Params: drpc.MsgParams{
@@ -522,7 +520,6 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinCont
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -640,7 +637,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 }
 
 func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
-	log.Infof("restarting data transfer: %s", req.ChanID)
+	log.Debugf("restarting data transfer: %s", req.ChanID)
 	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
 	if err != nil {
 		return err
@@ -650,9 +647,9 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			Chanid: req.ChanID.String(),
 			State:  st,
+			Failed: true,
 		})
 		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 	}
-
 	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }

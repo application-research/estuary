@@ -37,9 +37,9 @@ type Shuttle struct {
 }
 
 type ShuttleConnection struct {
-	handle  string
-	cmds    chan *drpc.Command
-	closing chan struct{}
+	handle string
+	cmds   chan *drpc.Command
+	ctx    context.Context
 
 	hostname string
 	addrInfo peer.AddrInfo
@@ -54,11 +54,11 @@ type ShuttleConnection struct {
 	pinQueueLength int64
 }
 
-func (dc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
+func (sc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
 	select {
-	case dc.cmds <- cmd:
+	case sc.cmds <- cmd:
 		return nil
-	case <-dc.closing:
+	case <-sc.ctx.Done():
 		return ErrNoShuttleConnection
 	case <-ctx.Done():
 		return ctx.Err()
@@ -89,33 +89,60 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		return nil, nil, err
 	}
 
-	d := &ShuttleConnection{
+	ctx, cancel := context.WithCancel(context.Background())
+
+	sc := &ShuttleConnection{
 		handle:   handle,
 		address:  hello.Address,
 		addrInfo: hello.AddrInfo,
 		hostname: hello.Host,
 		cmds:     make(chan *drpc.Command, 32),
-		closing:  make(chan struct{}),
+		ctx:      ctx,
 		private:  hello.Private,
 	}
 
-	cm.shuttles[handle] = d
+	// when a shuttle connects, refresh its pin queue
+	if !cm.contentAddingDisabled {
+		go func() {
+			if err := cm.refreshPinQueue(ctx, handle); err != nil {
+				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)
+			}
+		}()
+	}
 
-	return d.cmds, func() {
-		close(d.closing)
+	cm.shuttles[handle] = sc
+
+	return sc.cmds, func() {
+		cancel()
 		cm.shuttlesLk.Lock()
 		outd, ok := cm.shuttles[handle]
 		if ok {
-			if outd == d {
+			if outd == sc {
 				delete(cm.shuttles, handle)
 			}
 		}
 		cm.shuttlesLk.Unlock()
-
 	}, nil
 }
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
+
+func (cm *ContentManager) handleShuttleMessages(ctx context.Context, numHandlers int) {
+	for i := 1; i <= numHandlers; i++ {
+		go func() {
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case msg := <-cm.IncomingRPCMessages:
+					if err := cm.processShuttleMessage(msg.Handle, msg); err != nil {
+						log.Errorf("failed to process message from shuttle: %s", err)
+					}
+				}
+			}
+		}()
+	}
+}
 
 func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message) error {
 	ctx := context.TODO()
@@ -129,7 +156,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
-	log.Infof("handling shuttle message: %s", msg.Op)
+	log.Debugf("handling shuttle message: %s", msg.Op)
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
 		ups := msg.Params.UpdatePinStatus
@@ -231,14 +258,14 @@ func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string,
 
 func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	cm.shuttlesLk.Lock()
-	d, ok := cm.shuttles[handle]
+	sc, ok := cm.shuttles[handle]
 	cm.shuttlesLk.Unlock()
 	if !ok {
 		return false
 	}
 
 	select {
-	case <-d.closing:
+	case <-sc.ctx.Done():
 		return false
 	default:
 		return true
@@ -304,12 +331,12 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 
-	log.Infow("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
 func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
-	log.Infof("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
+	log.Debugf("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
 
 	var cd contentDeal
 	if param.DealDBID != 0 {
@@ -340,11 +367,17 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		cm.updateTransferStatus(ctx, handle, cd.ID, &filclient.ChannelState{
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+			"failed":    true,
+			"failed_at": time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+
+		param.State = &filclient.ChannelState{
 			Status:  datatransfer.Failed,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
-		})
-		return nil
+		}
 	}
 	cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	return nil

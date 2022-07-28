@@ -57,7 +57,7 @@ func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*ty
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
 				CID:     cont.Cid.CID.String(),
-				Name:    cont.Name,
+				Name:    cont.Filename,
 				Meta:    meta,
 				Origins: originStrs,
 			},
@@ -81,7 +81,7 @@ func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*ty
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
-	if cont.Location == "local" {
+	if cont.Location == util.ContentLocationLocal {
 		var out []string
 		for _, a := range cm.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
@@ -129,7 +129,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-	dsess := merkledag.NewSession(ctx, dserv)
+	dsess := dserv.Session(ctx)
 
 	if err := s.CM.addDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
 		return err
@@ -155,40 +155,41 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 	return s.CM.UpdatePinStatus(location, contID, status)
 }
 
-func (cm *ContentManager) refreshPinQueue() error {
-	var toPin []Content
-	if err := cm.DB.Find(&toPin, "active = false and pinning = true and not aggregate").Error; err != nil {
+func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string) error {
+	log.Infof("trying to refresh pin queue for %s contents", contentLoc)
+
+	var contents []Content
+	if err := cm.DB.Find(&contents, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
 		return err
 	}
 
-	// TODO: this doesnt persist the replacement directives, so a queued
-	// replacement, if ongoing during a restart of the node, will still
-	// complete the pin when the process comes back online, but it wont delete
-	// the old pin.
-	// Need to fix this, probably best option is just to add a 'replace' field
-	// to content, could be interesting to see the graph of replacements
-	// anyways
 	makeDeal := true
-	for _, c := range toPin {
-		var origins []*peer.AddrInfo
-		// when refreshing pinning queue, use content origins if available
-		if c.Origins != "" {
-			_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
-		}
+	for _, c := range contents {
+		select {
+		case <-ctx.Done():
+			log.Debugf("refresh pin queue canceled for %s contents", contentLoc)
+			return nil
+		default:
+			var origins []*peer.AddrInfo
+			// when refreshing pinning queue, use content origins if available
+			if c.Origins != "" {
+				_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
+			}
 
-		if c.Location == "local" {
-			cm.addPinToQueue(c, origins, 0, makeDeal)
-		} else {
-			if err := cm.pinContentOnShuttle(context.TODO(), c, origins, 0, c.Location, makeDeal); err != nil {
-				log.Errorf("failed to send pin message to shuttle: %s", err)
-				time.Sleep(time.Millisecond * 100)
+			if c.Location == util.ContentLocationLocal {
+				cm.addPinToQueue(c, origins, 0, makeDeal)
+			} else {
+				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
+					log.Errorf("failed to send pin message to shuttle: %s", err)
+					time.Sleep(time.Millisecond * 100)
+				}
 			}
 		}
 	}
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -221,7 +222,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 
 	cont := Content{
 		Cid:         util.DbCID{CID: obj},
-		Name:        name,
+		Filename:    filename,
 		UserID:      user,
 		Active:      false,
 		Replication: cm.Replication,
@@ -247,7 +248,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	if loc == "local" {
+	if loc == util.ContentLocationLocal {
 		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
@@ -258,7 +259,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 }
 
 func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
-	if cont.Location != "local" {
+	if cont.Location != util.ContentLocationLocal {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
 
@@ -266,7 +267,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, re
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
+		Name:     cont.Filename,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
@@ -309,7 +310,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content,
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
+		Name:     cont.Filename,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
@@ -372,8 +373,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-
-		return "local", nil
+		return util.ContentLocationLocal, nil
 	}
 
 	// TODO: take into account existing staging zones and their primary
@@ -424,8 +424,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont C
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-
-		return "local", nil
+		return util.ContentLocationLocal, nil
 	}
 
 	// prefer the shuttle the content is already on
@@ -670,12 +669,8 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	ctx := e.Request().Context()
 
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	var pin types.IpfsPin
@@ -757,12 +752,8 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	st, err := s.CM.pinStatus(content, nil)
@@ -780,12 +771,9 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *User) error {
-	if s.CM.contentAddingDisabled || u.StorageDisabled {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	pinID, err := strconv.Atoi(e.Param("pinid"))
@@ -810,12 +798,8 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	var origins []*peer.AddrInfo
@@ -865,12 +849,8 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	if content.UserID != u.ID {
-		return &util.HttpError{
-			Code:    http.StatusForbidden,
-			Reason:  util.ERR_NOT_AUTHORIZED,
-			Details: "user is not owner of specified content",
-		}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore

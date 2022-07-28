@@ -67,7 +67,7 @@ type Content struct {
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Cid         util.DbCID       `json:"cid"`
-	Name        string           `json:"name"`
+	Filename    string           `json:"filename"`
 	UserID      uint             `json:"userId" gorm:"index"`
 	Description string           `json:"description"`
 	Size        int64            `json:"size"`
@@ -159,6 +159,24 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 	}
 }
 
+func before(cctx *cli.Context) error {
+	level := util.LogLevel
+
+	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("estuary", level)
+	_ = logging.SetLogLevel("paych", level)
+	_ = logging.SetLogLevel("filclient", level)
+	_ = logging.SetLogLevel("dt_graphsync", level)
+	_ = logging.SetLogLevel("dt-chanmon", level)
+	_ = logging.SetLogLevel("markets", level)
+	_ = logging.SetLogLevel("data_transfer_network", level)
+	_ = logging.SetLogLevel("rpc", level)
+	_ = logging.SetLogLevel("bs-wal", level)
+	_ = logging.SetLogLevel("provider.batched", level)
+	_ = logging.SetLogLevel("bs-migrate", level)
+	return nil
+}
+
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary) error {
 	for _, flag := range flags {
 		name := flag.Names()[0]
@@ -244,6 +262,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
+		case "shuttle-message-handlers":
+			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
 
 		default:
 		}
@@ -255,20 +275,6 @@ func main() {
 	//set global time to UTC
 	utc, _ := time.LoadLocation("UTC")
 	time.Local = utc
-
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("estuary", "debug")
-	logging.SetLogLevel("paych", "debug")
-	logging.SetLogLevel("filclient", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	//logging.SetLogLevel("graphsync_allocator", "debug")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("markets", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("rpc", "info")
-	logging.SetLogLevel("bs-wal", "info")
-	logging.SetLogLevel("provider.batched", "info")
-	logging.SetLogLevel("bs-migrate", "info")
 
 	hDir, err := homedir.Dir()
 	if err != nil {
@@ -282,7 +288,10 @@ func main() {
 
 	app.Usage = "Estuary server CLI"
 
+	app.Before = before
+
 	app.Flags = []cli.Flag{
+		util.FlagLogLevel,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
@@ -439,6 +448,11 @@ func main() {
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
+		&cli.IntFlag{
+			Name:  "shuttle-message-handlers",
+			Usage: "sets shuttle message handler count",
+			Value: cfg.ShuttleMessageHandlers,
+		},
 	}
 	app.Commands = []*cli.Command{
 		{
@@ -463,7 +477,8 @@ func main() {
 				})
 
 				username := "admin"
-				passHash := ""
+				password := ""
+				salt:= ""
 
 				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
@@ -472,7 +487,8 @@ func main() {
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					PassHash: passHash,
+					Salt:	  salt,
+					PassHash: util.GetPasswordHash(password, salt),
 					Perm:     100,
 				}
 				if err := db.Create(newUser).Error; err != nil {
@@ -549,7 +565,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -638,17 +657,12 @@ func main() {
 		}
 
 		go cm.ContentWatcher()
+		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
+		// refresh pin queue for local contents
 		if !cm.contentAddingDisabled {
 			go func() {
-				// TODO - resume pin removal request
-
-				// wait for shuttles to reconnect
-				// This is a bit of a hack, and theres probably a better way to
-				// solve this. but its good enough for now
-				time.Sleep(time.Second * 10)
-
-				if err := cm.refreshPinQueue(); err != nil {
+				if err := cm.refreshPinQueue(cctx.Context, util.ContentLocationLocal); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)
 				}
 			}()
@@ -670,7 +684,7 @@ func main() {
 		go func() {
 			time.Sleep(time.Second * 10)
 
-			if err := s.RestartAllTransfersForLocation(context.TODO(), "local"); err != nil {
+			if err := s.RestartAllTransfersForLocation(cctx.Context, util.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
@@ -679,7 +693,7 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		log.Fatalf("could not run esturay app: %+v", err)
+		log.Fatalf("could not run estuary app: %+v", err)
 	}
 }
 
@@ -699,29 +713,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
-
-	db.AutoMigrate(&contentDeal{})
-	db.AutoMigrate(&dfeRecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&util.RetrievalFailureRecord{})
-	db.AutoMigrate(&retrievalSuccessRecord{})
-
-	db.AutoMigrate(&minerStorageAsk{})
-	db.AutoMigrate(&storageMiner{})
-
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
-
-	db.AutoMigrate(&Shuttle{})
-
-	db.AutoMigrate(&Autoretrieve{})
+	if err = migrateSchemas(db); err != nil {
+		return nil, err
+	}
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
@@ -741,6 +735,31 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 
 	}
 	return db, nil
+}
+
+func migrateSchemas(db *gorm.DB) error {
+	if err := db.AutoMigrate(
+		&Content{},
+		&Object{},
+		&ObjRef{},
+		&Collection{},
+		&CollectionRef{},
+		&contentDeal{},
+		&dfeRecord{},
+		&PieceCommRecord{},
+		&proposalRecord{},
+		&util.RetrievalFailureRecord{},
+		&retrievalSuccessRecord{},
+		&minerStorageAsk{},
+		&storageMiner{},
+		&User{},
+		&AuthToken{},
+		&InviteCode{},
+		&Shuttle{},
+		&Autoretrieve{}); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Server struct {
@@ -820,16 +839,15 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid); err != nil {
+		if err := s.CM.RestartTransfer(ctx, loc, chid, d.ID); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
 		}
 	}
-
 	return nil
 }
 
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, dealID uint) error {
 	if loc == "local" {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
@@ -837,12 +855,16 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		}
 
 		if util.TransferTerminated(st) {
-			return fmt.Errorf("deal in database as being in progress, but data transfer is terminated: %d", st.Status)
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
+				"failed":    true,
+				"failed_at": time.Now(),
+			}).Error; err != nil {
+				return err
+			}
+			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %d", st.Status)
 		}
-
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-
 	return cm.sendRestartTransferCmd(ctx, loc, chanid)
 }
 

@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
@@ -64,7 +65,7 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
 	uio "github.com/ipfs/go-unixfs/io"
-	car "github.com/ipld/go-car"
+	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
@@ -75,6 +76,32 @@ import (
 var appVersion string
 
 var log = logging.Logger("shuttle").With("app_version", appVersion)
+
+const (
+	ColUuid = "coluuid"
+	ColDir  = "dir"
+)
+
+//#nosec G104 - it's not common to treat SetLogLevel error return
+func before(cctx *cli.Context) error {
+	level := util.LogLevel
+
+	logging.SetLogLevel("dt-impl", level)
+	logging.SetLogLevel("shuttle", level)
+	logging.SetLogLevel("paych", level)
+	logging.SetLogLevel("filclient", level)
+	logging.SetLogLevel("dt_graphsync", level)
+	logging.SetLogLevel("graphsync_allocator", level)
+	logging.SetLogLevel("dt-chanmon", level)
+	logging.SetLogLevel("markets", level)
+	logging.SetLogLevel("data_transfer_network", level)
+	logging.SetLogLevel("rpc", level)
+	logging.SetLogLevel("bs-wal", level)
+	logging.SetLogLevel("bs-migrate", level)
+	logging.SetLogLevel("rcmgr", level)
+
+	return nil
+}
 
 func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle) error {
 	for _, flag := range flags {
@@ -163,20 +190,6 @@ func main() {
 	utc, _ := time.LoadLocation("UTC")
 	time.Local = utc
 
-	logging.SetLogLevel("dt-impl", "debug")
-	logging.SetLogLevel("shuttle", "debug")
-	logging.SetLogLevel("paych", "debug")
-	logging.SetLogLevel("filclient", "debug")
-	logging.SetLogLevel("dt_graphsync", "debug")
-	logging.SetLogLevel("graphsync_allocator", "info")
-	logging.SetLogLevel("dt-chanmon", "debug")
-	logging.SetLogLevel("markets", "debug")
-	logging.SetLogLevel("data_transfer_network", "debug")
-	logging.SetLogLevel("rpc", "info")
-	logging.SetLogLevel("bs-wal", "info")
-	logging.SetLogLevel("bs-migrate", "info")
-	logging.SetLogLevel("rcmgr", "debug")
-
 	hDir, err := homedir.Dir()
 	if err != nil {
 		log.Fatalf("could not determine homedir for shuttle app: %+v", err)
@@ -187,7 +200,10 @@ func main() {
 
 	cfg := config.NewShuttle(appVersion)
 
+	app.Before = before
+
 	app.Flags = []cli.Flag{
+		util.FlagLogLevel,
 		&cli.StringFlag{
 			Name:  "repo",
 			Value: "~/.lotus",
@@ -386,7 +402,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -788,10 +807,14 @@ func (d *Shuttle) RunRpcConnection() error {
 	}
 }
 
-func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
-	defer conn.Close()
+	defer func() {
+		if errC := conn.Close(); errC != nil {
+			err = errC
+		}
+	}()
 
 	readDone := make(chan struct{})
 
@@ -828,11 +851,16 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 		case <-readDone:
 			return fmt.Errorf("read routine exited, assuming socket is closed")
 		case msg := <-d.outgoing:
-			conn.SetWriteDeadline(time.Now().Add(time.Second * 30))
+			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+
+			}
 			if err := websocket.JSON.Send(conn, msg); err != nil {
 				log.Errorf("failed to send message: %s", err)
 			}
-			conn.SetWriteDeadline(time.Time{})
+			if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+			}
 		}
 	}
 }
@@ -1107,6 +1135,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
@@ -1150,7 +1179,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	fname := mpf.Filename
+	filename := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
@@ -1158,8 +1187,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+		CollectionID:  c.QueryParam(ColUuid),
+		CollectionDir: c.QueryParam(ColDir),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1183,7 +1212,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, cic)
+	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1265,25 +1294,25 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() {
-		bdWriter := &bytes.Buffer{}
-		bdReader := io.TeeReader(c.Request().Body, bdWriter)
+	// if !u.FlagSplitContent() {
+	// 	bdWriter := &bytes.Buffer{}
+	// 	bdReader := io.TeeReader(c.Request().Body, bdWriter)
 
-		bdSize, err := io.Copy(ioutil.Discard, bdReader)
-		if err != nil {
-			return err
-		}
+	// 	bdSize, err := io.Copy(ioutil.Discard, bdReader)
+	// 	if err != nil {
+	// 		return err
+	// 	}
 
-		if bdSize > util.DefaultContentSizeLimit {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-				Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
-			}
-		}
+	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 		return &util.HttpError{
+	// 			Code:    http.StatusBadRequest,
+	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 		}
+	// 	}
 
-		c.Request().Body = ioutil.NopCloser(bdWriter)
-	}
+	// 	c.Request().Body = ioutil.NopCloser(bdWriter)
+	// }
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
 	if err != nil {
@@ -1310,9 +1339,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	// TODO: how to specify filename?
-	fname := header.Roots[0].String()
+	filename := header.Roots[0].String()
 	if qpname := c.QueryParam("filename"); qpname != "" {
-		fname = qpname
+		filename = qpname
 	}
 
 	bserv := blockservice.New(bs, nil)
@@ -1320,9 +1349,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
-		CollectionID:   c.QueryParam("coluuid"),
-		CollectionPath: c.QueryParam("colpath"),
+	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
+		CollectionID:  c.QueryParam(ColUuid),
+		CollectionDir: c.QueryParam(ColDir),
 	})
 	if err != nil {
 		return err
@@ -1375,13 +1404,13 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
-	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, fname, cic)
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
-		Name:                fname,
+		Filename:            filename,
 		Location:            s.shuttleHandle,
 	})
 	if err != nil {
@@ -1422,7 +1451,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1431,7 +1460,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
 			Root:     root.String(),
-			Name:     fname,
+			Filename: filename,
 			Location: s.shuttleHandle,
 		},
 
@@ -1490,7 +1519,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 
 	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
-	dsess := merkledag.NewSession(ctx, dserv)
+	dsess := dserv.Session(ctx)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
 		// pinning failed, we wont try again. mark pin as dead
@@ -1642,7 +1671,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Infof("updating pin status: %d %s", cont, status)
+	log.Debugf("updating pin status: %d %s", cont, status)
 	if status == types.PinningStatusFailed {
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
@@ -1655,7 +1684,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 
 	go func() {
 		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-			Op: "UpdatePinStatus",
+			Op: drpc.OP_UpdatePinStatus,
 			Params: drpc.MsgParams{
 				UpdatePinStatus: &drpc.UpdatePinStatus{
 					DBID:   cont,
@@ -1959,7 +1988,10 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

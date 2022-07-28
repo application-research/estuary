@@ -55,14 +55,14 @@ definitions:
     type: object
   main.importDealBody:
     properties:
-      colpath:
-        type: string
       coluuid:
         type: string
       dealIDs:
         items:
           type: integer
         type: array
+      dir:
+        type: string
       name:
         type: string
     type: object
@@ -75,9 +75,9 @@ definitions:
     type: object
   util.ContentAddIpfsBody:
     properties:
-      colpath:
-        type: string
       coluuid:
+        type: string
+      dir:
         type: string
       filename:
         type: string
@@ -259,7 +259,7 @@ paths:
           type: string
         - description: Directory
           in: query
-          name: colpath
+          name: dir
           type: string
       produces:
         - application/json
@@ -376,9 +376,9 @@ paths:
           in: path
           name: coluuid
           type: string
-        - description: Collection path
+        - description: Directory
           in: path
-          name: colpath
+          name: dir
           type: string
       produces:
         - application/json
