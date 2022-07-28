@@ -2139,8 +2139,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				return fmt.Errorf("failed to delete deal proposal from db: %w", err)
 			}
 
+			// Clean up the preparation for deal request - deal protocol v120
 			if cleanupDealPrep != nil {
-				// Clean up the preparation for deal request
 				if err := cleanupDealPrep(); err != nil {
 					log.Errorw("cleaning up deal prepared request", "error", err)
 				}
@@ -2152,13 +2152,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Conte
 				phase = "propose"
 			}
 
-			cm.recordDealFailure(&DealFailureError{
+			if err = cm.recordDealFailure(&DealFailureError{
 				Miner:   m.address,
 				Phase:   phase,
 				Message: err.Error(),
 				Content: content.ID,
 				UserID:  content.UserID,
-			})
+			}); err != nil {
+				log.Errorw("failed to record deail failure", "error", err)
+			}
 			continue
 		}
 
@@ -2276,27 +2278,25 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content
 
 	proto, err := cm.FilClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
-		cm.recordDealFailure(&DealFailureError{
+		return 0, cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
 			Phase:   "deal-protocol-version",
 			Message: err.Error(),
 			Content: content.ID,
 			UserID:  content.UserID,
 		})
-		return 0, err
 	}
 
 	_, ok := cm.EnabledDealProtocolsVersions[proto]
 	if !ok {
 		err = fmt.Errorf("miner deal protocol:%s is not currently enabeld", proto)
-		cm.recordDealFailure(&DealFailureError{
+		return 0, cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
 			Phase:   "deal-protocol-version",
 			Message: err.Error(),
 			Content: content.ID,
 			UserID:  content.UserID,
 		})
-		return 0, err
 	}
 
 	ask, err := cm.FilClient.GetAsk(ctx, miner)
