@@ -2,10 +2,10 @@ package autoretrieve
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io"
-	"math/rand"
-	"strconv"
+	"math/big"
 	"strings"
 	"time"
 
@@ -145,14 +145,20 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	newEngine.db = db
 
 	// start engine
-	newEngine.Start(newEngine.context)
+	if err := newEngine.Start(newEngine.context); err != nil {
+		return nil, err
+	}
 
 	return newEngine, nil
 }
 
 func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
-	newContextID := []byte(ar.Handle + "_" + strconv.Itoa(rand.Intn(100000)))
+	nBig, err := rand.Int(rand.Reader, big.NewInt(10000000000))
+	if err != nil {
+		panic(err)
+	}
+	newContextID := []byte(ar.Handle + "_" + nBig.String())
 
 	retrievalAddresses := []string{}
 	providerID := ""
