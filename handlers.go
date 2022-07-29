@@ -961,39 +961,40 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	})
 }
 
+// redirectContentAdding is called when localContentAddingDisabled is true
+// it finds available shuttles and adds the desired content in one of them
 func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
-		log.Warnf("failed to get preferred upload endpoints: %s", err)
-		return err
-	} else if len(uep) > 0 {
-		// propagate any query params
-		req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
-		if err != nil {
-			return err
-		}
-		req.Header = c.Request().Header.Clone()
-		req.URL.RawQuery = c.Request().URL.Query().Encode()
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-
-		c.Response().WriteHeader(resp.StatusCode)
-
-		_, err = io.Copy(c.Response().Writer, resp.Body)
-		if err != nil {
-			log.Errorf("proxying content-add body errored: %s", err)
-			return err
-		}
-	} else {
+		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+	}
+	if len(uep) <= 0 {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
 			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
+	// propagate any query params
+	req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
+	if err != nil {
+		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+	}
+	req.Header = c.Request().Header.Clone()
+	req.URL.RawQuery = c.Request().URL.Query().Encode()
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+	}
+
+	c.Response().WriteHeader(resp.StatusCode)
+
+	_, err = io.Copy(c.Response().Writer, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+	}
+
 	return nil
 }
 
