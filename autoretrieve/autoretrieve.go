@@ -22,6 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const QueryNewCIDs string = "select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?);"
+
 type Autoretrieve struct {
 	gorm.Model
 
@@ -82,7 +84,7 @@ func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
 // Returns an error if failed
 func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
 	var newCids []cid.Cid
-	err := db.Raw("select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?);", lastAdvertisement).
+	err := db.Raw(QueryNewCIDs, lastAdvertisement).
 		Scan(&newCids).
 		Error
 	if err != nil {
