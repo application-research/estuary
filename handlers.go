@@ -1348,7 +1348,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Tags         deals
 // @Produce      json
 // @Param deal path int true "Deal ID"
-// @Router       /deal/status/{deal} [get]
+// @Router       /deals/status/{deal} [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1468,7 +1468,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid cid")
 	}
 
 	v0 := cid.Undef
@@ -1548,8 +1548,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Content uint            `json:"content"`
-	Miner   address.Address `json:"miner"`
+	ContentID uint `json:"content_id"`
 }
 
 // handleMakeDeal godoc
@@ -1559,7 +1558,7 @@ type dealRequest struct {
 // @Produce      json
 // @Param miner path string true "Miner"
 // @Param dealRequest body string true "Deal Request"
-// @Router       /deal/make/{miner} [post]
+// @Router       /deals/make/{miner} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1572,16 +1571,16 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid miner address")
 	}
 
 	var req dealRequest
 	if err := c.Bind(&req); err != nil {
-		return err
+		return errors.Wrap(err, "invalid content ID")
 	}
 
 	var cont Content
-	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
+	if err := s.DB.First(&cont, "id = ?", req.ContentID).Error; err != nil {
 		return err
 	}
 

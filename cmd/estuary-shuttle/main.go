@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
 	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
@@ -725,9 +726,9 @@ func main() {
 }
 
 var backoffTimer = backoff.ExponentialBackOff{
-	InitialInterval: time.Millisecond * 50,
+	InitialInterval: time.Second * 5,
 	Multiplier:      1.5,
-	MaxInterval:     time.Second,
+	MaxInterval:     time.Second * 10,
 	Stop:            backoff.Stop,
 	Clock:           backoff.SystemClock,
 }

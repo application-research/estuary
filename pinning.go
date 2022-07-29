@@ -478,6 +478,23 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qlimit := e.QueryParam("limit")
 	qreqids := e.QueryParam("requestid")
 
+	lim := 10 // default from spec
+	if qlimit != "" {
+		limit, err := strconv.Atoi(qlimit)
+		if err != nil {
+			return err
+		}
+		lim = limit
+
+		if lim > 1000 {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_QUERY_PARAM_VALUE,
+				Details: fmt.Sprintf("The LIMIT value cannot be above 1000"),
+			}
+		}
+	}
+
 	q := s.DB.Model(Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
 
 	if qcids != "" {
@@ -518,7 +535,6 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-
 		q = q.Where("created_at > ?", aftime)
 	}
 
@@ -532,15 +548,6 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			ids = append(ids, id)
 		}
 		q = q.Where("id in ?", ids)
-	}
-
-	lim := 10 // default from spec
-	if qlimit != "" {
-		limit, err := strconv.Atoi(qlimit)
-		if err != nil {
-			return err
-		}
-		lim = limit
 	}
 
 	pinStatuses := make(map[types.PinningStatus]bool)
