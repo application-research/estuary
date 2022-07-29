@@ -500,7 +500,7 @@ func (qm *queueManager) processQueue() {
 			heap.Push(qm.queue, qe)
 			qm.nextEvent = qe.checkTime
 			qm.qnextMetr.Set(float64(qe.checkTime.Unix()))
-			qm.evtTimer.Reset(qe.checkTime.Sub(time.Now()))
+			qm.evtTimer.Reset(time.Until(qe.checkTime))
 			return
 		}
 	}
@@ -1031,17 +1031,7 @@ func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Addr
 }
 
 func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bool {
-	if fsize > limit {
-		return true
-	}
-
-	/*
-		if fsize*64 > limit {
-			return true
-		}
-	*/
-
-	return false
+	return fsize > limit
 }
 
 func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
@@ -1998,10 +1988,7 @@ func init() {
 
 func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) bool {
 	if verified {
-		if types.BigCmp(price, abi.NewTokenAmount(0)) > 0 {
-			return true
-		}
-		return false
+		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
 	}
 
 	if types.BigCmp(price, priceMax) > 0 {
@@ -2698,7 +2685,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 
 	var obj Object
 	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
-		return nil, xerrors.Errorf("failed to get object from db: ", err)
+		return nil, xerrors.Errorf("failed to get object from db: %s", err)
 	}
 
 	var refs []ObjRef
@@ -2709,7 +2696,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 	var contentToFetch uint
 	switch len(refs) {
 	case 0:
-		return nil, xerrors.Errorf("have no object references for object %d in database")
+		return nil, xerrors.Errorf("have no object references for object %d in database", obj.ID)
 	case 1:
 		// easy case, fetch this thing.
 		contentToFetch = refs[0].Content
@@ -2879,11 +2866,9 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		return err
 	}
 
-	rootContent := content.ID
-
 	index := -1
 	if content.AggregatedIn > 0 {
-		rootContent = content.AggregatedIn
+		rootContent := content.AggregatedIn
 		ix, err := cm.indexForAggregate(ctx, rootContent, contentToFetch)
 		if err != nil {
 			return err
