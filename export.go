@@ -1,6 +1,10 @@
 package main
 
-import "time"
+import (
+	"time"
+
+	"github.com/application-research/estuary/util"
+)
 
 type DataExport struct {
 	Version string
@@ -10,12 +14,12 @@ type DataExport struct {
 }
 
 type ExportVersion1 struct {
-	Contents []Content
+	Contents []util.Content
 	Deals    []contentDeal
 }
 
 func (s *Server) exportUserData(uid uint) (*DataExport, error) {
-	var contents []Content
+	var contents []util.Content
 	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
 		return nil, err
 	}

@@ -8,14 +8,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/multiformats/go-multiaddr"
 
 	"go.opencensus.io/stats/view"
 
+	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
 	drpc "github.com/application-research/estuary/drpc"
@@ -32,7 +33,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
-	"github.com/multiformats/go-multiaddr"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
@@ -60,105 +60,6 @@ type storageMiner struct {
 	Version         string
 	Location        string
 	Owner           uint
-}
-
-type Content struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"-"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Cid         util.DbCID       `json:"cid"`
-	Filename    string           `json:"filename"`
-	UserID      uint             `json:"userId" gorm:"index"`
-	Description string           `json:"description"`
-	Size        int64            `json:"size"`
-	Type        util.ContentType `json:"type"`
-	Active      bool             `json:"active"`
-	Offloaded   bool             `json:"offloaded"`
-	Replication int              `json:"replication"`
-
-	// TODO: shift most of the 'state' booleans in here into a single state
-	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
-
-	Pinning bool   `json:"pinning"`
-	PinMeta string `json:"pinMeta"`
-	Replace bool   `json:"replace" gorm:"default:0"`
-	Origins string `json:"origins"`
-
-	Failed bool `json:"failed"`
-
-	Location string `json:"location"`
-	// TODO: shift location tracking to just use the ID of the shuttle
-	// Also move towards recording content movement intentions in the database,
-	// making that process more resilient to failures
-	// LocID     uint   `json:"locID"`
-	// LocIntent uint   `json:"locIntent"`
-
-	// If set, this content is part of a split dag.
-	// In such a case, the 'root' content should be advertised on the dht, but
-	// not have deals made for it, and the children should have deals made for
-	// them (unlike with aggregates)
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
-}
-
-type ContentWithPath struct {
-	Content
-	Path string `json:"path"`
-}
-
-type Object struct {
-	ID         uint       `gorm:"primarykey"`
-	Cid        util.DbCID `gorm:"index"`
-	Size       int
-	Reads      int
-	LastAccess time.Time
-}
-
-type ObjRef struct {
-	ID        uint `gorm:"primarykey"`
-	Content   uint `gorm:"index:,option:CONCURRENTLY"`
-	Object    uint `gorm:"index:,option:CONCURRENTLY"`
-	Offloaded uint
-}
-
-// updateAutoretrieveIndex ticks every tickInterval and checks for new information to add to autoretrieve
-// If so, it updates the filecoin index with the new CIDs, saying they are present on autoretrieve
-// With that, clients using bitswap can query autoretrieve servers using bitswap and get data from estuary
-func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan struct{}) error {
-	var autoretrieves []Autoretrieve
-	var lastTickTime time.Time
-	ticker := time.NewTicker(tickInterval)
-
-	defer ticker.Stop()
-	for {
-		lastTickTime = time.Now().Add(-tickInterval)
-
-		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := s.DB.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
-		if err != nil {
-			log.Errorf("unable to query autoretrieve servers from database: %s", err)
-			return err
-		}
-		if len(autoretrieves) > 0 {
-			for _, ar := range autoretrieves {
-				fmt.Println("online: ", ar) // TODO: remove
-			}
-		} else {
-			log.Info("no autoretrieve servers online")
-		}
-
-		// wait for next tick, or quit
-		select {
-		case <-ticker.C:
-			continue
-		case <-quit:
-			return nil
-		}
-	}
 }
 
 func before(cctx *cli.Context) error {
@@ -229,7 +130,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if err != nil {
 				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
 			}
-			cfg.Node.PeeringPeers = peers
+			cfg.Node.PeeringPeers = append(cfg.Node.PeeringPeers, peers...)
+
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -268,6 +170,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
 		case "staging-bucket":
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
+		case "indexer-url":
+			cfg.Node.IndexerURL = cctx.String("indexer-url")
+		case "indexer-tick-interval":
+			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
 		default:
 		}
 	}
@@ -328,9 +234,8 @@ func main() {
 			EnvVars: []string{"ESTUARY_ANNOUNCE"},
 		},
 		&cli.StringFlag{
-			Name:    "peering-peers",
-			Usage:   "peering addresses for the libp2p server to listen on",
-			EnvVars: []string{"ESTUARY_PEERING_PEERS"},
+			Name:  "peering-peers",
+			Usage: "peering addresses for the libp2p server to listen on",
 		},
 		&cli.StringFlag{
 			Name:    "datadir",
@@ -460,6 +365,15 @@ func main() {
 			Name:  "staging-bucket",
 			Usage: "enable staging bucket",
 			Value: cfg.StagingBucket.Enabled,
+		&cli.StringFlag{
+			Name:  "indexer-url",
+			Usage: "sets the indexer advertisement url",
+			Value: cfg.Node.IndexerURL,
+		},
+		&cli.IntFlag{
+			Name:  "indexer-tick-interval",
+			Usage: "sets the indexer advertisement interval in minutes",
+			Value: cfg.Node.IndexerTickInterval,
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -705,18 +619,14 @@ func main() {
 		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
-		// start autoretrieve index updater task every INDEX_UPDATE_INTERVAL minutes
-		updateInterval, ok := os.LookupEnv("INDEX_UPDATE_INTERVAL")
-		if !ok {
-			updateInterval = "720"
-		}
-		intervalMinutes, err := strconv.Atoi(updateInterval)
+
+		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
 		if err != nil {
 			return err
 		}
 
-		stopUpdateIndex := make(chan struct{})
-		go s.updateAutoretrieveIndex(time.Duration(intervalMinutes)*time.Minute, stopUpdateIndex)
+		go s.Node.ArEngine.Run()
+		defer s.Node.ArEngine.Shutdown()
 
 		go func() {
 			time.Sleep(time.Second * 10)
@@ -732,16 +642,6 @@ func main() {
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("could not run estuary app: %+v", err)
 	}
-}
-
-type Autoretrieve struct {
-	gorm.Model
-
-	Handle         string `gorm:"unique"`
-	Token          string `gorm:"unique"`
-	LastConnection time.Time
-	PeerID         string `gorm:"unique"`
-	Addresses      string
 }
 
 func setupDatabase(dbConnStr string) (*gorm.DB, error) {
@@ -776,9 +676,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 
 func migrateSchemas(db *gorm.DB) error {
 	if err := db.AutoMigrate(
-		&Content{},
-		&Object{},
-		&ObjRef{},
+		&util.Content{},
+		&util.Object{},
+		&util.ObjRef{},
 		&Collection{},
 		&CollectionRef{},
 		&contentDeal{},
@@ -793,7 +693,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&AuthToken{},
 		&InviteCode{},
 		&Shuttle{},
-		&Autoretrieve{}); err != nil {
+		&autoretrieve.Autoretrieve{}); err != nil {
 		return err
 	}
 	return nil
@@ -843,7 +743,7 @@ func (s *Server) GarbageCollect(ctx context.Context) error {
 
 func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	var count int64
-	if err := s.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := s.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
