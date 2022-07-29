@@ -789,7 +789,13 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
-	return c.JSON(http.StatusOK, map[string]interface{}{"content": cont})
+
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
+		Cid:          rootCID.String(),
+		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
+		EstuaryId:    cont.ID,
+		Providers:    s.CM.pinDelegatesForContent(*cont),
+	})
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -956,9 +962,10 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       nd.Cid().String(),
-		EstuaryId: content.ID,
-		Providers: s.CM.pinDelegatesForContent(*content),
+		Cid:          nd.Cid().String(),
+		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    content.ID,
+		Providers:    s.CM.pinDelegatesForContent(*content),
 	})
 }
 

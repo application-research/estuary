@@ -1244,9 +1244,10 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       nd.Cid().String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          nd.Cid().String(),
+		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
@@ -1380,9 +1381,10 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       root.String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          root.String(),
+		RetrievalURL: util.CreateRetrievalURL(root.String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
@@ -2273,9 +2275,10 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       cc.String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          cc.String(),
+		RetrievalURL: util.CreateRetrievalURL(cc.String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
