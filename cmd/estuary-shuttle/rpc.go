@@ -478,7 +478,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 }
 
 func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatus) error {
-	ctx, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
+	_, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
 		attribute.Int64("dealDbID", int64(req.DealDBID)),
 	))
 	defer span.End()
