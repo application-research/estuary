@@ -154,7 +154,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 		case <-ticker.C:
 			continue
 		case <-quit:
-			break
+			return nil
 		}
 	}
 }
