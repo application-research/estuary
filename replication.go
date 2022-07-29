@@ -627,7 +627,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
-		"cid":  util.DbCID{ncid},
+		"cid":  util.DbCID{CID: ncid},
 		"size": size,
 	}).Error; err != nil {
 		return err
@@ -640,7 +640,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if loc == util.ContentLocationLocal {
 		obj := &Object{
-			Cid:  util.DbCID{ncid},
+			Cid:  util.DbCID{CID: ncid},
 			Size: int(size),
 		}
 		if err := cm.DB.Create(obj).Error; err != nil {
@@ -2508,7 +2508,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	// fmt.Println("proposal cid: ", nd.Cid())
 
 	if err := cm.DB.Create(&proposalRecord{
-		PropCid: util.DbCID{nd.Cid()},
+		PropCid: util.DbCID{CID: nd.Cid()},
 		Data:    nd.RawData(),
 	}).Error; err != nil {
 		return err
@@ -2699,8 +2699,8 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 	}
 
 	opcr := PieceCommRecord{
-		Data:    util.DbCID{data},
-		Piece:   util.DbCID{pc},
+		Data:    util.DbCID{CID: data},
+		Piece:   util.DbCID{CID: pc},
 		CarSize: carSize,
 		Size:    size,
 	}

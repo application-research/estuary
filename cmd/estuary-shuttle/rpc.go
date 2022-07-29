@@ -360,7 +360,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	}
 
 	obj := &Object{
-		Cid:  util.DbCID{blk.Cid()},
+		Cid:  util.DbCID{CID: blk.Cid()},
 		Size: len(blk.RawData()),
 	}
 	if err := d.DB.Create(obj).Error; err != nil {

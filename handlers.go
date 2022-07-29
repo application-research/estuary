@@ -4169,7 +4169,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		// now, update size and cid
 		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{nd.Cid()},
+			"cid":  util.DbCID{CID: nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
 			return err
