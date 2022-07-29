@@ -549,7 +549,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", req.Content).Error; err != nil {
-		return xerrors.Errorf("no pin with content %d found for split content request: %w", err)
+		return xerrors.Errorf("no pin with content %d found for split content request: %w", req.Content, err)
 	}
 
 	// Check if we've done this already...
