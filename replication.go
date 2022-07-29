@@ -2787,41 +2787,42 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 
 func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont Content) error {
 	return fmt.Errorf("not retrieving content yet until implementation is finished")
-
-	var activeDeals []contentDeal
-	if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
-		return err
-	}
-
-	if len(activeDeals) == 0 {
-		log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
-		return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
-	}
-
-	var deals []drpc.StorageDeal
-	for _, d := range activeDeals {
-		ma, err := d.MinerAddr()
-		if err != nil {
-			log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
-			continue
+	/*
+		var activeDeals []contentDeal
+		if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
+			return err
 		}
 
-		deals = append(deals, drpc.StorageDeal{
-			Miner:  ma,
-			DealID: d.DealID,
-		})
-	}
+		if len(activeDeals) == 0 {
+			log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
+			return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
+		}
 
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_RetrieveContent,
-		Params: drpc.CmdParams{
-			RetrieveContent: &drpc.RetrieveContent{
-				Content: cont.ID,
-				Cid:     cont.Cid.CID,
-				Deals:   deals,
+		var deals []drpc.StorageDeal
+		for _, d := range activeDeals {
+			ma, err := d.MinerAddr()
+			if err != nil {
+				log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
+				continue
+			}
+
+			deals = append(deals, drpc.StorageDeal{
+				Miner:  ma,
+				DealID: d.DealID,
+			})
+		}
+
+		return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+			Op: drpc.CMD_RetrieveContent,
+			Params: drpc.CmdParams{
+				RetrieveContent: &drpc.RetrieveContent{
+					Content: cont.ID,
+					Cid:     cont.Cid.CID,
+					Deals:   deals,
+				},
 			},
-		},
-	})
+		})
+	*/
 }
 
 func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint) error {
