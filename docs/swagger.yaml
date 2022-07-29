@@ -673,27 +673,6 @@ paths:
       summary: Get Deal Info
       tags:
         - deals
-  /deal/make/{miner}:
-    post:
-      description: This endpoint makes a deal for a given content and miner
-      parameters:
-        - description: Miner
-          in: path
-          name: miner
-          required: true
-          type: string
-        - description: Deal Request
-          in: body
-          name: dealRequest
-          required: true
-          schema:
-            type: string
-      produces:
-        - application/json
-      responses: {}
-      summary: Make Deal
-      tags:
-        - deals
   /deal/proposal/{propcid}:
     get:
       description: This endpoint returns the proposal for a deal
@@ -737,21 +716,6 @@ paths:
         - application/json
       responses: {}
       summary: Get Deal Status by PropCid
-      tags:
-        - deals
-  /deal/status/{deal}:
-    get:
-      description: This endpoint returns the status of a deal
-      parameters:
-        - description: Deal ID
-          in: path
-          name: deal
-          required: true
-          type: integer
-      produces:
-        - application/json
-      responses: {}
-      summary: Get Deal Status
       tags:
         - deals
   /deal/status/{miner}/{propcid}:
@@ -799,6 +763,42 @@ paths:
         - application/json
       responses: {}
       summary: Get storage failures for user
+      tags:
+        - deals
+  /deals/make/{miner}:
+    post:
+      description: This endpoint makes a deal for a given content and miner
+      parameters:
+        - description: Miner
+          in: path
+          name: miner
+          required: true
+          type: string
+        - description: Deal Request
+          in: body
+          name: dealRequest
+          required: true
+          schema:
+            type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Make Deal
+      tags:
+        - deals
+  /deals/status/{deal}:
+    get:
+      description: This endpoint returns the status of a deal
+      parameters:
+        - description: Deal ID
+          in: path
+          name: deal
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Get Deal Status
       tags:
         - deals
   /net/addrs:

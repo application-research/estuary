@@ -855,37 +855,6 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/deal/make/{miner}": {
-            "post": {
-                "description": "This endpoint makes a deal for a given content and miner",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Make Deal",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Miner",
-                        "name": "miner",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Deal Request",
-                        "name": "dealRequest",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {}
-            }
-        },
         "/deal/proposal/{propcid}": {
             "get": {
                 "description": "This endpoint returns the proposal for a deal",
@@ -945,28 +914,6 @@ const docTemplate = `{
                         "type": "string",
                         "description": "PropCid",
                         "name": "propcid",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/deal/status/{deal}": {
-            "get": {
-                "description": "This endpoint returns the status of a deal",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Deal Status",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Deal ID",
-                        "name": "deal",
                         "in": "path",
                         "required": true
                     }
@@ -1039,6 +986,59 @@ const docTemplate = `{
                     "deals"
                 ],
                 "summary": "Get storage failures for user",
+                "responses": {}
+            }
+        },
+        "/deals/make/{miner}": {
+            "post": {
+                "description": "This endpoint makes a deal for a given content and miner",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Make Deal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deal Request",
+                        "name": "dealRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/deals/status/{deal}": {
+            "get": {
+                "description": "This endpoint returns the status of a deal",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Get Deal Status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Deal ID",
+                        "name": "deal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
