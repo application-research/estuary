@@ -1144,7 +1144,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content C
 		return nil
 	}
 
-	log.Infof("adding content to staging zone: %d", content.ID)
+	log.Debugf("adding content to staging zone: %d", content.ID)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
@@ -2622,7 +2622,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 		return cid.Undef, 0, 0, ErrWaitForRemoteCompute
 	}
 
-	log.Infow("computing piece commitment", "data", cont.Cid.CID)
+	log.Debugw("computing piece commitment", "data", cont.Cid.CID)
 	return filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
 }
 

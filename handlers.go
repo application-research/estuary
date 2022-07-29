@@ -789,7 +789,13 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
-	return c.JSON(http.StatusOK, map[string]interface{}{"content": cont})
+
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
+		Cid:          rootCID.String(),
+		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
+		EstuaryId:    cont.ID,
+		Providers:    s.CM.pinDelegatesForContent(*cont),
+	})
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -956,9 +962,10 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       nd.Cid().String(),
-		EstuaryId: content.ID,
-		Providers: s.CM.pinDelegatesForContent(*content),
+		Cid:          nd.Cid().String(),
+		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    content.ID,
+		Providers:    s.CM.pinDelegatesForContent(*content),
 	})
 }
 
@@ -1348,7 +1355,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Tags         deals
 // @Produce      json
 // @Param deal path int true "Deal ID"
-// @Router       /deal/status/{deal} [get]
+// @Router       /deals/status/{deal} [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1468,7 +1475,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid cid")
 	}
 
 	v0 := cid.Undef
@@ -1548,8 +1555,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Content uint            `json:"content"`
-	Miner   address.Address `json:"miner"`
+	ContentID uint `json:"content_id"`
 }
 
 // handleMakeDeal godoc
@@ -1559,20 +1565,21 @@ type dealRequest struct {
 // @Produce      json
 // @Param miner path string true "Miner"
 // @Param dealRequest body string true "Deal Request"
-// @Router       /deal/make/{miner} [post]
+// @Router       /deals/make/{miner} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
-		return util.HttpError{
-			Code:   http.StatusForbidden,
-			Reason: util.ERR_NOT_AUTHORIZED,
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user not authorized",
 		}
 	}
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid miner address")
 	}
 
 	var req dealRequest
@@ -1580,9 +1587,23 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
+	if req.ContentID == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: "supply a valid value for content_id",
+		}
+	}
+
 	var cont Content
-	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
-		return err
+	if err := s.DB.First(&cont, "id = ?", req.ContentID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", req.ContentID),
+			}
+		}
 	}
 
 	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
@@ -4995,7 +5016,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
+	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5015,6 +5036,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Replication: s.CM.Replication,
 		Location:    req.Location,
 	}
+
 	if req.DagSplitRoot != 0 {
 		content.DagSplit = true
 		content.SplitFrom = req.DagSplitRoot

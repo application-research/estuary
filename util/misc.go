@@ -65,23 +65,12 @@ func ErrorIfContentAddingDisabled(isContentAddingDisabled bool) error {
 	return nil
 }
 
-func ErrorIfContentLengthEmpty(c echo.Context) error {
-	if c.Request().Header.Get("Content-Length") == "" {
-		return HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  ERR_CONTENT_LENGTH_REQUIRED,
-			Details: "uploading car content requires Content-Length header value to be set",
-		}
-	}
-	return nil
-}
-
 // required for car uploads
 func WithContentLengthCheck(f func(echo.Context) error) func(echo.Context) error {
 	return func(c echo.Context) error {
 		if c.Request().Header.Get("Content-Length") == "" {
 			return &HttpError{
-				Code:    http.StatusBadRequest,
+				Code:    http.StatusLengthRequired,
 				Reason:  ERR_CONTENT_LENGTH_REQUIRED,
 				Details: "uploading car content requires Content-Length header value to be set",
 			}
