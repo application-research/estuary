@@ -309,7 +309,7 @@ func (cm *ContentManager) shuttleStorageStats(handle string) *util.ShuttleStorag
 }
 
 func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle string, resp *drpc.CommPComplete) error {
-	ctx, span := cm.tracer.Start(ctx, "handleRpcCommPComplete")
+	_, span := cm.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()
 
 	opcr := PieceCommRecord{

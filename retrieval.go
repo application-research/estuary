@@ -41,13 +41,15 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
 				Content: content.ID,
 				Cid:     content.Cid,
-			})
+			}); err != nil {
+				return nil, err
+			}
 			log.Errorf("failed to query miner %s: %s", maddr, err)
 			continue
 		}
@@ -85,13 +87,15 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	for m, ask := range asks {
 		if err := s.CM.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
 				Content: contid,
 				Cid:     content.Cid,
-			})
+			}); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -135,7 +139,7 @@ type retrievalSuccessRecord struct {
 
 func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
 	if err := cm.DB.Create(&retrievalSuccessRecord{
-		Cid:          util.DbCID{cc},
+		Cid:          util.DbCID{CID: cc},
 		Miner:        m.String(),
 		Peer:         rstats.Peer.String(),
 		Size:         rstats.Size,

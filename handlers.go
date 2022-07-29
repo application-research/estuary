@@ -154,7 +154,7 @@ func (s *Server) ServeAPI() error {
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", withUser(s.handleAddCar))
+	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
@@ -877,14 +877,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	defaultPath := "/"
-	path := &defaultPath
+	path := defaultPath
 	if cp := c.QueryParam(ColDir); cp != "" {
 		sp, err := sanitizePath(cp)
 		if err != nil {
 			return err
 		}
 
-		path = &sp
+		path = sp
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -919,13 +919,14 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
+	fullPath := filepath.Join(path, content.Filename)
 
 	if col != nil {
 		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
-			Path:       path,
+			Path:       &fullPath,
 		}).Error; err != nil {
 			log.Errorf("failed to add content to requested collection: %s", err)
 		}
@@ -976,23 +977,24 @@ func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
 		}
 	}
 	// propagate any query params
+	//#nosec G404: ignore weak random number generator
 	req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
 	if err != nil {
-		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+		return err
 	}
 	req.Header = c.Request().Header.Clone()
 	req.URL.RawQuery = c.Request().URL.Query().Encode()
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+		return err
 	}
 
 	c.Response().WriteHeader(resp.StatusCode)
 
 	_, err = io.Copy(c.Response().Writer, resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
+		return err
 	}
 
 	return nil
@@ -1654,33 +1656,6 @@ func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
-func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
-	parts := strings.Split(chanid, "-")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
-	}
-
-	initiator, err := peer.Decode(parts[0])
-	if err != nil {
-		return nil, err
-	}
-
-	responder, err := peer.Decode(parts[1])
-	if err != nil {
-		return nil, err
-	}
-
-	id, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	return &datatransfer.ChannelID{
-		Initiator: initiator,
-		Responder: responder,
-		ID:        datatransfer.TransferID(id),
-	}, nil
-}
 func (s *Server) handleTransferRestart(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1720,30 +1695,6 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (s *Server) handleTransferStart(c echo.Context) error {
-	addr, err := address.NewFromString(c.Param("miner"))
-	if err != nil {
-		return err
-	}
-
-	propCid, err := cid.Decode(c.Param("propcid"))
-	if err != nil {
-		return err
-	}
-
-	dataCid, err := cid.Decode(c.Param("datacid"))
-	if err != nil {
-		return err
-	}
-
-	chanid, err := s.FilClient.StartDataTransfer(c.Request().Context(), addr, propCid, dataCid)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, chanid)
 }
 
 // handleDealStatus godoc
@@ -2339,13 +2290,6 @@ type estimateDealBody struct {
 	Verified     bool   `json:"verified"`
 }
 
-type askResponse struct {
-	Miner         string           `json:"miner"`
-	Price         *abi.TokenAmount `json:"price"`
-	VerifiedPrice *abi.TokenAmount `json:"verifiedPrice"`
-	MinDealSize   int64            `json:"minDealSize"`
-}
-
 type priceEstimateResponse struct {
 	TotalStr string `json:"totalFil"`
 	Total    string `json:"totalAttoFil"`
@@ -2761,7 +2705,10 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -2887,9 +2834,10 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		exist = nil
 	}
 
-	if exist != nil && strings.ToLower(exist.Username) == username {
+	if exist != nil {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,
@@ -3105,7 +3053,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
-			ContentAddingDisabled: s.CM.globalContentAddingDisabled || u.StorageDisabled,
+			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
@@ -3459,12 +3407,18 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		lastDirNode.AddRawLink(c.Filename, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Filename, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
+		if err != nil {
+			return err
+		}
 	}
-	dserv.Add(context.Background(), collectionNode) // add new CID to local blockstore
+
+	if err := dserv.Add(context.Background(), collectionNode); err != nil {
+		return err
+	} // add new CID to local blockstore
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
@@ -3737,6 +3691,9 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
+	if err != nil {
+		return err
+	}
 
 	//	handle the extensive looks up differently. Cache them for 1 hour.
 	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
@@ -4159,7 +4116,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		// now, update size and cid
 		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{nd.Cid()},
+			"cid":  util.DbCID{CID: nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
 			return err
@@ -4579,6 +4536,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
@@ -5169,9 +5127,9 @@ type CidType string
 
 const (
 	Raw    CidType = "raw"
-	File           = "file"
-	Dir            = "directory"
-	ColDir         = "dir"
+	File   CidType = "file"
+	Dir    CidType = "directory"
+	ColDir string  = "dir"
 )
 
 type collectionListResponse struct {
@@ -5361,5 +5319,5 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 }
 
 func (s *Server) isContentAddingDisabled(u *User) bool {
-	return s.CM.globalContentAddingDisabled || u.StorageDisabled
+	return (s.CM.globalContentAddingDisabled && s.CM.localContentAddingDisabled) || u.StorageDisabled
 }

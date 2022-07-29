@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
@@ -154,7 +156,7 @@ func (s *Server) updateAutoretrieveIndex(tickInterval time.Duration, quit chan s
 		case <-ticker.C:
 			continue
 		case <-quit:
-			break
+			return nil
 		}
 	}
 }
@@ -458,6 +460,27 @@ func main() {
 		{
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:  "username",
+					Usage: "specify setup username",
+				},
+				&cli.StringFlag{
+					Name:  "password",
+					Usage: "specify setup password",
+				},
+				&cli.StringFlag{
+					Name:  "config",
+					Usage: "specify configuration file location",
+					Value: filepath.Join(hDir, ".estuary"),
+				},
+				&cli.StringFlag{
+					Name:    "database",
+					Usage:   "specify connection string for estuary database",
+					Value:   cfg.DatabaseConnString,
+					EnvVars: []string{"ESTUARY_DATABASE"},
+				},
+			},
 			Action: func(cctx *cli.Context) error {
 				if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
@@ -465,6 +488,16 @@ func main() {
 
 				if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
 					return nil
+				}
+
+				username := cctx.String("username")
+				if username == "" {
+					return errors.New("setup username cannot be empty")
+				}
+
+				password := cctx.String("password")
+				if password == "" {
+					return errors.New("setup password cannot be empty")
 				}
 
 				db, err := setupDatabase(cfg.DatabaseConnString)
@@ -476,14 +509,21 @@ func main() {
 					Logger: logger.Discard,
 				})
 
-				username := "admin"
-				password := ""
-				salt := ""
+				username = strings.ToLower(username)
 
-				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
-					return fmt.Errorf("an admin user already exists")
+				var exist *User
+				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
+					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+					exist = nil
 				}
 
+				if exist != nil {
+					return fmt.Errorf("a user already exist for that username:%s", username)
+				}
+
+				salt := uuid.New().String()
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
@@ -505,7 +545,6 @@ func main() {
 				}
 
 				fmt.Printf("Auth Token: %v\n", authToken.Token)
-
 				return nil
 			},
 		}, {
@@ -565,7 +604,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -710,29 +752,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	db.AutoMigrate(&Content{})
-	db.AutoMigrate(&Object{})
-	db.AutoMigrate(&ObjRef{})
-	db.AutoMigrate(&Collection{})
-	db.AutoMigrate(&CollectionRef{})
-
-	db.AutoMigrate(&contentDeal{})
-	db.AutoMigrate(&dfeRecord{})
-	db.AutoMigrate(&PieceCommRecord{})
-	db.AutoMigrate(&proposalRecord{})
-	db.AutoMigrate(&util.RetrievalFailureRecord{})
-	db.AutoMigrate(&retrievalSuccessRecord{})
-
-	db.AutoMigrate(&minerStorageAsk{})
-	db.AutoMigrate(&storageMiner{})
-
-	db.AutoMigrate(&User{})
-	db.AutoMigrate(&AuthToken{})
-	db.AutoMigrate(&InviteCode{})
-
-	db.AutoMigrate(&Shuttle{})
-
-	db.AutoMigrate(&Autoretrieve{})
+	if err = migrateSchemas(db); err != nil {
+		return nil, err
+	}
 
 	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
 	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
@@ -752,6 +774,31 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 
 	}
 	return db, nil
+}
+
+func migrateSchemas(db *gorm.DB) error {
+	if err := db.AutoMigrate(
+		&Content{},
+		&Object{},
+		&ObjRef{},
+		&Collection{},
+		&CollectionRef{},
+		&contentDeal{},
+		&dfeRecord{},
+		&PieceCommRecord{},
+		&proposalRecord{},
+		&util.RetrievalFailureRecord{},
+		&retrievalSuccessRecord{},
+		&minerStorageAsk{},
+		&storageMiner{},
+		&User{},
+		&AuthToken{},
+		&InviteCode{},
+		&Shuttle{},
+		&Autoretrieve{}); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Server struct {
@@ -806,11 +853,6 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
-}
-
-func jsondump(o interface{}) {
-	data, _ := json.MarshalIndent(o, "", "  ")
-	fmt.Println(string(data))
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
