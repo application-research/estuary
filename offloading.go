@@ -84,7 +84,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	return result, nil
 }
 func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []removalCandidateInfo) ([]offloadCandidate, error) {
-	ctx, span := cm.tracer.Start(ctx, "getLastAccesses")
+	_, span := cm.tracer.Start(ctx, "getLastAccesses")
 	defer span.End()
 
 	var offs []offloadCandidate

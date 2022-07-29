@@ -1147,7 +1147,7 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 }
 
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content Content) error {
-	ctx, span := cm.tracer.Start(ctx, "stageContent")
+	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
 	if content.AggregatedIn > 0 {
 		log.Warnf("attempted to add content to staging zone that was already staged: %d (is in %d)", content.ID, content.AggregatedIn)
@@ -3038,7 +3038,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
 func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*Object, loc string) error {
-	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
+	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
 	if err := cm.DB.CreateInBatches(objects, 300).Error; err != nil {
