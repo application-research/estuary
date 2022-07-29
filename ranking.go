@@ -96,8 +96,6 @@ func (cm *ContentManager) computeSortedMinerList() ([]*minerDealStats, error) {
 			}
 		} else if d.Failed {
 			st.FailedDeals++
-		} else {
-			// in progress
 		}
 	}
 

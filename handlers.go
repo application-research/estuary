@@ -154,7 +154,7 @@ func (s *Server) ServeAPI() error {
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", withUser(s.handleAddCar))
+	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
@@ -1655,33 +1655,6 @@ func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
-func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
-	parts := strings.Split(chanid, "-")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
-	}
-
-	initiator, err := peer.Decode(parts[0])
-	if err != nil {
-		return nil, err
-	}
-
-	responder, err := peer.Decode(parts[1])
-	if err != nil {
-		return nil, err
-	}
-
-	id, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	return &datatransfer.ChannelID{
-		Initiator: initiator,
-		Responder: responder,
-		ID:        datatransfer.TransferID(id),
-	}, nil
-}
 func (s *Server) handleTransferRestart(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1721,30 +1694,6 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (s *Server) handleTransferStart(c echo.Context) error {
-	addr, err := address.NewFromString(c.Param("miner"))
-	if err != nil {
-		return err
-	}
-
-	propCid, err := cid.Decode(c.Param("propcid"))
-	if err != nil {
-		return err
-	}
-
-	dataCid, err := cid.Decode(c.Param("datacid"))
-	if err != nil {
-		return err
-	}
-
-	chanid, err := s.FilClient.StartDataTransfer(c.Request().Context(), addr, propCid, dataCid)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, chanid)
 }
 
 // handleDealStatus godoc
@@ -2338,13 +2287,6 @@ type estimateDealBody struct {
 	Replication  int    `json:"replication"`
 	DurationBlks int    `json:"durationBlks"`
 	Verified     bool   `json:"verified"`
-}
-
-type askResponse struct {
-	Miner         string           `json:"miner"`
-	Price         *abi.TokenAmount `json:"price"`
-	VerifiedPrice *abi.TokenAmount `json:"verifiedPrice"`
-	MinDealSize   int64            `json:"minDealSize"`
 }
 
 type priceEstimateResponse struct {
@@ -3745,6 +3687,9 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
+	if err != nil {
+		return err
+	}
 
 	//	handle the extensive looks up differently. Cache them for 1 hour.
 	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
@@ -4167,7 +4112,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		// now, update size and cid
 		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{nd.Cid()},
+			"cid":  util.DbCID{CID: nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
 			return err
@@ -5178,9 +5123,9 @@ type CidType string
 
 const (
 	Raw    CidType = "raw"
-	File           = "file"
-	Dir            = "directory"
-	ColDir         = "dir"
+	File   CidType = "file"
+	Dir    CidType = "directory"
+	ColDir string  = "dir"
 )
 
 type collectionListResponse struct {
