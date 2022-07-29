@@ -530,11 +530,14 @@ func main() {
 				cst := filclient.ChannelStateConv(st)
 				trk.last = cst
 
-				log.Infof("event(%d) message: %s", event.Code, event.Message)
+				trsFailed, msg := util.TransferFailed(cst)
+
 				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
 					State:    cst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", cst.Status, msg, cst.Message),
 				})
 			}
 		})
@@ -572,10 +575,15 @@ func main() {
 				}
 
 				eventDebounceCache.Add(st.TransferID, time.Now())
+
+				trsFailed, msg := util.TransferFailed(&st)
+
 				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   st.TransferID,
 					DealDBID: dbid,
 					State:    &st,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 				})
 			}()
 		})
@@ -2122,7 +2130,8 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		if !util.TransferTerminated(filclient.ChannelStateConv(st)) {
+		isTerm, _ := util.TransferTerminated(filclient.ChannelStateConv(st))
+		if !isTerm {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)

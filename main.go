@@ -888,14 +888,16 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 			return err
 		}
 
-		if util.TransferTerminated(st) {
+		isTerm, msg := util.TransferTerminated(st)
+		if isTerm {
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
 				"failed":    true,
 				"failed_at": time.Now(),
 			}).Error; err != nil {
 				return err
 			}
-			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %d", st.Status)
+			errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
+			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}

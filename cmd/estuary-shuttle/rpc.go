@@ -491,6 +491,8 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 			return
 		}
 
+		trsFailed, msg := util.TransferFailed(st)
+
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			Chanid: req.ChanID,
 
@@ -499,7 +501,9 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 			//channel ID instead.
 			DealDBID: req.DealDBID,
 
-			State: st,
+			State:   st,
+			Failed:  trsFailed,
+			Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 		})
 	}()
 	return nil
@@ -643,11 +647,13 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		return err
 	}
 
-	if util.TransferTerminated(st) {
+	isTerm, msg := util.TransferTerminated(st)
+	if isTerm {
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-			Chanid: req.ChanID.String(),
-			State:  st,
-			Failed: true,
+			Chanid:  req.ChanID.String(),
+			State:   st,
+			Failed:  true,
+			Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 		})
 		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 	}
