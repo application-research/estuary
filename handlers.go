@@ -2833,9 +2833,10 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		exist = nil
 	}
 
-	if exist != nil && strings.ToLower(exist.Username) == username {
+	if exist != nil {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,

@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
@@ -458,6 +460,27 @@ func main() {
 		{
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
+			Flags: []cli.Flag{
+				&cli.StringFlag{
+					Name:  "username",
+					Usage: "specify setup username",
+				},
+				&cli.StringFlag{
+					Name:  "password",
+					Usage: "specify setup password",
+				},
+				&cli.StringFlag{
+					Name:  "config",
+					Usage: "specify configuration file location",
+					Value: filepath.Join(hDir, ".estuary"),
+				},
+				&cli.StringFlag{
+					Name:    "database",
+					Usage:   "specify connection string for estuary database",
+					Value:   cfg.DatabaseConnString,
+					EnvVars: []string{"ESTUARY_DATABASE"},
+				},
+			},
 			Action: func(cctx *cli.Context) error {
 				if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
@@ -465,6 +488,16 @@ func main() {
 
 				if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
 					return nil
+				}
+
+				username := cctx.String("username")
+				if username == "" {
+					return errors.New("setup username cannot be empty")
+				}
+
+				password := cctx.String("password")
+				if password == "" {
+					return errors.New("setup password cannot be empty")
 				}
 
 				db, err := setupDatabase(cfg.DatabaseConnString)
@@ -476,14 +509,21 @@ func main() {
 					Logger: logger.Discard,
 				})
 
-				username := "admin"
-				password := ""
-				salt := ""
+				username = strings.ToLower(username)
 
-				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
-					return fmt.Errorf("an admin user already exists")
+				var exist *User
+				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
+					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+						return err
+					}
+					exist = nil
 				}
 
+				if exist != nil {
+					return fmt.Errorf("a user already exist for that username:%s", username)
+				}
+
+				salt := uuid.New().String()
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
@@ -505,7 +545,6 @@ func main() {
 				}
 
 				fmt.Printf("Auth Token: %v\n", authToken.Token)
-
 				return nil
 			},
 		}, {
