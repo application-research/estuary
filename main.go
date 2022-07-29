@@ -365,6 +365,7 @@ func main() {
 			Name:  "staging-bucket",
 			Usage: "enable staging bucket",
 			Value: cfg.StagingBucket.Enabled,
+		},
 		&cli.StringFlag{
 			Name:  "indexer-url",
 			Usage: "sets the indexer advertisement url",
@@ -428,7 +429,6 @@ func main() {
 				quietdb := db.Session(&gorm.Session{
 					Logger: logger.Discard,
 				})
-
 
 				username = strings.ToLower(username)
 
@@ -618,7 +618,6 @@ func main() {
 
 		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-
 
 		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
 		if err != nil {

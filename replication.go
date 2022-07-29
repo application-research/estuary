@@ -381,7 +381,7 @@ func (cm *ContentManager) Run(ctx context.Context) {
 			case c := <-cm.ToCheck:
 				log.Debugf("checking content: %d", c)
 
-				var content Content
+				var content util.Content
 				if err := cm.DB.First(&content, "id = ?", c).Error; err != nil {
 					log.Errorf("finding content %d in database: %s", c, err)
 					continue
@@ -669,7 +669,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) (*merkledag.ProtoNode, error) {
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
 	log.Debug("aggregating contents in staging zone into new content")
 
 	sort.Slice(conts, func(i, j int) bool {
@@ -737,7 +737,7 @@ func (cm *ContentManager) reBuildStagingBuckets() error {
 func (cm *ContentManager) rebuildToCheckQueue() error {
 	log.Info("rebuilding contents queue .......")
 
-	var allcontent []Content
+	var allcontent []util.Content
 	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
@@ -1197,7 +1197,7 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 	return out
 }
 
-func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, done func(time.Duration)) error {
+func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Content, done func(time.Duration)) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
 	))
@@ -1396,11 +1396,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 	return nil
 }
 
-func (cm *ContentManager) canStageContent(cont Content) bool {
+func (cm *ContentManager) canStageContent(cont util.Content) bool {
 	return cont.Size < cm.cfg.StagingBucket.IndividualDealThreshold && cm.cfg.StagingBucket.Enabled
 }
 
-func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size int64) error {
+func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
 	ctx, span := cm.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
@@ -1971,7 +1971,7 @@ type proposalRecord struct {
 	Data    []byte
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[address.Address]bool) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, count int, exclude map[address.Address]bool) error {
 	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Int("count", count),
@@ -2257,7 +2257,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	return cleanup, propPhase, err
 }
 
-func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content, miner address.Address) (uint, error) {
+func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Content, miner address.Address) (uint, error) {
 	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Stringer("miner", miner),
