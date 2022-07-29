@@ -1271,7 +1271,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 			log.Warnf("providing failed: %s", err)
 			return
 		}
-		log.Infof("providing complete")
+		log.Debugf("providing complete")
 	}()
 
 	return nil
