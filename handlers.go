@@ -5063,7 +5063,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
+	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5083,6 +5083,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Replication: s.CM.Replication,
 		Location:    req.Location,
 	}
+
 	if req.DagSplitRoot != 0 {
 		content.DagSplit = true
 		content.SplitFrom = req.DagSplitRoot

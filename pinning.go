@@ -27,6 +27,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const (
+	DEFAULT_IPFS_PIN_LIMIT = 10 // https://github.com/ipfs/pinning-services-api-spec/blob/main/ipfs-pinning-service.yaml#L610
+	IPFS_PIN_LIMIT_MIN     = 1
+	IPFS_PIN_LIMIT_MAX     = 1000
+)
+
 func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
 	delegates := cm.pinDelegatesForContent(cont)
 
@@ -478,7 +484,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qlimit := e.QueryParam("limit")
 	qreqids := e.QueryParam("requestid")
 
-	lim := 10 // default from spec
+	lim := DEFAULT_IPFS_PIN_LIMIT
 	if qlimit != "" {
 		limit, err := strconv.Atoi(qlimit)
 		if err != nil {
@@ -486,11 +492,11 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		}
 		lim = limit
 
-		if lim > 1000 {
+		if lim > IPFS_PIN_LIMIT_MAX || lim < IPFS_PIN_LIMIT_MIN {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
 				Reason:  util.ERR_INVALID_QUERY_PARAM_VALUE,
-				Details: fmt.Sprintf("The LIMIT value cannot be above 1000"),
+				Details: fmt.Sprintf("specify a valid LIMIT value between %d and %d", IPFS_PIN_LIMIT_MIN, IPFS_PIN_LIMIT_MAX),
 			}
 		}
 	}
