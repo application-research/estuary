@@ -572,7 +572,6 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 				return err
 			}
 		}
-
 		s.sendSplitContentComplete(ctx, pin.Content)
 		return nil
 	}
@@ -591,7 +590,6 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		if err != nil {
 			return err
 		}
-
 		boxCids = append(boxCids, cc)
 	}
 
@@ -603,7 +601,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 			return err
 		}
 
-		pin := &Pin{
+		cpin := &Pin{
 			Cid:       util.DbCID{CID: c},
 			Content:   contid,
 			Active:    false,
@@ -613,11 +611,11 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 			SplitFrom: pin.Content,
 		}
 
-		if err := s.DB.Create(pin).Error; err != nil {
+		if err := s.DB.Create(cpin).Error; err != nil {
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := s.addDatabaseTrackingToContent(ctx, pin.Content, dserv, s.Node.Blockstore, c, func(int64) {}); err != nil {
+		if err := s.addDatabaseTrackingToContent(ctx, cpin.Content, dserv, s.Node.Blockstore, c, func(int64) {}); err != nil {
 			return err
 		}
 	}
@@ -627,12 +625,12 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	}).Error; err != nil {
 		return err
 	}
+
 	if err := s.DB.Where("pin = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
 		return err
 	}
 
 	s.sendSplitContentComplete(ctx, pin.Content)
-
 	return nil
 }
 

@@ -1151,12 +1151,8 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+		return err
 	}
 
 	form, err := c.MultipartForm()
@@ -1222,7 +1218,6 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: nd.Cid()},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1359,7 +1354,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: root},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1462,7 +1456,6 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 			Filename: filename,
 			Location: s.shuttleHandle,
 		},
-
 		Collections:  cols,
 		DagSplitRoot: dagsplitroot,
 		User:         uid,
@@ -2260,7 +2253,6 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 			}
 			continue
 		}
-
 		break
 	}
 
