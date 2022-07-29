@@ -1563,9 +1563,10 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
-		return util.HttpError{
-			Code:   http.StatusForbidden,
-			Reason: util.ERR_NOT_AUTHORIZED,
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user not authorized",
 		}
 	}
 
@@ -1576,12 +1577,26 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 
 	var req dealRequest
 	if err := c.Bind(&req); err != nil {
-		return errors.Wrap(err, "invalid content ID")
+		return err
+	}
+
+	if req.ContentID == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: "supply a valid value for content_id",
+		}
 	}
 
 	var cont Content
 	if err := s.DB.First(&cont, "id = ?", req.ContentID).Error; err != nil {
-		return err
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", req.ContentID),
+			}
+		}
 	}
 
 	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
