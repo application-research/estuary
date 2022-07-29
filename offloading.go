@@ -10,8 +10,6 @@ import (
 	"golang.org/x/xerrors"
 )
 
-const cacheThreshold = 0.50
-
 type offloadCandidate struct {
 	Content
 	LastAccess time.Time
@@ -120,10 +118,6 @@ func (cm *ContentManager) getLastAccessForContent(cont Content) (time.Time, erro
 	}
 
 	return obj.LastAccess, nil
-}
-
-type refResult struct {
-	Cid util.DbCID
 }
 
 func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (int, error) {

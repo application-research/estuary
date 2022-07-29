@@ -252,17 +252,6 @@ func (cb *contentStagingZone) isReady() bool {
 	return false
 }
 
-func (cb *contentStagingZone) hasRoomForContent(c Content) bool {
-	cb.lk.Lock()
-	defer cb.lk.Unlock()
-
-	if len(cb.Contents) >= cb.MaxItems {
-		return false
-	}
-
-	return cb.CurSize+c.Size <= cb.MaxSize
-}
-
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
@@ -1231,8 +1220,6 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 }
 
 const bucketingEnabled = true
-
-const errDelay = time.Minute * 5
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, done func(time.Duration)) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
@@ -2574,15 +2561,6 @@ func (dfe *DealFailureError) Record() *dfeRecord {
 
 func (dfe *DealFailureError) Error() string {
 	return fmt.Sprintf("deal with miner %s failed in phase %s: %s", dfe.Message, dfe.Phase, dfe.Message)
-}
-
-func averageAskPrice(asks []*network.AskResponse) types.FIL {
-	total := abi.NewTokenAmount(0)
-	for _, a := range asks {
-		total = types.BigAdd(total, a.Ask.Ask.Price)
-	}
-
-	return types.FIL(big.Div(total, big.NewInt(int64(len(asks)))))
 }
 
 type PieceCommRecord struct {

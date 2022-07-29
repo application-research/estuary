@@ -478,7 +478,7 @@ func main() {
 
 				username := "admin"
 				password := ""
-				salt:= ""
+				salt := ""
 
 				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
@@ -487,7 +487,7 @@ func main() {
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:	  salt,
+					Salt:     salt,
 					PassHash: util.GetPasswordHash(password, salt),
 					Perm:     100,
 				}
@@ -814,11 +814,6 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	return count > 0, nil
-}
-
-func jsondump(o interface{}) {
-	data, _ := json.MarshalIndent(o, "", "  ")
-	fmt.Println(string(data))
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
