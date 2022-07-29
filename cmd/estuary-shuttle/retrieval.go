@@ -101,7 +101,7 @@ func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals [
 				Phase:   "query",
 				Message: err.Error(),
 				Content: contentToFetch,
-				Cid:     util.DbCID{root},
+				Cid:     util.DbCID{CID: root},
 			})
 			continue
 		}
@@ -115,7 +115,7 @@ func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals [
 				Phase:   "retrieval",
 				Message: err.Error(),
 				Content: contentToFetch,
-				Cid:     util.DbCID{root},
+				Cid:     util.DbCID{CID: root},
 			})
 			continue
 		}

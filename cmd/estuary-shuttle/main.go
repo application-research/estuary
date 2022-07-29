@@ -9,6 +9,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
 	"path/filepath"
@@ -81,6 +83,7 @@ const (
 	ColDir  = "dir"
 )
 
+//#nosec G104 - it's not common to treat SetLogLevel error return
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
@@ -400,7 +403,10 @@ func main() {
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
 		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
 		flset.String("api-url", "", "node api url")
-		flset.Set("api-url", cfg.Node.ApiURL)
+		err = flset.Set("api-url", cfg.Node.ApiURL)
+		if err != nil {
+			return err
+		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
 		api, closer, err := lcli.GetGatewayAPI(ncctx)
@@ -802,10 +808,14 @@ func (d *Shuttle) RunRpcConnection() error {
 	}
 }
 
-func (d *Shuttle) runRpc(conn *websocket.Conn) error {
+func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	conn.MaxPayloadBytes = 128 << 20
 	log.Infof("connecting to primary estuary node")
-	defer conn.Close()
+	defer func() {
+		if errC := conn.Close(); errC != nil {
+			err = errC
+		}
+	}()
 
 	readDone := make(chan struct{})
 
@@ -842,11 +852,16 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) error {
 		case <-readDone:
 			return fmt.Errorf("read routine exited, assuming socket is closed")
 		case msg := <-d.outgoing:
-			conn.SetWriteDeadline(time.Now().Add(time.Second * 30))
+			if err := conn.SetWriteDeadline(time.Now().Add(time.Second * 30)); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+
+			}
 			if err := websocket.JSON.Send(conn, msg); err != nil {
 				log.Errorf("failed to send message: %s", err)
 			}
-			conn.SetWriteDeadline(time.Time{})
+			if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+				log.Errorf("failed to set the connection's network write deadline: %s", err)
+			}
 		}
 	}
 }
@@ -1043,7 +1058,7 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", withUser(s.handleAddCar))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1121,6 +1136,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 		return err
 	}
 
+	//#nosec G104 - it's not common to treat SetLogLevel error return
 	logging.SetLogLevel(body.System, body.Level)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{})
@@ -1164,7 +1180,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	fname := mpf.Filename
+	filename := mpf.Filename
 	fi, err := mpf.Open()
 	if err != nil {
 		return err
@@ -1197,7 +1213,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), fname, cic)
+	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1269,12 +1285,8 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+		return err
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -1324,9 +1336,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	// TODO: how to specify filename?
-	fname := header.Roots[0].String()
+	filename := header.Roots[0].String()
 	if qpname := c.QueryParam("filename"); qpname != "" {
-		fname = qpname
+		filename = qpname
 	}
 
 	bserv := blockservice.New(bs, nil)
@@ -1334,7 +1346,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, fname, util.ContentInCollection{
+	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
 		CollectionDir: c.QueryParam(ColDir),
 	})
@@ -1389,13 +1401,13 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fname string, cic util.ContentInCollection) (uint, error) {
-	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, fname, cic)
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
-		Name:                fname,
+		Filename:            filename,
 		Location:            s.shuttleHandle,
 	})
 	if err != nil {
@@ -1436,7 +1448,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, fnam
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, fname, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1445,7 +1457,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
 			Root:     root.String(),
-			Name:     fname,
+			Filename: filename,
 			Location: s.shuttleHandle,
 		},
 
@@ -1606,7 +1618,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
 
@@ -1973,7 +1985,10 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		})
 	}
 
-	io.Copy(c.Response(), r)
+	_, err = io.Copy(c.Response(), r)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
