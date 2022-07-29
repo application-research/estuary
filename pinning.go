@@ -409,7 +409,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 }
 
 func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont Content) (string, error) {
-	ctx, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
+	_, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
 	defer span.End()
 
 	var activeShuttles []string

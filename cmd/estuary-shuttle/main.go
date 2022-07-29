@@ -1058,7 +1058,7 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", withUser(s.handleAddCar))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1285,12 +1285,8 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+		return err
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -1622,7 +1618,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
 

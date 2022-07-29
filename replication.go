@@ -252,17 +252,6 @@ func (cb *contentStagingZone) isReady() bool {
 	return false
 }
 
-func (cb *contentStagingZone) hasRoomForContent(c Content) bool {
-	cb.lk.Lock()
-	defer cb.lk.Unlock()
-
-	if len(cb.Contents) >= cb.MaxItems {
-		return false
-	}
-
-	return cb.CurSize+c.Size <= cb.MaxSize
-}
-
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
@@ -511,7 +500,7 @@ func (qm *queueManager) processQueue() {
 			heap.Push(qm.queue, qe)
 			qm.nextEvent = qe.checkTime
 			qm.qnextMetr.Set(float64(qe.checkTime.Unix()))
-			qm.evtTimer.Reset(qe.checkTime.Sub(time.Now()))
+			qm.evtTimer.Reset(time.Until(qe.checkTime))
 			return
 		}
 	}
@@ -627,7 +616,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
-		"cid":  util.DbCID{ncid},
+		"cid":  util.DbCID{CID: ncid},
 		"size": size,
 	}).Error; err != nil {
 		return err
@@ -640,7 +629,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if loc == util.ContentLocationLocal {
 		obj := &Object{
-			Cid:  util.DbCID{ncid},
+			Cid:  util.DbCID{CID: ncid},
 			Size: int(size),
 		}
 		if err := cm.DB.Create(obj).Error; err != nil {
@@ -1042,17 +1031,7 @@ func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Addr
 }
 
 func (cm *ContentManager) sizeIsCloseEnough(fsize, limit abi.PaddedPieceSize) bool {
-	if fsize > limit {
-		return true
-	}
-
-	/*
-		if fsize*64 > limit {
-			return true
-		}
-	*/
-
-	return false
+	return fsize > limit
 }
 
 func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
@@ -1158,7 +1137,7 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 }
 
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content Content) error {
-	ctx, span := cm.tracer.Start(ctx, "stageContent")
+	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
 	if content.AggregatedIn > 0 {
 		log.Warnf("attempted to add content to staging zone that was already staged: %d (is in %d)", content.ID, content.AggregatedIn)
@@ -1231,8 +1210,6 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 }
 
 const bucketingEnabled = true
-
-const errDelay = time.Minute * 5
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, done func(time.Duration)) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
@@ -2011,10 +1988,7 @@ func init() {
 
 func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) bool {
 	if verified {
-		if types.BigCmp(price, abi.NewTokenAmount(0)) > 0 {
-			return true
-		}
-		return false
+		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
 	}
 
 	if types.BigCmp(price, priceMax) > 0 {
@@ -2508,7 +2482,7 @@ func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal)
 	// fmt.Println("proposal cid: ", nd.Cid())
 
 	if err := cm.DB.Create(&proposalRecord{
-		PropCid: util.DbCID{nd.Cid()},
+		PropCid: util.DbCID{CID: nd.Cid()},
 		Data:    nd.RawData(),
 	}).Error; err != nil {
 		return err
@@ -2574,15 +2548,6 @@ func (dfe *DealFailureError) Record() *dfeRecord {
 
 func (dfe *DealFailureError) Error() string {
 	return fmt.Sprintf("deal with miner %s failed in phase %s: %s", dfe.Message, dfe.Phase, dfe.Message)
-}
-
-func averageAskPrice(asks []*network.AskResponse) types.FIL {
-	total := abi.NewTokenAmount(0)
-	for _, a := range asks {
-		total = types.BigAdd(total, a.Ask.Ask.Price)
-	}
-
-	return types.FIL(big.Div(total, big.NewInt(int64(len(asks)))))
 }
 
 type PieceCommRecord struct {
@@ -2699,8 +2664,8 @@ func (cm *ContentManager) getPieceCommitment(ctx context.Context, data cid.Cid, 
 	}
 
 	opcr := PieceCommRecord{
-		Data:    util.DbCID{data},
-		Piece:   util.DbCID{pc},
+		Data:    util.DbCID{CID: data},
+		Piece:   util.DbCID{CID: pc},
 		CarSize: carSize,
 		Size:    size,
 	}
@@ -2720,7 +2685,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 
 	var obj Object
 	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
-		return nil, xerrors.Errorf("failed to get object from db: ", err)
+		return nil, xerrors.Errorf("failed to get object from db: %s", err)
 	}
 
 	var refs []ObjRef
@@ -2731,7 +2696,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 	var contentToFetch uint
 	switch len(refs) {
 	case 0:
-		return nil, xerrors.Errorf("have no object references for object %d in database")
+		return nil, xerrors.Errorf("have no object references for object %d in database", obj.ID)
 	case 1:
 		// easy case, fetch this thing.
 		contentToFetch = refs[0].Content
@@ -2809,41 +2774,42 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 
 func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont Content) error {
 	return fmt.Errorf("not retrieving content yet until implementation is finished")
-
-	var activeDeals []contentDeal
-	if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
-		return err
-	}
-
-	if len(activeDeals) == 0 {
-		log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
-		return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
-	}
-
-	var deals []drpc.StorageDeal
-	for _, d := range activeDeals {
-		ma, err := d.MinerAddr()
-		if err != nil {
-			log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
-			continue
+	/*
+		var activeDeals []contentDeal
+		if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
+			return err
 		}
 
-		deals = append(deals, drpc.StorageDeal{
-			Miner:  ma,
-			DealID: d.DealID,
-		})
-	}
+		if len(activeDeals) == 0 {
+			log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
+			return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
+		}
 
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_RetrieveContent,
-		Params: drpc.CmdParams{
-			RetrieveContent: &drpc.RetrieveContent{
-				Content: cont.ID,
-				Cid:     cont.Cid.CID,
-				Deals:   deals,
+		var deals []drpc.StorageDeal
+		for _, d := range activeDeals {
+			ma, err := d.MinerAddr()
+			if err != nil {
+				log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
+				continue
+			}
+
+			deals = append(deals, drpc.StorageDeal{
+				Miner:  ma,
+				DealID: d.DealID,
+			})
+		}
+
+		return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+			Op: drpc.CMD_RetrieveContent,
+			Params: drpc.CmdParams{
+				RetrieveContent: &drpc.RetrieveContent{
+					Content: cont.ID,
+					Cid:     cont.Cid.CID,
+					Deals:   deals,
+				},
 			},
-		},
-	})
+		})
+	*/
 }
 
 func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint) error {
@@ -2900,11 +2866,9 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 		return err
 	}
 
-	rootContent := content.ID
-
 	index := -1
 	if content.AggregatedIn > 0 {
-		rootContent = content.AggregatedIn
+		rootContent := content.AggregatedIn
 		ix, err := cm.indexForAggregate(ctx, rootContent, contentToFetch)
 		if err != nil {
 			return err
@@ -3060,7 +3024,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
 func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*Object, loc string) error {
-	ctx, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
+	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
 	if err := cm.DB.CreateInBatches(objects, 300).Error; err != nil {
