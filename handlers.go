@@ -3137,6 +3137,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 	var shuttles []Shuttle
 	for hnd, sh := range s.CM.shuttles {
 		if sh.hostname == "" {
+			log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
 		}
 
@@ -3147,6 +3148,7 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 		}
 
 		if !shuttle.Open {
+			log.Debugf("shuttle %+v is not open, skipping", shuttle)
 			continue
 		}
 
