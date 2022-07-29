@@ -1058,7 +1058,7 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", withUser(s.handleAddCar))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1286,8 +1286,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
-		return err
-	} else if err := util.ErrorIfContentLengthEmpty(c); err != nil {
 		return err
 	}
 
