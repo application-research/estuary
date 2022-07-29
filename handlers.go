@@ -3689,6 +3689,9 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
+	if err != nil {
+		return err
+	}
 
 	//	handle the extensive looks up differently. Cache them for 1 hour.
 	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
@@ -5122,9 +5125,9 @@ type CidType string
 
 const (
 	Raw    CidType = "raw"
-	File           = "file"
-	Dir            = "directory"
-	ColDir         = "dir"
+	File   CidType = "file"
+	Dir    CidType = "directory"
+	ColDir string  = "dir"
 )
 
 type collectionListResponse struct {
