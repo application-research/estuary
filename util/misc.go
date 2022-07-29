@@ -55,7 +55,7 @@ func CidIsUnwalkable(c cid.Cid) bool {
 
 func ErrorIfContentAddingDisabled(isContentAddingDisabled bool) error {
 	if isContentAddingDisabled {
-		return HttpError{
+		return &HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  ERR_CONTENT_ADDING_DISABLED,
 			Details: "uploading content to this node is not allowed at the moment",
