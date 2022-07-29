@@ -1,12 +1,14 @@
 package util
 
 import (
+	"net/http"
+
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
+	"github.com/labstack/echo/v4"
 	"github.com/multiformats/go-multihash"
-	"net/http"
 )
 
 func TransferTerminated(st *filclient.ChannelState) bool {
@@ -58,6 +60,17 @@ func ErrorIfContentAddingDisabled(isContentAddingDisabled bool) error {
 			Code:    http.StatusBadRequest,
 			Reason:  ERR_CONTENT_ADDING_DISABLED,
 			Details: "uploading content to this node is not allowed at the moment",
+		}
+	}
+	return nil
+}
+
+func ErrorIfContentLengthEmpty(c echo.Context) error {
+	if c.Request().Header.Get("Content-Length") == "" {
+		return HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  ERR_CONTENT_LENGTH_REQUIRED,
+			Details: "uploading car content requires Content-Length header value to be set",
 		}
 	}
 	return nil

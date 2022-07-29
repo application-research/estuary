@@ -702,6 +702,8 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
+	} else if err := util.ErrorIfContentLengthEmpty(c); err != nil {
+		return err
 	}
 	if s.CM.localContentAddingDisabled {
 		return s.redirectContentAdding(c, u)

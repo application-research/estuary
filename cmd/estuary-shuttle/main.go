@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
 	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
@@ -1284,12 +1285,10 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+		return err
+	} else if err := util.ErrorIfContentLengthEmpty(c); err != nil {
+		return err
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
