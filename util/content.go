@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"strings"
+	"fmt"
 
 	"github.com/ipfs/go-cid"
 	format "github.com/ipfs/go-ipld-format"
