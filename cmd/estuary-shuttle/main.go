@@ -1229,7 +1229,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
-		RetrievalURL: createRetrievalURL(nd.Cid().String()),
+		RetrievalURL: util.createRetrievalURL(nd.Cid().String()),
 		EstuaryId:    contid,
 		Providers:    s.addrsForShuttle(),
 	})
@@ -1370,7 +1370,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          root.String(),
-		RetrievalURL: createRetrievalURL(root.String()),
+		RetrievalURL: util.createRetrievalURL(root.String()),
 		EstuaryId:    contid,
 		Providers:    s.addrsForShuttle(),
 	})
@@ -1383,9 +1383,6 @@ func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Re
 	return car.LoadCar(ctx, bs, r)
 }
 
-func createRetrievalURL(cid string) string {
-	return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
-}
 func (s *Shuttle) addrsForShuttle() []string {
 	var out []string
 	for _, a := range s.Node.Host.Addrs() {
@@ -2264,7 +2261,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          cc.String(),
-		RetrievalURL: createRetrievalURL(cc.String()),
+		RetrievalURL: util.createRetrievalURL(cc.String()),
 		EstuaryId:    contid,
 		Providers:    s.addrsForShuttle(),
 	})

@@ -341,10 +341,6 @@ func serveProfile(c echo.Context) error {
 	return nil
 }
 
-func createRetrievalURL(cid string) string {
-	return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
-}
-
 type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
@@ -960,7 +956,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
-		RetrievalURL: createRetrievalURL(nd.Cid().String()),
+		RetrievalURL: util.createRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
 	})

@@ -123,3 +123,7 @@ func EnsurePathIsLinked(dirs []string, rootNode *merkledag.ProtoNode, ds format.
 	}
 	return lookupNode, nil
 }
+
+func createRetrievalURL(cid string) string {
+       return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
+}
