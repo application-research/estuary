@@ -478,7 +478,7 @@ func main() {
 
 				username := "admin"
 				password := ""
-				salt:= ""
+				salt := ""
 
 				if err := quietdb.First(&User{}, "username = ?", username).Error; err == nil {
 					return fmt.Errorf("an admin user already exists")
@@ -487,7 +487,7 @@ func main() {
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:	  salt,
+					Salt:     salt,
 					PassHash: util.GetPasswordHash(password, salt),
 					Perm:     100,
 				}
@@ -657,7 +657,7 @@ func main() {
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
 		// refresh pin queue for local contents
-		if !cm.contentAddingDisabled {
+		if !cm.globalContentAddingDisabled {
 			go func() {
 				if err := cm.refreshPinQueue(cctx.Context, util.ContentLocationLocal); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)

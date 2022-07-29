@@ -102,7 +102,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	}
 
 	// when a shuttle connects, refresh its pin queue
-	if !cm.contentAddingDisabled {
+	if !cm.globalContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
 				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)

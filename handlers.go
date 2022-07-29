@@ -3105,7 +3105,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			DealDuration:          dealDuration,
 			MaxStagingWait:        maxStagingZoneLifetime,
 			FileStagingThreshold:  int64(individualDealThreshold),
-			ContentAddingDisabled: s.CM.contentAddingDisabled || u.StorageDisabled,
+			ContentAddingDisabled: s.CM.globalContentAddingDisabled || u.StorageDisabled,
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
@@ -5359,5 +5359,5 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 }
 
 func (s *Server) isContentAddingDisabled(u *User) bool {
-	return s.CM.contentAddingDisabled || u.StorageDisabled
+	return s.CM.globalContentAddingDisabled || u.StorageDisabled
 }

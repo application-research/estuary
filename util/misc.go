@@ -1,12 +1,13 @@
 package util
 
 import (
+	"net/http"
+
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/multiformats/go-multihash"
-	"net/http"
 )
 
 func TransferTerminated(st *filclient.ChannelState) bool {
