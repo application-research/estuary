@@ -110,6 +110,37 @@ info:
   title: Estuary API
   version: 0.0.0
 paths:
+  /admin/autoretrieve/init:
+    post:
+      description: This endpoint registers a new autoretrieve server
+      parameters:
+        - description: Autoretrieve's comma-separated list of addresses
+          in: body
+          name: addresses
+          required: true
+          schema:
+            type: string
+        - description: Autoretrieve's public key
+          in: body
+          name: pubKey
+          required: true
+          schema:
+            type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Register autoretrieve server
+      tags:
+        - autoretrieve
+  /admin/autoretrieve/list:
+    get:
+      description: This endpoint lists all registered autoretrieve servers
+      produces:
+        - application/json
+      responses: {}
+      summary: List autoretrieve servers
+      tags:
+        - autoretrieve
   /admin/peering/peers:
     delete:
       description: This endpoint can be used to remove a Peer from the Peering Service
@@ -192,6 +223,21 @@ paths:
       summary: Get all users
       tags:
         - admin
+  /autoretrieve/heartbeat:
+    post:
+      description: This endpoint updates the lastConnection field for autoretrieve
+      parameters:
+        - description: Autoretrieve's auth token
+          in: header
+          name: token
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Marks autoretrieve server as up
+      tags:
+        - autoretrieve
   /collections/{coluuid}:
     delete:
       description: This endpoint is used to delete an existing collection.

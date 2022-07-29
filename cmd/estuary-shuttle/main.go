@@ -150,7 +150,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			if err != nil {
 				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
 			}
-			cfg.Node.PeeringPeers = peers
+			cfg.Node.PeeringPeers = append(cfg.Node.PeeringPeers, peers...)
 
 		case "host":
 			cfg.Hostname = cctx.String("host")
@@ -314,10 +314,8 @@ func main() {
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
 		&cli.StringFlag{
-			Name:    "peering-peers",
-			Usage:   "specify peering peers that this node can be connected to",
-			Value:   cfg.Node.GetPeeringPeersStr(),
-			EnvVars: []string{"PEERING_PEERS"},
+			Name:  "peering-peers",
+			Usage: "specify peering peers that this node can be connected to",
 		},
 		&cli.BoolFlag{
 			Name:  "jaeger-tracing",
