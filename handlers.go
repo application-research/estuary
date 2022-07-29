@@ -154,7 +154,7 @@ func (s *Server) ServeAPI() error {
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", withUser(s.handleAddCar))
+	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
@@ -789,7 +789,13 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
-	return c.JSON(http.StatusOK, map[string]interface{}{"content": cont})
+
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
+		Cid:          rootCID.String(),
+		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
+		EstuaryId:    cont.ID,
+		Providers:    s.CM.pinDelegatesForContent(*cont),
+	})
 }
 
 func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
@@ -956,9 +962,10 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       nd.Cid().String(),
-		EstuaryId: content.ID,
-		Providers: s.CM.pinDelegatesForContent(*content),
+		Cid:          nd.Cid().String(),
+		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    content.ID,
+		Providers:    s.CM.pinDelegatesForContent(*content),
 	})
 }
 
@@ -1348,7 +1355,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Tags         deals
 // @Produce      json
 // @Param deal path int true "Deal ID"
-// @Router       /deal/status/{deal} [get]
+// @Router       /deals/status/{deal} [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
@@ -1468,7 +1475,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid cid")
 	}
 
 	v0 := cid.Undef
@@ -1548,8 +1555,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 }
 
 type dealRequest struct {
-	Content uint            `json:"content"`
-	Miner   address.Address `json:"miner"`
+	ContentID uint `json:"content_id"`
 }
 
 // handleMakeDeal godoc
@@ -1559,20 +1565,21 @@ type dealRequest struct {
 // @Produce      json
 // @Param miner path string true "Miner"
 // @Param dealRequest body string true "Deal Request"
-// @Router       /deal/make/{miner} [post]
+// @Router       /deals/make/{miner} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
-		return util.HttpError{
-			Code:   http.StatusForbidden,
-			Reason: util.ERR_NOT_AUTHORIZED,
+		return &util.HttpError{
+			Code:    http.StatusForbidden,
+			Reason:  util.ERR_NOT_AUTHORIZED,
+			Details: "user not authorized",
 		}
 	}
 
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "invalid miner address")
 	}
 
 	var req dealRequest
@@ -1580,9 +1587,23 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		return err
 	}
 
+	if req.ContentID == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: "supply a valid value for content_id",
+		}
+	}
+
 	var cont Content
-	if err := s.DB.First(&cont, "id = ?", req.Content).Error; err != nil {
-		return err
+	if err := s.DB.First(&cont, "id = ?", req.ContentID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", req.ContentID),
+			}
+		}
 	}
 
 	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
@@ -1655,33 +1676,6 @@ func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
-func parseChanID(chanid string) (*datatransfer.ChannelID, error) {
-	parts := strings.Split(chanid, "-")
-	if len(parts) != 3 {
-		return nil, fmt.Errorf("incorrectly formatted channel id, must have three parts")
-	}
-
-	initiator, err := peer.Decode(parts[0])
-	if err != nil {
-		return nil, err
-	}
-
-	responder, err := peer.Decode(parts[1])
-	if err != nil {
-		return nil, err
-	}
-
-	id, err := strconv.ParseUint(parts[2], 10, 64)
-	if err != nil {
-		return nil, err
-	}
-
-	return &datatransfer.ChannelID{
-		Initiator: initiator,
-		Responder: responder,
-		ID:        datatransfer.TransferID(id),
-	}, nil
-}
 func (s *Server) handleTransferRestart(c echo.Context) error {
 	ctx := c.Request().Context()
 
@@ -1721,30 +1715,6 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (s *Server) handleTransferStart(c echo.Context) error {
-	addr, err := address.NewFromString(c.Param("miner"))
-	if err != nil {
-		return err
-	}
-
-	propCid, err := cid.Decode(c.Param("propcid"))
-	if err != nil {
-		return err
-	}
-
-	dataCid, err := cid.Decode(c.Param("datacid"))
-	if err != nil {
-		return err
-	}
-
-	chanid, err := s.FilClient.StartDataTransfer(c.Request().Context(), addr, propCid, dataCid)
-	if err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, chanid)
 }
 
 // handleDealStatus godoc
@@ -2340,13 +2310,6 @@ type estimateDealBody struct {
 	Verified     bool   `json:"verified"`
 }
 
-type askResponse struct {
-	Miner         string           `json:"miner"`
-	Price         *abi.TokenAmount `json:"price"`
-	VerifiedPrice *abi.TokenAmount `json:"verifiedPrice"`
-	MinDealSize   int64            `json:"minDealSize"`
-}
-
 type priceEstimateResponse struct {
 	TotalStr string `json:"totalFil"`
 	Total    string `json:"totalAttoFil"`
@@ -2891,9 +2854,10 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
+		exist = nil
 	}
 
-	if exist != nil && strings.ToLower(exist.Username) == username {
+	if exist != nil {
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_USERNAME_TAKEN,
@@ -3745,6 +3709,9 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
+	if err != nil {
+		return err
+	}
 
 	//	handle the extensive looks up differently. Cache them for 1 hour.
 	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
@@ -4167,7 +4134,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		// now, update size and cid
 		if err := s.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{nd.Cid()},
+			"cid":  util.DbCID{CID: nd.Cid()},
 			"size": size,
 		}).Error; err != nil {
 			return err
@@ -5049,7 +5016,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Infow("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
+	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5069,6 +5036,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Replication: s.CM.Replication,
 		Location:    req.Location,
 	}
+
 	if req.DagSplitRoot != 0 {
 		content.DagSplit = true
 		content.SplitFrom = req.DagSplitRoot
@@ -5178,9 +5146,9 @@ type CidType string
 
 const (
 	Raw    CidType = "raw"
-	File           = "file"
-	Dir            = "directory"
-	ColDir         = "dir"
+	File   CidType = "file"
+	Dir    CidType = "directory"
+	ColDir string  = "dir"
 )
 
 type collectionListResponse struct {

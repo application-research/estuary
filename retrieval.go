@@ -139,7 +139,7 @@ type retrievalSuccessRecord struct {
 
 func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
 	if err := cm.DB.Create(&retrievalSuccessRecord{
-		Cid:          util.DbCID{cc},
+		Cid:          util.DbCID{CID: cc},
 		Miner:        m.String(),
 		Peer:         rstats.Peer.String(),
 		Size:         rstats.Size,

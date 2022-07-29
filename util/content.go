@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -30,16 +31,16 @@ type ContentInCollection struct {
 
 type ContentAddIpfsBody struct {
 	ContentInCollection
-
 	Root     string   `json:"root"`
 	Filename string   `json:"filename"`
 	Peers    []string `json:"peers"`
 }
 
 type ContentAddResponse struct {
-	Cid       string   `json:"cid"`
-	EstuaryId uint     `json:"estuaryId"`
-	Providers []string `json:"providers"`
+	Cid          string   `json:"cid"`
+	RetrievalURL string   `json:"retrieval_url"`
+	EstuaryId    uint     `json:"estuaryId"`
+	Providers    []string `json:"providers"`
 }
 
 type ContentCreateBody struct {
@@ -121,4 +122,8 @@ func EnsurePathIsLinked(dirs []string, rootNode *merkledag.ProtoNode, ds format.
 		}
 	}
 	return lookupNode, nil
+}
+
+func CreateRetrievalURL(cid string) string {
+	return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
 }

@@ -9,6 +9,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+
 	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 	"os"
@@ -725,9 +726,9 @@ func main() {
 }
 
 var backoffTimer = backoff.ExponentialBackOff{
-	InitialInterval: time.Millisecond * 50,
+	InitialInterval: time.Second * 5,
 	Multiplier:      1.5,
-	MaxInterval:     time.Second,
+	MaxInterval:     time.Second * 10,
 	Stop:            backoff.Stop,
 	Clock:           backoff.SystemClock,
 }
@@ -1057,7 +1058,7 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", withUser(s.handleAddCar))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1243,9 +1244,10 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       nd.Cid().String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          nd.Cid().String(),
+		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
@@ -1269,7 +1271,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 			log.Warnf("providing failed: %s", err)
 			return
 		}
-		log.Infof("providing complete")
+		log.Debugf("providing complete")
 	}()
 
 	return nil
@@ -1284,12 +1286,8 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+		return err
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -1383,9 +1381,10 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       root.String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          root.String(),
+		RetrievalURL: util.CreateRetrievalURL(root.String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
@@ -1621,7 +1620,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		objlk.Lock()
 		objects = append(objects, &Object{
-			Cid:  util.DbCID{c},
+			Cid:  util.DbCID{CID: c},
 			Size: len(node.RawData()),
 		})
 
@@ -2276,9 +2275,10 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:       cc.String(),
-		EstuaryId: contid,
-		Providers: s.addrsForShuttle(),
+		Cid:          cc.String(),
+		RetrievalURL: util.CreateRetrievalURL(cc.String()),
+		EstuaryId:    contid,
+		Providers:    s.addrsForShuttle(),
 	})
 }
 
