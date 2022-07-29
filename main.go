@@ -130,7 +130,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if err != nil {
 				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
 			}
-			cfg.Node.PeeringPeers = peers
+			cfg.Node.PeeringPeers = append(cfg.Node.PeeringPeers, peers...)
+
 		case "lightstep-token":
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
@@ -232,9 +233,8 @@ func main() {
 			EnvVars: []string{"ESTUARY_ANNOUNCE"},
 		},
 		&cli.StringFlag{
-			Name:    "peering-peers",
-			Usage:   "peering addresses for the libp2p server to listen on",
-			EnvVars: []string{"ESTUARY_PEERING_PEERS"},
+			Name:  "peering-peers",
+			Usage: "peering addresses for the libp2p server to listen on",
 		},
 		&cli.StringFlag{
 			Name:    "datadir",

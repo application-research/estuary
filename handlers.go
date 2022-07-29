@@ -456,7 +456,6 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	//	validate the IDs and Addrs here
 	var validPeersAddInfo []peer.AddrInfo
 	for _, peerParam := range params {
-
 		//	validate the PeerID
 		peerParamId, err := peer.Decode(peerParam.ID)
 
