@@ -99,11 +99,14 @@ func NewEstuary(appVersion string) *Estuary {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			PeeringPeers:      []peering.PeeringPeer{},
+			PeeringPeers:      peering.DefaultPeers,
 			WriteLogDir:       "",
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
+
+			IndexerURL:          "https://cid.contact",
+			IndexerTickInterval: 720,
 
 			ApiURL: "wss://api.chain.love",
 
