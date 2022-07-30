@@ -1542,16 +1542,11 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	ask, err := s.FilClient.GetAsk(c.Request().Context(), addr)
+	ask, err := s.CM.getAsk(c.Request().Context(), addr, 0)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-
-	if err := s.CM.updateMinerVersion(c.Request().Context(), addr); err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, toDBAsk(ask))
+	return c.JSON(http.StatusOK, ask)
 }
 
 type dealRequest struct {

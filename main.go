@@ -378,7 +378,7 @@ func main() {
 		&cli.StringSliceFlag{
 			Name:  "deal-protocol-version",
 			Usage: "sets the deal protocol version. deafults to v110 (go-fil-markets) and v120 (boost)",
-    },
+		},
 		&cli.StringFlag{
 			Name:  "indexer-url",
 			Usage: "sets the indexer advertisement url",
@@ -514,7 +514,7 @@ func main() {
 		}
 
 		init := Initializer{&cfg.Node, db, nil}
-		nd, err := node.Setup(context.Background(), &init)
+		nd, err := node.Setup(cctx.Context, &init)
 		if err != nil {
 			return err
 		}
@@ -605,13 +605,13 @@ func main() {
 
 		go func() {
 			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(context.TODO(), ai); err != nil {
+				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
 					fmt.Println("failed to connect to bootstrapper: ", err)
 					continue
 				}
 			}
 
-			if err := nd.Dht.Bootstrap(context.TODO()); err != nil {
+			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
 				fmt.Println("dht bootstrapping failed: ", err)
 			}
 		}()
