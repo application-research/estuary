@@ -111,8 +111,8 @@ type ContentManager struct {
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
 
-	contentAddingDisabled      bool
-	localContentAddingDisabled bool
+	globalContentAddingDisabled bool
+	localContentAddingDisabled  bool
 
 	Replication int
 
@@ -338,7 +338,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		inflightCids:                 make(map[cid.Cid]uint),
 		FailDealOnTransferFailure:    cfg.Deal.FailOnTransferFailure,
 		isDealMakingDisabled:         cfg.Deal.Disable,
-		contentAddingDisabled:        cfg.Content.DisableGlobalAdding,
+		globalContentAddingDisabled:  cfg.Content.DisableGlobalAdding,
 		localContentAddingDisabled:   cfg.Content.DisableLocalAdding,
 		VerifiedDeal:                 cfg.Deal.Verified,
 		Replication:                  cfg.Replication,

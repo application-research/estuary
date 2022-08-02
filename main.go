@@ -633,7 +633,7 @@ func main() {
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
 		// refresh pin queue for local contents
-		if !cm.contentAddingDisabled {
+		if !cm.globalContentAddingDisabled {
 			go func() {
 				if err := cm.refreshPinQueue(cctx.Context, util.ContentLocationLocal); err != nil {
 					log.Errorf("failed to refresh pin queue: %s", err)
