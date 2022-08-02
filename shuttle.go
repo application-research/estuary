@@ -101,8 +101,9 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		private:  hello.Private,
 	}
 
-	// If global content adding is enabled, refresh shuttle pin queue
+	// when a shuttle connects, if global content adding is enabled, refresh shuttle pin queue
 	if !cm.contentAddingDisabled {
+	if !cm.globalContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
 				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)
@@ -358,11 +359,13 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}
 
 		if oerr := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "start-data-transfer-remote",
-			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
-			Content: cd.Content,
-			UserID:  cd.UserID,
+			Miner:               miner,
+			Phase:               "start-data-transfer-remote",
+			Message:             fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+			Content:             cd.Content,
+			UserID:              cd.UserID,
+			MinerVersion:        cd.MinerVersion,
+			DealProtocolVersion: cd.DealProtocolVersion,
 		}); oerr != nil {
 			return oerr
 		}

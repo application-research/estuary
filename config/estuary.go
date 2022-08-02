@@ -6,7 +6,8 @@ import (
 
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/filecoin-project/go-state-types/abi"
-
+	"github.com/application-research/filclient"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/application-research/estuary/build"
 )
 
@@ -75,6 +76,10 @@ func NewEstuary(appVersion string) *Estuary {
 			FailOnTransferFailure: false,
 			IsVerified:            true,
 			Duration:              abi.ChainEpoch(1555200 - (2880 * 21)), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
+			EnabledDealProtocolsVersions: map[protocol.ID]bool{
+				filclient.DealProtocolv110: true,
+				filclient.DealProtocolv120: true,
+			},
 		},
 
 		Content: Content{
