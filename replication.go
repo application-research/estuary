@@ -850,7 +850,7 @@ func (cm *ContentManager) pickMinerDist(n int) (int, int) {
 
 const topMinerSel = 15
 
-func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByprice bool) ([]miner, error) {
+func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
 		attribute.Int("count", n),
 	))
@@ -864,16 +864,16 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.P
 	// give miners more of a chance to prove themselves
 	_, nrand := cm.pickMinerDist(n)
 
-	out, err := cm.randomMinerListForDeal(ctx, nrand, pieceSize, exclude, filterByprice)
+	out, err := cm.randomMinerListForDeal(ctx, nrand, pieceSize, exclude, filterByPrice)
 	if err != nil {
 		return nil, err
 	}
-	return cm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByprice)
+	return cm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
 }
 
 //TODO - this is currently not used, if we choose to use it,
 //add a check to make sure miners selected is still active in db
-func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByprice bool) ([]miner, error) {
+func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	sortedMiners, _, err := cm.sortedMinerList()
 	if err != nil {
 		return nil, err
@@ -917,7 +917,7 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 			continue
 		}
 
-		if filterByprice {
+		if filterByPrice {
 			price := ask.GetPrice(cm.VerifiedDeal)
 			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
 				continue
@@ -932,7 +932,7 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 	return out, nil
 }
 
-func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByprice bool) ([]miner, error) {
+func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	var dbminers []storageMiner
 	if err := cm.DB.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
@@ -973,7 +973,7 @@ func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pie
 			continue
 		}
 
-		if filterByprice {
+		if filterByPrice {
 			price := ask.GetPrice(cm.VerifiedDeal)
 			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
 				continue

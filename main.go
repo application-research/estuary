@@ -377,7 +377,7 @@ func main() {
 		},
 		&cli.StringSliceFlag{
 			Name:  "deal-protocol-version",
-			Usage: "sets the deal protocol version. deafults to v110 (go-fil-markets) and v120 (boost)",
+			Usage: "sets the deal protocol version. defaults to v110 (go-fil-markets) and v120 (boost)",
 		},
 		&cli.StringFlag{
 			Name:  "indexer-url",
