@@ -54,7 +54,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-
 type miner struct {
 	address             address.Address
 	dealProtocolVersion protocol.ID
@@ -325,7 +324,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
 		IncomingRPCMessages:          make(chan *drpc.Message),
-    EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
+		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.toCheck(c)
@@ -914,8 +913,8 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 		}
 
 		if filterByPrice {
-			price := ask.GetPrice(cm.VerifiedDeal)
-			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
+			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+			if cm.priceIsTooHigh(price) {
 				continue
 			}
 		}
@@ -970,8 +969,8 @@ func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pie
 		}
 
 		if filterByPrice {
-			price := ask.GetPrice(cm.VerifiedDeal)
-			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
+			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+			if cm.priceIsTooHigh(price) {
 				continue
 			}
 		}
@@ -2055,11 +2054,10 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		return err
 	}
 
-
 	var readyDeals []deal
 	for _, m := range miners {
-		price := m.ask.GetPrice(verified)
-		prop, err := cm.FilClient.MakeDeal(ctx, m.address, content.Cid.CID, price, m.ask.MinPieceSize, dealDuration, verified)
+		price := m.ask.GetPrice(cm.cfg.Deal.IsVerified)
+		prop, err := cm.FilClient.MakeDeal(ctx, m.address, content.Cid.CID, price, m.ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -2296,14 +2294,13 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	price := ask.PriceBigInt
-	if verified {
+	if cm.cfg.Deal.IsVerified {
 		price = ask.VerifiedPriceBigInt
 	}
 
 	if cm.priceIsTooHigh(price) {
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
-
 
 	prop, err := cm.FilClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 	if err != nil {
