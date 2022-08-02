@@ -71,9 +71,9 @@ func NewEstuary(appVersion string) *Estuary {
 		EnableAutoRetrieve:     false,
 
 		Deal: Deal{
-			Disabled:              false,
+			IsDisabled:            false,
 			FailOnTransferFailure: false,
-			Verified:              true,
+			IsVerified:            true,
 			Duration:              abi.ChainEpoch(1555200 - (2880 * 21)), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
 		},
 
@@ -92,6 +92,7 @@ func NewEstuary(appVersion string) *Estuary {
 			KeepAlive:               time.Minute * 40,
 			MinDealSize:             256 << 20,                                               //0.25 Gib
 			IndividualDealThreshold: int64((abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10), // 90% of the unpadded data size for a 4GB piece, the 10% gap is to accommodate car file packing overhead, can probably do this better
+			AggregateInterval:       time.Minute * 5,                                         // aggregate staging buckets every 5 minutes
 		},
 
 		Jaeger: Jaeger{

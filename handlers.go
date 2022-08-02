@@ -3069,7 +3069,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
 			Replication:           s.CM.Replication,
-			Verified:              s.cfg.Deal.Verified,
+			Verified:              s.cfg.Deal.IsVerified,
 			DealDuration:          s.cfg.Deal.Duration,
 			MaxStagingWait:        s.cfg.StagingBucket.MaxLifeTime,
 			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,

@@ -9,7 +9,7 @@ import "time"
 // KeepAlive - staging zones will remain open for at least this long after the last piece of content is added to them (unless they are full)
 // MaxItems - max number of items a bucket can hold before it is aggregated
 // MinDealSize - minimum deal size that bucket must meet before it is ever considered for aggregation
-
+// AggregateInterval - interval to aggregate staging contents
 type StagingBucket struct {
 	Enabled                 bool          `json:"enabled"`
 	MinSize                 int64         `json:"min_size"`
@@ -20,4 +20,5 @@ type StagingBucket struct {
 	MaxContentAge           time.Duration `json:"max_content_age"`
 	KeepAlive               time.Duration `json:"keep_alive"`
 	MaxLifeTime             time.Duration `json:"max_life_time"`
+	AggregateInterval       time.Duration `json:"aggregate_interval"`
 }
