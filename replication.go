@@ -1312,8 +1312,8 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		replicationFactor = content.Replication
 	}
 
-	dealsTobeMade := replicationFactor - goodDeals
-	if dealsTobeMade > 0 {
+	dealsToBeMade := replicationFactor - goodDeals
+	if dealsToBeMade > 0 {
 		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 		if err != nil {
 			return err
@@ -1379,8 +1379,8 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 		go func() {
 			// make some more deals!
-			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsTobeMade)
-			if err := cm.makeDealsForContent(ctx, content, dealsTobeMade, excludedMiners); err != nil {
+			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
+			if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, excludedMiners); err != nil {
 				log.Errorf("failed to make more deals: %s", err)
 			}
 			done(time.Minute * 10)
