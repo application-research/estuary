@@ -98,8 +98,8 @@ type ContentManager struct {
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
 
-	contentAddingDisabled      bool
-	localContentAddingDisabled bool
+	globalContentAddingDisabled bool
+	localContentAddingDisabled  bool
 
 	Replication int
 
@@ -302,34 +302,34 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	}
 
 	cm := &ContentManager{
-		Provider:                   prov,
-		DB:                         db,
-		Api:                        api,
-		FilClient:                  fc,
-		Blockstore:                 tbs.Under().(node.EstuaryBlockstore),
-		Host:                       nd.Host,
-		Node:                       nd,
-		NotifyBlockstore:           nbs,
-		Tracker:                    tbs,
-		ToCheck:                    make(chan uint, 100000),
-		retrievalsInProgress:       make(map[uint]*util.RetrievalProgress),
-		buckets:                    make(map[uint][]*contentStagingZone),
-		pinJobs:                    make(map[uint]*pinner.PinningOperation),
-		pinMgr:                     pinmgr,
-		remoteTransferStatus:       cache,
-		shuttles:                   make(map[string]*ShuttleConnection),
-		contentSizeLimit:           util.DefaultContentSizeLimit,
-		hostname:                   cfg.Hostname,
-		inflightCids:               make(map[cid.Cid]uint),
-		FailDealOnTransferFailure:  cfg.Deal.FailOnTransferFailure,
-		isDealMakingDisabled:       cfg.Deal.Disable,
-		contentAddingDisabled:      cfg.Content.DisableGlobalAdding,
-		localContentAddingDisabled: cfg.Content.DisableLocalAdding,
-		VerifiedDeal:               cfg.Deal.Verified,
-		Replication:                cfg.Replication,
-		tracer:                     otel.Tracer("replicator"),
-		DisableFilecoinStorage:     cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:        make(chan *drpc.Message),
+		Provider:                    prov,
+		DB:                          db,
+		Api:                         api,
+		FilClient:                   fc,
+		Blockstore:                  tbs.Under().(node.EstuaryBlockstore),
+		Host:                        nd.Host,
+		Node:                        nd,
+		NotifyBlockstore:            nbs,
+		Tracker:                     tbs,
+		ToCheck:                     make(chan uint, 100000),
+		retrievalsInProgress:        make(map[uint]*util.RetrievalProgress),
+		buckets:                     make(map[uint][]*contentStagingZone),
+		pinJobs:                     make(map[uint]*pinner.PinningOperation),
+		pinMgr:                      pinmgr,
+		remoteTransferStatus:        cache,
+		shuttles:                    make(map[string]*ShuttleConnection),
+		contentSizeLimit:            util.DefaultContentSizeLimit,
+		hostname:                    cfg.Hostname,
+		inflightCids:                make(map[cid.Cid]uint),
+		FailDealOnTransferFailure:   cfg.Deal.FailOnTransferFailure,
+		isDealMakingDisabled:        cfg.Deal.Disable,
+		globalContentAddingDisabled: cfg.Content.DisableGlobalAdding,
+		localContentAddingDisabled:  cfg.Content.DisableLocalAdding,
+		VerifiedDeal:                cfg.Deal.Verified,
+		Replication:                 cfg.Replication,
+		tracer:                      otel.Tracer("replicator"),
+		DisableFilecoinStorage:      cfg.DisableFilecoinStorage,
+		IncomingRPCMessages:         make(chan *drpc.Message),
 	}
 	qm := newQueueManager(func(c uint) {
 		cm.ToCheck <- c
