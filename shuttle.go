@@ -358,11 +358,13 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}
 
 		if oerr := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "start-data-transfer-remote",
-			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
-			Content: cd.Content,
-			UserID:  cd.UserID,
+			Miner:               miner,
+			Phase:               "start-data-transfer-remote",
+			Message:             fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+			Content:             cd.Content,
+			UserID:              cd.UserID,
+			MinerVersion:        cd.MinerVersion,
+			DealProtocolVersion: cd.DealProtocolVersion,
 		}); oerr != nil {
 			return oerr
 		}

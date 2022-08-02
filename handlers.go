@@ -1543,16 +1543,11 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	ask, err := s.FilClient.GetAsk(c.Request().Context(), addr)
+	ask, err := s.CM.getAsk(c.Request().Context(), addr, 0)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-
-	if err := s.CM.updateMinerVersion(c.Request().Context(), addr); err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, toDBAsk(ask))
+	return c.JSON(http.StatusOK, ask)
 }
 
 type dealRequest struct {
@@ -2332,9 +2327,9 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 		return err
 	}
 
-	rounded := padreader.PaddedSize(body.Size)
+	pieceSize := padreader.PaddedSize(body.Size)
 
-	estimate, err := s.CM.estimatePrice(ctx, body.Replication, rounded.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	estimate, err := s.CM.estimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
 	if err != nil {
 		return err
 	}

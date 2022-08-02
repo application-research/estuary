@@ -31,6 +31,7 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p-core/protocol"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/whyrusleeping/memo"
@@ -172,6 +173,20 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
 		case "indexer-tick-interval":
 			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
+
+		case "deal-protocol-version":
+			dprs := make(map[protocol.ID]bool, 0)
+			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
+				p, ok := config.DealProtocolsVersionsMap[dprv]
+				if !ok {
+					return fmt.Errorf("%s: is not a valid deal protocol version", dprv)
+				}
+				dprs[p] = true
+			}
+
+			if len(dprs) > 0 {
+				cfg.Deal.EnabledDealProtocolsVersions = dprs
+			}
 
 		default:
 		}
@@ -360,6 +375,10 @@ func main() {
 			Usage: "sets shuttle message handler count",
 			Value: cfg.ShuttleMessageHandlers,
 		},
+		&cli.StringSliceFlag{
+			Name:  "deal-protocol-version",
+			Usage: "sets the deal protocol version. defaults to v110 (go-fil-markets) and v120 (boost)",
+		},
 		&cli.StringFlag{
 			Name:  "indexer-url",
 			Usage: "sets the indexer advertisement url",
@@ -495,7 +514,7 @@ func main() {
 		}
 
 		init := Initializer{&cfg.Node, db, nil}
-		nd, err := node.Setup(context.Background(), &init)
+		nd, err := node.Setup(cctx.Context, &init)
 		if err != nil {
 			return err
 		}
@@ -586,13 +605,13 @@ func main() {
 
 		go func() {
 			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(context.TODO(), ai); err != nil {
+				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
 					fmt.Println("failed to connect to bootstrapper: ", err)
 					continue
 				}
 			}
 
-			if err := nd.Dht.Bootstrap(context.TODO()); err != nil {
+			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
 				fmt.Println("dht bootstrapping failed: ", err)
 			}
 		}()
