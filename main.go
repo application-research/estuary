@@ -143,8 +143,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.LowMem = cctx.Bool("lowmem")
 		case "no-storage-cron":
 			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
-		case "disable-deal-making":
-			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
+		case "disable-new-deals":
+			cfg.Deal.Disable = cctx.Bool("disable-new-deals")
 		case "verified-deal":
 			cfg.Deal.Verified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
@@ -296,8 +296,8 @@ func main() {
 			Value: cfg.Deal.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
-			Name:  "disable-deal-making",
-			Usage: "do not create any new deals (existing deals will still be processed)",
+			Name:  "disable-new-deals",
+			Usage: "prevents the worker from making any new deals, but existing deals will still be updated/checked",
 			Value: cfg.Deal.Disable,
 		},
 		&cli.BoolFlag{
