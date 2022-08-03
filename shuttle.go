@@ -102,7 +102,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	}
 
 	// when a shuttle connects, refresh its pin queue
-	if !cm.contentAddingDisabled {
+	if !cm.globalContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
 				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)
@@ -358,11 +358,13 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}
 
 		if oerr := cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "data-transfer-remote",
-			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
-			Content: cd.Content,
-			UserID:  cd.UserID,
+			Miner:               miner,
+			Phase:               "data-transfer-remote",
+			Message:             fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+			Content:             cd.Content,
+			UserID:              cd.UserID,
+			MinerVersion:        cd.MinerVersion,
+			DealProtocolVersion: cd.DealProtocolVersion,
 		}); oerr != nil {
 			return oerr
 		}
@@ -403,7 +405,7 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle string, param *drpc.GarbageCheck) error {
 	var tounpin []uint
 	for _, c := range param.Contents {
-		var cont Content
+		var cont util.Content
 		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 			if xerrors.Is(err, gorm.ErrRecordNotFound) {
 				tounpin = append(tounpin, c)
@@ -427,13 +429,13 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 
 	// TODO: do some sanity checks that the sub pieces were all made successfully...
 
-	if err := cm.DB.Model(Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to update content for split complete: %w", err)
 	}
 
-	if err := cm.DB.Delete(&ObjRef{}, "content = ?", param.ID).Error; err != nil {
+	if err := cm.DB.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
 		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 	}
 
