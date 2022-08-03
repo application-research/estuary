@@ -1309,7 +1309,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, &content)
+			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
 			}
@@ -1413,7 +1413,7 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 		return nil, err
 	}
 
-	chanst, err := s.CM.GetTransferStatus(ctx, &deal, &content)
+	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		log.Errorf("failed to get transfer status: %s", err)
 	}
@@ -1708,7 +1708,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal.ID); err != nil {
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
 		return err
 	}
 	return nil

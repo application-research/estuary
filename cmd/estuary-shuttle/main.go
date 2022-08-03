@@ -2126,8 +2126,8 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		isTerm, _ := util.TransferTerminated(filclient.ChannelStateConv(st))
-		if !isTerm {
+		canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st))
+		if canRestart {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)

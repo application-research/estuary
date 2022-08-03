@@ -11,15 +11,14 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-func TransferTerminated(st *filclient.ChannelState) (bool, string) {
-	msg, _ := datatransfer.Statuses[st.Status]
+func CanRestartTransfer(st *filclient.ChannelState) bool {
 	switch st.Status {
 	case datatransfer.Cancelled,
 		datatransfer.Failed,
 		datatransfer.Completed:
-		return true, msg
+		return false
 	default:
-		return false, msg
+		return true
 	}
 }
 
