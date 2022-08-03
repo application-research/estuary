@@ -266,7 +266,7 @@ func main() {
 		},
 		&cli.BoolFlag{
 			Name:  "no-storage-cron",
-			Usage: "run estuary without processing files into deals",
+			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node",
 			Value: cfg.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
