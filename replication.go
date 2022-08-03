@@ -1304,16 +1304,16 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return err
 	}
 
-	// if len(deals) == 0 &&
-	// 	content.Size < int64(individualDealThreshold) &&
-	// 	!content.Aggregate &&
-	// 	bucketingEnabled {
-	// 	// Put it in a bucket!
-	// 	if err := cm.addContentToStagingZone(ctx, content); err != nil {
-	// 		return err
-	// 	}
-	// 	return nil
-	// }
+	if len(deals) == 0 &&
+		content.Size < int64(individualDealThreshold) &&
+		!content.Aggregate &&
+		bucketingEnabled {
+		// Put it in a bucket!
+		if err := cm.addContentToStagingZone(ctx, content); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	replicationFactor := cm.Replication
 	if content.Replication > 0 {
