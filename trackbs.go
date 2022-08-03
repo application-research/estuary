@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/application-research/estuary/util"
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -65,11 +64,11 @@ func (tbs *TrackingBlockstore) Under() blockstore.Blockstore {
 }
 
 type getCountsReq struct {
-	req  []util.Object
+	req  []Object
 	resp chan []int
 }
 
-func (tbs *TrackingBlockstore) GetCounts(objects []util.Object) ([]int, error) {
+func (tbs *TrackingBlockstore) GetCounts(objects []Object) ([]int, error) {
 	req := getCountsReq{
 		req:  objects,
 		resp: make(chan []int),
@@ -116,7 +115,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
 	for c, acc := range buf {
 		if acc.Get > 0 {
-			err := tbs.db.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
+			err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
 				"reads":       gorm.Expr("reads + ?", acc.Get),
 				"last_access": acc.Last,
 			}).Error
@@ -164,7 +163,7 @@ func (tbs *TrackingBlockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block
 	blk, err := tbs.bs.Get(ctx, c)
 	if err != nil {
 		if xerrors.Is(err, blockstore.ErrNotFound) {
-			var obj util.Object
+			var obj Object
 			if dberr := tbs.db.First(&obj, "where cid = ?", c.Bytes()).Error; dberr != nil {
 				if xerrors.Is(dberr, gorm.ErrRecordNotFound) {
 					// explicitly return original error

@@ -38,9 +38,9 @@ func TestCalculateCarSize(t *testing.T) {
 		car.TraverseLinksOnlyOnce(),
 	)
 
-	objects := make([]CarObject, 0, 0)
+	objects := make([]Object, 0, 0)
 	preparedCar, err := selectiveCar.Prepare(func(block car.Block) error {
-		objects = append(objects, CarObject{
+		objects = append(objects, Object{
 			Cid:  block.BlockCID,
 			Size: uint64(len(block.Data)),
 		})

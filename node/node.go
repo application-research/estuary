@@ -11,7 +11,6 @@ import (
 
 	peering "github.com/application-research/estuary/node/modules/peering"
 
-	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
@@ -100,6 +99,7 @@ type Node struct {
 	FullRT   *fullrt.FullRT
 	FilDht   *dht.IpfsDHT
 	Host     host.Host
+
 	// Set for gathering disk usage
 
 	StorageDir string
@@ -112,10 +112,9 @@ type Node struct {
 
 	Wallet *wallet.LocalWallet
 
-	Bwc      *metrics.BandwidthCounter
-	Peering  *peering.EstuaryPeeringService
-	Config   *config.Node
-	ArEngine *autoretrieve.AutoretrieveEngine
+	Bwc     *metrics.BandwidthCounter
+	Peering *peering.EstuaryPeeringService
+	Config  *config.Node
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"gorm.io/gorm"
@@ -31,7 +30,7 @@ func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid,
 	go func() {
 		defer close(out)
 
-		var contents []util.Content
+		var contents []Content
 		if err := init.db.Find(&contents, "active").Error; err != nil {
 			log.Errorf("failed to load contents for reproviding: %s", err)
 			return

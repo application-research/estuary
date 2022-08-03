@@ -61,7 +61,7 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	var count int64
-	if err := cm.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := cm.DB.Model(&Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -78,7 +78,7 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	if err := cm.DB.Delete(&util.Content{}, contID).Error; err != nil {
+	if err := cm.DB.Delete(&Content{}, contID).Error; err != nil {
 		return fmt.Errorf("failed to delete content from db: %w", err)
 	}
 
@@ -86,11 +86,11 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 		Object uint
 	}
 
-	if err := cm.DB.Model(&util.ObjRef{}).Find(&objIds, "content = ?", contID).Error; err != nil {
+	if err := cm.DB.Model(&ObjRef{}).Find(&objIds, "content = ?", contID).Error; err != nil {
 		return fmt.Errorf("failed to gather referenced object IDs: %w", err)
 	}
 
-	if err := cm.DB.Where("content = ?", contID).Delete(&util.ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", contID).Delete(&ObjRef{}).Error; err != nil {
 		return fmt.Errorf("failed to delete related object references: %w", err)
 	}
 
@@ -111,7 +111,7 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 		slice := ids[i : i+count]
 
 		subq := cm.DB.Table("obj_refs").Select("1").Where("obj_refs.object = objects.id")
-		if err := cm.DB.Where("id IN ? and not exists (?)", slice, subq).Delete(&util.Object{}).Error; err != nil {
+		if err := cm.DB.Where("id IN ? and not exists (?)", slice, subq).Delete(&Object{}).Error; err != nil {
 			return err
 		}
 	}
@@ -121,7 +121,7 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 	}
 
 	// TODO: copied from the offloading method, need to refactor this into something better
-	q := cm.DB.Model(&util.ObjRef{}).
+	q := cm.DB.Model(&ObjRef{}).
 		Select("cid").
 		Joins("left join objects on obj_refs.object = objects.id").
 		Group("cid").
@@ -146,7 +146,7 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 }
 
 func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
-	var pin util.Content
+	var pin Content
 	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
 		return err
 	}
@@ -156,11 +156,11 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
+	if err := cm.DB.Delete(&Content{ID: pin.ID}).Error; err != nil {
 		return err
 	}
 
-	if err := cm.DB.Where("content = ?", pin.ID).Delete(&util.ObjRef{}).Error; err != nil {
+	if err := cm.DB.Where("content = ?", pin.ID).Delete(&ObjRef{}).Error; err != nil {
 		return err
 	}
 
@@ -177,7 +177,7 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 	return nil
 }
 
-func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *util.Object) (bool, error) {
+func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *Object) (bool, error) {
 	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinned")
 	defer span.End()
 
@@ -187,12 +187,12 @@ func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *util.Object)
 	return cm.deleteIfNotPinnedLock(ctx, o)
 }
 
-func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *util.Object) (bool, error) {
+func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *Object) (bool, error) {
 	ctx, span := cm.tracer.Start(ctx, "deleteIfNotPinnedLock")
 	defer span.End()
 
-	var objs []util.Object
-	if err := cm.DB.Limit(1).Model(util.Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
+	var objs []Object
+	if err := cm.DB.Limit(1).Model(Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
 		return false, err
 	}
 	if len(objs) == 0 {
@@ -201,7 +201,7 @@ func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *util.Obj
 	return false, nil
 }
 
-func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*util.Object) error {
+func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*Object) error {
 	var ids []uint
 	for _, o := range objs {
 		ids = append(ids, o.ID)
@@ -210,16 +210,16 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 	defer cm.contentLk.Unlock()
 
 	if err := cm.DB.Where("(?) = 0 and id in ?",
-		cm.DB.Model(util.ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
-		Delete(util.Object{}).Error; err != nil {
+		cm.DB.Model(ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
+		Delete(Object{}).Error; err != nil {
 		return err
 	}
 	return nil
 }
 
-func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*util.Object, error) {
-	var objects []*util.Object
-	if err := cm.DB.Model(util.ObjRef{}).Where("content = ?", cont).
+func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*Object, error) {
+	var objects []*Object
+	if err := cm.DB.Model(ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").
 		Scan(&objects).Error; err != nil {
 		return nil, err

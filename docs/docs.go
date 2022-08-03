@@ -24,52 +24,6 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/admin/autoretrieve/init": {
-            "post": {
-                "description": "This endpoint registers a new autoretrieve server",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "autoretrieve"
-                ],
-                "summary": "Register autoretrieve server",
-                "parameters": [
-                    {
-                        "description": "Autoretrieve's comma-separated list of addresses",
-                        "name": "addresses",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "description": "Autoretrieve's public key",
-                        "name": "pubKey",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/admin/autoretrieve/list": {
-            "get": {
-                "description": "This endpoint lists all registered autoretrieve servers",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "autoretrieve"
-                ],
-                "summary": "List autoretrieve servers",
-                "responses": {}
-            }
-        },
         "/admin/peering/peers": {
             "get": {
                 "description": "This endpoint can be used to list all peers on Peering Service",
@@ -179,28 +133,6 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Get all users",
-                "responses": {}
-            }
-        },
-        "/autoretrieve/heartbeat": {
-            "post": {
-                "description": "This endpoint updates the lastConnection field for autoretrieve",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "autoretrieve"
-                ],
-                "summary": "Marks autoretrieve server as up",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Autoretrieve's auth token",
-                        "name": "token",
-                        "in": "header",
-                        "required": true
-                    }
-                ],
                 "responses": {}
             }
         },

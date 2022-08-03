@@ -164,7 +164,7 @@ type contentStagingZone struct {
 	EarliestContent time.Time `json:"earliestContent"`
 	CloseTime       time.Time `json:"closeTime"`
 
-	Contents []util.Content `json:"contents"`
+	Contents []Content `json:"contents"`
 
 	MinSize int64 `json:"minSize"`
 	MaxSize int64 `json:"maxSize"`
@@ -188,7 +188,7 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 		ZoneOpened:      cb.ZoneOpened,
 		EarliestContent: cb.EarliestContent,
 		CloseTime:       cb.CloseTime,
-		Contents:        make([]util.Content, len(cb.Contents)),
+		Contents:        make([]Content, len(cb.Contents)),
 		MinSize:         cb.MinSize,
 		MaxSize:         cb.MaxSize,
 		MaxItems:        cb.MaxItems,
@@ -202,7 +202,7 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 }
 
 func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
-	content := &util.Content{
+	content := &Content{
 		Size:        0,
 		Filename:    "aggregate",
 		Active:      false,
@@ -267,7 +267,7 @@ func (cb *contentStagingZone) isReady() bool {
 	return false
 }
 
-func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
+func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 	if cb.CurSize+c.Size > cb.MaxSize {
@@ -278,7 +278,7 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 		return false, nil
 	}
 
-	if err := cm.DB.Model(util.Content{}).
+	if err := cm.DB.Model(Content{}).
 		Where("id = ?", c.ID).
 		UpdateColumn("aggregated_in", cb.ContID).Error; err != nil {
 		return false, err
@@ -298,7 +298,7 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	return true, nil
 }
 
-func (cb *contentStagingZone) hasContent(c util.Content) bool {
+func (cb *contentStagingZone) hasContent(c Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
@@ -374,7 +374,7 @@ func (cm *ContentManager) ContentWatcher() {
 	for {
 		select {
 		case c := <-cm.ToCheck:
-			var content util.Content
+			var content Content
 			if err := cm.DB.First(&content, "id = ?", c).Error; err != nil {
 				log.Errorf("finding content %d in database: %s", c, err)
 				continue
@@ -524,7 +524,7 @@ func (qm *queueManager) processQueue() {
 }
 
 func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
-	var cont util.Content
+	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 		return "", err
 	}
@@ -532,8 +532,8 @@ func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
 	return cont.Location, nil
 }
 
-func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]util.Content, error) {
-	out := make(map[string][]util.Content)
+func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]Content, error) {
+	out := make(map[string][]Content)
 	for _, c := range b.Contents {
 		loc, err := cm.currentLocationForContent(c.ID)
 		if err != nil {
@@ -550,7 +550,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	var primary string
 	var curMax int64
 	dataByLoc := make(map[string]int64)
-	contentByLoc := make(map[string][]util.Content)
+	contentByLoc := make(map[string][]Content)
 
 	for _, c := range b.Contents {
 		loc, err := cm.currentLocationForContent(c.ID)
@@ -571,7 +571,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	}
 
 	// okay, move everything to 'primary'
-	var toMove []util.Content
+	var toMove []Content
 	for loc, conts := range contentByLoc {
 		if loc != primary {
 			toMove = append(toMove, conts...)
@@ -631,20 +631,20 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		log.Warnf("content %d aggregate dir apparent size is zero", b.ContID)
 	}
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
 		"cid":  util.DbCID{CID: ncid},
 		"size": size,
 	}).Error; err != nil {
 		return err
 	}
 
-	var content util.Content
+	var content Content
 	if err := cm.DB.First(&content, "id = ?", b.ContID).Error; err != nil {
 		return err
 	}
 
 	if loc == util.ContentLocationLocal {
-		obj := &util.Object{
+		obj := &Object{
 			Cid:  util.DbCID{CID: ncid},
 			Size: int(size),
 		}
@@ -652,7 +652,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 			return err
 		}
 
-		if err := cm.DB.Create(&util.ObjRef{
+		if err := cm.DB.Create(&ObjRef{
 			Content: b.ContID,
 			Object:  obj.ID,
 		}).Error; err != nil {
@@ -663,7 +663,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 			return err
 		}
 
-		if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
 			"active":  true,
 			"pinning": false,
 		}).Error; err != nil {
@@ -684,7 +684,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) (*merkledag.ProtoNode, error) {
 	sort.Slice(conts, func(i, j int) bool {
 		return conts[i].ID < conts[j].ID
 	})
@@ -711,7 +711,7 @@ func (cm *ContentManager) startup() error {
 func (cm *ContentManager) reBuildStagingZones() error {
 	log.Info("rebuilding staging zones.......")
 
-	var stages []util.Content
+	var stages []Content
 	if err := cm.DB.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
 		return err
 	}
@@ -734,7 +734,7 @@ func (cm *ContentManager) reBuildStagingZones() error {
 			z.CloseTime = minClose
 		}
 
-		var inZones []util.Content
+		var inZones []Content
 		if err := cm.DB.Find(&inZones, "aggregated_in = ?", c.ID).Error; err != nil {
 			return err
 		}
@@ -752,7 +752,7 @@ func (cm *ContentManager) reBuildStagingZones() error {
 }
 
 func (cm *ContentManager) queueAllContent() error {
-	var allcontent []util.Content
+	var allcontent []Content
 	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
@@ -1121,7 +1121,7 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	return *chid, nil
 }
 
-func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util.Content) bool {
+func (cm *ContentManager) contentInStagingZone(ctx context.Context, content Content) bool {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
@@ -1173,7 +1173,7 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 	return out
 }
 
-func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {
+func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content Content) error {
 	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
 	if content.AggregatedIn > 0 {
@@ -1248,7 +1248,7 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 
 const bucketingEnabled = true
 
-func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Content, done func(time.Duration)) error {
+func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, done func(time.Duration)) error {
 	ctx, span := cm.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
 	))
@@ -1464,7 +1464,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	return nil
 }
 
-func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
+func (cm *ContentManager) splitContent(ctx context.Context, cont Content, size int64) error {
 	ctx, span := cm.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
@@ -1491,8 +1491,8 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 	}
 }
 
-func (cm *ContentManager) getContent(id uint) (*util.Content, error) {
-	var content util.Content
+func (cm *ContentManager) getContent(id uint) (*Content, error) {
+	var content Content
 	if err := cm.DB.First(&content, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
@@ -1882,7 +1882,7 @@ type transferStatusRecord struct {
 	Received time.Time
 }
 
-func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, content *util.Content) (*filclient.ChannelState, error) {
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, content *Content) (*filclient.ChannelState, error) {
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
@@ -1911,7 +1911,7 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 	})
 }
 
-func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, content *util.Content) (*filclient.ChannelState, error) {
+func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, content *Content) (*filclient.ChannelState, error) {
 	ccid := content.Cid.CID
 
 	miner, err := d.MinerAddr()
@@ -2055,7 +2055,7 @@ type proposalRecord struct {
 	Data    []byte
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, count int, exclude map[address.Address]bool, verified bool) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content Content, count int, exclude map[address.Address]bool, verified bool) error {
 	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Int("count", count),
@@ -2262,7 +2262,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	return cleanup, propPhase, err
 }
 
-func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Content, miner address.Address, verified bool) (uint, error) {
+func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content Content, miner address.Address, verified bool) (uint, error) {
 	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Stringer("miner", miner),
@@ -2425,7 +2425,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 }
 
 func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal) error {
-	var cont util.Content
+	var cont Content
 	if err := cm.DB.First(&cont, "id = ?", cd.Content).Error; err != nil {
 		return err
 	}
@@ -2575,7 +2575,7 @@ func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (u
 	_, span := cm.tracer.Start(ctx, "calculateCarSize")
 	defer span.End()
 
-	var objects []util.Object
+	var objects []Object
 	where := "id in (select object from obj_refs where content = (select id from contents where cid = ?))"
 	if err := cm.DB.Find(&objects, where, data.Bytes()).Error; err != nil {
 		return 0, err
@@ -2585,9 +2585,9 @@ func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (u
 		return 0, fmt.Errorf("not found")
 	}
 
-	os := make([]util.CarObject, len(objects))
+	os := make([]util.Object, len(objects))
 	for i, o := range objects {
-		os[i] = util.CarObject{Size: uint64(o.Size), Cid: o.Cid.CID}
+		os[i] = util.Object{Size: uint64(o.Size), Cid: o.Cid.CID}
 	}
 
 	return util.CalculateCarSize(data, os)
@@ -2596,7 +2596,7 @@ func (cm *ContentManager) calculateCarSize(ctx context.Context, data cid.Cid) (u
 var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
 
 func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
-	var cont util.Content
+	var cont Content
 	if err := cm.DB.First(&cont, "cid = ?", data.Bytes()).Error; err != nil {
 		return cid.Undef, 0, 0, err
 	}
@@ -2677,12 +2677,12 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 	))
 	defer span.End()
 
-	var obj util.Object
+	var obj Object
 	if err := cm.DB.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
 		return nil, xerrors.Errorf("failed to get object from db: %s", err)
 	}
 
-	var refs []util.ObjRef
+	var refs []ObjRef
 	if err := cm.DB.Find(&refs, "object = ?", obj.ID).Error; err != nil {
 		return nil, err
 	}
@@ -2699,7 +2699,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 
 		// if one of the referenced contents has the requested cid as its root, then we should probably fetch that one
 
-		var contents []util.Content
+		var contents []Content
 		if err := cm.DB.Find(&contents, "cid = ?", c.Bytes()).Error; err != nil {
 			return nil, err
 		}
@@ -2735,7 +2735,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 
 	// TODO: this retrieval needs to mark all of its content as 'referenced'
 	// until we can update its offloading status in the database
-	var c util.Content
+	var c Content
 	if err := cm.DB.First(&c, "id = ?", cont).Error; err != nil {
 		return err
 	}
@@ -2752,11 +2752,11 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 			return err
 		}
 
-		if err := cm.DB.Model(&util.Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
+		if err := cm.DB.Model(&Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
 			return err
 		}
 
-		if err := cm.DB.Model(&util.ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
+		if err := cm.DB.Model(&ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
 			return err
 		}
 	default:
@@ -2766,7 +2766,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 	return nil
 }
 
-func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont util.Content) error {
+func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont Content) error {
 	return fmt.Errorf("not retrieving content yet until implementation is finished")
 	/*
 		var activeDeals []contentDeal
@@ -2855,7 +2855,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	ctx, span := cm.tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
-	var content util.Content
+	var content Content
 	if err := cm.DB.First(&content, contentToFetch).Error; err != nil {
 		return err
 	}
@@ -3017,7 +3017,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*Object, loc string) error {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -3025,10 +3025,10 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 		return xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
-	refs := make([]util.ObjRef, 0, len(objects))
+	refs := make([]ObjRef, 0, len(objects))
 	var totalSize int64
 	for _, o := range objects {
-		refs = append(refs, util.ObjRef{
+		refs = append(refs, ObjRef{
 			Content: content,
 			Object:  o.ID,
 		})
@@ -3040,7 +3040,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 		attribute.Int("numObjects", len(objects)),
 	)
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
 		"active":   true,
 		"size":     totalSize,
 		"pinning":  false,
@@ -3056,7 +3056,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	return nil
 }
 
-func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []util.Content) error {
+func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []Content) error {
 	for _, c := range toMove {
 		if err := cm.migrateContentToLocalNode(ctx, c); err != nil {
 			return err
@@ -3066,7 +3066,7 @@ func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove
 	return nil
 }
 
-func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont util.Content) error {
+func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont Content) error {
 	done, err := cm.safeFetchData(ctx, cont.Cid.CID)
 	if err != nil {
 		return fmt.Errorf("failed to fetch data: %w", err)
@@ -3074,13 +3074,13 @@ func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont ut
 
 	defer done()
 
-	if err := cm.DB.Model(util.ObjRef{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(ObjRef{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"offloaded": 0,
 	}).Error; err != nil {
 		return err
 	}
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"offloaded": false,
 		"location":  util.ContentLocationLocal,
 	}).Error; err != nil {
@@ -3187,7 +3187,7 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	})
 }
 
-func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []uint, blob []byte) error {
+func (cm *ContentManager) sendAggregateCmd(ctx context.Context, loc string, cont Content, aggr []uint, blob []byte) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_AggregateContent,
 		Params: drpc.CmdParams{
@@ -3226,7 +3226,7 @@ func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, c
 	})
 }
 
-func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
+func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc string, contents []Content) error {
 	fromLocs := make(map[string]struct{})
 
 	tc := &drpc.TakeContent{}
@@ -3285,7 +3285,7 @@ func (cm *ContentManager) setDealMakingEnabled(enable bool) {
 	cm.isDealMakingDisabled = !enable
 }
 
-func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
+func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, size int64) error {
 	dserv := merkledag.NewDAGService(blockservice.New(cm.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(size), 0)
 	if err := b.Pack(ctx, cont.Cid.CID); err != nil {
@@ -3305,7 +3305,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 	}
 
 	for i, c := range boxCids {
-		content := &util.Content{
+		content := &Content{
 			Cid:         util.DbCID{CID: c},
 			Filename:    fmt.Sprintf("%s-%d", cont.Filename, i),
 			Active:      true,
@@ -3332,7 +3332,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		}()
 	}
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
 		"active":    false,
 		"size":      0,

@@ -21,11 +21,8 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.1.5
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.1.3
-	github.com/filecoin-project/index-provider v0.6.1
 	github.com/filecoin-project/lotus v1.15.1
 	github.com/filecoin-project/specs-actors/v6 v6.0.1
-	github.com/filecoin-project/storetheindex v0.4.1
-	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/influxdata/influxdb-client-go/v2 v2.5.1
@@ -153,7 +150,6 @@ require (
 	github.com/filecoin-project/go-hamt-ipld v0.1.5 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0 // indirect
-	github.com/filecoin-project/go-legs v0.3.11 // indirect
 	github.com/filecoin-project/go-paramfetch v0.0.4 // indirect
 	github.com/filecoin-project/go-statemachine v1.0.2 // indirect
 	github.com/filecoin-project/go-statestore v0.2.0 // indirect
@@ -178,6 +174,7 @@ require (
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.19.6 // indirect
 	github.com/go-openapi/spec v0.20.4 // indirect
+	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
