@@ -30,7 +30,7 @@ import (
 type GatewayHandler struct {
 	bs       blockstore.Blockstore
 	dserv    mdagipld.DAGService
-	resolver *resolver.Resolver
+	resolver resolver.Resolver
 }
 
 type httpError struct {

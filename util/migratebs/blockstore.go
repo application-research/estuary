@@ -7,6 +7,7 @@ import (
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"golang.org/x/xerrors"
 )
@@ -129,7 +130,7 @@ func (bs *Blockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block, error) 
 		return blk, nil
 	}
 	if err != nil {
-		if !xerrors.Is(err, blockstore.ErrNotFound) {
+		if !xerrors.Is(err, ipld.ErrNotFound{Cid: c}) {
 			return nil, err
 		}
 	}
@@ -144,7 +145,7 @@ func (bs *Blockstore) GetSize(ctx context.Context, c cid.Cid) (int, error) {
 		return s, nil
 	}
 	if err != nil {
-		if !xerrors.Is(err, blockstore.ErrNotFound) {
+		if !xerrors.Is(err, ipld.ErrNotFound{Cid: c}) {
 			return 0, err
 		}
 	}
@@ -182,7 +183,7 @@ func (bs *Blockstore) View(ctx context.Context, c cid.Cid, f func([]byte) error)
 		if err == nil {
 			return nil
 		}
-		if !xerrors.Is(err, blockstore.ErrNotFound) {
+		if !xerrors.Is(err, ipld.ErrNotFound{Cid: c}) {
 			return err
 		}
 		// explicitly fall through to backup logic...
