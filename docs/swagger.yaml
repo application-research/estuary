@@ -79,7 +79,7 @@ definitions:
         type: string
       dir:
         type: string
-      name:
+      filename:
         type: string
       peers:
         items:
