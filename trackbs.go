@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -35,7 +36,7 @@ type accesses struct {
 
 func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlockstore {
 	cidReq := func(context.Context, cid.Cid) (blocks.Block, error) {
-		return nil, blockstore.ErrNotFound
+		return nil, errors.New("NewTrackingBlockstore: cidReq not set")
 	}
 
 	tbs := &TrackingBlockstore{
@@ -163,7 +164,7 @@ func (tbs *TrackingBlockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block
 	tbs.getCh <- c // TODO: should we be tracking all requests? or all successful servings?
 	blk, err := tbs.bs.Get(ctx, c)
 	if err != nil {
-		if xerrors.Is(err, blockstore.ErrNotFound) {
+		if blk == nil { // not found
 			var obj util.Object
 			if dberr := tbs.db.First(&obj, "where cid = ?", c.Bytes()).Error; dberr != nil {
 				if xerrors.Is(dberr, gorm.ErrRecordNotFound) {
