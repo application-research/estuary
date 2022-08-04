@@ -34,7 +34,7 @@ type ContentInCollection struct {
 type ContentAddIpfsBody struct {
 	ContentInCollection
 	Root  string   `json:"root"`
-	Name  string   `json:"name"`
+	Name  string   `json:"filename"`
 	Peers []string `json:"peers"`
 }
 
