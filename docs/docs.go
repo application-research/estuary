@@ -1720,7 +1720,7 @@ const docTemplate = `{
                 "dir": {
                     "type": "string"
                 },
-                "filename": {
+                "name": {
                     "type": "string"
                 },
                 "peers": {
