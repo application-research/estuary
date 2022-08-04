@@ -345,7 +345,7 @@ func serveProfile(c echo.Context) error {
 type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
-	Filename        string  `json:"filename"`
+	Filename        string  `json:"name"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
