@@ -1407,7 +1407,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
-		Filename:            filename,
+		Name:                filename,
 		Location:            s.shuttleHandle,
 	})
 	if err != nil {
@@ -1457,7 +1457,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
 			Root:     root.String(),
-			Filename: filename,
+			Name:     filename,
 			Location: s.shuttleHandle,
 		},
 
