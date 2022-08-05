@@ -128,6 +128,9 @@ func (s *Server) ServeAPI() error {
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
 
+	// We need to expose a Nonce Endpoint
+	e.GET("/nonce", s.handleNonce)
+
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
@@ -364,6 +367,21 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 		}
 		return f(c, u)
 	}
+}
+
+// handleNonce godoc
+// @Summary Generate a random 96-bit Nonce for a User logging in with SIWE
+// @Produce json
+// @Success 200 {object} util.HttpSuccess
+func (s *Server) handleNonce(c echo.Context) error {
+	// Generate a random nonce
+	nonce := make([]byte, 96)
+	_, err := rand.Read(nonce)
+	if err != nil {
+		return err
+	}
+	// Return the nonce
+	return c.JSON(http.StatusOK, nonce)
 }
 
 // handleStats godoc
