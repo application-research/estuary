@@ -1078,6 +1078,10 @@ func (s *Shuttle) ServeAPI() error {
 	return e.Start(s.shuttleConfig.ApiListen)
 }
 
+func (s *Shuttle) isContentAddingDisabled(u *User) bool {
+	return s.disableLocalAdding || u.StorageDisabled
+}
+
 func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
@@ -1149,7 +1153,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
@@ -1279,7 +1283,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
