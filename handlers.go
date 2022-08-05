@@ -56,6 +56,18 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p-core/peer"
+
+	/*
+	    For supporting writing Nonces to User Sesssions
+        Source: https://echo.labstack.com/middleware/session/
+    */
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
+	/*
+	    SIWE libraries
+    */
+    siwe "github.com/spruceid/siwe-go"
+
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -125,11 +137,15 @@ func (s *Server) ServeAPI() error {
 	e.Use(middleware.CORS())
 
 	e.POST("/register", s.handleRegisterUser)
-	e.POST("/login", s.handleLoginUser)
+    // Traditional login
+    // 	e.POST("/login", s.handleLoginUser)
+    // We need to expose a Nonce Endpoint
+    e.GET("/nonce", s.handleNonce)
+    // TODO: Change this to a real secret
+    e.Use(session.Middleware(sessions.NewCookieStore([]byte("secret"))))
+    // Login with an ERC20 Wallet
+    e.POST("/login", s.handleSiweLoginUser)
 	e.GET("/health", s.handleHealth)
-
-	// We need to expose a Nonce Endpoint
-	e.GET("/nonce", s.handleNonce)
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 
@@ -367,21 +383,6 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 		}
 		return f(c, u)
 	}
-}
-
-// handleNonce godoc
-// @Summary Generate a random 96-bit Nonce for a User logging in with SIWE
-// @Produce json
-// @Success 200 {object} util.HttpSuccess
-func (s *Server) handleNonce(c echo.Context) error {
-	// Generate a random nonce
-	nonce := make([]byte, 96)
-	_, err := rand.Read(nonce)
-	if err != nil {
-		return err
-	}
-	// Return the nonce
-	return c.JSON(http.StatusOK, nonce)
 }
 
 // handleStats godoc
@@ -2916,76 +2917,174 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	})
 }
 
+/* SIWE Login */
+
+// handleNonce godoc
+// @Summary Generate a random 96-bit Nonce for a User logging in with SIWE
+// @Produce json
+// @Success 200 {object} util.HttpSuccess
+func (s *Server) handleNonce(c echo.Context) error {
+	// Generate a random nonce
+	nonce := siwe.GenerateNonce()
+    // Retrieve and Configure the Session
+    sess, _ := session.Get("session", c)
+    sess.Options = &sessions.Options{
+        Path: "/", // Is this Right?
+        MaxAge: 86400, // One day
+        HttpOnly: true, // Change once we're out of DEV
+    }
+    // Write the nonce to the session
+    sess.Vales["nonce"] = string(nonce)
+    sess.Save(c.Request(), c.Response())
+    return c.NoContent(http.StatusOK)
+}
+
 type loginBody struct {
-	Username string `json:"username"`
-	Password string `json:"passwordHash"`
+    Message string `json:"message"`
+    Ens    string `json:"ens"`
+    Signature string `json:"signature"`
 }
 
 type loginResponse struct {
-	Token  string    `json:"token"`
-	Expiry time.Time `json:"expiry"`
+    Token string `json:"token"`
+    Expiry time.Time `json:"expiry"`
 }
 
-func (s *Server) handleLoginUser(c echo.Context) error {
-	var body loginBody
-	if err := c.Bind(&body); err != nil {
-		return err
-	}
+// handleSiweLoginUser godoc
+// @Summary      Login a User with SIWE
+// @Description  This endpoint is used to provide users authenticated with SIWE a sesssion token.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  loginResponse
+// @Router       /login [post]
+func (s *Server) handleSiweLoginUser(c echo.Context) error {
+    // TODO: Replace with our own key, and use proper configuration
+    infuraKey := "8fcacee838e04f31b6ec145eb98879c8"
+    var body loginBody
+    if err := c.Bind(&body); err != nil {
+        return err
+    }
 
-	var user User
-	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:   http.StatusForbidden,
-				Reason: util.ERR_USER_NOT_FOUND,
-			}
-		}
-		return err
-	}
+    // Extract our Ens and Signature
+    ens := body.Ens
+    signature := body.Signature
 
-	//	validate password
-	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
-		((user.Salt == "") && (user.PassHash != body.Password)) {
-		return &util.HttpError{
-			Code:   http.StatusForbidden,
-			Reason: util.ERR_INVALID_PASSWORD,
-		}
-	}
+    // Throw 422 if we don't have a message
+    if body.Message == "" {
+        return &util.HttpError{
+            Code:    http.StatusUnprocessableEntity,
+            Reason:  util.ERR_MISSING_MESSAGE,
+        }
+    }
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil)
-	if err != nil {
-		return err
-	}
+    // Parse the message
+    message, err := siwe.ParseMessage(body.Message)
+    if err != nil {
+        println("Could not parse SIWE message: " + err.Error())
+        return err
+    }
 
-	return c.JSON(http.StatusOK, &loginResponse{
-		Token:  authToken.Token,
-		Expiry: authToken.Expiry,
-	})
+    // Verify the message with the signature
+    var nonce *string
+    pubKey, err := message.Verify(signature, nonce, nil)
+    if err != nil {
+        println("Could not verify SIWE message: " + err.Error())
+        return err
+    }
+
+    // Make sure the extracted nonce is the same as the one in the session
+    sess, _ := session.Get("session", c)
+    nonceFromSession := sess.Values["nonce"].(string)
+    if nonceFromSession != string(*nonce) {
+        println("Nonce mismatch: " + nonceFromSession + " != " + string(*nonce))
+        return &util.HttpError{
+            Code:    http.StatusUnprocessableEntity,
+            Reason:  util.ERR_NONCE_MISMATCH,
+        }
+    }
+
+    // Log the pubKey
+    println("Validated Login with PubKey: " + pubKey)
+
+    // Return an error for now
+    return &util.HttpError{
+        Code:    http.StatusUnprocessableEntity,
+        Reason:  util.ERR_LOGIN_FAILED,
+    }
 }
 
-type changePasswordParams struct {
-	NewPassword string `json:"newPasswordHash"`
-}
+/* Traditional login */
 
-func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
-	var params changePasswordParams
-	if err := c.Bind(&params); err != nil {
-		return err
-	}
-
-	salt := uuid.New().String()
-
-	updatedUserColumns := &User{
-		Salt:     salt,
-		PassHash: util.GetPasswordHash(params.NewPassword, salt),
-	}
-
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
-}
+// type loginBody struct {
+//     Username string `json:"username"`
+//     Password string `json:"passwordHash"`
+// }
+//
+// type loginResponse struct {
+// 	Token  string    `json:"token"`
+// 	Expiry time.Time `json:"expiry"`
+// }
+//
+// func (s *Server) handleLoginUser(c echo.Context) error {
+// 	var body loginBody
+// 	if err := c.Bind(&body); err != nil {
+// 		return err
+// 	}
+//
+// 	var user User
+// 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
+// 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+// 			return &util.HttpError{
+// 				Code:   http.StatusForbidden,
+// 				Reason: util.ERR_USER_NOT_FOUND,
+// 			}
+// 		}
+// 		return err
+// 	}
+//
+// 	//	validate password
+// 	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+// 		((user.Salt == "") && (user.PassHash != body.Password)) {
+// 		return &util.HttpError{
+// 			Code:   http.StatusForbidden,
+// 			Reason: util.ERR_INVALID_PASSWORD,
+// 		}
+// 	}
+//
+// 	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil)
+// 	if err != nil {
+// 		return err
+// 	}
+//
+// 	return c.JSON(http.StatusOK, &loginResponse{
+// 		Token:  authToken.Token,
+// 		Expiry: authToken.Expiry,
+// 	})
+// }
+//
+// type changePasswordParams struct {
+// 	NewPassword string `json:"newPasswordHash"`
+// }
+//
+// func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
+// 	var params changePasswordParams
+// 	if err := c.Bind(&params); err != nil {
+// 		return err
+// 	}
+//
+// 	salt := uuid.New().String()
+//
+// 	updatedUserColumns := &User{
+// 		Salt:     salt,
+// 		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+// 	}
+//
+// 	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
+// 		return err
+// 	}
+//
+// 	return c.JSON(http.StatusOK, map[string]string{})
+// }
 
 type changeAddressParams struct {
 	Address string `json:"address"`
