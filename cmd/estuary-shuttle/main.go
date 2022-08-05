@@ -2222,7 +2222,11 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 			return fmt.Errorf("getting deal info from chain: %w", err)
 		}
 
-		c, err := util.ParseDealLabel(deal.Proposal.Label)
+		dealLabelString, err := deal.Proposal.Label.ToString()
+		if err != nil {
+			return fmt.Errorf("getting deal label from chain: %w", err)
+		}
+		c, err := util.ParseDealLabel(dealLabelString)
 		if err != nil {
 			return fmt.Errorf("failed to parse deal label in deal %d: %w", id, err)
 		}

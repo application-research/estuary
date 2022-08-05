@@ -105,7 +105,8 @@ func New(o ...Option) (*AutoretrieveEngine, error) {
 func (e *AutoretrieveEngine) Start(ctx context.Context) error {
 	// Create datastore entriesChunker
 	entriesCacheDs := dsn.Wrap(e.ds, datastore.NewKey(linksCachePath))
-	cachedChunker, err := chunker.NewCachedEntriesChunker(ctx, entriesCacheDs, e.entChunkSize, e.entCacheCap)
+	cachedChunker, err := chunker.NewCachedEntriesChunker(ctx, entriesCacheDs, e.entCacheCap, chunker.NewChainChunkerFunc(e.entChunkSize), true)
+
 	if err != nil {
 		return err
 	}
@@ -524,7 +525,7 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 	// this means there is a "cid too short" error in IPLD links serialization.
 	if prevAdvID != cid.Undef {
 		prev := ipld.Link(cidlink.Link{Cid: prevAdvID})
-		adv.PreviousID = &prev
+		adv.PreviousID = prev
 	} else {
 		log.Info("Latest advertisement CID was undefined - no previous advertisement")
 	}
