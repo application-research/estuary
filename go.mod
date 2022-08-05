@@ -90,7 +90,7 @@ require (
 )
 
 require (
-	github.com/application-research/filclient v0.0.0-20220801053338-7de328613bf9
+	github.com/application-research/filclient v0.0.0-20220805152143-9c68f2661dfc
 	github.com/filecoin-project/go-legs v0.4.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
@@ -372,5 +372,3 @@ replace github.com/filecoin-project/index-provider => github.com/gmelodie/index-
 replace github.com/filecoin-project/go-bs-lmdb => github.com/gmelodie/go-bs-lmdb v0.1.0
 
 replace github.com/filecoin-project/boost => github.com/gmelodie/boost v0.0.0-20220804204154-633175e55228
-
-replace github.com/application-research/filclient => ../filclient
