@@ -19,7 +19,7 @@ help()
 install_package() {
   PKG=$1
   echo "Checking for "$PKG" ... "
-  dPKG -s $pkg &> /dev/null
+  dpkg -s $PKG &> /dev/null
 
   if [ ! $? -eq 0 ]; then
     echo "Installing "$PKG"."
