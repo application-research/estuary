@@ -81,7 +81,7 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.7.0
 	go.opentelemetry.io/otel/sdk v1.7.0
 	go.opentelemetry.io/otel/trace v1.7.0
-	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
+	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 	golang.org/x/net v0.0.0-20220517181318-183a9ca12b87
 	golang.org/x/sys v0.0.0-20220517195934-5e4e11fc645e
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f
@@ -95,6 +95,8 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
 	github.com/libp2p/go-libp2p-pubsub v0.7.1
+	github.com/onsi/ginkgo/v2 v2.1.4
+	github.com/onsi/gomega v1.19.0
 	github.com/pkg/errors v0.9.1
 )
 
@@ -314,6 +316,7 @@ require (
 	github.com/prometheus/statsd_exporter v0.21.0 // indirect
 	github.com/raulk/clock v1.1.0 // indirect
 	github.com/raulk/go-watchdog v1.2.0 // indirect
+	github.com/remyoudompheng/bigfft v0.0.0-20200410134404-eec4a21b6bb0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/rs/cors v1.7.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -323,6 +326,7 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
+	github.com/tj/go-spin v1.1.0 // indirect
 	github.com/twmb/murmur3 v1.1.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.1 // indirect
@@ -334,6 +338,8 @@ require (
 	github.com/whyrusleeping/ledger-filecoin-go v0.9.1-0.20201010031517-c3dcc1bddce4 // indirect
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7 // indirect
 	github.com/whyrusleeping/timecache v0.0.0-20160911033111-cfcb2f1abfee // indirect
+	github.com/xlab/c-for-go v0.0.0-20201112171043-ea6dce5809cb // indirect
+	github.com/xlab/pkgconfig v0.0.0-20170226114623-cea12a0fd245 // indirect
 	github.com/xrash/smetrics v0.0.0-20201216005158-039620a65673 // indirect
 	github.com/zondax/hid v0.9.0 // indirect
 	github.com/zondax/ledger-go v0.12.1 // indirect
@@ -359,6 +365,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.0 // indirect
 	howett.net/plist v0.0.0-20181124034731-591f970eefbb // indirect
 	lukechampine.com/blake3 v1.1.7 // indirect
+	modernc.org/cc v1.0.0 // indirect
+	modernc.org/golex v1.0.1 // indirect
+	modernc.org/mathutil v1.4.1 // indirect
+	modernc.org/strutil v1.1.1 // indirect
+	modernc.org/xc v1.0.0 // indirect
 )
 
 //replace github.com/libp2p/go-libp2p-yamux => github.com/libp2p/go-libp2p-yamux v0.5.1

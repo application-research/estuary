@@ -13,7 +13,7 @@ Requirements:
 - [rustup](https://rustup.rs/)
 - postgresql
 
-1. Run `make clean all` inside the estuary directory
+Run `make clean all` inside the estuary directory
 
 ## Running your own node
 

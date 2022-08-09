@@ -22,7 +22,7 @@ for f in *.sh; do
         bash "$f" || break  # execute successfully or break
         res=$?
         #if test "$res" != "0"; then
-           #bash ../reporting/report.sh $f $res
+           #bash ../reports/report.sh $f $res
         #fi
     fi
 done
