@@ -58,15 +58,14 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 
 	/*
-	    For supporting writing Nonces to User Sesssions
-        Source: https://echo.labstack.com/middleware/session/
-    */
+			    For supporting writing Nonces to User Sesssions
+		        Source: https://echo.labstack.com/middleware/session/
+	*/
 	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
 	/*
-	    SIWE libraries
-    */
-    siwe "github.com/spruceid/siwe-go"
+	   SIWE libraries
+	*/
+	//siwe "github.com/spruceid/siwe-go"
 
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
@@ -99,6 +98,12 @@ import (
 // @license.name Apache 2.0 Apache-2.0 OR MIT
 // @license.url https://github.com/application-research/estuary/blob/master/LICENSE.md
 
+/* How long Nonces live */
+const NONCE_LIFETIME = time.Minute * 5 // Five Minutes
+
+/* How long API Tokens live */
+const TOKEN_LIFTEIME = time.Hour * 24 * 30 // 30 Days
+
 // @host api.estuary.tech
 // @BasePath  /
 // @securityDefinitions.Bearer
@@ -106,6 +111,10 @@ import (
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
+	/* Initialize Session Storage for the SIWE API */
+	// TODO: Need to load from a config file
+	// TODO: Need to implement Rotating Keys for SIWE cookies
+	s.SessionStore = sessions.NewCookieStore([]byte("SOMETHING_VERY_SECRET"))
 
 	e := echo.New()
 
@@ -134,17 +143,22 @@ func (s *Server) ServeAPI() error {
 		return nil
 	})
 
-	e.Use(middleware.CORS())
+	// TODO: This is a temporary Configuration
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		// TODO: Replace with appropriate origins
+		AllowOrigins:     []string{"http://localhost:4443"},
+		AllowCredentials: true,
+		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.DELETE},
+	}))
 
 	e.POST("/register", s.handleRegisterUser)
-    // Traditional login
-    // 	e.POST("/login", s.handleLoginUser)
-    // We need to expose a Nonce Endpoint
-    e.GET("/nonce", s.handleNonce)
-    // TODO: Change this to a real secret
-    e.Use(session.Middleware(sessions.NewCookieStore([]byte("secret"))))
-    // Login with an ERC20 Wallet
-    e.POST("/login", s.handleSiweLoginUser)
+	// Traditional login
+	// 	e.POST("/login", s.handleLoginUser)
+	// We need to expose a Nonce Endpoint
+	e.GET("/nonce", s.handleNonce)
+
+	// Login with an ERC20 Wallet
+	e.POST("/login", s.handleSiweLoginUser)
 	e.GET("/health", s.handleHealth)
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
@@ -159,7 +173,7 @@ func (s *Server) ServeAPI() error {
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
-	user.PUT("/password", withUser(s.handleUserChangePassword))
+	//user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
 	user.GET("/stats", withUser(s.handleGetUserStats))
 
@@ -2920,34 +2934,58 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 /* SIWE Login */
 
 // handleNonce godoc
-// @Summary Generate a random 96-bit Nonce for a User logging in with SIWE
+// @Summary Generate a random 96-bit Nonce for a User logging in with SIWE and saves it in a short lived session
 // @Produce json
 // @Success 200 {object} util.HttpSuccess
 func (s *Server) handleNonce(c echo.Context) error {
-	// Generate a random nonce
-	nonce := siwe.GenerateNonce()
-    // Retrieve and Configure the Session
-    sess, _ := session.Get("session", c)
-    sess.Options = &sessions.Options{
-        Path: "/", // Is this Right?
-        MaxAge: 86400, // One day
-        HttpOnly: true, // Change once we're out of DEV
-    }
-    // Write the nonce to the session
-    sess.Vales["nonce"] = string(nonce)
-    sess.Save(c.Request(), c.Response())
-    return c.NoContent(http.StatusOK)
+	/* TODO: Use siwe.GenerateNonce() */
+	// Generate a random 96 bit nonce
+	nonceBytes := make([]byte, 12)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		return err
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+	println("Generating nonce:", nonce)
+
+	// Initialize A Session using Gorilla Sessions
+	sess, err := s.SessionStore.Get(c.Request(), "siwe-session")
+	if err != nil {
+		return err
+	}
+
+	// note(al): Always set a new nonce when requested
+	// - If someone is re-authenticating, they will get a new nonce
+	// - Anyone trying to hijack a session will get a new nonce, but not be able to authenticate
+	// - At worst you can stop someone from logging in if you hijack their cookie
+
+	// Set a new nonce under a short-lived session
+	sess.Options = &sessions.Options{
+		MaxAge:   int(NONCE_LIFETIME.Seconds()),
+		HttpOnly: true, // Change once we're out of DEV
+	}
+
+	sess.Values["nonce"] = nonce
+	if err = sess.Save(c.Request(), c.Response()); err != nil {
+		return err
+	}
+
+	// Get the nonce from the session
+	//nonce = sess.Values["nonce"].(string)
+	//println("Saved Nonce:", nonce)
+
+	// Return the nonce to the caller
+	return c.JSON(http.StatusOK, string(nonce))
 }
 
 type loginBody struct {
-    Message string `json:"message"`
-    Ens    string `json:"ens"`
-    Signature string `json:"signature"`
+	Message   string `json:"message"`
+	Ens       string `json:"ens"`
+	Signature string `json:"signature"`
 }
 
 type loginResponse struct {
-    Token string `json:"token"`
-    Expiry time.Time `json:"expiry"`
+	Token  string    `json:"token"`
+	Expiry time.Time `json:"expiry"`
 }
 
 // handleSiweLoginUser godoc
@@ -2958,59 +2996,89 @@ type loginResponse struct {
 // @Success      200  {object}  loginResponse
 // @Router       /login [post]
 func (s *Server) handleSiweLoginUser(c echo.Context) error {
-    // TODO: Replace with our own key, and use proper configuration
-    infuraKey := "8fcacee838e04f31b6ec145eb98879c8"
-    var body loginBody
-    if err := c.Bind(&body); err != nil {
-        return err
-    }
+	/*
+	 * First, confirm we have a valid nonce set for this login attempt
+	 */
 
-    // Extract our Ens and Signature
-    ens := body.Ens
-    signature := body.Signature
+	// Retrieve the session tied to the request
+	sess, err := s.SessionStore.Get(c.Request(), "siwe-session")
+	if err != nil {
+		return err
+	}
 
-    // Throw 422 if we don't have a message
-    if body.Message == "" {
-        return &util.HttpError{
-            Code:    http.StatusUnprocessableEntity,
-            Reason:  util.ERR_MISSING_MESSAGE,
-        }
-    }
+	// Check if the nonce is set. If it is then this is a valid login attempt.
+	var sessNonce string
+	sessNonce, ok := sess.Values["nonce"].(string)
+	if !ok {
+		// Otherwise, the caller has not received a nonce,
+		// so they are not ready to login.
+		return &util.HttpError{
+			Code:   http.StatusBadRequest,
+			Reason: "No Nonce Set", // TODO: Custom error code needed
+		}
+	}
 
-    // Parse the message
-    message, err := siwe.ParseMessage(body.Message)
-    if err != nil {
-        println("Could not parse SIWE message: " + err.Error())
-        return err
-    }
+	println("Nonce is Set: ", sessNonce)
 
-    // Verify the message with the signature
-    var nonce *string
-    pubKey, err := message.Verify(signature, nonce, nil)
-    if err != nil {
-        println("Could not verify SIWE message: " + err.Error())
-        return err
-    }
+	/*
+	 * Next, we need to use this Nonce to authenticate the user
+	 * against the signed SIWE message they provide here.
+	 */
 
-    // Make sure the extracted nonce is the same as the one in the session
-    sess, _ := session.Get("session", c)
-    nonceFromSession := sess.Values["nonce"].(string)
-    if nonceFromSession != string(*nonce) {
-        println("Nonce mismatch: " + nonceFromSession + " != " + string(*nonce))
-        return &util.HttpError{
-            Code:    http.StatusUnprocessableEntity,
-            Reason:  util.ERR_NONCE_MISMATCH,
-        }
-    }
+	// Extract the LoginBody from the request
+	var loginBody loginBody
+	if err := c.Bind(&loginBody); err != nil {
+		return err
+	}
+	//
+	//// Log the contents of the login body
+	//println("Login Body:", loginBody)
+	//println("Login Body Message:", loginBody.Message)
+	//println("Login Body Signature:", loginBody.Signature)
+	//println("Login Body Ens:", loginBody.Ens)
 
-    // Log the pubKey
-    println("Validated Login with PubKey: " + pubKey)
+	return &util.HttpError{
+		Code:   http.StatusUnprocessableEntity,
+		Reason: "Login Not Implemented",
+	}
+	//
+	//// Extract our Ens and Signature
+	//ens := loginBody.Ens
+	//signature := loginBody.Signature
+	//
+	//// Throw 422 if we don't have a message
+	//if loginBody.Message == "" {
+	//	return &util.HttpError{
+	//		Code:   http.StatusUnprocessableEntity,
+	//		Reason: "No message provided",
+	//	}
+	//}
 
-    // Return an error for now
-    return &util.HttpError{
-        Code:    http.StatusUnprocessableEntity,
-        Reason:  util.ERR_LOGIN_FAILED,
-    }
+	//// Parse the message
+	//message, err := siwe.ParseMessage(body.Message)
+	//if err != nil {
+	//	println("Could not parse SIWE message: " + err.Error())
+	//	return err
+	//}
+	//
+	//// Verify the message with the signature
+	//var nonce *string
+	//_, err = message.Verify(signature, nil, nonce, nil)
+	//if err != nil {
+	//	println("Could not verify SIWE message: " + err.Error())
+	//	return err
+	//}
+	//
+	//// Make sure the extracted nonce is the same as the one in the session
+	//sess, _ := session.Get("session", c)
+	//nonceFromSession := sess.Values["nonce"].(string)
+	//if nonceFromSession != string(*nonce) {
+	//	println("Nonce mismatch: " + nonceFromSession + " != " + string(*nonce))
+	//	return &util.HttpError{
+	//		Code:   http.StatusUnprocessableEntity,
+	//		Reason: "Nonce mismatch",
+	//	}
+	//}
 }
 
 /* Traditional login */
