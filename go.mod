@@ -98,7 +98,6 @@ require (
 	github.com/labstack/echo-contrib v0.13.0
 	github.com/libp2p/go-libp2p-pubsub v0.6.1
 	github.com/pkg/errors v0.9.1
-	//github.com/spruceid/siwe-go v0.2.0
 )
 
 require (
@@ -342,6 +341,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spacemonkeygo/spacelog v0.0.0-20180420211403-2296661a0572 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/spruceid/siwe-go v0.2.0 // indirect
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tj/go-spin v1.1.0 // indirect
