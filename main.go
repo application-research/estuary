@@ -48,6 +48,9 @@ import (
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	/* Session Storage */
+	"github.com/gorilla/sessions"
 )
 
 var appVersion string
@@ -730,6 +733,9 @@ type Server struct {
 	Api        api.Gateway
 	CM         *ContentManager
 	StagingMgr *stagingbs.StagingBSMgr
+
+	/* Our Session Storage Manager */
+	SessionStore *sessions.CookieStore
 
 	gwayHandler *gateway.GatewayHandler
 
