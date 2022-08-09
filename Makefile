@@ -65,7 +65,9 @@ deps: $(BUILD_DEPS)
 
 .PHONY: estuary
 estuary:
-	go build $(GOFLAGS)
+	# (note al): We need to allow multi definitions while we figure our secp256k1 conflicts. See:
+	# https://filecoinproject.slack.com/archives/C016APFREQK/p1660061482725619
+	go build $(GOFLAGS) --ldflags '-extldflags "-Wl,--allow-multiple-definition"'
 BINS+=estuary
 
 .PHONY: shuttle

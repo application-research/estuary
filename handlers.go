@@ -65,7 +65,7 @@ import (
 	/*
 	   SIWE libraries
 	*/
-	//siwe "github.com/spruceid/siwe-go"
+	siwe "github.com/spruceid/siwe-go"
 
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
@@ -2978,9 +2978,9 @@ func (s *Server) handleNonce(c echo.Context) error {
 }
 
 type loginBody struct {
-	Message   string `json:"message"`
-	Ens       string `json:"ens"`
-	Signature string `json:"signature"`
+	Message   siwe.Message `json:"message"`
+	Ens       string       `json:"ens"`
+	Signature string       `json:"signature"`
 }
 
 type loginResponse struct {
