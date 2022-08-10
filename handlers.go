@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/spruceid/siwe-go"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -62,10 +63,6 @@ import (
 		        Source: https://echo.labstack.com/middleware/session/
 	*/
 	"github.com/gorilla/sessions"
-	/*
-	   SIWE libraries
-	*/
-	siwe "github.com/spruceid/siwe-go"
 
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
@@ -2945,7 +2942,6 @@ func (s *Server) handleNonce(c echo.Context) error {
 		return err
 	}
 	nonce := hex.EncodeToString(nonceBytes)
-	println("Generating nonce:", nonce)
 
 	// Initialize A Session using Gorilla Sessions
 	sess, err := s.SessionStore.Get(c.Request(), "siwe-session")
@@ -2961,7 +2957,7 @@ func (s *Server) handleNonce(c echo.Context) error {
 	// Set a new nonce under a short-lived session
 	sess.Options = &sessions.Options{
 		MaxAge:   int(NONCE_LIFETIME.Seconds()),
-		HttpOnly: true, // Change once we're out of DEV
+		HttpOnly: true, // TODO: Change once we're out of DEV
 	}
 
 	sess.Values["nonce"] = nonce
@@ -2974,13 +2970,13 @@ func (s *Server) handleNonce(c echo.Context) error {
 	//println("Saved Nonce:", nonce)
 
 	// Return the nonce to the caller
-	return c.JSON(http.StatusOK, string(nonce))
+	return c.JSON(http.StatusOK, nonce)
 }
 
 type loginBody struct {
-	Message   siwe.Message `json:"message"`
-	Ens       string       `json:"ens"`
-	Signature string       `json:"signature"`
+	Message   string `json:"message"`
+	Ens       string `json:"ens"`
+	Signature string `json:"signature"`
 }
 
 type loginResponse struct {
@@ -3016,69 +3012,73 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 			Code:   http.StatusBadRequest,
 			Reason: "No Nonce Set", // TODO: Custom error code needed
 		}
+	} else {
+		// Delete the session from the server
+		// The session will be invalid now and eventually removed
+		sess.Options.MaxAge = -1
 	}
-
-	println("Nonce is Set: ", sessNonce)
 
 	/*
 	 * Next, we need to use this Nonce to authenticate the user
 	 * against the signed SIWE message they provide here.
 	 */
 
-	// Extract the LoginBody from the request
-	var loginBody loginBody
-	if err := c.Bind(&loginBody); err != nil {
-		return err
+	// Bind the body to a loginBody struct
+	var body loginBody
+	if err := c.Bind(&body); err != nil {
+		return &util.HttpError{
+			Code:   http.StatusUnprocessableEntity,
+			Reason: util.ERR_INVALID_SIWE_LOGIN_BODY,
+		}
 	}
-	//
-	//// Log the contents of the login body
-	//println("Login Body:", loginBody)
-	//println("Login Body Message:", loginBody.Message)
-	//println("Login Body Signature:", loginBody.Signature)
-	//println("Login Body Ens:", loginBody.Ens)
 
-	return &util.HttpError{
-		Code:   http.StatusUnprocessableEntity,
-		Reason: "Login Not Implemented",
+	// Extract our Ens and Signature
+	//ens := body.Ens
+	signature := body.Signature
+
+	// Check if we have a Message
+	if body.Message == "" {
+		return &util.HttpError{
+			Code:   http.StatusUnprocessableEntity,
+			Reason: util.ERR_NO_SIWE_MESSAGE,
+		}
 	}
-	//
-	//// Extract our Ens and Signature
-	//ens := loginBody.Ens
-	//signature := loginBody.Signature
-	//
-	//// Throw 422 if we don't have a message
-	//if loginBody.Message == "" {
-	//	return &util.HttpError{
-	//		Code:   http.StatusUnprocessableEntity,
-	//		Reason: "No message provided",
-	//	}
-	//}
 
-	//// Parse the message
-	//message, err := siwe.ParseMessage(body.Message)
-	//if err != nil {
-	//	println("Could not parse SIWE message: " + err.Error())
-	//	return err
-	//}
-	//
-	//// Verify the message with the signature
-	//var nonce *string
-	//_, err = message.Verify(signature, nil, nonce, nil)
-	//if err != nil {
-	//	println("Could not verify SIWE message: " + err.Error())
-	//	return err
-	//}
-	//
-	//// Make sure the extracted nonce is the same as the one in the session
-	//sess, _ := session.Get("session", c)
-	//nonceFromSession := sess.Values["nonce"].(string)
-	//if nonceFromSession != string(*nonce) {
-	//	println("Nonce mismatch: " + nonceFromSession + " != " + string(*nonce))
-	//	return &util.HttpError{
-	//		Code:   http.StatusUnprocessableEntity,
-	//		Reason: "Nonce mismatch",
-	//	}
-	//}
+	//Parse the message string into a SIWE message
+	var message *siwe.Message
+	message, err = siwe.ParseMessage(body.Message)
+	if err != nil {
+		return &util.HttpError{
+			Code:   http.StatusUnprocessableEntity,
+			Reason: util.ERR_INVALID_SIWE_MESSAGE,
+		}
+	}
+
+	// note (al) - SIWE Domains don't support protocol or port specification
+	// so we need to remove them from the domain before we attempt to match it
+	// TOOD: Get them to change this because its dumb (sorry/not sorry)
+	domain := &strings.Split(strings.Split(s.estuaryCfg.Hostname, "//")[1], ":")[0]
+
+	// Verify the message with the signature
+	_, err = message.Verify(
+		signature,  // Verify against the provided signature
+		domain,     // Verify against our configured hostname
+		&sessNonce, // Verify against our user's stored Nonce
+		nil,        // We don't care about TimeStamps
+	)
+	if err != nil {
+		return &util.HttpError{
+			Code:   http.StatusUnprocessableEntity,
+			Reason: err.Error(), // Return the verification error
+		}
+	}
+
+	/*
+	 * The user is now authenticated with SIWE.
+	 */
+
+	// Return a Ok response with a nothing body
+	return c.JSON(http.StatusOK, &loginResponse{})
 }
 
 /* Traditional login */
