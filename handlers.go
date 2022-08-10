@@ -3107,7 +3107,14 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 	}
 
 	// Create a new token for the user with the default expiry time
-	authToken, err := s.newAuthTokenForUser(user, time.Now().Add(time.Duration(s.estuaryCfg.AuthTokenLifetime)), nil)
+	token_lifetime, err := time.ParseDuration(strconv.Itoa(s.estuaryCfg.AuthTokenLifetime) + "s")
+	if err != nil {
+		return &util.HttpError{
+			Code:   http.StatusInternalServerError,
+			Reason: err.Error(),
+		}
+	}
+	authToken, err := s.newAuthTokenForUser(user, time.Now().Add(token_lifetime), nil)
 	if err != nil {
 		return err
 	}
@@ -3399,8 +3406,9 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
-	// Use the default Expoiry time for the API key
-	expiry := time.Now().Add(time.Duration(s.estuaryCfg.AuthTokenLifetime))
+	// Use the default Expiry time for the API key
+	default_duration, err := time.ParseDuration(strconv.Itoa(s.estuaryCfg.AuthTokenLifetime) + "s")
+	expiry := time.Now().Add(default_duration)
 	// If a different expiry time is specified, use that instead
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
