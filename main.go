@@ -141,8 +141,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Replication = cctx.Int("replication")
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
-		case "no-storage-cron":
-			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
+		case "disable-fil-node":
+			cfg.DisableFilecoinStorage = cctx.Bool("disable-fil-node")
 		case "disable-new-deals":
 			cfg.Deal.Disable = cctx.Bool("disable-new-deals")
 		case "verified-deal":
@@ -264,8 +264,8 @@ func main() {
 			Hidden: true,
 		},
 		&cli.BoolFlag{
-			Name:  "no-storage-cron",
-			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node",
+			Name:  "disable-fil-node",
+			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node instead",
 			Value: cfg.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
