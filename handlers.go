@@ -109,9 +109,8 @@ const TOKEN_LIFTEIME = time.Hour * 24 * 30 // 30 Days
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
 	/* Initialize Session Storage for the SIWE API */
-	// TODO: Need to load from a config file
 	// TODO: Need to implement Rotating Keys for SIWE cookies
-	s.SessionStore = sessions.NewCookieStore([]byte("SOMETHING_VERY_SECRET"))
+	s.SessionStore = sessions.NewCookieStore(s.estuaryCfg.NonceSessionKey)
 
 	e := echo.New()
 
@@ -140,22 +139,24 @@ func (s *Server) ServeAPI() error {
 		return nil
 	})
 
-	// TODO: This is a temporary Configuration
+	// We need to allow CORS in order to get/set a Nonce in a session with the Frontend
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		// TODO: Replace with appropriate origins
-		AllowOrigins:     []string{"http://localhost:4443"},
+		AllowOrigins:     []string{s.estuaryCfg.FrontEndHostname},
 		AllowCredentials: true,
-		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.DELETE},
+		AllowMethods:     []string{echo.GET, echo.POST},
 	}))
 
-	e.POST("/register", s.handleRegisterUser)
+	// note (al) Registering is not a public route now
+	//e.POST("/register", s.handleRegisterUser)
 	// Traditional login
 	// 	e.POST("/login", s.handleLoginUser)
 	// We need to expose a Nonce Endpoint
-	e.GET("/nonce", s.handleNonce)
 
-	// Login with an ERC20 Wallet
+	/* Exposed Login Handlers */
+	e.GET("/nonce", s.handleNonce)
 	e.POST("/login", s.handleSiweLoginUser)
+
 	e.GET("/health", s.handleHealth)
 
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
@@ -2843,90 +2844,91 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	}
 }
 
-type registerBody struct {
-	Username   string `json:"username"`
-	Password   string `json:"passwordHash"`
-	InviteCode string `json:"inviteCode"`
-}
-
-func (s *Server) handleRegisterUser(c echo.Context) error {
-	var reg registerBody
-	if err := c.Bind(&reg); err != nil {
-		return err
-	}
-
-	var invite InviteCode
-	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:   http.StatusNotFound,
-				Reason: util.ERR_INVALID_INVITE,
-			}
-		}
-		return err
-	}
-
-	if invite.ClaimedBy != 0 {
-		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_INVITE_ALREADY_USED,
-		}
-	}
-
-	username := strings.ToLower(reg.Username)
-
-	var exist *User
-	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
-		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		exist = nil
-	}
-
-	if exist != nil {
-		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_USERNAME_TAKEN,
-		}
-	}
-
-	salt := uuid.New().String()
-
-	newUser := &User{
-		Username: username,
-		UUID:     uuid.New().String(),
-		Salt:     salt,
-		PassHash: util.GetPasswordHash(reg.Password, salt),
-		Perm:     util.PermLevelUser,
-	}
-
-	if err := s.DB.Create(newUser).Error; err != nil {
-		return &util.HttpError{
-			Code:   http.StatusInternalServerError,
-			Reason: util.ERR_USER_CREATION_FAILED,
-		}
-	}
-
-	authToken := &AuthToken{
-		Token:  "EST" + uuid.New().String() + "ARY",
-		User:   newUser.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 7),
-	}
-
-	if err := s.DB.Create(authToken).Error; err != nil {
-		return err
-	}
-
-	invite.ClaimedBy = newUser.ID
-	if err := s.DB.Save(&invite).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, &loginResponse{
-		Token:  authToken.Token,
-		Expiry: authToken.Expiry,
-	})
-}
+// note (al) Everything is through Wallets, so this is not needed as a public API handler now.
+//type registerBody struct {
+//	Username   string `json:"username"`
+//	Password   string `json:"passwordHash"`
+//	InviteCode string `json:"inviteCode"`
+//}
+//
+//func (s *Server) handleRegisterUser(c echo.Context) error {
+//	var reg registerBody
+//	if err := c.Bind(&reg); err != nil {
+//		return err
+//	}
+//
+//	var invite InviteCode
+//	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
+//		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+//			return &util.HttpError{
+//				Code:   http.StatusNotFound,
+//				Reason: util.ERR_INVALID_INVITE,
+//			}
+//		}
+//		return err
+//	}
+//
+//	if invite.ClaimedBy != 0 {
+//		return &util.HttpError{
+//			Code:   http.StatusBadRequest,
+//			Reason: util.ERR_INVITE_ALREADY_USED,
+//		}
+//	}
+//
+//	username := strings.ToLower(reg.Username)
+//
+//	var exist *User
+//	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
+//		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+//			return err
+//		}
+//		exist = nil
+//	}
+//
+//	if exist != nil {
+//		return &util.HttpError{
+//			Code:   http.StatusBadRequest,
+//			Reason: util.ERR_USERNAME_TAKEN,
+//		}
+//	}
+//
+//	salt := uuid.New().String()
+//
+//	newUser := &User{
+//		Username: username,
+//		UUID:     uuid.New().String(),
+//		Salt:     salt,
+//		PassHash: util.GetPasswordHash(reg.Password, salt),
+//		Perm:     util.PermLevelUser,
+//	}
+//
+//	if err := s.DB.Create(newUser).Error; err != nil {
+//		return &util.HttpError{
+//			Code:   http.StatusInternalServerError,
+//			Reason: util.ERR_USER_CREATION_FAILED,
+//		}
+//	}
+//
+//	authToken := &AuthToken{
+//		Token:  "EST" + uuid.New().String() + "ARY",
+//		User:   newUser.ID,
+//		Expiry: time.Now().Add(time.Hour * 24 * 7),
+//	}
+//
+//	if err := s.DB.Create(authToken).Error; err != nil {
+//		return err
+//	}
+//
+//	invite.ClaimedBy = newUser.ID
+//	if err := s.DB.Save(&invite).Error; err != nil {
+//		return err
+//	}
+//
+//	return c.JSON(http.StatusOK, &loginResponse{
+//		Token:  authToken.Token,
+//		Expiry: authToken.Expiry,
+//	})
+//}
 
 /* SIWE Login */
 
@@ -2956,18 +2958,15 @@ func (s *Server) handleNonce(c echo.Context) error {
 
 	// Set a new nonce under a short-lived session
 	sess.Options = &sessions.Options{
-		MaxAge:   int(NONCE_LIFETIME.Seconds()),
-		HttpOnly: true, // TODO: Change once we're out of DEV
+		MaxAge:   s.estuaryCfg.NonceSessionLifetime, // Nonces last for 5 minutes
+		HttpOnly: true,                              // Don't allow Javascript to access the session
+		SameSite: http.SameSiteLaxMode,              // Allow the session to be shared across origins
 	}
 
 	sess.Values["nonce"] = nonce
 	if err = sess.Save(c.Request(), c.Response()); err != nil {
 		return err
 	}
-
-	// Get the nonce from the session
-	//nonce = sess.Values["nonce"].(string)
-	//println("Saved Nonce:", nonce)
 
 	// Return the nonce to the caller
 	return c.JSON(http.StatusOK, nonce)
@@ -3077,8 +3076,46 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 	 * The user is now authenticated with SIWE.
 	 */
 
-	// Return a Ok response with a nothing body
-	return c.JSON(http.StatusOK, &loginResponse{})
+	// Read the User's address as a hex string
+	address_str := message.GetAddress().Hex()
+
+	// Check if the User already exists in the database
+	var user *User
+	// TODO: Figure out how Gorm stores WalletAddress
+	if err := s.DB.First(user, "walletaddress = ?", address_str).Error; err != nil {
+		// If the error is not "record not found" then return the error
+		if err != gorm.ErrRecordNotFound {
+			return &util.HttpError{
+				Code:   http.StatusInternalServerError,
+				Reason: err.Error(),
+			}
+		}
+		// Otherwise, the user does not exist in the database, so create a new one
+		user = &User{
+			UUID:          uuid.New().String(),
+			WalletAddress: address_str,
+			Username:      "FakePerson", // TODO: Remove this or set the Username from the ENS or something
+			Perm:          util.PermLevelUser,
+		}
+		// Save the new user to the database
+		if err := s.DB.Create(user).Error; err != nil {
+			return &util.HttpError{
+				Code:   http.StatusInternalServerError,
+				Reason: util.ERR_USER_CREATION_FAILED,
+			}
+		}
+	}
+
+	// Create a new token for the user with the default expiry time
+	authToken, err := s.newAuthTokenForUser(user, time.Now().Add(time.Duration(s.estuaryCfg.AuthTokenLifetime)), nil)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, &loginResponse{
+		Token:  authToken.Token,
+		Expiry: authToken.Expiry,
+	})
 }
 
 /* Traditional login */
@@ -3362,7 +3399,9 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
-	expiry := time.Now().Add(time.Hour * 24 * 30)
+	// Use the default Expoiry time for the API key
+	expiry := time.Now().Add(time.Duration(s.estuaryCfg.AuthTokenLifetime))
+	// If a different expiry time is specified, use that instead
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
 			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough

@@ -140,6 +140,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.LightstepToken = cctx.String("lightstep-token")
 		case "hostname":
 			cfg.Hostname = cctx.String("hostname")
+		case "front-end-hostname":
+			cfg.FrontEndHostname = cctx.String("front-end-hostname")
+		case "auth-token-lifetime":
+			cfg.AuthTokenLifetime = cctx.Int("auth-token-lifetime")
+		case "nonce-session-lifetime":
+			cfg.NonceSessionLifetime = cctx.Int("nonce-session-lifetime")
 		case "replication":
 			cfg.Replication = cctx.Int("replication")
 		case "lowmem":
@@ -293,6 +299,21 @@ func main() {
 			Usage: "specify hostname this node will be reachable at",
 			Value: cfg.Hostname,
 		},
+		&cli.StringFlag{
+			Name:  "front-end-hostname",
+			Usage: "specify hostname for the front-end server formatting user interactions",
+			Value: cfg.FrontEndHostname,
+		},
+		&cli.IntFlag{
+			Name:  "auth-token-lifetime",
+			Usage: "specify the lifetime of an auth token in seconds",
+			Value: cfg.AuthTokenLifetime,
+		},
+		&cli.IntFlag{
+			Name:  "nonce-session-lifetime",
+			Usage: "specify the lifetime of a nonce session in seconds",
+			Value: cfg.NonceSessionLifetime,
+		},
 		&cli.BoolFlag{
 			Name:  "fail-deals-on-transfer-failure",
 			Usage: "consider deals failed when the transfer to the miner fails",
@@ -402,10 +423,11 @@ func main() {
 					Name:  "username",
 					Usage: "specify setup username",
 				},
-				&cli.StringFlag{
-					Name:  "password",
-					Usage: "specify setup password",
-				},
+				// TODO: Remove Admin User Setup
+				//&cli.StringFlag{
+				//	Name:  "password",
+				//	Usage: "specify setup password",
+				//},
 				&cli.StringFlag{
 					Name:  "config",
 					Usage: "specify configuration file location",
@@ -432,10 +454,10 @@ func main() {
 					return errors.New("setup username cannot be empty")
 				}
 
-				password := cctx.String("password")
-				if password == "" {
-					return errors.New("setup password cannot be empty")
-				}
+				//password := cctx.String("password")
+				//if password == "" {
+				//	return errors.New("setup password cannot be empty")
+				//}
 
 				db, err := setupDatabase(cfg.DatabaseConnString)
 				if err != nil {
@@ -460,13 +482,14 @@ func main() {
 					return fmt.Errorf("a user already exist for that username:%s", username)
 				}
 
-				salt := uuid.New().String()
+				//salt := uuid.New().String()
 				newUser := &User{
-					UUID:     uuid.New().String(),
-					Username: username,
-					Salt:     salt,
-					PassHash: util.GetPasswordHash(password, salt),
-					Perm:     100,
+					UUID:          uuid.New().String(),
+					Username:      username,
+					WalletAddress: "FakeWalletAddress",
+					//Salt:     salt,
+					//PassHash: util.GetPasswordHash(password, salt),
+					Perm: 100,
 				}
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
