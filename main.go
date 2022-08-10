@@ -486,7 +486,7 @@ func main() {
 				newUser := &User{
 					UUID:          uuid.New().String(),
 					Username:      username,
-					WalletAddress: "FakeWalletAddress",
+					Walletaddress: "FakeWalletAddress",
 					//Salt:     salt,
 					//PassHash: util.GetPasswordHash(password, salt),
 					Perm: 100,

@@ -10,7 +10,7 @@ import (
 type User struct {
 	gorm.Model
 	UUID          string `gorm:"unique"`
-	WalletAddress string // The address of the user's ERC20 wallet as a hex string
+	Walletaddress string // The address of the user's ERC20 wallet as a hex string
 	// TODO: Implement DiD resolution, store ENS
 	DID string // A DID for the users On-Chain identity
 

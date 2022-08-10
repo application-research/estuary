@@ -3077,12 +3077,12 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 	 */
 
 	// Read the User's address as a hex string
-	address_str := message.GetAddress().Hex()
+	wallet_address_str := message.GetAddress().Hex()
 
 	// Check if the User already exists in the database
 	var user *User
 	// TODO: Figure out how Gorm stores WalletAddress
-	if err := s.DB.First(user, "walletaddress = ?", address_str).Error; err != nil {
+	if err := s.DB.First(&user, "walletaddress = ?", wallet_address_str).Error; err != nil {
 		// If the error is not "record not found" then return the error
 		if err != gorm.ErrRecordNotFound {
 			return &util.HttpError{
@@ -3093,8 +3093,8 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 		// Otherwise, the user does not exist in the database, so create a new one
 		user = &User{
 			UUID:          uuid.New().String(),
-			WalletAddress: address_str,
-			Username:      "FakePerson", // TODO: Remove this or set the Username from the ENS or something
+			Walletaddress: wallet_address_str,
+			Username:      "FakeENSName", // TODO: Remove this or set the Username from the ENS or something
 			Perm:          util.PermLevelUser,
 		}
 		// Save the new user to the database
