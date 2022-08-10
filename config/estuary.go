@@ -2,9 +2,11 @@ package config
 
 import (
 	"path/filepath"
+	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
+	"github.com/gorilla/securecookie"
 	"github.com/libp2p/go-libp2p-core/protocol"
 
 	"github.com/application-research/estuary/build"
@@ -20,6 +22,10 @@ type Estuary struct {
 	EnableAutoRetrieve     bool      `json:"enable_autoretrieve"`
 	LightstepToken         string    `json:"lightstep_token"`
 	Hostname               string    `json:"hostname"`
+	FrontEndHostname       string    `json:"front_end_hostname"`     // TODO: note (al) Do we need this?
+	AuthTokenLifetime      int       `json:"auth_token_lifetime"`    // note (al): How long Auth Tokens are valid for
+	NonceSessionLifetime   int       `json:"nonce_session_lifetime"` // note (al): How long Nonce Sessions are valid for
+	NonceSessionKey        []byte    `json:"nonce_session_key"`      // note (al): Key for Nonce Sessions
 	Node                   Node      `json:"node"`
 	Jaeger                 Jaeger    `json:"jaeger"`
 	Deal                   Deal      `json:"deal"`
@@ -58,12 +64,17 @@ func (cfg *Estuary) SetRequiredOptions() error {
 
 func NewEstuary(appVersion string) *Estuary {
 	return &Estuary{
-		AppVersion:             appVersion,
-		DataDir:                ".",
-		DatabaseConnString:     build.DefaultDatabaseValue,
-		ApiListen:              ":3004",
-		LightstepToken:         "",
-		Hostname:               "http://localhost:3004",
+		AppVersion:           appVersion,
+		DataDir:              ".",
+		DatabaseConnString:   build.DefaultDatabaseValue,
+		ApiListen:            ":3004",
+		LightstepToken:       "",
+		Hostname:             "http://localhost:3004",              // Dev default for Estuary
+		FrontEndHostname:     "http://localhost:4443",              // Dev default for Estuary-WWW (at least in my case)
+		AuthTokenLifetime:    int((time.Hour * 24 * 30).Seconds()), // 30 days
+		NonceSessionLifetime: int((time.Minute * 5).Seconds()),     // 5 minutes
+		// TODO: Implement rotating nonce session key
+		NonceSessionKey:        securecookie.GenerateRandomKey(64), // 64 byte random key
 		Replication:            6,
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
