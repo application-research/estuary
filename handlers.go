@@ -3053,10 +3053,8 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 		}
 	}
 
-	// note (al) - SIWE Domains don't support protocol or port specification
-	// so we need to remove them from the domain before we attempt to match it
-	// TOOD: Get them to change this because its dumb (sorry/not sorry)
-	domain := &strings.Split(strings.Split(s.estuaryCfg.Hostname, "//")[1], ":")[0]
+	// Extract Estuary's domain from our config
+	domain := &strings.Split(s.estuaryCfg.Hostname, "//")[1]
 
 	// Verify the message with the signature
 	_, err = message.Verify(
