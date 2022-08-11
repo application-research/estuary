@@ -66,7 +66,7 @@ var _ = Describe("HandlerAdmin", Ordered, func() {
 	//admin.POST("/loglevel", s.handleLogLevel)
 
 	It("check handleAdminBalance", func() {
-		Expect(true).To(Equal(true)) // skip
+		Expect(true).To(BeTrue())
 	})
 
 	It("check handleAdminAddEscrow", func() {

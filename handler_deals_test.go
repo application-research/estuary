@@ -30,6 +30,7 @@ var _ = Describe("HandlerDeals", Ordered, func() {
 	//deals.GET("/failures", withUser(s.handleStorageFailures))
 
 	It("check handleGetDealStatus", func() {
+
 		Expect(true).To(Equal(true)) // skip
 	})
 	It("check handleGetDealStatusByPropCid", func() {

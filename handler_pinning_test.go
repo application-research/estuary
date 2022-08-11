@@ -2,6 +2,7 @@ package main
 
 import (
 	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("HandlerPinning", Ordered, func() {
@@ -14,4 +15,25 @@ var _ = Describe("HandlerPinning", Ordered, func() {
 	//pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
 	//pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 	//pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
+
+	It("check handleListPins", func() {
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleAddPin", func() {
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleGetPin", func() {
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleReplacePin", func() {
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleDeletePin", func() {
+		Expect(true).To(Equal(true)) // skip
+	})
+
 })

@@ -20,6 +20,7 @@ var (
 	base_url             string = "http://localhost:3004"
 	content_add_url             = base_url + "/content/add"
 	content_add_ipfs_url        = base_url + "/content/add-ipfs"
+	content_add_car             = base_url + "/content/add-car"
 )
 
 var (
@@ -51,14 +52,7 @@ var _ = Describe("HandlerContent", Ordered, func() {
 	//content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 
 	It("check handleAdd", func() {
-		body := new(bytes.Buffer)
-		writer := multipart.NewWriter(body)
-		file, _ := os.Open(filePath)
-		w, _ := writer.CreateFormFile("data", filePath)
-
-		_, _ = io.Copy(w, file)
-		writer.Close()
-
+		body, writer, _ := getMockBody()
 		req := httptest.NewRequest(echo.POST, content_add_url, body)
 		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
 		rec := httptest.NewRecorder()
@@ -71,14 +65,7 @@ var _ = Describe("HandlerContent", Ordered, func() {
 	})
 
 	It("check handleAddIpfs", func() {
-		body := new(bytes.Buffer)
-		writer := multipart.NewWriter(body)
-		file, _ := os.Open(filePath)
-		w, _ := writer.CreateFormFile("data", filePath)
-
-		_, _ = io.Copy(w, file)
-		writer.Close()
-
+		body, writer, _ := getMockBody()
 		req := httptest.NewRequest(echo.POST, content_add_ipfs_url, body)
 		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
 		rec := httptest.NewRecorder()
@@ -91,54 +78,160 @@ var _ = Describe("HandlerContent", Ordered, func() {
 	})
 
 	It("check handleAddCar", func() {
+		body, writer, _ := getMockBody()
+		req := httptest.NewRequest(echo.POST, content_add_car, body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleAddIpfs(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleCreateContent", func() {
-		Expect(true).To(Equal(true)) // skip
+		body, writer, _ := getMockBody()
+		req := httptest.NewRequest(echo.POST, content_add_url, body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleCreateContent(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+
 	})
 
 	It("check handleGetContentByCid", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		req.Form.Set("cid", "")
+		s.handleGetContentByCid(ctx)
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleStats", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleStats(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleEnsureReplication", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		req.Form.Set("datacid", "")
+		s.handleEnsureReplication(ctx)
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleContentStatus", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		req.Form.Set("id", "")
+		s.handleContentStatus(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleListContent", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleListContent(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleListContentWithDeals", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleListContentWithDeals(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleGetContentFailures", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleGetContentFailures(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleGetContentBandwidth", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleGetContentBandwidth(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleGetStagingZoneForUser", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleGetStagingZoneForUser(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 	It("check handleGetAggregatedForContent", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleGetAggregatedForContent(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 	It("check handleGetAllDealsForUser", func() {
-		Expect(true).To(Equal(true)) // skip
+		req := httptest.NewRequest(echo.GET, content_add_url, nil)
+		rec := httptest.NewRecorder()
+		ctx := echo.New().NewContext(req, rec)
+		s.handleGetAllDealsForUser(ctx, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		fmt.Println(rec.Body.String())
+		Expect(rec.Code).To(Equal(200))
 	})
 
 })
+
+func getMockBody() (*bytes.Buffer, *multipart.Writer, error) {
+	body := new(bytes.Buffer)
+	writer := multipart.NewWriter(body)
+	file, _ := os.Open(filePath)
+	w, _ := writer.CreateFormFile("data", filePath)
+
+	_, _ = io.Copy(w, file)
+	writer.Close()
+
+	return body, writer, nil
+}
