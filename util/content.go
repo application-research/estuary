@@ -31,9 +31,9 @@ type ContentInCollection struct {
 
 type ContentAddIpfsBody struct {
 	ContentInCollection
-	Root     string   `json:"root"`
-	Filename string   `json:"filename"`
-	Peers    []string `json:"peers"`
+	Root  string   `json:"root"`
+	Name  string   `json:"filename"`
+	Peers []string `json:"peers"`
 }
 
 type ContentAddResponse struct {
@@ -47,7 +47,7 @@ type ContentCreateBody struct {
 	ContentInCollection
 
 	Root     string      `json:"root"`
-	Filename string      `json:"filename"`
+	Name     string      `json:"name"`
 	Location string      `json:"location"`
 	Type     ContentType `json:"type"`
 }

@@ -344,7 +344,7 @@ func serveProfile(c echo.Context) error {
 type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
-	Filename        string  `json:"filename"`
+	Filename        string  `json:"name"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -407,7 +407,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
-			Filename: c.Filename,
+			Filename: c.Name,
 		}
 
 		if false {
@@ -614,7 +614,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		return err
 	}
 
-	filename := params.Filename
+	filename := params.Name
 	if filename == "" {
 		filename = params.Root
 	}
@@ -924,7 +924,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
-	fullPath := filepath.Join(path, content.Filename)
+	fullPath := filepath.Join(path, content.Name)
 
 	if col != nil {
 		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
@@ -1104,7 +1104,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Filename:    filename,
+		Name:        filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
@@ -3413,7 +3413,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 	// create DAG respecting directory structure
 	collectionNode := unixfs.EmptyDirNode()
 	for _, c := range contents {
-		dirs, err := util.DirsFromPath(c.Path, c.Filename)
+		dirs, err := util.DirsFromPath(c.Path, c.Name)
 		if err != nil {
 			return err
 		}
@@ -3422,7 +3422,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-		err = lastDirNode.AddRawLink(c.Filename, &ipld.Link{
+		err = lastDirNode.AddRawLink(c.Name, &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
@@ -3489,7 +3489,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 	dirs := make(map[string]bool)
 	var out []collectionListResponse
 	for _, r := range refs {
-		if r.Path == "" || r.Filename == "" {
+		if r.Path == "" || r.Name == "" {
 			continue
 		}
 
@@ -3510,7 +3510,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
 			}
 
 			out = append(out, collectionListResponse{
-				Name:      r.Filename,
+				Name:      r.Name,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
@@ -4653,7 +4653,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: rootCID},
-		Filename:    req.Filename,
+		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,
 		UserID:      u.ID,
@@ -5013,7 +5013,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Filename)
+	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5026,7 +5026,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 
 	content := &Content{
 		Cid:         util.DbCID{CID: root},
-		Filename:    req.Filename,
+		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,
 		UserID:      req.User,

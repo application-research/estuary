@@ -204,7 +204,7 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
 	content := &Content{
 		Size:        0,
-		Filename:    "aggregate",
+		Name:        "aggregate",
 		Active:      false,
 		Pinning:     true,
 		UserID:      user,
@@ -692,7 +692,7 @@ func (cm *ContentManager) createAggregate(ctx context.Context, conts []Content) 
 	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range conts {
-		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Filename), &ipld.Link{
+		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
 			Size: uint64(c.Size),
 			Cid:  c.Cid.CID,
 		})
@@ -1304,16 +1304,16 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content Content, do
 		return err
 	}
 
-	// if len(deals) == 0 &&
-	// 	content.Size < int64(individualDealThreshold) &&
-	// 	!content.Aggregate &&
-	// 	bucketingEnabled {
-	// 	// Put it in a bucket!
-	// 	if err := cm.addContentToStagingZone(ctx, content); err != nil {
-	// 		return err
-	// 	}
-	// 	return nil
-	// }
+	if len(deals) == 0 &&
+		content.Size < int64(individualDealThreshold) &&
+		!content.Aggregate &&
+		bucketingEnabled {
+		// Put it in a bucket!
+		if err := cm.addContentToStagingZone(ctx, content); err != nil {
+			return err
+		}
+		return nil
+	}
 
 	replicationFactor := cm.Replication
 	if content.Replication > 0 {
@@ -3307,7 +3307,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont Content, s
 	for i, c := range boxCids {
 		content := &Content{
 			Cid:         util.DbCID{CID: c},
-			Filename:    fmt.Sprintf("%s-%d", cont.Filename, i),
+			Name:        fmt.Sprintf("%s-%d", cont.Name, i),
 			Active:      true,
 			Pinning:     true,
 			UserID:      cont.UserID,
