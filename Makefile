@@ -141,7 +141,7 @@ calibnet: build
 
 .PHONY: test
 test:
-	go test $(GOFLAGS) -v ./...
+	go test $(GOFLAGS) -v ./... --ldflags '-extldflags "-Wl,--allow-multiple-definition"'
 
 .PHONY: generate-swagger
 generate-swagger:
