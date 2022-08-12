@@ -33,9 +33,9 @@ jobs:
       run: make clean all
 
     - name: Setup
-      run: echo "ESTUARY_TOKEN=$(./estuary setup | grep Token | cut -d ' ' -f 3)" >> $GITHUB_ENV
+      run: echo "ESTUARY_TOKEN=$(./estuary --username=admin setup | grep Token | cut -d ' ' -f 3)" >> $GITHUB_ENV
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v ./... --ldflags '-extldflags "-Wl,--allow-multiple-definition"'
       env:
         ESTUARY_TOKEN: $ESTUARY_TOKEN
