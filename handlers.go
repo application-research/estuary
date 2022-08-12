@@ -95,12 +95,6 @@ import (
 // @license.name Apache 2.0 Apache-2.0 OR MIT
 // @license.url https://github.com/application-research/estuary/blob/master/LICENSE.md
 
-/* How long Nonces live */
-const NONCE_LIFETIME = time.Minute * 5 // Five Minutes
-
-/* How long API Tokens live */
-const TOKEN_LIFTEIME = time.Hour * 24 * 30 // 30 Days
-
 // @host api.estuary.tech
 // @BasePath  /
 // @securityDefinitions.Bearer
@@ -144,7 +138,7 @@ func (s *Server) ServeAPI() error {
 		// TODO: Replace with appropriate origins
 		AllowOrigins:     []string{s.estuaryCfg.FrontEndHostname},
 		AllowCredentials: true,
-		AllowMethods:     []string{echo.GET, echo.POST},
+		AllowMethods:     []string{echo.GET, echo.POST, echo.PUT, echo.DELETE},
 	}))
 
 	// note (al) Registering is not a public route now
@@ -2796,6 +2790,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 	return &user, nil
 }
 
+/* Middleware for Authenticating a User's Token before allowing access to protected routes */
 func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -2946,7 +2941,7 @@ func (s *Server) handleNonce(c echo.Context) error {
 	nonce := hex.EncodeToString(nonceBytes)
 
 	// Initialize A Session using Gorilla Sessions
-	sess, err := s.SessionStore.Get(c.Request(), "siwe-session")
+	sess, err := s.SessionStore.Get(c.Request(), "SIWE_SESSION")
 	if err != nil {
 		return err
 	}
@@ -2996,7 +2991,7 @@ func (s *Server) handleSiweLoginUser(c echo.Context) error {
 	 */
 
 	// Retrieve the session tied to the request
-	sess, err := s.SessionStore.Get(c.Request(), "siwe-session")
+	sess, err := s.SessionStore.Get(c.Request(), "SIWE_SESSION")
 	if err != nil {
 		return err
 	}
@@ -3390,7 +3385,8 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 		return err
 	}
 
-	return c.NoContent(200)
+	// Return a 200 OK response
+	return c.NoContent(http.StatusOK)
 }
 
 // handleUserCreateApiKey godoc
