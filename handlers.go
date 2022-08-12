@@ -2932,13 +2932,8 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 // @Produce json
 // @Success 200 {object} util.HttpSuccess
 func (s *Server) handleNonce(c echo.Context) error {
-	/* TODO: Use siwe.GenerateNonce() */
 	// Generate a random 96 bit nonce
-	nonceBytes := make([]byte, 12)
-	if _, err := rand.Read(nonceBytes); err != nil {
-		return err
-	}
-	nonce := hex.EncodeToString(nonceBytes)
+	nonce := siwe.GenerateNonce()
 
 	// Initialize A Session using Gorilla Sessions
 	sess, err := s.SessionStore.Get(c.Request(), "SIWE_SESSION")
