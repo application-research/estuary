@@ -63,7 +63,7 @@ func (cm *ContentManager) pinStatus(cont util.Content, origins []*peer.AddrInfo)
 			Created:   cont.CreatedAt,
 			Pin: types.IpfsPin{
 				CID:     cont.Cid.CID.String(),
-				Name:    cont.Filename,
+				Name:    cont.Name,
 				Meta:    meta,
 				Origins: originStrs,
 			},
@@ -228,7 +228,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 
 	cont := util.Content{
 		Cid:         util.DbCID{CID: obj},
-		Filename:    filename,
+		Name:        filename,
 		UserID:      user,
 		Active:      false,
 		Replication: cm.Replication,
@@ -273,7 +273,7 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInf
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Filename,
+		Name:     cont.Name,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
@@ -316,7 +316,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Con
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
-		Name:     cont.Filename,
+		Name:     cont.Name,
 		Peers:    peers,
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
