@@ -3,6 +3,7 @@ package main
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gorm.io/gorm"
 )
 
 var _ = Describe("HandlerAdmin", Ordered, func() {
@@ -66,34 +67,119 @@ var _ = Describe("HandlerAdmin", Ordered, func() {
 	//admin.POST("/loglevel", s.handleLogLevel)
 
 	It("check handleAdminBalance", func() {
+		s.handleAdminBalance(nil)
 		Expect(true).To(BeTrue())
 	})
 
 	It("check handleAdminAddEscrow", func() {
+		s.handleAdminAddEscrow(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleDealStats", func() {
+		s.handleDealStats(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleDiskSpaceCheck", func() {
+		s.handleDiskSpaceCheck(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleAdminStats", func() {
+		s.handleAdminStats(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleGetSystemConfig", func() {
+		s.handleGetSystemConfig(nil, &User{
+			Model: gorm.Model{ID: 1},
+		})
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleAdminAddMiner", func() {
+		s.handleAdminAddMiner(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleAdminRemoveMiner", func() {
+		s.handleAdminRemoveMiner(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleSuspendMiner", func() {
+		s.handleSuspendMiner(nil, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleUnsuspendMiner", func() {
+		s.handleUnsuspendMiner(nil, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		Expect(true).To(Equal(true)) // skip
+	})
+	It("check handleMinersSetInfo", func() {
+		s.handleMinersSetInfo(nil, &User{
+			Model: gorm.Model{ID: 1},
+		})
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleAdminGetMiners", func() {
+		s.handleAdminGetMiners(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleAdminGetMinerStats", func() {
+		s.handleAdminGetMinerStats(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleMinerTransferDiagnostics", func() {
+		s.handleMinerTransferDiagnostics(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleAdminGetProgress", func() {
+		s.handleAdminGetProgress(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleDebugGetAllDeals", func() {
+		s.handleDebugGetAllDeals(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleReadLocalContent", func() {
+		s.handleReadLocalContent(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleGetOffloadingCandidates", func() {
+		s.handleGetOffloadingCandidates(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleOffloadContent", func() {
+		s.handleOffloadContent(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleRunOffloadingCollection", func() {
+		s.handleRunOffloadingCollection(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleRefreshContent", func() {
+		s.handleRefreshContent(nil)
+		Expect(true).To(Equal(true)) // skip
+	})
+
+	It("check handleRunGc", func() {
+		s.handleRunGc(nil)
 		Expect(true).To(Equal(true)) // skip
 	})
 

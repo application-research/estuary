@@ -32,25 +32,6 @@ var _ = Describe("HandlerContent", Ordered, func() {
 		time.Sleep(time.Second * 5)
 	})
 
-	//contmeta := e.Group("/content")
-	//uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
-	//uploads.POST("/add", withUser(s.handleAdd))
-	//uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	//uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
-	//uploads.POST("/create", withUser(s.handleCreateContent))
-	//content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
-	//content.GET("/by-cid/:cid", s.handleGetContentByCid)
-	//content.GET("/stats", withUser(s.handleStats))
-	//content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
-	//content.GET("/status/:id", withUser(s.handleContentStatus))
-	//content.GET("/list", withUser(s.handleListContent))
-	//content.GET("/deals", withUser(s.handleListContentWithDeals))
-	//content.GET("/failures/:content", withUser(s.handleGetContentFailures))
-	//content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
-	//content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
-	//content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
-	//content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
-
 	It("check handleAdd", func() {
 		body, writer, _ := getMockBody()
 		req := httptest.NewRequest(echo.POST, content_add_url, body)
@@ -104,6 +85,8 @@ var _ = Describe("HandlerContent", Ordered, func() {
 	})
 
 	It("check handleGetContentByCid", func() {
+		// upload first then get content by id.
+
 		req := httptest.NewRequest(echo.GET, content_add_url, nil)
 		rec := httptest.NewRecorder()
 		ctx := echo.New().NewContext(req, rec)
