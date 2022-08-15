@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
 
@@ -1096,7 +1097,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, util.ContentLocationLocal)
+	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
 }
 
 func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
@@ -1110,7 +1111,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
-		Location:    util.ContentLocationLocal,
+		Location:    constants.ContentLocationLocal,
 	}
 
 	if err := cm.DB.Create(content).Error; err != nil {
@@ -4140,7 +4141,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		fixedAggregateSize = true
 	}
 
-	if cont.Location != util.ContentLocationLocal {
+	if cont.Location != constants.ContentLocationLocal {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
 			"content":            cont,
@@ -5322,7 +5323,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", err
 	}
 
-	if cont.Location == util.ContentLocationLocal {
+	if cont.Location == constants.ContentLocationLocal {
 		return "", nil
 	}
 

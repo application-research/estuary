@@ -1,4 +1,6 @@
 #! /bin/bash
+set -eu
+set -o pipefail
 
 help()
 {
@@ -18,19 +20,7 @@ help()
 
 install_package() {
   PKG=$1
-  echo "Checking for "$PKG" ... "
-  dPKG -s $pkg &> /dev/null
-
-  if [ ! $? -eq 0 ]; then
-    echo "Installing "$PKG"."
-    if [ $VERBOSE -eq 1 ]; then
-      sudo apt -y install $PKG
-    else
-      sudo apt -y install $PKG &> /dev/null
-    fi
-  else
-    echo $PKG" already installed."
-  fi
+  sudo apt -y install $PKG
 }
 
 POSITIONAL_ARGS=()
@@ -116,7 +106,7 @@ export ESTUARY_IP=`ip route get 8.8.8.8 | grep -oP "src \K[^ ]+"`
 echo "ESTUARY_IP=$ESTUARY_IP" >> ~/.bashrc
 
 echo "Installing libOpenCL and setting up necessary softlinks."
-mkdir neo
+mkdir neo -p
 cd neo
 
 if [ $VERBOSE -eq 1 ]; then
@@ -141,45 +131,41 @@ read -a strattr <<< "$ubuntuversion"
 IFS='.'
 read -a majorv <<< ${strattr[1]}
 if [ ${majorv[0]} = "20" ]; then
-  sudo ln -s /usr/lib/x86_64-linux-gnu/libhwloc.so.15.1.0 /usr/lib/libhwloc.so
-  sudo ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so
+  sudo ln -fs /usr/lib/x86_64-linux-gnu/libhwloc.so.15.1.0 /usr/lib/libhwloc.so
+  sudo ln -fs /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so
   echo "Major Ubuntu version is 20"
 elif [ ${majorv[0]} = "22" ]; then
-  sudo ln -s /usr/lib/x86_64-linux-gnu/libhwloc.so.15.5.2 /usr/lib/libhwloc.so
-  sudo ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so
+  sudo ln -fs /usr/lib/x86_64-linux-gnu/libhwloc.so.15.5.2 /usr/lib/libhwloc.so
+  sudo ln -fs /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so
   echo "Major Ubuntu version is 22"
 else
   echo "OS not supported at this time."
 fi
 
 echo "Checking for postgresql ... "
-dpkg -s postgresql &> /dev/null
-
-if [ ! $? -eq 0 ]; then
-  echo "Installing and launching postgresql ... "
-  if [ $VERBOSE -eq 1 ]; then
-    sudo apt -y install postgresql postgresql-contrib
-  else
-    sudo apt -y install postgresql postgresql-contrib &> /dev/null
-  fi
-  echo "Starting and enabling postgresql ... "
+sudo apt -y install postgresql postgresql-contrib
   sudo systemctl start postgresql.service
   sudo systemctl enable postgresql.service
-fi
 
 echo "Downloading estuary ... "
-if [ $VERBOSE -eq 1 ]; then
-  sudo git clone https://github.com/application-research/estuary /usr/local/estuary
-else
-  sudo git clone https://github.com/application-research/estuary /usr/local/estuary &> /dev/null
+if [ ! -d /usr/local/estuary ]; then
+  if [ $VERBOSE -eq 1 ]; then
+    sudo git clone https://github.com/application-research/estuary /usr/local/estuary
+  else
+    sudo git clone https://github.com/application-research/estuary /usr/local/estuary &> /dev/null
+  fi
 fi
 
-echo "Configuring estuary database ..."
-sudo -u postgres createuser -d -s estuary
-sudo -u postgres psql -c "ALTER USER estuary PASSWORD '$PASSWORD';"
-sudo -u postgres createdb estuary
-echo "Setting estuary database password to: $PASSWORD"
-echo "Establishing $DATADIR as the estuary data store"
+
+
+sudo -u postgres psql estuary < /dev/null || (
+  echo "Configuring estuary database ..."
+  sudo -u postgres createuser -d -s estuary
+  sudo -u postgres psql -c "ALTER USER estuary PASSWORD '$PASSWORD';"
+  sudo -u postgres createdb estuary
+  echo "Setting estuary database password to: $PASSWORD"
+  echo "Establishing $DATADIR as the estuary data store"
+)
 
 source ~/.bashrc
 cd /usr/local/estuary
@@ -195,7 +181,10 @@ if [ ! -d $DATADIR ]; then
   sudo mkdir -p $DATADIR
 fi
 
-sudo --preserve-env=PASSWORD,DATADIR bash -c '/usr/local/estuary/estuary --datadir='$DATADIR' --database="postgres=host=127.0.0.1 user=estuary password='$PASSWORD' dbname=estuary" setup > /usr/local/estuary/token.file'
+if [ ! -f /usr/local/estuary/token.file ]; then
+	sudo --preserve-env=PASSWORD,DATADIR bash -c '/usr/local/estuary/estuary --datadir='$DATADIR' --database="postgres=host=127.0.0.1 user=estuary password='$PASSWORD' dbname=estuary" setup --username user2 --password password > /usr/local/estuary/token.file'
+fi
+
 sudo bash -c 'echo "#! /bin/bash" > /usr/local/estuary/estuary_start.bash'
 sudo bash -c 'echo "ulimit -n 10000" >> /usr/local/estuary/estuary_start.bash'
 sudo bash -c 'echo "sysctl -w net.core.rmem_max=2500000" >> /usr/local/estuary/estuary_start.bash'
@@ -211,17 +200,7 @@ sudo git clone https://github.com/application-research/estuary-www /usr/local/es
 cd /usr/local/estuary-www
 
 echo "Checking for npm ... "
-dpkg -s npm &> /dev/null
-if [ ! $? -eq 0 ]; then
-  echo "Installing npm."
-  if [ $VERBOSE -eq 1 ]; then
-    sudo apt -y install npm
-  else
-    sudo apt -y install npm &> /dev/null
-  fi
-else
-  echo "npm already installed."
-fi
+sudo apt -y install npm
 
 echo "Updating npm ... "
 

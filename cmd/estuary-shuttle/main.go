@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/pinner/types"
 
@@ -1170,11 +1171,11 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
+	if !u.FlagSplitContent() && mpf.Size > constants.DefaultContentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, constants.DefaultContentSizeLimit),
 		}
 	}
 

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
 
@@ -648,7 +649,7 @@ func main() {
 		go func() {
 			time.Sleep(time.Second * 10)
 
-			if err := s.RestartAllTransfersForLocation(cctx.Context, util.ContentLocationLocal); err != nil {
+			if err := s.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
