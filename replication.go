@@ -1275,9 +1275,9 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	if len(deals) == 0 &&
-		content.Size < int64(individualDealThreshold) &&
+		content.Size < int64(constants.IndividualDealThreshold) &&
 		!content.Aggregate &&
-		bucketingEnabled {
+		constants.BucketingEnabled {
 		// Put it in a bucket!
 		if err := cm.addContentToStagingZone(ctx, content); err != nil {
 			return err
