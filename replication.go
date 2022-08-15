@@ -388,7 +388,7 @@ func (cm *ContentManager) Run(ctx context.Context) {
 	// if content adding is enabled, refresh pin queue for local contents
 	if !cm.localContentAddingDisabled {
 		go func() {
-			if err := cm.refreshPinQueue(ctx, util.ContentLocationLocal); err != nil {
+			if err := cm.refreshPinQueue(ctx, constants.ContentLocationLocal); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
 		}()
@@ -865,8 +865,8 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.P
 	return cm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
 }
 
-//TODO - this is currently not used, if we choose to use it,
-//add a check to make sure miners selected is still active in db
+// TODO - this is currently not used, if we choose to use it,
+// add a check to make sure miners selected is still active in db
 func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	sortedMiners, _, err := cm.sortedMinerList()
 	if err != nil {
