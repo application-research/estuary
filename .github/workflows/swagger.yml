@@ -10,7 +10,7 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Build
-      run: make generate-swagger 
+      run: make generate-swagger
 
     - name: Check for new files
       run: echo "NEW_FILES=$(git diff | cat | wc -m)" >> $GITHUB_ENV
