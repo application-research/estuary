@@ -371,6 +371,7 @@ type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
 	Filename        string  `json:"name"`
+	Size            int64  `json:"size"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -434,6 +435,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
 			Filename: c.Name,
+			Size:     c.Size,
 		}
 
 		if false {
