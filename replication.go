@@ -1402,7 +1402,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		// only verified deals need datacap checks
 		if verified {
 			bl, err := cm.FilClient.Balance(ctx)
-			if err != nil {
+			if err != nil || bl.VerifiedClientBalance == nil {
 				return errors.Wrap(err, "could not retrieve dataCap from client balance")
 			}
 
