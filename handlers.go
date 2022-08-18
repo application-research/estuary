@@ -182,7 +182,7 @@ func (s *Server) ServeAPI() error {
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
 	// note (al): This is the only route for upladiong content rn
 	uploads.POST("/add", withUser(s.handleAdd))
-	uploads.POST("/update-deal-id/:dealID", withUser(s.handleUpdateDealId))
+	uploads.POST("/update-deal-id", withUser(s.handleUpdateDealId))
 	// note (al): For my own sanity I am deprecating other upload routes
 	// TODO: Re-enable these and get them compliant with the new API defined in /content/add
 	// uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
@@ -379,6 +379,7 @@ type statsResp struct {
 	Cid             cid.Cid `json:"cid"`
 	Filename        string  `json:"name"`
 	Size            int64   `json:"size"`
+	DealId          uint    `json:"dealId"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -441,6 +442,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
+			DealId:   c.DealId,
 			Filename: c.Name,
 			Size:     c.Size,
 		}
@@ -962,16 +964,12 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	// Retrieve a Blake3 hash string of the file
-	// b3hStr := "test"
+	b3hStr, err := util.Blake3Hash(fi)
+	if err != nil {
+		return err
+	}
 
-	// b3hStr, err := util.Blake3Hash(fi)
-	// if err != nil {
-	// 	return err
-	// }
-
-	// println("b3hStr:", b3hStr)
-
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), "b3hStr", filename, replication)
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), b3hStr, filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -1014,7 +1012,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
-		Blake3Hash:   "b3hStr",
+		Blake3Hash:   b3hStr,
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
@@ -1040,6 +1038,8 @@ func (s *Server) handleUpdateDealId(c echo.Context, u *User) error {
 		return err
 	}
 
+	println("handleUpdateDealID: ", req.EstuaryId, req.DealId)
+
 	var content util.Content
 	if err := s.DB.First(&content, "id = ? and user_id = ?", req.EstuaryId, u.ID).Error; err != nil {
 		return err
@@ -1048,6 +1048,9 @@ func (s *Server) handleUpdateDealId(c echo.Context, u *User) error {
 	if err := s.DB.Model(&content).Update("deal_id", req.DealId).Error; err != nil {
 		return err
 	}
+
+	println("handleUpdateDealID: ", content.DealId)
+
 	// Return a 200 OK response with no body
 	return c.JSON(http.StatusOK, "")
 }
@@ -1189,7 +1192,7 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	content := &util.Content{
 		Cid:         util.DbCID{CID: root},
 		Blake3Hash:  b3hStr,
-		DealID:      0, // There is no deal ID at this point
+		DealId:      0, // There is no deal ID at this point
 		Name:        filename,
 		Active:      false,
 		Pinning:     true,

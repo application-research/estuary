@@ -67,9 +67,10 @@ type Content struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         DbCID       `json:"cid"`
-	Blake3Hash  string      `json:"blake3hash"` // hash of the content
-	DealID      uint        `json:"dealId"`     // Eth on-chain deal id of the content
+	Cid        DbCID  `json:"cid"`
+	Blake3Hash string `json:"blake3hash"` // hash of the content
+	// TODO: Determine if uint is the right data type for DealId
+	DealId      uint        `json:"dealId"` // Eth on-chain deal id of the content
 	Name        string      `json:"name"`
 	UserID      uint        `json:"userId" gorm:"index"`
 	Description string      `json:"description"`
