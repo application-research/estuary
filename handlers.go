@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/spruceid/siwe-go"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -24,6 +23,8 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/constants"
+	"github.com/spruceid/siwe-go"
+
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
 
@@ -372,7 +373,7 @@ type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
 	Filename        string  `json:"name"`
-	Size            int64  `json:"size"`
+	Size            int64   `json:"size"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -818,6 +819,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}()
 
+	// TODO: Add blake3 hashing
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          rootCID.String(),
 		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
@@ -989,6 +991,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
+	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
