@@ -180,10 +180,14 @@ func (s *Server) ServeAPI() error {
 
 	contmeta := e.Group("/content")
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
+	// note (al): This is the only route for upladiong content rn
 	uploads.POST("/add", withUser(s.handleAdd))
-	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
-	uploads.POST("/create", withUser(s.handleCreateContent))
+	uploads.POST("/update-deal-id/:dealID", withUser(s.handleUpdateDealId))
+	// note (al): For my own sanity I am deprecating other upload routes
+	// TODO: Re-enable these and get them compliant with the new API defined in /content/add
+	// uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	// uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	// uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -333,6 +337,7 @@ func (s *Server) ServeAPI() error {
 	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat, s.withAutoretrieveAuth())
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
+	// TODO: Investigate why we need this.
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
@@ -796,10 +801,14 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
+	// TODO: How would you get a blake3 Hash of the Car?
+	// For now we will just use a blank hash
+	b3hStr := ""
+
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, b3hStr, filename, s.CM.Replication)
 	if err != nil {
 		return err
 	}
@@ -939,6 +948,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
+	// Import the file as a DAG and store the root CID in the database
 	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
@@ -951,7 +961,15 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	// Retrieve a Blake3 hash string of the file
+	b3hStr, err := util.Blake3Hash(fi)
+	if err != nil {
+		return err
+	}
+
+	println("b3hStr:", b3hStr)
+
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), b3hStr, filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -994,10 +1012,42 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
+		Blake3Hash:   b3hStr,
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
 	})
+}
+
+// handleUpdateDealID godoc
+// @Summary Update the deal ID for a piece of content
+// @Description This endpoint is used by Authenticated users to update the deal ID for a piece of content
+// @ID update-deal-id
+// @Tags content
+// @Accept  json
+// @Produce  json
+// @Param estuaryId path string true "Content ID"
+// @Param dealId query string true "Deal ID"
+// @Success 200
+func (s *Server) handleUpdateDealId(c echo.Context, u *User) error {
+	_, span := s.tracer.Start(c.Request().Context(), "handleUpdateDealID", trace.WithAttributes(attribute.Int("user", int(u.ID))))
+	defer span.End()
+
+	var req util.ContentUpdateDealIdRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.DB.First(&content, "id = ? and user_id = ?", req.EstuaryId, u.ID).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(&content).Update("deal_id", req.DealId).Error; err != nil {
+		return err
+	}
+	// Return a 200 OK response with no body
+	return c.JSON(http.StatusOK, "")
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -1130,12 +1180,14 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, b3hStr string, filename string, replication int) (*util.Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	content := &util.Content{
 		Cid:         util.DbCID{CID: root},
+		Blake3Hash:  b3hStr,
+		DealID:      0, // There is no deal ID at this point
 		Name:        filename,
 		Active:      false,
 		Pinning:     true,
