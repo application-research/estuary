@@ -962,14 +962,16 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	// Retrieve a Blake3 hash string of the file
-	b3hStr, err := util.Blake3Hash(fi)
-	if err != nil {
-		return err
-	}
+	// b3hStr := "test"
 
-	println("b3hStr:", b3hStr)
+	// b3hStr, err := util.Blake3Hash(fi)
+	// if err != nil {
+	// 	return err
+	// }
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), b3hStr, filename, replication)
+	// println("b3hStr:", b3hStr)
+
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), "b3hStr", filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -1012,7 +1014,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
-		Blake3Hash:   b3hStr,
+		Blake3Hash:   "b3hStr",
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
