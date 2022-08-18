@@ -1,0 +1,112 @@
+name: Build
+
+on:
+  workflow_call:
+    secrets:
+      DOCKERHUB_ORG:
+        description: 'Dockerhub org to get image from'
+        required: true
+
+jobs:
+  build_linux_amd64:
+    # Map the job outputs to step outputs
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        version: ['linux/amd64']
+        include:
+        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
+        # instead of using Linux' naming convention (version items).
+          - version: linux/amd64
+            OS: linux
+            ARCH: amd64
+    steps:
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Build binary for ${{ matrix.version }}
+      env:
+        DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+      run: |
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} $DOCKERHUB_ORG/estuary-base:latest /bin/sh -c "make"
+    - name: Prepare build artifact for stashing
+      run: |
+        mkdir binaries
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./binaries
+    - name: Upload binaries to be used by next workflow
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
+        path: ./binaries
+
+  build_linux_arm64:
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        version: ['linux/arm64']
+        include:
+        # add the GO naming convention for OS ($GOOS) and architecture ($GOARCH)
+        # instead of using Linux' naming convention (version items).
+          - version: linux/arm64
+            OS: linux
+            ARCH: arm64
+    steps:
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+
+    - name: Install QEMU
+      uses: docker/setup-qemu-action@v1
+      with:
+        platforms: linux/arm64
+
+    - name: Build binary for ${{ matrix.version }}
+      env:
+        DOCKERHUB_ORG: ${{ secrets.DOCKERHUB_ORG }}
+      run: |
+        docker run --rm -v "$PWD":/usr/est/build -w /usr/est/build --platform=${{ matrix.version }} $DOCKERHUB_ORG/estuary-base:linux-arm64 /bin/sh -c "cp /build/* extern/filecoin-ffi/ && touch extern/filecoin-ffi/.install-filcrypto && make"
+    - name: Prepare build artifact for stashing
+      run: |
+        mkdir binaries
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./binaries
+    - name: Upload binaries to be used by next workflow
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
+        path: ./binaries
+
+  build_macos_amd64:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        version: ['darwin-amd64']
+        include:
+          - version: darwin-amd64
+            OS: darwin
+            ARCH: amd64
+    steps:
+    - name: Set up Go 1.17
+      uses: actions/setup-go@v1
+      id: go
+      with:
+        go-version: 1.17
+    - uses: actions/checkout@v1
+      with:
+        submodules: true
+    - name: Install dependencies
+      run: |
+        brew install bzr jq pkg-config rustup hwloc
+        cargo install cargo-lipo
+    - name: Build binary for macOS
+      run: |
+        export PATH=/System/Volumes/Data/Users/runner/go/bin:$PATH
+        make
+    - name: Prepare build artifact for stashing
+      run: |
+        mkdir binaries
+        mv ./estuary ./estuary-shuttle ./benchest ./bsget ./binaries
+    - name: Upload binaries to be used by next workflow
+      uses: actions/upload-artifact@v1
+      with:
+        name: estuary-${{ matrix.OS }}-${{ matrix.ARCH }}-${{ github.sha }}
+        path: ./binaries
