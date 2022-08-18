@@ -4683,7 +4683,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Cid:         util.DbCID{CID: rootCID},
 		Name:        req.Name,
 		Active:      false,
-		Pinning:     false,
+		Pinning:     true,
 		UserID:      u.ID,
 		Replication: s.CM.Replication,
 		Location:    req.Location,
@@ -4704,7 +4704,6 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 
 		path := &sp
-
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -5056,7 +5055,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Cid:         util.DbCID{CID: root},
 		Name:        req.Name,
 		Active:      false,
-		Pinning:     false,
+		Pinning:     true,
 		UserID:      req.User,
 		Replication: s.CM.Replication,
 		Location:    req.Location,
