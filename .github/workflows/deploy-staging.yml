@@ -1,0 +1,19 @@
+name: Deploy dev branch to staging box
+
+on:
+  push:
+    branches: [ dev ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: deploy dev through ssh
+        uses: fifsky/ssh-action@master
+        with:
+          command: |
+            cd ~/estuary-docker
+            docker-compose stop
+            docker-compose up -d
+          host: staging.estuary.tech
+          key: ${{ secrets.STAGING_SSH_KEY }}

@@ -529,11 +529,14 @@ func main() {
 				cst := filclient.ChannelStateConv(st)
 				trk.last = cst
 
-				log.Infof("event(%d) message: %s", event.Code, event.Message)
+				trsFailed, msg := util.TransferFailed(cst)
+
 				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
 					State:    cst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", cst.Status, msg, cst.Message),
 				})
 			}
 		})
@@ -571,10 +574,15 @@ func main() {
 				}
 
 				eventDebounceCache.Add(st.TransferID, time.Now())
+
+				trsFailed, msg := util.TransferFailed(&st)
+
 				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   st.TransferID,
 					DealDBID: dbid,
 					State:    &st,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 				})
 			}()
 		})
@@ -1079,6 +1087,10 @@ func (s *Shuttle) ServeAPI() error {
 	return e.Start(s.shuttleConfig.ApiListen)
 }
 
+func (s *Shuttle) isContentAddingDisabled(u *User) bool {
+	return s.disableLocalAdding || u.StorageDisabled
+}
+
 func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 
@@ -1150,12 +1162,8 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	form, err := c.MultipartForm()
@@ -1221,7 +1229,6 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: nd.Cid()},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1285,7 +1292,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
@@ -1358,7 +1365,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: root},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1461,7 +1467,6 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 			Name:     filename,
 			Location: s.shuttleHandle,
 		},
-
 		Collections:  cols,
 		DagSplitRoot: dagsplitroot,
 		User:         uid,
@@ -2121,7 +2126,8 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		if !util.TransferTerminated(filclient.ChannelStateConv(st)) {
+		isTerm, _ := util.TransferTerminated(filclient.ChannelStateConv(st))
+		if !isTerm {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)
@@ -2259,7 +2265,6 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 			}
 			continue
 		}
-
 		break
 	}
 
