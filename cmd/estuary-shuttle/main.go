@@ -589,7 +589,12 @@ func main() {
 					log.Error(err)
 				}
 			})
-			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
+			server := &http.Server{
+				Addr:              "127.0.0.1:3105",
+				ReadHeaderTimeout: 5 * time.Second,
+			}
+
+			if err := server.ListenAndServe(); err != nil {
 				log.Errorf("failed to start http server for pprof endpoints: %s", err)
 			}
 		}()
