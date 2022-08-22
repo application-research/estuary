@@ -91,7 +91,7 @@ require (
 )
 
 require (
-	github.com/filecoin-project/go-legs v0.4.4
+	github.com/filecoin-project/go-legs v0.4.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.12.1
 	github.com/libp2p/go-libp2p-pubsub v0.7.1
