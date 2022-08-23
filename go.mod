@@ -4,14 +4,14 @@ go 1.17
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0
-	github.com/application-research/filclient v0.0.0-20220811145600-6ac0cabdbd9f
+	github.com/application-research/filclient v0.2.0
 	github.com/application-research/go-bs-autobatch v0.1.0
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.4.0
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5
-	github.com/filecoin-project/boost v1.2.1-0.20220803131342-cfcd4837136d
+	github.com/filecoin-project/boost v1.3.1
 	github.com/filecoin-project/go-address v1.0.0
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
