@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"math/rand"
 	"sort"
 	"sync"
@@ -28,7 +29,7 @@ import (
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
+	market "github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	lru "github.com/hashicorp/golang-lru"
 	blocks "github.com/ipfs/go-block-format"
@@ -2437,7 +2438,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 	return nil
 }
 
-func (cm *ContentManager) putProposalRecord(dealprop *market.ClientDealProposal) (*proposalRecord, error) {
+func (cm *ContentManager) putProposalRecord(dealprop *marketv8.ClientDealProposal) (*proposalRecord, error) {
 	nd, err := cborutil.AsIpld(dealprop)
 	if err != nil {
 		return nil, err
