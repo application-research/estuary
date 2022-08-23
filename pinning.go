@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
@@ -27,7 +28,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
+const (
+	DEFAULT_IPFS_PIN_LIMIT = 10 // https://github.com/ipfs/pinning-services-api-spec/blob/main/ipfs-pinning-service.yaml#L610
+	IPFS_PIN_LIMIT_MIN     = 1
+	IPFS_PIN_LIMIT_MAX     = 1000
+)
+
+func (cm *ContentManager) pinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
 	delegates := cm.pinDelegatesForContent(cont)
 
 	cm.pinLk.Lock()
@@ -80,8 +87,8 @@ func (cm *ContentManager) pinStatus(cont Content, origins []*peer.AddrInfo) (*ty
 	return status, nil
 }
 
-func (cm *ContentManager) pinDelegatesForContent(cont Content) []string {
-	if cont.Location == util.ContentLocationLocal {
+func (cm *ContentManager) pinDelegatesForContent(cont util.Content) []string {
+	if cont.Location == constants.ContentLocationLocal {
 		var out []string
 		for _, a := range cm.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
@@ -158,7 +165,7 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string) error {
 	log.Infof("trying to refresh pin queue for %s contents", contentLoc)
 
-	var contents []Content
+	var contents []util.Content
 	if err := cm.DB.Find(&contents, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
 		return err
 	}
@@ -176,7 +183,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 				_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
 			}
 
-			if c.Location == util.ContentLocationLocal {
+			if c.Location == constants.ContentLocationLocal {
 				cm.addPinToQueue(c, origins, 0, makeDeal)
 			} else {
 				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
@@ -189,7 +196,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, name string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -197,7 +204,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
-		if err := cm.DB.Model(&Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
+		if err := cm.DB.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -220,9 +227,9 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		originsStr = string(b)
 	}
 
-	cont := Content{
+	cont := util.Content{
 		Cid:         util.DbCID{CID: obj},
-		Name:        name,
+		Name:        filename,
 		UserID:      user,
 		Active:      false,
 		Replication: cm.Replication,
@@ -248,7 +255,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	if loc == util.ContentLocationLocal {
+	if loc == constants.ContentLocationLocal {
 		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
@@ -258,8 +265,8 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 	return cm.pinStatus(cont, origins)
 }
 
-func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
-	if cont.Location != util.ContentLocationLocal {
+func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
+	if cont.Location != constants.ContentLocationLocal {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
 
@@ -285,7 +292,7 @@ func (cm *ContentManager) addPinToQueue(cont Content, peers []*peer.AddrInfo, re
 	cm.pinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
+func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
 		attribute.String("CID", cont.Cid.CID.String()),
@@ -373,7 +380,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-		return util.ContentLocationLocal, nil
+		return constants.ContentLocationLocal, nil
 	}
 
 	// TODO: take into account existing staging zones and their primary
@@ -402,8 +409,8 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	return shuttles[0].Handle, nil
 }
 
-func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont Content) (string, error) {
-	ctx, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
+func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont util.Content) (string, error) {
+	_, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
 	defer span.End()
 
 	var activeShuttles []string
@@ -424,7 +431,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont C
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-		return util.ContentLocationLocal, nil
+		return constants.ContentLocationLocal, nil
 	}
 
 	// prefer the shuttle the content is already on
@@ -478,7 +485,24 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 	qlimit := e.QueryParam("limit")
 	qreqids := e.QueryParam("requestid")
 
-	q := s.DB.Model(Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
+	lim := DEFAULT_IPFS_PIN_LIMIT
+	if qlimit != "" {
+		limit, err := strconv.Atoi(qlimit)
+		if err != nil {
+			return err
+		}
+		lim = limit
+
+		if lim > IPFS_PIN_LIMIT_MAX || lim < IPFS_PIN_LIMIT_MIN {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_QUERY_PARAM_VALUE,
+				Details: fmt.Sprintf("specify a valid LIMIT value between %d and %d", IPFS_PIN_LIMIT_MIN, IPFS_PIN_LIMIT_MAX),
+			}
+		}
+	}
+
+	q := s.DB.Model(util.Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID
@@ -518,7 +542,6 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 		if err != nil {
 			return err
 		}
-
 		q = q.Where("created_at > ?", aftime)
 	}
 
@@ -532,15 +555,6 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 			ids = append(ids, id)
 		}
 		q = q.Where("id in ?", ids)
-	}
-
-	lim := 10 // default from spec
-	if qlimit != "" {
-		limit, err := strconv.Atoi(qlimit)
-		if err != nil {
-			return err
-		}
-		lim = limit
 	}
 
 	pinStatuses := make(map[types.PinningStatus]bool)
@@ -573,7 +587,7 @@ func (s *Server) handleListPins(e echo.Context, u *User) error {
 
 	q.Limit(lim)
 
-	var contents []Content
+	var contents []util.Content
 	if err := q.Scan(&contents).Error; err != nil {
 		return err
 	}
@@ -740,7 +754,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -786,7 +800,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -837,7 +851,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var content Content
+	var content util.Content
 	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -854,7 +868,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore
-	if err := s.DB.Model(&Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
+	if err := s.DB.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
 		return err
 	}
 
@@ -877,7 +891,7 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 	}
 
 	if status == types.PinningStatusFailed {
-		var c Content
+		var c util.Content
 		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
 			return errors.Wrap(err, "failed to look up content")
 		}
@@ -886,7 +900,7 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
 		}
 
-		if err := cm.DB.Model(Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"active":  false,
 			"pinning": false,
 			"failed":  true,
@@ -902,14 +916,14 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	ctx, span := cm.tracer.Start(ctx, "handlePinningComplete")
 	defer span.End()
 
-	var cont Content
+	var cont util.Content
 	if err := cm.DB.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
 		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
 	if cont.Active {
 		// content already active, no need to add objects, just update location
-		if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"location": handle,
 		}).Error; err != nil {
 			return err
@@ -920,7 +934,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	}
 
 	if cont.Aggregate {
-		if err := cm.DB.Model(Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"pinning":  false,
 			"location": handle,
@@ -930,9 +944,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return nil
 	}
 
-	objects := make([]*Object, 0, len(pincomp.Objects))
+	objects := make([]*util.Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
-		objects = append(objects, &Object{
+		objects = append(objects, &util.Object{
 			Cid:  util.DbCID{CID: o.Cid},
 			Size: o.Size,
 		})

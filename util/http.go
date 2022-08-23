@@ -15,6 +15,7 @@ import (
 
 var log = logging.Logger("util")
 
+//#nosec G101 -- This is a false positive
 const (
 	ERR_INVALID_TOKEN              = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED              = "ERR_TOKEN_EXPIRED"
@@ -39,6 +40,8 @@ const (
 	ERR_PEERING_PEERS_STOP_ERROR   = "ERR_PEERING_PEERS_STOP_ERROR"
 	ERR_CONTENT_NOT_FOUND          = "ERR_CONTENT_NOT_FOUND"
 	ERR_INVALID_PINNING_STATUS     = "ERR_INVALID_PINNING_STATUS"
+	ERR_INVALID_QUERY_PARAM_VALUE  = "ERR_INVALID_QUERY_PARAM_VALUE"
+	ERR_CONTENT_LENGTH_REQUIRED    = "ERR_CONTENT_LENGTH_REQUIRED"
 )
 
 type HttpError struct {
@@ -143,28 +146,37 @@ func ErrorHandler(err error, ctx echo.Context) {
 	var httpRespErr *HttpError
 	if xerrors.As(err, &httpRespErr) {
 		log.Errorf("handler error: %s", err)
-		ctx.JSON(httpRespErr.Code, HttpErrorResponse{Error: *httpRespErr})
+		if err := ctx.JSON(httpRespErr.Code, HttpErrorResponse{Error: *httpRespErr}); err != nil {
+			log.Errorf("handler error: %s", err)
+			return
+		}
 		return
 	}
 
 	var echoErr *echo.HTTPError
 	if xerrors.As(err, &echoErr) {
-		ctx.JSON(echoErr.Code, HttpErrorResponse{
+		if err := ctx.JSON(echoErr.Code, HttpErrorResponse{
 			Error: HttpError{
 				Code:    echoErr.Code,
 				Reason:  http.StatusText(echoErr.Code),
 				Details: echoErr.Message.(string),
 			},
-		})
+		}); err != nil {
+			log.Errorf("handler error: %s", err)
+			return
+		}
 		return
 	}
 
 	log.Errorf("handler error: %s", err)
-	ctx.JSON(http.StatusInternalServerError, HttpErrorResponse{
+	if err := ctx.JSON(http.StatusInternalServerError, HttpErrorResponse{
 		Error: HttpError{
 			Code:    http.StatusInternalServerError,
 			Reason:  http.StatusText(http.StatusInternalServerError),
 			Details: err.Error(),
 		},
-	})
+	}); err != nil {
+		log.Errorf("handler error: %s", err)
+		return
+	}
 }

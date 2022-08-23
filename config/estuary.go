@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/filclient"
+	"github.com/libp2p/go-libp2p-core/protocol"
 
 	"github.com/application-research/estuary/build"
 )
@@ -71,6 +73,10 @@ func NewEstuary(appVersion string) *Estuary {
 			Disable:               false,
 			FailOnTransferFailure: false,
 			Verified:              true,
+			EnabledDealProtocolsVersions: map[protocol.ID]bool{
+				filclient.DealProtocolv110: true,
+				filclient.DealProtocolv120: true,
+			},
 		},
 
 		Content: Content{
@@ -93,11 +99,14 @@ func NewEstuary(appVersion string) *Estuary {
 			ListenAddrs: []string{
 				"/ip4/0.0.0.0/tcp/6744",
 			},
-			PeeringPeers:      []peering.PeeringPeer{},
+			PeeringPeers:      peering.DefaultPeers,
 			WriteLogDir:       "",
 			HardFlushWriteLog: false,
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
+
+			IndexerURL:          "https://cid.contact",
+			IndexerTickInterval: 720,
 
 			ApiURL: "wss://api.chain.love",
 

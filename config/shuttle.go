@@ -100,7 +100,7 @@ func NewShuttle(appVersion string) *Shuttle {
 				"/ip4/0.0.0.0/tcp/6745",
 				"/ip4/0.0.0.0/udp/6746/quic",
 			},
-			PeeringPeers:              []peering.PeeringPeer{},
+			PeeringPeers:              peering.DefaultPeers,
 			EnableWebsocketListenAddr: false,
 
 			WriteLogDir:       "",

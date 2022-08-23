@@ -73,13 +73,13 @@ func TestContentsQuery(t *testing.T) {
 	// Creation
 	contents := []Content{
 		{
-			Name: "a",
+			Filename: "a",
 		},
 		{
-			Name: "b",
+			Filename: "b",
 		},
 		{
-			Name: "c",
+			Filename: "c",
 		},
 	}
 	a.NoError(db.Contents().CreateAll(contents))

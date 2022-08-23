@@ -7,12 +7,12 @@ import (
 	"github.com/ipld/go-car"
 )
 
-type Object struct {
+type CarObject struct {
 	Cid  cid.Cid
 	Size uint64
 }
 
-func CalculateCarSize(data cid.Cid, objects []Object) (uint64, error) {
+func CalculateCarSize(data cid.Cid, objects []CarObject) (uint64, error) {
 	// Calculate header size
 	header := car.CarHeader{
 		Roots:   []cid.Cid{data},

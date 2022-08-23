@@ -119,7 +119,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			}); err != nil {
 				log.Errorf("failed to send pin status update: %s", err)
 			}
-			return fmt.Errorf("tried to add pin for content we failed to pin previously")
+			return nil
 		}
 
 		if !existing.Pinning && existing.Active {
@@ -360,7 +360,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	}
 
 	obj := &Object{
-		Cid:  util.DbCID{blk.Cid()},
+		Cid:  util.DbCID{CID: blk.Cid()},
 		Size: len(blk.RawData()),
 	}
 	if err := d.DB.Create(obj).Error; err != nil {
@@ -478,7 +478,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 }
 
 func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatus) error {
-	ctx, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
+	_, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
 		attribute.Int64("dealDbID", int64(req.DealDBID)),
 	))
 	defer span.End()
@@ -549,7 +549,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", req.Content).Error; err != nil {
-		return xerrors.Errorf("no pin with content %d found for split content request: %w", err)
+		return xerrors.Errorf("no pin with content %d found for split content request: %w", req.Content, err)
 	}
 
 	// Check if we've done this already...

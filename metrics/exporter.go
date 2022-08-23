@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"net/http"
+	//#nosec G108 - exposing the profiling endpoint is expected
 	_ "net/http/pprof"
 
 	"contrib.go.opencensus.io/exporter/prometheus"

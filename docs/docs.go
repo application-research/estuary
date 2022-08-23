@@ -24,6 +24,52 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/admin/autoretrieve/init": {
+            "post": {
+                "description": "This endpoint registers a new autoretrieve server",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "autoretrieve"
+                ],
+                "summary": "Register autoretrieve server",
+                "parameters": [
+                    {
+                        "description": "Autoretrieve's comma-separated list of addresses",
+                        "name": "addresses",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Autoretrieve's public key",
+                        "name": "pubKey",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/admin/autoretrieve/list": {
+            "get": {
+                "description": "This endpoint lists all registered autoretrieve servers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "autoretrieve"
+                ],
+                "summary": "List autoretrieve servers",
+                "responses": {}
+            }
+        },
         "/admin/peering/peers": {
             "get": {
                 "description": "This endpoint can be used to list all peers on Peering Service",
@@ -133,6 +179,28 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Get all users",
+                "responses": {}
+            }
+        },
+        "/autoretrieve/heartbeat": {
+            "post": {
+                "description": "This endpoint updates the lastConnection field for autoretrieve",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "autoretrieve"
+                ],
+                "summary": "Marks autoretrieve server as up",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Autoretrieve's auth token",
+                        "name": "token",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -855,37 +923,6 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/deal/make/{miner}": {
-            "post": {
-                "description": "This endpoint makes a deal for a given content and miner",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Make Deal",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Miner",
-                        "name": "miner",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Deal Request",
-                        "name": "dealRequest",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    }
-                ],
-                "responses": {}
-            }
-        },
         "/deal/proposal/{propcid}": {
             "get": {
                 "description": "This endpoint returns the proposal for a deal",
@@ -945,28 +982,6 @@ const docTemplate = `{
                         "type": "string",
                         "description": "PropCid",
                         "name": "propcid",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {}
-            }
-        },
-        "/deal/status/{deal}": {
-            "get": {
-                "description": "This endpoint returns the status of a deal",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Get Deal Status",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "Deal ID",
-                        "name": "deal",
                         "in": "path",
                         "required": true
                     }
@@ -1039,6 +1054,59 @@ const docTemplate = `{
                     "deals"
                 ],
                 "summary": "Get storage failures for user",
+                "responses": {}
+            }
+        },
+        "/deals/make/{miner}": {
+            "post": {
+                "description": "This endpoint makes a deal for a given content and miner",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Make Deal",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Deal Request",
+                        "name": "dealRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/deals/status/{deal}": {
+            "get": {
+                "description": "This endpoint returns the status of a deal",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Get Deal Status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Deal ID",
+                        "name": "deal",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {}
             }
         },

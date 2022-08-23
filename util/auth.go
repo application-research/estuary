@@ -1,6 +1,7 @@
 package util
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 )
@@ -22,4 +23,9 @@ func IsCollectionOwner(uID, entityID uint) error {
 
 func IsContentOwner(uID, entityID uint) error {
 	return isEntityOwner(uID, entityID, "content")
+}
+
+func GetPasswordHash(password, salt string) string {
+	passHashBytes := sha256.Sum256([]byte(password + "." + salt))
+	return string(passHashBytes[:])
 }
