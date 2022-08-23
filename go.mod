@@ -67,7 +67,7 @@ require (
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.5.0
-	github.com/multiformats/go-multihash v0.2.0
+	github.com/multiformats/go-multihash v0.2.1
 	github.com/prometheus/client_golang v1.12.1
 	github.com/stretchr/testify v1.7.1
 	github.com/swaggo/echo-swagger v1.3.0
@@ -222,7 +222,7 @@ require (
 	github.com/ipfs/go-ipns v0.1.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-peertaskqueue v0.7.1 // indirect
-	github.com/ipfs/go-verifcid v0.0.1 // indirect
+	github.com/ipfs/go-verifcid v0.0.2 // indirect
 	github.com/ipfs/interface-go-ipfs-core v0.7.0 // indirect
 	github.com/ipld/go-car/v2 v2.4.2-0.20220707083113-89de8134e58e // indirect
 	github.com/ipld/go-ipld-adl-hamt v0.0.0-20220616142416-9004dbd839e0 // indirect
