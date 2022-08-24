@@ -57,8 +57,41 @@ Make sure to follow the instructions output by the `make` command as configurati
 
 - View the guidelines on how to run estuary using docker [here](https://github.com/application-research/estuary-docker).
 
+## Using Estuary
+
+The first thing you'll likely want to do with Estuary is upload content. To upload your first file, use the `/content/add`
+endpoint:
+
+```
+curl -X POST http://localhost:3004/content/add -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -H "Accept: application/json" -H "Content-Type: multipart/form-data" -F "data=@PATH_TO_FILE_BUT_REMEMBER_THE_@_SYMBOL_IS_REQUIRED"
+```
+
+You can verify this worked with the `/content/list` endpoint:
+
+```
+curl -X GET -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" http://localhost:3004/content/list
+```
+
+You may find the API documentation at [docs.estuary.tech](https://docs.estuary.tech/) useful as you explore Estuary's capabilities.
+
+### Sealing a Deal
+
+Estuary will automatically make a deal with Filecoin miners after 8 hours. If you upload more than 3.57 GiB of data
+it will make the deal sooner.
+
+To keep tabs on the status of your uploaded content and Filecoin deals, you can use [estuary-www](https://github.com/application-research/estuary-www).
+Clone the `estuary-www` repository and run:
+
+```
+npm install
+npm run dev
+```
+
+And then head to [localhost:4444/staging](http://localhost:4444/staging) to see the status of your deal.
+
+
 ## Contributing
-See `CONTRIBUTING.md` for contributing and development instructions.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributing and development instructions.
 
 ## Troubleshooting
 Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
@@ -71,7 +104,7 @@ If you get the following error:
 /ERROR basichost basic/basic_host.go:328 failed to resolve local interface addresses {"error": "route ip+net: netlinkrib: too many open files"}
 ```
 
-It is because you do not have enough open file handles available. 
+It is because you do not have enough open file handles available.
 
 #### Solution
 Update this with the following command:
@@ -82,7 +115,7 @@ ulimit -n 10000
 ### Guide for: Missing `hwloc` on M1 Macs
 The Portable Hardware Locality (hwloc) software package provides a portable abstraction of the hierarchical structure of current architectures, including NUMA memory nodes, sockets, shared caches, cores, and simultaneous multi-threading (across OS, versions, architectures, etc.).
 
-`lhwloc` is used by libp2p-core. Estuary uses libp2p for the majority of its features including network communication, pinning, replication and resource manager. 
+`lhwloc` is used by libp2p-core. Estuary uses libp2p for the majority of its features including network communication, pinning, replication and resource manager.
 
 #### Error
 ```
