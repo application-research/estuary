@@ -2,34 +2,36 @@ package config
 
 import (
 	"path/filepath"
+	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/application-research/filclient"
 	"github.com/libp2p/go-libp2p-core/protocol"
-
 	"github.com/application-research/estuary/build"
 )
 
 type Estuary struct {
-	AppVersion             string    `json:"app_version"`
-	DatabaseConnString     string    `json:"database_conn_string"`
-	StagingDataDir         string    `json:"staging_data_dir"`
-	ServerCacheDir         string    `json:"server_cache_dir"`
-	DataDir                string    `json:"data_dir"`
-	ApiListen              string    `json:"api_listen"`
-	EnableAutoRetrieve     bool      `json:"enable_autoretrieve"`
-	LightstepToken         string    `json:"lightstep_token"`
-	Hostname               string    `json:"hostname"`
-	Node                   Node      `json:"node"`
-	Jaeger                 Jaeger    `json:"jaeger"`
-	Deal                   Deal      `json:"deal"`
-	Content                Content   `json:"content"`
-	LowMem                 bool      `json:"low_mem"`
-	DisableFilecoinStorage bool      `json:"disable_filecoin_storage"`
-	Replication            int       `json:"replication"`
-	Logging                Logging   `json:"logging"`
-	FilClient              FilClient `json:"fil_client"`
-	ShuttleMessageHandlers int       `json:"shuttle_message_Handlers"`
+	AppVersion             string        `json:"app_version"`
+	DatabaseConnString     string        `json:"database_conn_string"`
+	StagingDataDir         string        `json:"staging_data_dir"`
+	ServerCacheDir         string        `json:"server_cache_dir"`
+	DataDir                string        `json:"data_dir"`
+	ApiListen              string        `json:"api_listen"`
+	LightstepToken         string        `json:"lightstep_token"`
+	Hostname               string        `json:"hostname"`
+	EnableAutoRetrieve     bool          `json:"enable_autoretrieve"`
+	LowMem                 bool          `json:"low_mem"`
+	DisableFilecoinStorage bool          `json:"disable_filecoin_storage"`
+	Node                   Node          `json:"node"`
+	Jaeger                 Jaeger        `json:"jaeger"`
+	Deal                   Deal          `json:"deal"`
+	Content                Content       `json:"content"`
+	Logging                Logging       `json:"logging"`
+	FilClient              FilClient     `json:"fil_client"`
+	StagingBucket          StagingBucket `json:"staging_bucket"`
+	ShuttleMessageHandlers int           `json:"shuttle_message_Handlers"`
+	Replication            int           `json:"replication"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -70,9 +72,10 @@ func NewEstuary(appVersion string) *Estuary {
 		EnableAutoRetrieve:     false,
 
 		Deal: Deal{
-			Disable:               false,
+			IsDisabled:            false,
 			FailOnTransferFailure: false,
-			Verified:              true,
+			IsVerified:            true,
+			Duration:              abi.ChainEpoch(1555200 - (2880 * 21)), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
 			EnabledDealProtocolsVersions: map[protocol.ID]bool{
 				filclient.DealProtocolv110: true,
 				filclient.DealProtocolv120: true,
@@ -82,6 +85,19 @@ func NewEstuary(appVersion string) *Estuary {
 		Content: Content{
 			DisableLocalAdding:  false,
 			DisableGlobalAdding: false,
+		},
+
+		StagingBucket: StagingBucket{
+			Enabled:                 true,
+			MaxLifeTime:             time.Hour * 8,
+			MaxContentAge:           time.Hour * 24 * 7,
+			MaxItems:                10000,
+			MaxSize:                 int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10),                // 14.29 Gib
+			MinSize:                 int64(int64((abi.PaddedPieceSize(16<<30).Unpadded()*9)/10) - (1 << 30)), // 13.29 GiB
+			KeepAlive:               time.Minute * 40,
+			MinDealSize:             256 << 20,                                               //0.25 Gib
+			IndividualDealThreshold: int64((abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10), // 90% of the unpadded data size for a 4GB piece, the 10% gap is to accommodate car file packing overhead, can probably do this better
+			AggregateInterval:       time.Minute * 5,                                         // aggregate staging buckets every 5 minutes
 		},
 
 		Jaeger: Jaeger{

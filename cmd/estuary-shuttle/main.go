@@ -591,23 +591,6 @@ func main() {
 		}
 
 		go func() {
-			http.Handle("/debug/metrics", estumetrics.Exporter())
-			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
-				if err := writeAllGoroutineStacks(w); err != nil {
-					log.Error(err)
-				}
-			})
-			server := &http.Server{
-				Addr:              "127.0.0.1:3105",
-				ReadHeaderTimeout: 5 * time.Second,
-			}
-
-			if err := server.ListenAndServe(); err != nil {
-				log.Errorf("failed to start http server for pprof endpoints: %s", err)
-			}
-		}()
-
-		go func() {
 			if err := s.RunRpcConnection(); err != nil {
 				log.Errorf("failed to run rpc connection: %s", err)
 			}
@@ -1047,11 +1030,23 @@ func (s *Shuttle) ServeAPI() error {
 		e.Use(middleware.Logger())
 	}
 
-	e.Use(middleware.CORS())
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
-
 	e.HTTPErrorHandler = util.ErrorHandler
+
+	e.GET("/debug/metrics", func(e echo.Context) error {
+		estumetrics.Exporter().ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+	e.GET("/debug/stack", func(e echo.Context) error {
+		err := writeAllGoroutineStacks(e.Response().Writer)
+		if err != nil {
+			log.Error(err)
+		}
+		return err
+	})
+
+	e.Use(middleware.CORS())
 
 	e.GET("/health", s.handleHealth)
 	e.GET("/net/addrs", s.handleGetNetAddress)

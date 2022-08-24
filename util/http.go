@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/xerrors"
@@ -121,15 +122,15 @@ func ExtractAuth(c echo.Context) (string, error) {
 }
 
 type UserSettings struct {
-	Replication           int           `json:"replication"`
-	Verified              bool          `json:"verified"`
-	DealDuration          int           `json:"dealDuration"`
-	MaxStagingWait        time.Duration `json:"maxStagingWait"`
-	FileStagingThreshold  int64         `json:"fileStagingThreshold"`
-	ContentAddingDisabled bool          `json:"contentAddingDisabled"`
-	DealMakingDisabled    bool          `json:"dealMakingDisabled"`
-	UploadEndpoints       []string      `json:"uploadEndpoints"`
-	Flags                 int           `json:"flags"`
+	Replication           int            `json:"replication"`
+	Verified              bool           `json:"verified"`
+	DealDuration          abi.ChainEpoch `json:"dealDuration"`
+	MaxStagingWait        time.Duration  `json:"maxStagingWait"`
+	FileStagingThreshold  int64          `json:"fileStagingThreshold"`
+	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
+	DealMakingDisabled    bool           `json:"dealMakingDisabled"`
+	UploadEndpoints       []string       `json:"uploadEndpoints"`
+	Flags                 int            `json:"flags"`
 }
 
 type ViewerResponse struct {

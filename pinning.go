@@ -143,7 +143,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	}
 
 	if op.MakeDeal {
-		s.CM.ToCheck <- op.ContId
+		s.CM.toCheck(op.ContId)
 	}
 
 	// this provide call goes out immediately
@@ -955,6 +955,6 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 
-	cm.ToCheck <- cont.ID
+	cm.toCheck(cont.ID)
 	return nil
 }

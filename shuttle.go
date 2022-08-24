@@ -21,19 +21,14 @@ import (
 
 type Shuttle struct {
 	gorm.Model
-
-	Handle string `gorm:"unique"`
-	Token  string
-
-	LastConnection time.Time
+	Handle         string `gorm:"unique"`
+	Token          string
 	Host           string
 	PeerID         string
-
-	Private bool
-
-	Open bool
-
-	Priority int
+	LastConnection time.Time
+	Private        bool
+	Open           bool
+	Priority       int
 }
 
 type ShuttleConnection struct {
@@ -101,7 +96,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		private:  hello.Private,
 	}
 
-	// when a shuttle connects, refresh its pin queue
+	// when a shuttle connects, if global content adding is enabled, refresh shuttle pin queue
 	if !cm.globalContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
@@ -438,6 +433,5 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 	if err := cm.DB.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
 		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 	}
-
 	return nil
 }

@@ -73,6 +73,7 @@ type ContentManager struct {
 	FilClient *filclient.FilClient
 	Provider  *batched.BatchProvidingSystem
 	Node      *node.Node
+	cfg       *config.Estuary
 
 	Host host.Host
 
@@ -128,8 +129,6 @@ type ContentManager struct {
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
 
-	VerifiedDeal bool
-
 	DisableFilecoinStorage bool
 
 	IncomingRPCMessages chan *drpc.Message
@@ -165,6 +164,9 @@ type contentStagingZone struct {
 	ContID   uint   `json:"contentID"`
 	Location string `json:"location"`
 
+	MaxContentAge time.Duration `json:"max_content_age"`
+	MinDealSize   int64         `json:"min_deal_size"`
+
 	lk sync.Mutex
 }
 
@@ -183,6 +185,8 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 		User:            cb.User,
 		ContID:          cb.ContID,
 		Location:        cb.Location,
+		MaxContentAge:   cb.MaxContentAge,
+		MinDealSize:     cb.MinSize,
 	}
 	copy(cb2.Contents, cb.Contents)
 	return cb2
@@ -205,19 +209,21 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 	}
 
 	return &contentStagingZone{
-		ZoneOpened: time.Now(),
-		CloseTime:  time.Now().Add(constants.MaxStagingZoneLifetime),
-		MinSize:    constants.MinStagingZoneSizeLimit,
-		MaxSize:    constants.MaxStagingZoneSizeLimit,
-		MaxItems:   constants.MaxBucketItems,
-		User:       user,
-		ContID:     content.ID,
-		Location:   content.Location,
+		MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
+		MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
+		ZoneOpened:    time.Now(),
+		CloseTime:     time.Now().Add(cm.cfg.StagingBucket.MaxLifeTime),
+		MinSize:       cm.cfg.StagingBucket.MinSize,
+		MaxSize:       cm.cfg.StagingBucket.MaxSize,
+		MaxItems:      cm.cfg.StagingBucket.MaxItems,
+		User:          user,
+		ContID:        content.ID,
+		Location:      content.Location,
 	}, nil
 }
 
 func (cb *contentStagingZone) isReady() bool {
-	if cb.CurSize < constants.MinDealSize {
+	if cb.CurSize < cb.MinDealSize {
 		return false
 	}
 
@@ -230,14 +236,14 @@ func (cb *contentStagingZone) isReady() bool {
 		return true
 	}
 
-	if time.Since(cb.EarliestContent) > constants.MaxContentAge {
+	if time.Since(cb.EarliestContent) > cb.MaxContentAge {
 		return true
 	}
 
+	// if its above the items count requirement, go right ahead
 	if len(cb.Contents) >= cb.MaxItems {
 		return true
 	}
-
 	return false
 }
 
@@ -265,7 +271,7 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
 
-	nowPlus := time.Now().Add(constants.StagingZoneKeepAlive)
+	nowPlus := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
 	if cb.CloseTime.Before(nowPlus) {
 		cb.CloseTime = nowPlus
 	}
@@ -291,6 +297,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 	}
 
 	cm := &ContentManager{
+		cfg:                          cfg,
 		Provider:                     prov,
 		DB:                           db,
 		Api:                          api,
@@ -311,10 +318,9 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		hostname:                     cfg.Hostname,
 		inflightCids:                 make(map[cid.Cid]uint),
 		FailDealOnTransferFailure:    cfg.Deal.FailOnTransferFailure,
-		isDealMakingDisabled:         cfg.Deal.Disable,
+		isDealMakingDisabled:         cfg.Deal.IsDisabled,
 		globalContentAddingDisabled:  cfg.Content.DisableGlobalAdding,
 		localContentAddingDisabled:   cfg.Content.DisableLocalAdding,
-		VerifiedDeal:                 cfg.Deal.Verified,
 		Replication:                  cfg.Replication,
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
@@ -322,39 +328,51 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
 	qm := newQueueManager(func(c uint) {
-		cm.ToCheck <- c
+		cm.toCheck(c)
 	})
 
 	cm.queueMgr = qm
 	return cm, nil
 }
 
-func (cm *ContentManager) ContentWatcher() {
-	if err := cm.reBuildStagingZones(); err != nil {
-		log.Fatalf("failed to rebuild staging zones: %s", err)
+func (cm *ContentManager) toCheck(contID uint) {
+	// if DisableFilecoinStorage is not enabled, queue content for deal making
+	if !cm.DisableFilecoinStorage {
+		cm.ToCheck <- contID
 	}
+}
 
-	// do not process content for storage if DisableFilecoinStorage is enabled
-	if cm.DisableFilecoinStorage {
-		return
+func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
+	timer := time.NewTicker(cm.cfg.StagingBucket.AggregateInterval)
+	for {
+		select {
+		case <-timer.C:
+			log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
+
+			buckets := cm.popReadyStagingZone()
+			for _, b := range buckets {
+				if err := cm.aggregateContent(ctx, b); err != nil {
+					log.Errorf("content aggregation failed (bucket %d): %s", b.ContID, err)
+					continue
+				}
+			}
+		}
 	}
+}
 
-	if err := cm.startup(); err != nil {
-		log.Errorf("failed to recheck existing content: %s", err)
-	}
-
-	timer := time.NewTimer(time.Minute * 5)
-
+func (cm *ContentManager) runDealWorker(ctx context.Context) {
+	// run the deal reconciliation and deal making worker
 	for {
 		select {
 		case c := <-cm.ToCheck:
+			log.Debugf("checking content: %d", c)
+
 			var content util.Content
 			if err := cm.DB.First(&content, "id = ?", c).Error; err != nil {
 				log.Errorf("finding content %d in database: %s", c, err)
 				continue
 			}
 
-			log.Debugf("checking content: %d", content.ID)
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
 				cm.queueMgr.add(content.ID, dur)
 			})
@@ -362,27 +380,42 @@ func (cm *ContentManager) ContentWatcher() {
 				log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
 				cm.queueMgr.add(content.ID, time.Minute*5)
 			}
+		}
+	}
+}
 
-		case <-timer.C:
-			log.Infow("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
+func (cm *ContentManager) Run(ctx context.Context) {
+	// if content adding is enabled, refresh pin queue for local contents
+	if !cm.localContentAddingDisabled {
+		go func() {
+			if err := cm.refreshPinQueue(ctx, constants.ContentLocationLocal); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
+		}()
+	}
 
-			/*
-				if err := cm.queueAllContent(); err != nil {
-					log.Errorf("rechecking content: %s", err)
-					continue
-				}
-			*/
+	// if staging buckets are enabled, rebuild the buckets, and run the bucket aggregate worker
+	if cm.cfg.StagingBucket.Enabled {
+		// rebuild the staging buckets
+		if err := cm.rebuildStagingBuckets(); err != nil {
+			log.Fatalf("failed to rebuild staging buckets: %s", err)
+		}
 
-			buckets := cm.popReadyStagingZone()
-			for _, b := range buckets {
-				if err := cm.aggregateContent(context.TODO(), b); err != nil {
-					log.Errorf("content aggregation failed (bucket %d): %s", b.ContID, err)
-					continue
-				}
+		// run the staging bucket aggregator worker
+		go cm.runStagingBucketWorker(ctx)
+	}
+
+	// if FilecoinStorage is enabled, check content deals or make content deals
+	if !cm.DisableFilecoinStorage {
+		go func() {
+			// rebuild toCheck queue
+			if err := cm.rebuildToCheckQueue(); err != nil {
+				log.Errorf("failed to recheck existing content: %s", err)
 			}
 
-			timer.Reset(time.Minute * 5)
-		}
+			// run the deal reconciliation and deal making worker
+			cm.runDealWorker(ctx)
+		}()
 	}
 }
 
@@ -502,7 +535,6 @@ func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
 	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
 		return "", err
 	}
-
 	return cont.Location, nil
 }
 
@@ -516,7 +548,6 @@ func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *conten
 
 		out[loc] = append(out[loc], c)
 	}
-
 	return out, nil
 }
 
@@ -552,7 +583,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 		}
 	}
 
-	log.Infow("consolidating content to single location for aggregation", "user", b.User, "primary", primary, "numItems", len(toMove), "primaryWeight", curMax)
+	log.Debugw("consolidating content to single location for aggregation", "user", b.User, "primary", primary, "numItems", len(toMove), "primaryWeight", curMax)
 	if primary == constants.ContentLocationLocal {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
@@ -645,7 +676,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		}
 
 		go func() {
-			cm.ToCheck <- b.ContID
+			cm.toCheck(b.ContID)
 		}()
 
 		return nil
@@ -659,11 +690,12 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 }
 
 func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
+	log.Debug("aggregating contents in staging zone into new content")
+
 	sort.Slice(conts, func(i, j int) bool {
 		return conts[i].ID < conts[j].ID
 	})
 
-	log.Info("aggregating contents in staging zone into new content")
 	dir := unixfs.EmptyDirNode()
 	for _, c := range conts {
 		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
@@ -674,16 +706,11 @@ func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Cont
 			return nil, err
 		}
 	}
-
 	return dir, nil
 }
 
-func (cm *ContentManager) startup() error {
-	return cm.queueAllContent()
-}
-
-func (cm *ContentManager) reBuildStagingZones() error {
-	log.Info("rebuilding staging zones.......")
+func (cm *ContentManager) rebuildStagingBuckets() error {
+	log.Info("rebuilding staging buckets.......")
 
 	var stages []util.Content
 	if err := cm.DB.Find(&stages, "not active and pinning and aggregate").Error; err != nil {
@@ -693,17 +720,19 @@ func (cm *ContentManager) reBuildStagingZones() error {
 	zones := make(map[uint][]*contentStagingZone)
 	for _, c := range stages {
 		z := &contentStagingZone{
-			ZoneOpened: c.CreatedAt,
-			CloseTime:  c.CreatedAt.Add(constants.MaxStagingZoneLifetime),
-			MinSize:    constants.MinStagingZoneSizeLimit,
-			MaxSize:    constants.MaxStagingZoneSizeLimit,
-			MaxItems:   constants.MaxBucketItems,
-			User:       c.UserID,
-			ContID:     c.ID,
-			Location:   c.Location,
+			MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
+			MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
+			ZoneOpened:    c.CreatedAt,
+			CloseTime:     c.CreatedAt.Add(cm.cfg.StagingBucket.MaxLifeTime),
+			MinSize:       cm.cfg.StagingBucket.MinSize,
+			MaxSize:       cm.cfg.StagingBucket.MaxSize,
+			MaxItems:      cm.cfg.StagingBucket.MaxItems,
+			User:          c.UserID,
+			ContID:        c.ID,
+			Location:      c.Location,
 		}
 
-		minClose := time.Now().Add(constants.StagingZoneKeepAlive)
+		minClose := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
 		if z.CloseTime.Before(minClose) {
 			z.CloseTime = minClose
 		}
@@ -725,26 +754,19 @@ func (cm *ContentManager) reBuildStagingZones() error {
 	return nil
 }
 
-func (cm *ContentManager) queueAllContent() error {
+func (cm *ContentManager) rebuildToCheckQueue() error {
+	log.Info("rebuilding contents queue .......")
+
 	var allcontent []util.Content
 	if err := cm.DB.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
 		return xerrors.Errorf("finding all content in database: %w", err)
 	}
 
-	log.Infof("queueing all content for checking: %d", len(allcontent))
-
 	go func() {
 		for _, c := range allcontent {
-			log.Infof("queueing content: %d", c.ID)
 			cm.ToCheck <- c.ID
 		}
 	}()
-	/* TODO: this should be more correct, just testing the above out though to ensure the things from here are first in queue
-	for _, c := range allcontent {
-		cm.queueMgr.add(c.ID, 0)
-	}
-	*/
-
 	return nil
 }
 
@@ -843,8 +865,8 @@ func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.P
 	return cm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
 }
 
-//TODO - this is currently not used, if we choose to use it,
-//add a check to make sure miners selected is still active in db
+// TODO - this is currently not used, if we choose to use it,
+// add a check to make sure miners selected is still active in db
 func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	sortedMiners, _, err := cm.sortedMinerList()
 	if err != nil {
@@ -890,8 +912,8 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 		}
 
 		if filterByPrice {
-			price := ask.GetPrice(cm.VerifiedDeal)
-			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
+			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+			if cm.priceIsTooHigh(price) {
 				continue
 			}
 		}
@@ -946,8 +968,8 @@ func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pie
 		}
 
 		if filterByPrice {
-			price := ask.GetPrice(cm.VerifiedDeal)
-			if cm.priceIsTooHigh(price, cm.VerifiedDeal) {
+			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+			if cm.priceIsTooHigh(price) {
 				continue
 			}
 		}
@@ -1107,7 +1129,6 @@ func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util
 			return true
 		}
 	}
-
 	return false
 }
 
@@ -1124,7 +1145,6 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 	for _, b := range blist {
 		out = append(out, b.DeepCopy())
 	}
-
 	return out
 }
 
@@ -1139,7 +1159,6 @@ func (cm *ContentManager) getStagingZoneSnapshot(ctx context.Context) map[uint][
 		for _, b := range blist {
 			copylist = append(copylist, b.DeepCopy())
 		}
-
 		out[u] = copylist
 	}
 	return out
@@ -1214,7 +1233,6 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 		}
 		cm.buckets[uid] = keep
 	}
-
 	return out
 }
 
@@ -1224,44 +1242,37 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	))
 	defer span.End()
 
-	verified := cm.VerifiedDeal
-
+	// If this content is aggregated inside another piece of content, nothing to do here, that content will be processed
 	if content.AggregatedIn > 0 {
-		// This content is aggregated inside another piece of content, nothing to do here
 		return nil
 	}
 
+	// If this is the 'root' of a split dag, we dont need to process it
 	if content.DagSplit && content.SplitFrom == 0 {
-		// This is the 'root' of a split dag, we dont need to process it
 		return nil
 	}
 
-	// if it's a shuttle content and the shuttle is not online, do not proceed
+	// If this is a shuttle content and the shuttle is not online, do not proceed, retry it 15 mins
 	if content.Location != constants.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
 		log.Debugf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
 
+	// If this content is already scheduled to be aggregated and is waiting in a bucket
 	if cm.contentInStagingZone(ctx, content) {
-		// This content is already scheduled to be aggregated and is waiting in a bucket
 		return nil
 	}
 
-	// its too big, need to split it up into chunks
+	// it's too big, need to split it up into chunks, no need to requeue dagsplit root content
 	if content.Size > cm.contentSizeLimit {
-		if err := cm.splitContent(ctx, content, cm.contentSizeLimit); err != nil {
-			return err
-		}
-		// no need to requeue dagsplit root content
-		return nil
+		return cm.splitContent(ctx, content, cm.contentSizeLimit)
 	}
 
 	// check if content has enough deals made for it
 	// if not enough deals, go make more
 	// check all existing deals, ensure they are still active
 	// if not active, repair!
-
 	var deals []contentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -1269,39 +1280,12 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}
 	}
 
-	var user User
-	if err := cm.DB.First(&user, "id = ?", content.UserID).Error; err != nil {
-		return err
-	}
-
-	if len(deals) == 0 &&
-		content.Size < int64(constants.IndividualDealThreshold) &&
-		!content.Aggregate &&
-		constants.BucketingEnabled {
-		// Put it in a bucket!
-		if err := cm.addContentToStagingZone(ctx, content); err != nil {
-			return err
+	// if staging bucket is enabled, try to bucket the content
+	if cm.canStageContent(content) {
+		// Only contents that have no deals and that are not themselves buckets(aggregates) that can be placed in a bucket
+		if len(deals) == 0 && !content.Aggregate {
+			return cm.addContentToStagingZone(ctx, content)
 		}
-		return nil
-	}
-
-	replicationFactor := cm.Replication
-	if content.Replication > 0 {
-		replicationFactor = content.Replication
-	}
-
-	minersAlready := make(map[address.Address]bool)
-	for _, d := range deals {
-		if d.Failed {
-			// TODO: this is an interesting choice, because it gives miners more chances to try again if they fail.
-			// I think that as we get a more diverse set of stable miners, we can *not* do this.
-			continue
-		}
-		maddr, err := d.MinerAddr()
-		if err != nil {
-			return err
-		}
-		minersAlready[maddr] = true
 	}
 
 	// check on each of the existing deals, see if they need fixing
@@ -1345,6 +1329,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}(i)
 	}
 	wg.Wait()
+
 	// return the last error found, log the rest
 	var retErr error
 	for _, err := range errs {
@@ -1358,80 +1343,102 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	if retErr != nil {
 		return fmt.Errorf("deal check errored: %w", retErr)
 	}
-
 	goodDeals := numSealed + numPublished + numProgress
-	if goodDeals < replicationFactor {
-		pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
-		if err != nil {
-			return err
-		}
 
-		if pc == nil {
-			// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
-			go func() {
-				_, _, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
-				if err != nil {
-					log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
-					done(time.Minute * 5)
-				} else {
-					done(time.Second * 10)
-				}
-			}()
+	replicationFactor := cm.Replication
+	if content.Replication > 0 {
+		replicationFactor = content.Replication
+	}
 
-			return nil
-		}
-
-		if content.Offloaded {
-			go func() {
-				if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
-					log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
-				}
-
-				done(time.Second * 30)
-			}()
-
-			return nil
-		}
-
-		if cm.dealMakingDisabled() {
-			log.Warnf("deal making is disabled for now")
-			done(time.Minute * 60)
-			return nil
-		}
-
-		// only verified deals need datacap checks
-		if verified {
-			bl, err := cm.FilClient.Balance(ctx)
-			if err != nil || bl.VerifiedClientBalance == nil {
-				return errors.Wrap(err, "could not retrieve dataCap from client balance")
-			}
-
-			if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
-				// how do we notify admin to top up datacap?
-				return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
-			}
-		}
-
-		go func() {
-			// make some more deals!
-			log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", replicationFactor-len(deals))
-			if err := cm.makeDealsForContent(ctx, content, replicationFactor-len(deals), minersAlready, verified); err != nil {
-				log.Errorf("failed to make more deals: %s", err)
-			}
+	dealsToBeMade := replicationFactor - goodDeals
+	if dealsToBeMade <= 0 {
+		if numSealed >= replicationFactor {
+			done(time.Hour * 24)
+		} else if numSealed+numPublished >= replicationFactor {
+			done(time.Hour)
+		} else {
 			done(time.Minute * 10)
+		}
+		return nil
+	}
+
+	pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
+	if err != nil {
+		return err
+	}
+
+	if pc == nil {
+		// pre-compute piece commitment in a goroutine and dont block the checker loop while doing so
+		go func() {
+			_, _, _, err := cm.getPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
+			if err != nil {
+				log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
+				done(time.Minute * 5)
+			} else {
+				done(time.Second * 10)
+			}
 		}()
 		return nil
 	}
 
-	if numSealed >= replicationFactor {
-		done(time.Hour * 24)
-	} else if numSealed+numPublished >= replicationFactor {
-		done(time.Hour)
-	} else {
-		done(time.Minute * 10)
+	if content.Offloaded {
+		go func() {
+			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
+				log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
+			}
+			done(time.Second * 30)
+		}()
+		return nil
 	}
 
+	if cm.dealMakingDisabled() {
+		log.Warnf("deal making is disabled for now")
+		done(time.Minute * 60)
+		return nil
+	}
+
+	// only verified deals need datacap checks
+	if cm.cfg.Deal.IsVerified {
+		bl, err := cm.FilClient.Balance(ctx)
+		if err != nil {
+			return errors.Wrap(err, "could not retrieve dataCap from client balance")
+		}
+
+		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
+			// how do we notify admin to top up datacap?
+			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
+		}
+	}
+
+	// to make sure replicas are distributed, make new deals with miners that currently don't store this content
+	excludedMiners := make(map[address.Address]bool)
+	for _, d := range deals {
+		if d.Failed {
+			// TODO: this is an interesting choice, because it gives miners more chances to try again if they fail.
+			// I think that as we get a more diverse set of stable miners, we can *not* do this.
+			continue
+		}
+		maddr, err := d.MinerAddr()
+		if err != nil {
+			return err
+		}
+		excludedMiners[maddr] = true
+	}
+
+	go func() {
+		// make some more deals!
+		log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
+		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, excludedMiners); err != nil {
+			log.Errorf("failed to make more deals: %s", err)
+		}
+		done(time.Minute * 10)
+	}()
 	return nil
+
+}
+
+func (cm *ContentManager) canStageContent(cont util.Content) bool {
+	return cont.Size < cm.cfg.StagingBucket.IndividualDealThreshold && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
@@ -2007,15 +2014,11 @@ func init() {
 	priceMax = abi.TokenAmount(max)
 }
 
-func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount, verified bool) bool {
-	if verified {
+func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
+	if cm.cfg.Deal.IsVerified {
 		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
 	}
-
-	if types.BigCmp(price, priceMax) > 0 {
-		return true
-	}
-	return false
+	return types.BigCmp(price, priceMax) > 0
 }
 
 type proposalRecord struct {
@@ -2023,7 +2026,7 @@ type proposalRecord struct {
 	Data    []byte
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, count int, exclude map[address.Address]bool, verified bool) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, count int, exclude map[address.Address]bool) error {
 	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Int("count", count),
@@ -2050,8 +2053,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 	var readyDeals []deal
 	for _, m := range miners {
-		price := m.ask.GetPrice(verified)
-		prop, err := cm.FilClient.MakeDeal(ctx, m.address, content.Cid.CID, price, m.ask.MinPieceSize, constants.DealDuration, verified)
+		price := m.ask.GetPrice(cm.cfg.Deal.IsVerified)
+		prop, err := cm.FilClient.MakeDeal(ctx, m.address, content.Cid.CID, price, m.ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -2072,7 +2075,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 			PropCid:             util.DbCID{CID: propnd.Cid()},
 			DealUUID:            dealUUID.String(),
 			Miner:               m.address.String(),
-			Verified:            verified,
+			Verified:            cm.cfg.Deal.IsVerified,
 			UserID:              content.UserID,
 			DealProtocolVersion: m.dealProtocolVersion,
 			MinerVersion:        m.ask.MinerVersion,
@@ -2230,7 +2233,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	return cleanup, propPhase, err
 }
 
-func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Content, miner address.Address, verified bool) (uint, error) {
+func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Content, miner address.Address) (uint, error) {
 	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Stringer("miner", miner),
@@ -2288,15 +2291,15 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	price := ask.PriceBigInt
-	if verified {
+	if cm.cfg.Deal.IsVerified {
 		price = ask.VerifiedPriceBigInt
 	}
 
-	if cm.priceIsTooHigh(price, verified) {
+	if cm.priceIsTooHigh(price) {
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
-	prop, err := cm.FilClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, constants.DealDuration, verified)
+	prop, err := cm.FilClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 	if err != nil {
 		return 0, xerrors.Errorf("failed to construct a deal proposal: %w", err)
 	}
@@ -2317,7 +2320,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 		PropCid:             util.DbCID{CID: propnd.Cid()},
 		DealUUID:            dealUUID.String(),
 		Miner:               miner.String(),
-		Verified:            verified,
+		Verified:            cm.cfg.Deal.IsVerified,
 		UserID:              content.UserID,
 		DealProtocolVersion: proto,
 		MinerVersion:        ask.MinerVersion,
@@ -3293,10 +3296,10 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 			return err
 		}
 
-		//queue splited contents
+		// queue splited contents
 		go func() {
-			log.Infow("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
-			cm.ToCheck <- content.ID
+			log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
+			cm.toCheck(content.ID)
 		}()
 	}
 
