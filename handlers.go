@@ -183,6 +183,7 @@ func (s *Server) ServeAPI() error {
 	// note (al): This is the only route for upladiong content rn
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/update-deal-id", withUser(s.handleUpdateDealId))
+	uploads.POST("/populated-add", withUser(s.handlePopulatedAdd))
 	// note (al): For my own sanity I am deprecating other upload routes
 	// TODO: Re-enable these and get them compliant with the new API defined in /content/add
 	// uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
@@ -833,6 +834,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 	// TODO: Add blake3 hashing
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          rootCID.String(),
+		Blake3Hash:   b3hStr,
 		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
 		EstuaryId:    cont.ID,
 		Providers:    s.CM.pinDelegatesForContent(*cont),
@@ -1051,8 +1053,9 @@ func (s *Server) handleUpdateDealId(c echo.Context, u *User) error {
 
 	println("handleUpdateDealID: ", content.DealId)
 
-	// Return a 200 OK response with no body
-	return c.JSON(http.StatusOK, "")
+	return c.JSON(http.StatusOK, &util.ContentUpdateDealIdResponse{
+		DealId: content.DealId,
+	})
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -4927,7 +4930,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error)
 }
 
 // handleCreateContent godoc
-// @Summary      Add a new content
+// @Summary      Add a new content. This Endpoint is called by Shuttles to add a new content.
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
@@ -4964,6 +4967,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	content := &util.Content{
 		Cid:         util.DbCID{CID: rootCID},
+		Blake3Hash:  req.Blake3Hash,
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,

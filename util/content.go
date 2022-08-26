@@ -48,13 +48,18 @@ type ContentUpdateDealIdRequest struct {
 	DealId    uint `json:"dealId"`
 }
 
+type ContentUpdateDealIdResponse struct {
+	DealId uint `json:"dealId"`
+}
+
 type ContentCreateBody struct {
 	ContentInCollection
 
-	Root     string      `json:"root"`
-	Name     string      `json:"name"`
-	Location string      `json:"location"`
-	Type     ContentType `json:"type"`
+	Root       string      `json:"root"`
+	Blake3Hash string      `json:"blake3hash"`
+	Name       string      `json:"name"`
+	Location   string      `json:"location"`
+	Type       ContentType `json:"type"`
 }
 
 type ContentCreateResponse struct {

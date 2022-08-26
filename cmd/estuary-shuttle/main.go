@@ -1062,7 +1062,8 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	// TODO: Reimplement this endpoint
+	// content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1212,12 +1213,19 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
+	// Import the file as a DAG and store the root CID in the database
 	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
+	// Generate a Blake3 hash of the file and return the string
+	b3hstr, err := util.Blake3Hash(fi)
+	if err != nil {
+		return err
+	}
+
+	contid, err := s.createContent(ctx, u, nd.Cid(), b3hstr, filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1407,12 +1415,13 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, b3hstr string, filename string, cic util.ContentInCollection) (uint, error) {
 	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
+		Blake3Hash:          b3hstr,
 		Name:                filename,
 		Location:            s.shuttleHandle,
 	})
@@ -1454,7 +1463,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, b3hstr string, filename, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1462,9 +1471,10 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
-			Root:     root.String(),
-			Name:     filename,
-			Location: s.shuttleHandle,
+			Root:       root.String(),
+			Blake3Hash: b3hstr,
+			Name:       filename,
+			Location:   s.shuttleHandle,
 		},
 
 		Collections:  cols,
