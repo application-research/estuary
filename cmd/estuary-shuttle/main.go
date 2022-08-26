@@ -1152,6 +1152,9 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Param        data formData file true "File to upload"
+// @Param 		 blake3Hash query string false "Hex string for the Blake3 hash of the file"
+// @Param 		 dealId query string false "On-chain Deal ID associated with the uploaded content"
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1219,13 +1222,29 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	// Generate a Blake3 hash of the file and return the string
-	b3hstr, err := util.Blake3Hash(fi)
+	// Calculate a Blake3 hash string of the file
+	b3hStr, err := util.Blake3Hash(fi)
 	if err != nil {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), b3hstr, filename, cic)
+	// Check for a Blake3 hash in the request
+	reqB3hstr := c.FormValue("blake3Hash")
+	// If they provided a Blake3 hash, check it against the calculated hash
+	if reqB3hstr != "" {
+		if b3hStr != reqB3hstr {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_BLAKE3_HASH_MISMATCH,
+				Details: fmt.Sprintf("Blake3 hash mismatch: %s != %s", b3hStr, reqB3hstr),
+			}
+		}
+	}
+
+	// Check for a Deal ID in the request
+	reqDealID := c.FormValue("dealId")
+
+	contid, err := s.createContent(ctx, u, nd.Cid(), b3hStr, filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1257,6 +1276,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
+		Blake3Hash:   b3hStr,
+		DealId:       reqDealID,
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    contid,
 		Providers:    s.addrsForShuttle(),
