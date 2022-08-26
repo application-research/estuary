@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/spruceid/siwe-go"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -22,6 +21,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/application-research/estuary/constants"
+	"github.com/spruceid/siwe-go"
 
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -178,10 +180,14 @@ func (s *Server) ServeAPI() error {
 
 	contmeta := e.Group("/content")
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
+	// note (al): This is the only route for upladiong content rn
 	uploads.POST("/add", withUser(s.handleAdd))
-	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
-	uploads.POST("/create", withUser(s.handleCreateContent))
+	uploads.POST("/update-deal-id", withUser(s.handleUpdateDealId))
+	// note (al): For my own sanity I am deprecating other upload routes
+	// TODO: Re-enable these and get them compliant with the new API defined in /content/add
+	// uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	// uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	// uploads.POST("/create", withUser(s.handleCreateContent))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -331,6 +337,7 @@ func (s *Server) ServeAPI() error {
 	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat, s.withAutoretrieveAuth())
 
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
+	// TODO: Investigate why we need this.
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
 	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
@@ -371,7 +378,8 @@ type statsResp struct {
 	ID              uint    `json:"id"`
 	Cid             cid.Cid `json:"cid"`
 	Filename        string  `json:"name"`
-	Size            int64  `json:"size"`
+	Size            int64   `json:"size"`
+	DealId          uint    `json:"dealId"`
 	BWUsed          int64   `json:"bwUsed"`
 	TotalRequests   int64   `json:"totalRequests"`
 	Offloaded       bool    `json:"offloaded"`
@@ -434,6 +442,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 		st := statsResp{
 			ID:       c.ID,
 			Cid:      c.Cid.CID,
+			DealId:   c.DealId,
 			Filename: c.Name,
 			Size:     c.Size,
 		}
@@ -794,10 +803,14 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
+	// TODO: How would you get a blake3 Hash of the Car?
+	// For now we will just use a blank hash
+	b3hStr := ""
+
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, b3hStr, filename, s.CM.Replication)
 	if err != nil {
 		return err
 	}
@@ -817,8 +830,10 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 		}
 	}()
 
+	// TODO: Add blake3 hashing
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          rootCID.String(),
+		Blake3Hash:   b3hStr,
 		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
 		EstuaryId:    cont.ID,
 		Providers:    s.CM.pinDelegatesForContent(*cont),
@@ -838,9 +853,11 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        file formData file true "File to upload"
+// @Param        data formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
 // @Param        dir path string false "Directory"
+// @Param 		 blake3Hash query string false "Hex string for the Blake3 hash of the file"
+// @Param 		 dealId query string false "On-chain Deal ID associated with the uploaded content"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -936,6 +953,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
+	// Import the file as a DAG and store the root CID in the database
 	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
@@ -948,7 +966,26 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	// Calculate the Blake3 hash of the file
+	b3hStr := util.Blake3Hash(fi)
+
+	// Check for a Blake3 hash in the request
+	reqB3hstr := c.FormValue("blake3Hash")
+	// If they provided a Blake3 hash, check it against the calculated hash
+	if reqB3hstr != "" {
+		if b3hStr != reqB3hstr {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_BLAKE3_HASH_MISMATCH,
+				Details: fmt.Sprintf("Blake3 hash mismatch: %s != %s", b3hStr, reqB3hstr),
+			}
+		}
+	}
+
+	// Check for a Deal ID in the request
+	reqDealID := c.FormValue("dealId")
+
+	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), b3hStr, filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -988,11 +1025,51 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}()
 
+	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
+		Blake3Hash:   b3hStr,    // If the correct Blake3 hash is provided, it will be returned
+		DealId:       reqDealID, // Just return the deal ID if they provided one
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
+	})
+}
+
+// handleUpdateDealID godoc
+// @Summary Update the deal ID for a piece of content
+// @Description This endpoint is used by Authenticated users to update the deal ID for a piece of content
+// @ID update-deal-id
+// @Tags content
+// @Accept  json
+// @Produce  json
+// @Param estuaryId path string true "Content ID"
+// @Param dealId query string true "Deal ID"
+// @Success 200
+func (s *Server) handleUpdateDealId(c echo.Context, u *User) error {
+	_, span := s.tracer.Start(c.Request().Context(), "handleUpdateDealID", trace.WithAttributes(attribute.Int("user", int(u.ID))))
+	defer span.End()
+
+	var req util.ContentUpdateDealIdRequest
+	if err := c.Bind(&req); err != nil {
+		return err
+	}
+
+	println("handleUpdateDealID: ", req.EstuaryId, req.DealId)
+
+	var content util.Content
+	if err := s.DB.First(&content, "id = ? and user_id = ?", req.EstuaryId, u.ID).Error; err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(&content).Update("deal_id", req.DealId).Error; err != nil {
+		return err
+	}
+
+	println("handleUpdateDealID: ", content.DealId)
+
+	return c.JSON(http.StatusOK, &util.ContentUpdateDealIdResponse{
+		DealId: content.DealId,
 	})
 }
 
@@ -1123,21 +1200,23 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, util.ContentLocationLocal)
+	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, b3hStr string, filename string, replication int) (*util.Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
 	content := &util.Content{
 		Cid:         util.DbCID{CID: root},
+		Blake3Hash:  b3hStr,
+		DealId:      0, // There is no deal ID at this point
 		Name:        filename,
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
 		Replication: replication,
-		Location:    util.ContentLocationLocal,
+		Location:    constants.ContentLocationLocal,
 	}
 
 	if err := cm.DB.Create(content).Error; err != nil {
@@ -3285,9 +3364,9 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Settings: util.UserSettings{
 			Replication:           s.CM.Replication,
 			Verified:              s.CM.VerifiedDeal,
-			DealDuration:          dealDuration,
-			MaxStagingWait:        maxStagingZoneLifetime,
-			FileStagingThreshold:  int64(individualDealThreshold),
+			DealDuration:          constants.DealDuration,
+			MaxStagingWait:        constants.MaxStagingZoneLifetime,
+			FileStagingThreshold:  int64(constants.IndividualDealThreshold),
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
@@ -4363,7 +4442,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		fixedAggregateSize = true
 	}
 
-	if cont.Location != util.ContentLocationLocal {
+	if cont.Location != constants.ContentLocationLocal {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
 			"content":            cont,
@@ -4866,7 +4945,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error)
 }
 
 // handleCreateContent godoc
-// @Summary      Add a new content
+// @Summary      Add a new content. This Endpoint is called by Shuttles to add a new content.
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
@@ -4903,6 +4982,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 
 	content := &util.Content{
 		Cid:         util.DbCID{CID: rootCID},
+		Blake3Hash:  req.Blake3Hash,
 		Name:        req.Name,
 		Active:      false,
 		Pinning:     false,
@@ -5545,7 +5625,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", err
 	}
 
-	if cont.Location == util.ContentLocationLocal {
+	if cont.Location == constants.ContentLocationLocal {
 		return "", nil
 	}
 

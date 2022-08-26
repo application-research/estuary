@@ -15,8 +15,10 @@ import (
 	mh "github.com/multiformats/go-multihash"
 )
 
+// TODO: change to Blake3 eventually
 var DefaultHashFunction = uint64(mh.SHA2_256)
 
+/// Prepare a file to be addressed by IPFS.
 func ImportFile(dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 	prefix, err := merkledag.PrefixForCidVersion(1)
 	if err != nil {

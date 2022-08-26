@@ -15,9 +15,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const DefaultContentSizeLimit = 34_000_000_000
-const ContentLocationLocal = "local"
-
 type ContentType int64
 
 const (
@@ -40,18 +37,30 @@ type ContentAddIpfsBody struct {
 
 type ContentAddResponse struct {
 	Cid          string   `json:"cid"`
+	Blake3Hash   string   `json:"blake3hash"`
+	DealId       string   `json:"dealid"`
 	RetrievalURL string   `json:"retrieval_url"`
 	EstuaryId    uint     `json:"estuaryId"`
 	Providers    []string `json:"providers"`
 }
 
+type ContentUpdateDealIdRequest struct {
+	EstuaryId uint `json:"estuaryId"`
+	DealId    uint `json:"dealId"`
+}
+
+type ContentUpdateDealIdResponse struct {
+	DealId uint `json:"dealId"`
+}
+
 type ContentCreateBody struct {
 	ContentInCollection
 
-	Root     string      `json:"root"`
-	Name     string      `json:"name"`
-	Location string      `json:"location"`
-	Type     ContentType `json:"type"`
+	Root       string      `json:"root"`
+	Blake3Hash string      `json:"blake3hash"`
+	Name       string      `json:"name"`
+	Location   string      `json:"location"`
+	Type       ContentType `json:"type"`
 }
 
 type ContentCreateResponse struct {
@@ -64,7 +73,10 @@ type Content struct {
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Cid         DbCID       `json:"cid"`
+	Cid        DbCID  `json:"cid"`
+	Blake3Hash string `json:"blake3hash"` // hash of the content
+	// TODO: Determine if uint is the right data type for DealId
+	DealId      uint        `json:"dealId"` // Eth on-chain deal id of the content
 	Name        string      `json:"name"`
 	UserID      uint        `json:"userId" gorm:"index"`
 	Description string      `json:"description"`

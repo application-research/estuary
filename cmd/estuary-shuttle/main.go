@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/pinner/types"
 
@@ -588,7 +589,12 @@ func main() {
 					log.Error(err)
 				}
 			})
-			if err := http.ListenAndServe("127.0.0.1:3105", nil); err != nil {
+			server := &http.Server{
+				Addr:              "127.0.0.1:3105",
+				ReadHeaderTimeout: 5 * time.Second,
+			}
+
+			if err := server.ListenAndServe(); err != nil {
 				log.Errorf("failed to start http server for pprof endpoints: %s", err)
 			}
 		}()
@@ -1056,7 +1062,8 @@ func (s *Shuttle) ServeAPI() error {
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
 	content.POST("/add", withUser(s.handleAdd))
-	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	// TODO: Reimplement this endpoint
+	// content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1145,6 +1152,9 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Param        data formData file true "File to upload"
+// @Param 		 blake3Hash query string false "Hex string for the Blake3 hash of the file"
+// @Param 		 dealId query string false "On-chain Deal ID associated with the uploaded content"
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1170,11 +1180,11 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > util.DefaultContentSizeLimit {
+	if !u.FlagSplitContent() && mpf.Size > constants.DefaultContentSizeLimit {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, util.DefaultContentSizeLimit),
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, constants.DefaultContentSizeLimit),
 		}
 	}
 
@@ -1206,12 +1216,32 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
+	// Import the file as a DAG and store the root CID in the database
 	nd, err := s.importFile(ctx, dserv, fi)
 	if err != nil {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
+	// Calculate the Blake3 hash of the file
+	b3hStr := util.Blake3Hash(fi)
+
+	// Check for a Blake3 hash in the request
+	reqB3hstr := c.FormValue("blake3Hash")
+	// If they provided a Blake3 hash, check it against the calculated hash
+	if reqB3hstr != "" {
+		if b3hStr != reqB3hstr {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_BLAKE3_HASH_MISMATCH,
+				Details: fmt.Sprintf("Blake3 hash mismatch: %s != %s", b3hStr, reqB3hstr),
+			}
+		}
+	}
+
+	// Check for a Deal ID in the request
+	reqDealID := c.FormValue("dealId")
+
+	contid, err := s.createContent(ctx, u, nd.Cid(), b3hStr, filename, cic)
 	if err != nil {
 		return err
 	}
@@ -1243,6 +1273,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
+		Blake3Hash:   b3hStr,
+		DealId:       reqDealID,
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    contid,
 		Providers:    s.addrsForShuttle(),
@@ -1275,116 +1307,118 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
+// Note (al): Deprecating this so we can get this to compile.
+// When we know what we want to do with this endpoint we can re-enable it.
 // handleAddCar godoc
 // @Summary      Upload content via a car file
 // @Description  This endpoint uploads content via a car file
 // @Tags         content
 // @Produce      json
 // @Router       /content/add-car [post]
-func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
-	ctx := c.Request().Context()
+// func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
+// 	ctx := c.Request().Context()
 
-	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
-		return err
-	}
+// 	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+// 		return err
+// 	}
 
-	// if splitting is disabled and uploaded content size is greater than content size limit
-	// reject the upload, as it will only get stuck and deals will never be made for it
-	// if !u.FlagSplitContent() {
-	// 	bdWriter := &bytes.Buffer{}
-	// 	bdReader := io.TeeReader(c.Request().Body, bdWriter)
+// 	// if splitting is disabled and uploaded content size is greater than content size limit
+// 	// reject the upload, as it will only get stuck and deals will never be made for it
+// 	// if !u.FlagSplitContent() {
+// 	// 	bdWriter := &bytes.Buffer{}
+// 	// 	bdReader := io.TeeReader(c.Request().Body, bdWriter)
 
-	// 	bdSize, err := io.Copy(ioutil.Discard, bdReader)
-	// 	if err != nil {
-	// 		return err
-	// 	}
+// 	// 	bdSize, err := io.Copy(ioutil.Discard, bdReader)
+// 	// 	if err != nil {
+// 	// 		return err
+// 	// 	}
 
-	// 	if bdSize > util.DefaultContentSizeLimit {
-	// 		return &util.HttpError{
-	// 			Code:    http.StatusBadRequest,
-	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
-	// 		}
-	// 	}
+// 	// 	if bdSize > util.DefaultContentSizeLimit {
+// 	// 		return &util.HttpError{
+// 	// 			Code:    http.StatusBadRequest,
+// 	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+// 	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+// 	// 		}
+// 	// 	}
 
-	// 	c.Request().Body = ioutil.NopCloser(bdWriter)
-	// }
+// 	// 	c.Request().Body = ioutil.NopCloser(bdWriter)
+// 	// }
 
-	bsid, bs, err := s.StagingMgr.AllocNew()
-	if err != nil {
-		return err
-	}
+// 	bsid, bs, err := s.StagingMgr.AllocNew()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	defer func() {
-		go func() {
-			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
-			}
-		}()
-	}()
+// 	defer func() {
+// 		go func() {
+// 			if err := s.StagingMgr.CleanUp(bsid); err != nil {
+// 				log.Errorf("failed to clean up staging blockstore: %s", err)
+// 			}
+// 		}()
+// 	}()
 
-	defer c.Request().Body.Close()
-	header, err := s.loadCar(ctx, bs, c.Request().Body)
-	if err != nil {
-		return err
-	}
+// 	defer c.Request().Body.Close()
+// 	header, err := s.loadCar(ctx, bs, c.Request().Body)
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if len(header.Roots) != 1 {
-		// if someone wants this feature, let me know
-		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
-	}
+// 	if len(header.Roots) != 1 {
+// 		// if someone wants this feature, let me know
+// 		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
+// 	}
 
-	// TODO: how to specify filename?
-	filename := header.Roots[0].String()
-	if qpname := c.QueryParam("filename"); qpname != "" {
-		filename = qpname
-	}
+// 	// TODO: how to specify filename?
+// 	filename := header.Roots[0].String()
+// 	if qpname := c.QueryParam("filename"); qpname != "" {
+// 		filename = qpname
+// 	}
 
-	bserv := blockservice.New(bs, nil)
-	dserv := merkledag.NewDAGService(bserv)
+// 	bserv := blockservice.New(bs, nil)
+// 	dserv := merkledag.NewDAGService(bserv)
 
-	root := header.Roots[0]
+// 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
-		CollectionID:  c.QueryParam(ColUuid),
-		CollectionDir: c.QueryParam(ColDir),
-	})
-	if err != nil {
-		return err
-	}
+// 	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
+// 		CollectionID:  c.QueryParam(ColUuid),
+// 		CollectionDir: c.QueryParam(ColDir),
+// 	})
+// 	if err != nil {
+// 		return err
+// 	}
 
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{CID: root},
-		UserID:  u.ID,
+// 	pin := &Pin{
+// 		Content: contid,
+// 		Cid:     util.DbCID{CID: root},
+// 		UserID:  u.ID,
 
-		Active:  false,
-		Pinning: true,
-	}
+// 		Active:  false,
+// 		Pinning: true,
+// 	}
 
-	if err := s.DB.Create(pin).Error; err != nil {
-		return err
-	}
+// 	if err := s.DB.Create(pin).Error; err != nil {
+// 		return err
+// 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
-	}
+// 	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
+// 		return xerrors.Errorf("encountered problem computing object references: %w", err)
+// 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
+// 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+// 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+// 	}
 
-	if err := s.Provide(ctx, root); err != nil {
-		log.Warn(err)
-	}
+// 	if err := s.Provide(ctx, root); err != nil {
+// 		log.Warn(err)
+// 	}
 
-	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          root.String(),
-		RetrievalURL: util.CreateRetrievalURL(root.String()),
-		EstuaryId:    contid,
-		Providers:    s.addrsForShuttle(),
-	})
-}
+// 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
+// 		Cid:          root.String(),
+// 		RetrievalURL: util.CreateRetrievalURL(root.String()),
+// 		EstuaryId:    contid,
+// 		Providers:    s.addrsForShuttle(),
+// 	})
+// }
 
 func (s *Shuttle) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
 	_, span := s.Tracer.Start(ctx, "loadCar")
@@ -1401,12 +1435,13 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, b3hstr string, filename string, cic util.ContentInCollection) (uint, error) {
 	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
 		ContentInCollection: cic,
 		Root:                root.String(),
+		Blake3Hash:          b3hstr,
 		Name:                filename,
 		Location:            s.shuttleHandle,
 	})
@@ -1448,7 +1483,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, b3hstr string, filename, collection string, dagsplitroot uint) (uint, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1456,9 +1491,10 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
 		ContentCreateBody: util.ContentCreateBody{
-			Root:     root.String(),
-			Name:     filename,
-			Location: s.shuttleHandle,
+			Root:       root.String(),
+			Blake3Hash: b3hstr,
+			Name:       filename,
+			Location:   s.shuttleHandle,
 		},
 
 		Collections:  cols,
@@ -2262,7 +2298,10 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		break
 	}
 
-	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInCollection)
+	// TODO (al): Should we import the Blake3 hash of the file on the Shuttle?
+	// I mean it should be stored in the Content Registry, but I'm not sure
+	// For now the content will be imported into the shuttle with a blank hash
+	contid, err := s.createContent(ctx, u, cc, "", body.Name, body.ContentInCollection)
 	if err != nil {
 		return err
 	}

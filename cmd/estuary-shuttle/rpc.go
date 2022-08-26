@@ -541,6 +541,8 @@ func (s *Shuttle) finishSplit(cont uint) {
 	delete(s.splitsInProgress, cont)
 }
 
+// Note (al): This route relies on knowing how to assign a blake3 hash to a portion of a file.
+// For now this field is left empty, but we really need to figure something out for this
 func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
 	if err := s.markStartSplit(req.Content); err != nil {
 		return err
@@ -598,7 +600,8 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	for i, c := range boxCids {
 		fname := fmt.Sprintf("split-%09d", i)
 
-		contid, err := s.shuttleCreateContent(ctx, pin.UserID, c, fname, "", pin.Content)
+		// TODO: We need to figure out what to do with Blake3 hashing here
+		contid, err := s.shuttleCreateContent(ctx, pin.UserID, c, "", fname, "", pin.Content)
 		if err != nil {
 			return err
 		}
