@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/spruceid/siwe-go"
 	"io"
 	"io/ioutil"
 	"math/rand"
