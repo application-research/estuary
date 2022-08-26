@@ -1368,7 +1368,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "query"
+                        "in": "path"
                     }
                 ],
                 "responses": {}
