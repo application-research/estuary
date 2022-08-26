@@ -1222,11 +1222,8 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	// Calculate a Blake3 hash string of the file
-	b3hStr, err := util.Blake3Hash(fi)
-	if err != nil {
-		return err
-	}
+	// Calculate the Blake3 hash of the file
+	b3hStr := util.Blake3Hash(fi)
 
 	// Check for a Blake3 hash in the request
 	reqB3hstr := c.FormValue("blake3Hash")
