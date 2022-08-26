@@ -183,7 +183,6 @@ func (s *Server) ServeAPI() error {
 	// note (al): This is the only route for upladiong content rn
 	uploads.POST("/add", withUser(s.handleAdd))
 	uploads.POST("/update-deal-id", withUser(s.handleUpdateDealId))
-	uploads.POST("/populated-add", withUser(s.handlePopulatedAdd))
 	// note (al): For my own sanity I am deprecating other upload routes
 	// TODO: Re-enable these and get them compliant with the new API defined in /content/add
 	// uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
@@ -854,9 +853,11 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        file formData file true "File to upload"
+// @Param        data formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
 // @Param        dir path string false "Directory"
+// @Param 		 blake3Hash query string false "Hex string for the Blake3 hash of the file"
+// @Param 		 dealId query string false "On-chain Deal ID associated with the uploaded content"
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -965,11 +966,27 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 		}
 	}
 
-	// Retrieve a Blake3 hash string of the file
+	// Calculate a Blake3 hash string of the file
 	b3hStr, err := util.Blake3Hash(fi)
 	if err != nil {
 		return err
 	}
+
+	// Check for a Blake3 hash in the request
+	reqB3hstr := c.FormValue("blake3Hash")
+	// If they provided a Blake3 hash, check it against the calculated hash
+	if reqB3hstr != "" {
+		if b3hStr != reqB3hstr {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_BLAKE3_HASH_MISMATCH,
+				Details: fmt.Sprintf("Blake3 hash mismatch: %s != %s", b3hStr, reqB3hstr),
+			}
+		}
+	}
+
+	// Check for a Deal ID in the request
+	reqDealID := c.FormValue("dealId")
 
 	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), b3hStr, filename, replication)
 	if err != nil {
@@ -1014,7 +1031,8 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	// TODO: Add Blake3 hashing to content tracking
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
-		Blake3Hash:   b3hStr,
+		Blake3Hash:   b3hStr,    // If the correct Blake3 hash is provided, it will be returned
+		DealId:       reqDealID, // Just return the deal ID if they provided one
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),

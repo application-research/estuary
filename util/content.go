@@ -38,6 +38,7 @@ type ContentAddIpfsBody struct {
 type ContentAddResponse struct {
 	Cid          string   `json:"cid"`
 	Blake3Hash   string   `json:"blake3hash"`
+	DealId       string   `json:"dealid"`
 	RetrievalURL string   `json:"retrieval_url"`
 	EstuaryId    uint     `json:"estuaryId"`
 	Providers    []string `json:"providers"`
