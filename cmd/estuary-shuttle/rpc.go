@@ -645,8 +645,8 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		return err
 	}
 
-	canRestart := util.CanRestartTransfer(st)
-	if !canRestart {
+	cannotRestart := !util.CanRestartTransfer(st)
+	if cannotRestart {
 		trsFailed, msg := util.TransferFailed(st)
 		if trsFailed {
 			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
