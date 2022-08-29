@@ -797,6 +797,8 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 	return nil
 }
 
+// RestartTransfer tries to resume incomplete data transfers between client and storage providers.
+// It supports only legacy deals (PushTransfer)
 func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
 	maddr, err := d.MinerAddr()
 	if err != nil {
@@ -805,9 +807,11 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 
 	var dealUUID *uuid.UUID
 	if d.DealUUID != "" {
-		if parsed, parseErr := uuid.Parse(d.DealUUID); parseErr == nil {
-			dealUUID = &parsed
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
 		}
+		dealUUID = &parsed
 	}
 
 	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)

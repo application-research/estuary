@@ -1488,7 +1488,7 @@ const (
 func (cm *ContentManager) getDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
-	if err != nil && provds == nil {
+	if err != nil && providerDealState == nil {
 		isPushTransfer = true
 		providerDealState, err = cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, nil)
 	}
