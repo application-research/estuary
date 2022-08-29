@@ -805,8 +805,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 
 	var dealUUID *uuid.UUID
 	if d.DealUUID != "" {
-		parsed, parseErr := uuid.Parse(d.DealUUID)
-		if parseErr == nil {
+		if parsed, parseErr := uuid.Parse(d.DealUUID); parseErr == nil {
 			dealUUID = &parsed
 		}
 	}
