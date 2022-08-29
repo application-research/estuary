@@ -1487,12 +1487,12 @@ const (
 // first check deal protocol version 2, then check version 1
 func (cm *ContentManager) getDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
-	provds, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
+	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && provds == nil {
 		isPushTransfer = true
-		provds, err = cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, nil)
+		providerDealState, err = cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, nil)
 	}
-	return provds, isPushTransfer, err
+	return providerDealState, isPushTransfer, err
 }
 
 func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
