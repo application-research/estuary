@@ -826,8 +826,8 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 			return err
 		}
 
-		canRestart := util.CanRestartTransfer(st)
-		if !canRestart {
+		cannotRestart := !util.CanRestartTransfer(st)
+		if cannotRestart {
 			trsFailed, msg := util.TransferFailed(st)
 			if trsFailed {
 				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
