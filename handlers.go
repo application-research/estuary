@@ -13,7 +13,6 @@ import (
 	"net/http"
 	httpprof "net/http/pprof"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
@@ -309,7 +308,7 @@ func (s *Server) ServeAPI() error {
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
-	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
+	if !s.cfg.DisableSwaggerEndpoint {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
 	return e.Start(s.cfg.ApiListen)

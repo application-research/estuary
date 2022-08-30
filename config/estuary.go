@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/application-research/filclient"
-	"github.com/libp2p/go-libp2p-core/protocol"
 	"github.com/application-research/estuary/build"
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/filclient"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/libp2p/go-libp2p-core/protocol"
 )
 
 type Estuary struct {
@@ -23,6 +23,7 @@ type Estuary struct {
 	EnableAutoRetrieve     bool          `json:"enable_autoretrieve"`
 	LowMem                 bool          `json:"low_mem"`
 	DisableFilecoinStorage bool          `json:"disable_filecoin_storage"`
+	DisableSwaggerEndpoint bool          `json:"disable_swagger_endpoint"`
 	Node                   Node          `json:"node"`
 	Jaeger                 Jaeger        `json:"jaeger"`
 	Deal                   Deal          `json:"deal"`
@@ -69,6 +70,7 @@ func NewEstuary(appVersion string) *Estuary {
 		Replication:            6,
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
+		DisableSwaggerEndpoint: false,
 		EnableAutoRetrieve:     false,
 
 		Deal: Deal{
