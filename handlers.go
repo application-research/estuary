@@ -1537,6 +1537,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 // @Produce      json
 // @Param 		 miner path string true "CID"
 // @Router       /deal/query/{miner} [get]
+// @Router       /public/miners/storage/query/miner} [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
