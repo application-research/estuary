@@ -1043,6 +1043,21 @@ paths:
       tags:
         - public
         - miner
+  /public/miners/storage/query/miner}:
+    get:
+      description: This endpoint returns the ask for a given CID
+      parameters:
+        - description: CID
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Query Ask
+      tags:
+        - deals
   /public/net/addrs:
     get:
       description: This endpoint is used to get net addrs
