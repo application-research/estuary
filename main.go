@@ -302,6 +302,11 @@ func main() {
 			Value: cfg.Deal.IsDisabled,
 		},
 		&cli.BoolFlag{
+			Name:  "disable-swagger-endpoint",
+			Usage: "do not create the /swagger/* endpoints",
+			Value: cfg.DisableSwaggerEndpoint,
+		},
+		&cli.BoolFlag{
 			Name:  "verified-deal",
 			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
 			Value: cfg.Deal.IsVerified,
@@ -380,7 +385,7 @@ func main() {
 			Name:  "staging-bucket",
 			Usage: "enable staging bucket",
 			Value: cfg.StagingBucket.Enabled,
-    },
+		},
 		&cli.StringSliceFlag{
 			Name:  "deal-protocol-version",
 			Usage: "sets the deal protocol version. defaults to v110 (go-fil-markets) and v120 (boost)",
