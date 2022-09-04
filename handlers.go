@@ -2106,7 +2106,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
 		return err
 	}
-ndl
+	
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
