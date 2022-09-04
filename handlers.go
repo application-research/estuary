@@ -158,7 +158,7 @@ func (s *Server) ServeAPI() error {
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
-	uploads.POST("/remove", withUser(s.handleRemove))
+	uploads.DELETE("/remove", withUser(s.handleRemove))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -203,7 +203,6 @@ func (s *Server) ServeAPI() error {
 
 	colfs := cols.Group("/fs")
 	colfs.POST("/add", withUser(s.handleColfsAdd))
-	colsfs.DELETE("/remove", withUser(s.handleColfsRemove))
 
 	pinning := e.Group("/pinning")
 	pinning.Use(openApiMiddleware)
@@ -2106,7 +2105,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
 		return err
 	}
-	
+
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
