@@ -158,6 +158,7 @@ func (s *Server) ServeAPI() error {
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
+	uploads.POST("/remove", withUser(s.handleRemove))
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -202,6 +203,7 @@ func (s *Server) ServeAPI() error {
 
 	colfs := cols.Group("/fs")
 	colfs.POST("/add", withUser(s.handleColfsAdd))
+	colsfs.DELETE("/remove", withUser(s.handleColfsRemove))
 
 	pinning := e.Group("/pinning")
 	pinning.Use(openApiMiddleware)
@@ -965,6 +967,60 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          nd.Cid().String(),
 		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
+		EstuaryId:    content.ID,
+		Providers:    s.CM.pinDelegatesForContent(*content),
+	})
+}
+
+// handleRemove godoc
+// @Summary      Remove content from a collection
+// @Description  This endpoint is used to remove content. (Notice: content removed from Estuary may still be available on IPFS and Filecoin Network)
+// @Tags         content
+// @Produce      json
+// @Accept       multipart/form-data
+// @Param        coluuid path string true "Collection UUID"
+// @Param        dir path string false "Directory"
+// @Router       /content/remove [delete]
+func (s *Server) handleRemove(c echo.Context, u *User) error {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
+	}
+
+	coluuid := c.QueryParam("coluuid")
+	var col *Collection
+	if coluuid != "" {
+		var srchCol Collection
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
+			return err
+		}
+
+		col = &srchCol
+	}
+	
+	defaultPath := "/"
+	path := defaultPath
+	if cp := c.QueryParam(ColDir); cp != "" {
+		sp, err := sanitizePath(cp)
+		if err != nil {
+			return err
+		}
+
+		path = sp
+	}
+
+	if col != nil {
+		var refs []CollectionRef
+		if err := s.DB.Where("collection = ? and path LIKE ?", col.ID, fullPath + "%").Find(&refs).Error; err != nil {
+			log.Errorf("Failed to retrieve content frome requested collection: %s", err)
+			return err
+		}
+		if err := s.DB.Delete(&refs).Error; err != nil {
+			log.Errorf("Failed to delete content from requested collection: %s", err)
+			return err
+		}
+	}
+
+	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		EstuaryId:    content.ID,
 		Providers:    s.CM.pinDelegatesForContent(*content),
 	})
@@ -2050,7 +2106,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
 		return err
 	}
-
+ndl
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
