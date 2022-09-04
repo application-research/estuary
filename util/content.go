@@ -42,6 +42,10 @@ type ContentAddResponse struct {
 	Providers    []string `json:"providers"`
 }
 
+type ContentRemoveResponse struct {
+	Total 		 uint 	  `json:"total"`
+}
+
 type ContentCreateBody struct {
 	ContentInCollection
 

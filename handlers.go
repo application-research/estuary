@@ -1007,10 +1007,11 @@ func (s *Server) handleRemove(c echo.Context, u *User) error {
 
 		path = sp
 	}
+	
+	var refs []CollectionRef
 
 	if col != nil {
-		var refs []CollectionRef
-		if err := s.DB.Where("collection = ? and path LIKE ?", col.ID, fullPath + "%").Find(&refs).Error; err != nil {
+		if err := s.DB.Where("collection = ? and path LIKE ?", col.ID, path + "%").Find(&refs).Error; err != nil {
 			log.Errorf("Failed to retrieve content frome requested collection: %s", err)
 			return err
 		}
@@ -1020,9 +1021,8 @@ func (s *Server) handleRemove(c echo.Context, u *User) error {
 		}
 	}
 
-	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		EstuaryId:    content.ID,
-		Providers:    s.CM.pinDelegatesForContent(*content),
+	return c.JSON(http.StatusOK, &util.ContentRemoveResponse{
+		Total:    uint(len(refs)),
 	})
 }
 
