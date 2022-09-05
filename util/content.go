@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	unixfs "github.com/ipfs/go-unixfs"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
@@ -188,4 +190,21 @@ func EnsurePathIsLinked(dirs []string, rootNode *merkledag.ProtoNode, ds format.
 
 func CreateRetrievalURL(cid string) string {
 	return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
+}
+
+func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
+	var content Content
+	if err := db.First(&content, "id = ?", contentid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return Content{}, &HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content with ID(%s) was not found", contentid),
+			}
+		}
+	}
+	if err := IsContentOwner(u.ID, content.UserID); err != nil {
+		return Content{}, err
+	}
+	return content, nil
 }

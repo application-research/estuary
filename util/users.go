@@ -17,7 +17,7 @@ type User struct {
 	UserEmail string
 
 	Address   DbAddr
-	AuthToken AuthToken
+	AuthToken AuthToken `gorm:"-"`
 	Perm      int
 	Flags     int
 

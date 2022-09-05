@@ -3,6 +3,7 @@ package collections
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/application-research/estuary/util"
@@ -45,4 +46,32 @@ func GetCollection(coluuid string, db *gorm.DB, u *util.User) (Collection, error
 		return Collection{}, err
 	}
 	return col, nil
+}
+
+// refs = collections.GetContentsInPath(path, s.DB, u)
+func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) ([]CollectionRef, error) {
+	col, err := GetCollection(coluuid, db, u)
+	if err != nil {
+		return []CollectionRef{}, err
+	}
+
+	refs := []CollectionRef{}
+	if err := db.Model(CollectionRef{}).
+		Where("collection = ?", col.ID).
+		Scan(&refs).Error; err != nil {
+		return []CollectionRef{}, err
+	}
+
+	if len(refs) == 0 {
+		return []CollectionRef{}, fmt.Errorf("no contents on specified path for collection")
+	}
+
+	var selectedRefs []CollectionRef
+	for _, ref := range refs {
+		if strings.HasPrefix(*ref.Path, path) {
+			selectedRefs = append(selectedRefs, ref)
+		}
+	}
+
+	return selectedRefs, nil
 }

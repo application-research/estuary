@@ -200,6 +200,9 @@ func (s *Server) ServeAPI() error {
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
 	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
+
+	cols.DELETE("/:coluuid/content", withUser(s.handleDeleteContentFromCollection))
+
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
@@ -3259,7 +3262,7 @@ type createCollectionBody struct {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [post]
-func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
+func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -3290,7 +3293,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [get]
-func (s *Server) handleListCollections(c echo.Context, u *User) error {
+func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 	var cols []collections.Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
 		return err
@@ -3308,7 +3311,7 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 // @Param        body     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
 // @Router       /collections/{coluuid} [post]
-func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
+func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var contentIDs []uint
@@ -3449,7 +3452,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Param        coluuid query string true "Collection UUID"
 // @Param        dir query string false "Directory"
 // @Router       /collections/{coluuid} [get]
-func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
+func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var col collections.Collection
@@ -3596,6 +3599,74 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+type deleteContentFromCollectionBody struct {
+	By    string `json:"by"`
+	Value string `json:"value"`
+}
+
+// handleDeleteContentFromCollection godoc
+// @Summary      Deletes a content from a collection
+// @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
+// @Tags         collections
+// @Param        coluuid path string true "Collection ID"
+// @Param        contentid path string true "Content ID"
+// @Param        by body string true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
+// @Param        value body string true "Value of content_id or path to look for"
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Router       /collections/{coluuid}/content [delete]
+func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
+	var body deleteContentFromCollectionBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+	coluuid := c.Param("coluuid")
+
+	// check if 'by' is either 'path' or 'content_id'
+	if body.By != "path" && body.By != "content_id" {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_INVALID_FILTER,
+			Details: fmt.Sprintf("invalid 'by' value, must be either 'content_id' or 'path', got %s", body.By),
+		}
+	}
+
+	col, err := collections.GetCollection(coluuid, s.DB, u)
+	if err != nil {
+		return err
+	}
+
+	refs := []collections.CollectionRef{}
+	if body.By == "path" {
+		path := body.Value
+		refs, err = collections.GetContentsInPath(coluuid, path, s.DB, u)
+		if err != nil {
+			return err
+		}
+	} else if body.By == "content_id" {
+		contentid := body.Value
+		content, err := util.GetContent(contentid, s.DB, u)
+		if err != nil {
+			return err
+		}
+		if err := s.DB.Model(collections.CollectionRef{}).
+			Where("collection = ?", col.ID).
+			Where("content = ?", content.ID).
+			Scan(&refs).Error; err != nil {
+			return err
+		}
+	} else {
+		return fmt.Errorf("unkown error on content delete")
+	}
+
+	// delete found refs
+	if err := s.DB.Delete(&refs).Error; err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusOK)
