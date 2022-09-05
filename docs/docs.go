@@ -1396,7 +1396,7 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/public/miners/storage/query/miner}": {
+        "/public/miners/storage/query/{miner}": {
             "get": {
                 "description": "This endpoint returns the ask for a given CID",
                 "produces": [
