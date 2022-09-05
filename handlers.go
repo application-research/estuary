@@ -192,11 +192,13 @@ func (s *Server) ServeAPI() error {
 
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
-	cols.GET("/list", withUser(s.handleListCollections))
+
+	cols.GET("/", withUser(s.handleListCollections))
+	cols.POST("/", withUser(s.handleCreateCollection))
+
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
-	cols.POST("/create", withUser(s.handleCreateCollection))
-	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
-	cols.GET("/content", withUser(s.handleGetCollectionContents))
+	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
+	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
@@ -3248,7 +3250,7 @@ type createCollectionBody struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/create [post]
+// @Router       /collections/ [post]
 func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
@@ -3279,7 +3281,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/list [get]
+// @Router       /collections/ [get]
 func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	var cols []Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
@@ -3289,61 +3291,39 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, cols)
 }
 
-type addContentToCollectionParams struct {
-	Contents     []uint   `json:"contents"`
-	CollectionID string   `json:"coluuid"`
-	Cids         []string `json:"cids"`
-}
-
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
-// @Description  When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
+// @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        body     body     main.addContentToCollectionParams  true     "Contents to add to collection"
+// @Param        body     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
-// @Router       /collections/add-content [post]
+// @Router       /collections/{coluuid} [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
-	var params addContentToCollectionParams
-	if err := c.Bind(&params); err != nil {
+	coluuid := c.Param("coluuid")
+
+	var contentIDs []uint
+	if err := c.Bind(&contentIDs); err != nil {
 		return err
 	}
 
-	if len(params.Contents) > 128 {
-		return fmt.Errorf("too many contents specified: %d (max 128)", len(params.Contents))
-	}
-
-	if len(params.Cids) > 128 {
-		return fmt.Errorf("too many cids specified: %d (max 128)", len(params.Cids))
+	if len(contentIDs) > 128 {
+		return fmt.Errorf("too many contents specified: %d (max 128)", len(contentIDs))
 	}
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
 
 	var contents []util.Content
-	if err := s.DB.Find(&contents, "id in ? and user_id = ?", params.Contents, u.ID).Error; err != nil {
+	if err := s.DB.Find(&contents, "id in ? and user_id = ?", contentIDs, u.ID).Error; err != nil {
 		return err
 	}
 
-	for _, c := range params.Cids {
-		cc, err := cid.Decode(c)
-		if err != nil {
-			return fmt.Errorf("cid in params was improperly formatted: %w", err)
-		}
-
-		var cont util.Content
-		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{CID: cc}, u.ID).Error; err != nil {
-			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
-		}
-
-		contents = append(contents, cont)
-	}
-
-	if len(contents) != len(params.Contents)+len(params.Cids) {
-		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(params.Contents)-len(contents))
+	if len(contents) != len(contentIDs) {
+		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
 	var colrefs []CollectionRef
@@ -3460,9 +3440,9 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Success      200  {object}  string
 // @Param        coluuid query string true "Collection UUID"
 // @Param        dir query string false "Directory"
-// @Router       /collections/content [get]
+// @Router       /collections/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	coluuid := c.QueryParam("coluuid")
+	coluuid := c.Param("coluuid")
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
