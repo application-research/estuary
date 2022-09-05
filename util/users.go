@@ -1,9 +1,8 @@
-package main
+package util
 
 import (
 	"time"
 
-	"github.com/application-research/estuary/util"
 	"gorm.io/gorm"
 )
 
@@ -11,14 +10,14 @@ type User struct {
 	gorm.Model
 	UUID     string `gorm:"unique"`
 	Username string `gorm:"unique"`
-	Salt     string 
+	Salt     string
 	PassHash string
 	DID      string
 
 	UserEmail string
 
-	Address   util.DbAddr
-	authToken AuthToken
+	Address   DbAddr
+	AuthToken AuthToken
 	Perm      int
 	Flags     int
 

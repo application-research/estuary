@@ -5,11 +5,12 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"math/rand"
 	"sort"
 	"sync"
 	"time"
+
+	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
@@ -1446,7 +1447,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 	ctx, span := cm.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
-	var u User
+	var u util.User
 	if err := cm.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return fmt.Errorf("failed to load contents user from db: %w", err)
 	}
