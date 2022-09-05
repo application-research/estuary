@@ -320,14 +320,9 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 }
 
 func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStarted) error {
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
-		"dt_chan":           param.Chanid,
-		"transfer_started":  time.Now(),
-		"transfer_finished": time.Time{},
-	}).Error; err != nil {
-		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+	if err := cm.SetDealTransferStarted(param.DealDBID, param.Chanid); err != nil {
+		return err
 	}
-
 	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }

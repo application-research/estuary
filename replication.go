@@ -5,11 +5,12 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 	"math/rand"
 	"sort"
 	"sync"
 	"time"
+
+	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
@@ -1114,6 +1115,17 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	}
 
 	return *chid, nil
+}
+
+func (cm *ContentManager) SetDealTransferStarted(dealDBID uint, chanid string) error {
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealDBID).UpdateColumns(map[string]interface{}{
+		"dt_chan":           chanid,
+		"transfer_started":  time.Now(),
+		"transfer_finished": time.Time{},
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+	}
+	return nil
 }
 
 func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util.Content) bool {

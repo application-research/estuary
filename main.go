@@ -636,6 +636,20 @@ func main() {
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		s.FilClient = fc
 
+		// Subscribe to data transfer events from Boost
+		_, err = s.FilClient.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
+			if st.Status == datatransfer.Requested {
+				go func() {
+					if err := s.CM.SetDealTransferStarted(dbid, st.TransferID); err != nil {
+						log.Errorf("failed to deal transfer start: %s", err)
+					}
+				}()
+			}
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
+
 		if cfg.EnableAutoRetrieve {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
