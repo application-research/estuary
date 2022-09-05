@@ -1396,6 +1396,28 @@ const docTemplate = `{
                 "responses": {}
             }
         },
+        "/public/miners/storage/query/{miner}": {
+            "get": {
+                "description": "This endpoint returns the ask for a given CID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Query Ask",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CID",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            }
+        },
         "/public/net/addrs": {
             "get": {
                 "description": "This endpoint is used to get net addrs",
