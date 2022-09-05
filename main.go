@@ -142,10 +142,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Replication = cctx.Int("replication")
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
-		case "no-storage-cron":
-			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
-		case "disable-deal-making":
-			cfg.Deal.IsDisabled = cctx.Bool("disable-deal-making")
+		case "disable-deals-storage":
+			cfg.DisableFilecoinStorage = cctx.Bool("disable-deals-storage")
+		case "disable-new-deals":
+			cfg.Deal.IsDisabled = cctx.Bool("disable-new-deals")
 		case "verified-deal":
 			cfg.Deal.IsVerified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
@@ -265,8 +265,8 @@ func main() {
 			Hidden: true,
 		},
 		&cli.BoolFlag{
-			Name:  "no-storage-cron",
-			Usage: "run estuary without processing files into deals",
+			Name:  "disable-deals-storage",
+			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node instead",
 			Value: cfg.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
@@ -297,8 +297,8 @@ func main() {
 			Value: cfg.Deal.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
-			Name:  "disable-deal-making",
-			Usage: "do not create any new deals (existing deals will still be processed)",
+			Name:  "disable-new-deals",
+			Usage: "prevents the worker from making any new deals, but existing deals will still be updated/checked",
 			Value: cfg.Deal.IsDisabled,
 		},
 		&cli.BoolFlag{
