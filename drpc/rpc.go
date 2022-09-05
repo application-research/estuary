@@ -16,9 +16,10 @@ type Hello struct {
 
 	DiskSpaceFree int64
 
-	Address  address.Address
-	AddrInfo peer.AddrInfo
-	Private  bool
+	Address               address.Address
+	AddrInfo              peer.AddrInfo
+	Private               bool
+	ContentAddingDisabled bool
 }
 
 type Command struct {

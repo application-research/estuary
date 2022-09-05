@@ -3101,6 +3101,11 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 	defer s.CM.shuttlesLk.Unlock()
 	var shuttles []Shuttle
 	for hnd, sh := range s.CM.shuttles {
+		if sh.ContentAddingDisabled {
+			log.Debugf("shuttle %+v content adding is disabled", sh)
+			continue
+		}
+
 		if sh.hostname == "" {
 			log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
