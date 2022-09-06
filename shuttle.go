@@ -40,7 +40,8 @@ type ShuttleConnection struct {
 	addrInfo peer.AddrInfo
 	address  address.Address
 
-	private bool
+	private               bool
+	ContentAddingDisabled bool
 
 	spaceLow       bool
 	blockstoreSize uint64
@@ -87,17 +88,18 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sc := &ShuttleConnection{
-		handle:   handle,
-		address:  hello.Address,
-		addrInfo: hello.AddrInfo,
-		hostname: hello.Host,
-		cmds:     make(chan *drpc.Command, 32),
-		ctx:      ctx,
-		private:  hello.Private,
+		handle:                handle,
+		address:               hello.Address,
+		addrInfo:              hello.AddrInfo,
+		hostname:              hello.Host,
+		cmds:                  make(chan *drpc.Command, 32),
+		ctx:                   ctx,
+		private:               hello.Private,
+		ContentAddingDisabled: hello.ContentAddingDisabled,
 	}
 
-	// when a shuttle connects, if global content adding is enabled, refresh shuttle pin queue
-	if !cm.globalContentAddingDisabled {
+	// when a shuttle connects, if global content adding and shuttle content adding is enabled, refresh shuttle pin queue
+	if !cm.globalContentAddingDisabled && !hello.ContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
 				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)

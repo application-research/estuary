@@ -310,7 +310,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
+			Name: "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -882,6 +882,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 			ID:    d.Node.Host.ID(),
 			Addrs: d.Node.Host.Addrs(),
 		},
+		ContentAddingDisabled: d.disableLocalAdding,
 	}, nil
 }
 
