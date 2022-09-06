@@ -794,7 +794,7 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid, d.ID); err != nil {
+		if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
 		}
@@ -802,23 +802,52 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 	return nil
 }
 
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, dealID uint) error {
-	if loc == "local" {
+// RestartTransfer tries to resume incomplete data transfers between client and storage providers.
+// It supports only legacy deals (PushTransfer)
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
+	maddr, err := d.MinerAddr()
+	if err != nil {
+		return err
+	}
+
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+		}
+		dealUUID = &parsed
+	}
+
+	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)
+	if err != nil {
+		return err
+	}
+
+	if !isPushTransfer {
+		return nil
+	}
+
+	if loc == constants.ContentLocationLocal {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
 		}
 
-		isTerm, msg := util.TransferTerminated(st)
-		if isTerm {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
-				"failed":    true,
-				"failed_at": time.Now(),
-			}).Error; err != nil {
-				return err
+		cannotRestart := !util.CanRestartTransfer(st)
+		if cannotRestart {
+			trsFailed, msg := util.TransferFailed(st)
+			if trsFailed {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+					"failed":    true,
+					"failed_at": time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
+				return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
 			}
-			errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
-			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
+			return nil
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}

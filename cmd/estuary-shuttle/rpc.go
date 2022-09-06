@@ -645,15 +645,19 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		return err
 	}
 
-	isTerm, msg := util.TransferTerminated(st)
-	if isTerm {
-		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-			Chanid:  req.ChanID.String(),
-			State:   st,
-			Failed:  true,
-			Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
-		})
-		return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
+	cannotRestart := !util.CanRestartTransfer(st)
+	if cannotRestart {
+		trsFailed, msg := util.TransferFailed(st)
+		if trsFailed {
+			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+				Chanid:  req.ChanID.String(),
+				State:   st,
+				Failed:  true,
+				Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
+			})
+			return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
+		}
+		return nil
 	}
 	return s.Filc.RestartTransfer(ctx, &req.ChanID)
 }
