@@ -12,9 +12,9 @@ import (
 
 func SetupDatabase(dbval string) (*gorm.DB, error) {
 	parts := strings.SplitN(dbval, "=", 2)
-	// if len(parts) == 1 {
-	// 	return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS'")
-	// }
+	if len(parts) == 1 {
+		return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS', even if using dbURL syntax")
+	}
 
 	var dial gorm.Dialector
 	switch parts[0] {
