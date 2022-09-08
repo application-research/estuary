@@ -204,79 +204,55 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/collections/add-content": {
-            "post": {
-                "description": "When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.",
-                "consumes": [
-                    "application/json"
-                ],
+        "/collections/": {
+            "get": {
+                "description": "This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "collections"
                 ],
-                "summary": "Add contents to a collection",
+                "summary": "List all collections",
                 "parameters": [
                     {
-                        "description": "Contents to add to collection",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/main.addContentToCollectionParams"
-                        }
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": {
-                                "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/main.Collection"
                             }
                         }
-                    }
-                }
-            }
-        },
-        "/collections/content": {
-            "get": {
-                "description": "This endpoint is used to get contents in a collection. If no colpath query param is passed",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Get contents in a collection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
-                        "in": "query",
-                        "required": true
                     },
-                    {
-                        "type": "string",
-                        "description": "Directory",
-                        "name": "dir",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
+                    "400": {
+                        "description": "Bad Request",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
                         }
                     }
                 }
-            }
-        },
-        "/collections/create": {
+            },
             "post": {
                 "description": "This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.",
                 "produces": [
@@ -361,57 +337,78 @@ const docTemplate = `{
                 "responses": {}
             }
         },
-        "/collections/list": {
+        "/collections/{coluuid}": {
             "get": {
-                "description": "This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.",
+                "description": "This endpoint is used to get contents in a collection. If no colpath query param is passed",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "collections"
                 ],
-                "summary": "List all collections",
+                "summary": "Get contents in a collection",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "query",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/main.Collection"
-                            }
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
+                            "type": "string"
                         }
                     }
                 }
-            }
-        },
-        "/collections/{coluuid}": {
+            },
+            "post": {
+                "description": "This endpoint adds already-pinned contents (that have ContentIDs) to a collection.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Add contents to a collection",
+                "parameters": [
+                    {
+                        "description": "Content IDs to add to collection",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
             "delete": {
                 "description": "This endpoint is used to delete an existing collection.",
                 "tags": [
@@ -1640,26 +1637,6 @@ const docTemplate = `{
                 },
                 "uuid": {
                     "type": "string"
-                }
-            }
-        },
-        "main.addContentToCollectionParams": {
-            "type": "object",
-            "properties": {
-                "cids": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "coluuid": {
-                    "type": "string"
-                },
-                "contents": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
                 }
             }
         },

@@ -15,19 +15,6 @@ definitions:
       uuid:
         type: string
     type: object
-  main.addContentToCollectionParams:
-    properties:
-      cids:
-        items:
-          type: string
-        type: array
-      coluuid:
-        type: string
-      contents:
-        items:
-          type: integer
-        type: array
-    type: object
   main.createCollectionBody:
     properties:
       description:
@@ -238,86 +225,39 @@ paths:
       summary: Marks autoretrieve server as up
       tags:
         - autoretrieve
-  /collections/{coluuid}:
-    delete:
-      description: This endpoint is used to delete an existing collection.
-      parameters:
-        - description: Collection ID
-          in: path
-          name: coluuid
-          required: true
-          type: string
-      responses: {}
-      summary: Deletes a collection
-      tags:
-        - collections
-  /collections/{coluuid}/commit:
-    post:
-      description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
-      parameters:
-        - description: coluuid
-          in: path
-          name: coluuid
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-      summary: Produce a CID of the collection contents
-      tags:
-        - collections
-  /collections/add-content:
-    post:
-      consumes:
-        - application/json
-      description: When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
-      parameters:
-        - description: Contents to add to collection
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/main.addContentToCollectionParams'
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Add contents to a collection
-      tags:
-        - collections
-  /collections/content:
+  /collections/:
     get:
-      description: This endpoint is used to get contents in a collection. If no colpath query param is passed
+      description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
       parameters:
-        - description: Collection UUID
-          in: query
-          name: coluuid
+        - description: User ID
+          in: path
+          name: id
           required: true
-          type: string
-        - description: Directory
-          in: query
-          name: dir
-          type: string
+          type: integer
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            type: string
-      summary: Get contents in a collection
+            items:
+              $ref: '#/definitions/main.Collection'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: List all collections
       tags:
         - collections
-  /collections/create:
     post:
       description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
       parameters:
@@ -349,6 +289,85 @@ paths:
       summary: Create a new collection
       tags:
         - collections
+  /collections/{coluuid}:
+    delete:
+      description: This endpoint is used to delete an existing collection.
+      parameters:
+        - description: Collection ID
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      responses: {}
+      summary: Deletes a collection
+      tags:
+        - collections
+    get:
+      description: This endpoint is used to get contents in a collection. If no colpath query param is passed
+      parameters:
+        - description: Collection UUID
+          in: query
+          name: coluuid
+          required: true
+          type: string
+        - description: Directory
+          in: query
+          name: dir
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Get contents in a collection
+      tags:
+        - collections
+    post:
+      consumes:
+        - application/json
+      description: This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
+      parameters:
+        - description: Content IDs to add to collection
+          in: body
+          name: body
+          required: true
+          schema:
+            items:
+              type: integer
+            type: array
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add contents to a collection
+      tags:
+        - collections
+  /collections/{coluuid}/commit:
+    post:
+      description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
+      parameters:
+        - description: coluuid
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Produce a CID of the collection contents
+      tags:
+        - collections
   /collections/fs/add:
     post:
       description: This endpoint adds a file to a collection
@@ -372,39 +391,6 @@ paths:
         - application/json
       responses: {}
       summary: Add a file to a collection
-      tags:
-        - collections
-  /collections/list:
-    get:
-      description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
-      parameters:
-        - description: User ID
-          in: path
-          name: id
-          required: true
-          type: integer
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/main.Collection'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: List all collections
       tags:
         - collections
   /content/add:
