@@ -6,7 +6,7 @@
 
 Requirements:
 
-- go (1.15 or higher)
+- go (1.15 >= and <= 1.18)
 - [jq](https://stedolan.github.io/jq/)
 - [hwloc](https://www.open-mpi.org/projects/hwloc/)
 - opencl
