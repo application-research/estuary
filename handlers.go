@@ -2867,7 +2867,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		Username: username,
 		UUID:     uuid.New().String(),
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(reg.Password, salt),
+		PassHash: util.GetPasswordHashBase64(reg.Password, salt),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2927,7 +2927,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	}
 
 	//	validate password
-	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
+	if ((user.Salt != "") && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) || (user.PassHash != util.GetPasswordHashBase64(body.Password, user.Salt))) ||
 		((user.Salt == "") && (user.PassHash != body.Password)) {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
@@ -2960,7 +2960,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 
 	updatedUserColumns := &User{
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+		PassHash: util.GetPasswordHashBase64(params.NewPassword, salt),
 	}
 
 	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {

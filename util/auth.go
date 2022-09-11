@@ -2,6 +2,7 @@ package util
 
 import (
 	"crypto/sha256"
+	b64 "encoding/base64"
 	"fmt"
 	"net/http"
 )
@@ -28,4 +29,9 @@ func IsContentOwner(uID, entityID uint) error {
 func GetPasswordHash(password, salt string) string {
 	passHashBytes := sha256.Sum256([]byte(password + "." + salt))
 	return string(passHashBytes[:])
+}
+
+func GetPasswordHashBase64(password, salt string) string {
+	passHashBytes := sha256.Sum256([]byte(password + "." + salt))
+	return b64.StdEncoding.EncodeToString(passHashBytes[:])
 }
