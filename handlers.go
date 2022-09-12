@@ -2350,7 +2350,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Param miner query string false "Filter by miner"
+// @Param miner path string false "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))

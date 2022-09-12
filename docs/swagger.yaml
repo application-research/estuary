@@ -1004,7 +1004,7 @@ paths:
       description: This endpoint returns all miners
       parameters:
         - description: Filter by miner
-          in: query
+          in: path
           name: miner
           type: string
       produces:
