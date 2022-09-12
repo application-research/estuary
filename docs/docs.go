@@ -490,7 +490,14 @@ const docTemplate = `{
                         "in": "path"
                     }
                 ],
-                "responses": {}
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ContentAddResponse"
+                        }
+                    }
+                }
             }
         },
         "/content/add-car": {
@@ -1729,6 +1736,26 @@ const docTemplate = `{
                     }
                 },
                 "root": {
+                    "type": "string"
+                }
+            }
+        },
+        "util.ContentAddResponse": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "type": "string"
+                },
+                "estuaryId": {
+                    "type": "integer"
+                },
+                "providers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "retrieval_url": {
                     "type": "string"
                 }
             }
