@@ -3333,11 +3333,13 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
+	defaultPath := "/"
 	var colrefs []CollectionRef
 	for _, cont := range contents {
 		colrefs = append(colrefs, CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
+			Path:       &defaultPath,
 		})
 	}
 
