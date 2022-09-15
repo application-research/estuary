@@ -1311,7 +1311,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		go func(i int) {
 			d := deals[i]
 			defer wg.Done()
-			
+
 			status, err := cm.checkDeal(ctx, &d, content)
 			if err != nil {
 				var dfe *DealFailureError
@@ -2147,7 +2147,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 	// Now start up some data transfers!
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
-    for _, rDeal := range readyDeals {
+	for _, rDeal := range readyDeals {
 		// If the data transfer is a pull transfer, we don't need to explicitly
 		// start the transfer (the Storage Provider will start pulling data as
 		// soon as it accepts the proposal)
@@ -2949,25 +2949,25 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 				if err != nil {
 					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
 						d.DealUUID, d.ID, miner, err)
-					return err
+					return
 				}
 				dealUUID = &parsed
 			}
 
-			provds, _, err := cm.getDealStatus(subctx, d, miner, dealUUID)
+			provds, _, err := s.CM.getDealStatus(subctx, &d, miner, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
-				return err
+				return
 			}
 
 			if provds == nil {
-				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID
-				return fmt.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
+				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
+				return
 			}
 
 			if provds.PublishCid == nil {
 				log.Errorf("no publish cid for deal: %d", d.DealID)
-				return fmt.Errorf("no publish cid for deal: %d", d.DealID)
+				return
 			}
 
 			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
