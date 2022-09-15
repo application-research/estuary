@@ -75,6 +75,19 @@ definitions:
       root:
         type: string
     type: object
+  util.ContentAddResponse:
+    properties:
+      cid:
+        type: string
+      estuaryId:
+        type: integer
+      providers:
+        items:
+          type: string
+        type: array
+      retrieval_url:
+        type: string
+    type: object
   util.HttpError:
     properties:
       code:
@@ -414,7 +427,11 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ContentAddResponse'
       summary: Add new content
       tags:
         - content

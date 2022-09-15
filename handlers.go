@@ -201,7 +201,7 @@ func (s *Server) ServeAPI() error {
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
 	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
 
-	cols.DELETE("/:coluuid/content", withUser(s.handleDeleteContentFromCollection))
+	cols.DELETE("/:coluuid/contents", withUser(s.handleDeleteContentFromCollection))
 
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
@@ -3337,11 +3337,13 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
+	defaultPath := "/"
 	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
 		colrefs = append(colrefs, collections.CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
+			Path:       &defaultPath,
 		})
 	}
 
@@ -3620,7 +3622,7 @@ type deleteContentFromCollectionBody struct {
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
-// @Router       /collections/{coluuid}/content [delete]
+// @Router       /collections/{coluuid}/contents [delete]
 func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
 	var body deleteContentFromCollectionBody
 	if err := c.Bind(&body); err != nil {
@@ -3634,6 +3636,14 @@ func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User)
 			Code:    http.StatusNotFound,
 			Reason:  util.ERR_INVALID_FILTER,
 			Details: fmt.Sprintf("invalid 'by' value, must be either 'content_id' or 'path', got %s", body.By),
+		}
+	}
+
+	if len(body.Value) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_VALUE_REQUIRED,
+			Details: fmt.Sprintf("invalid 'value' field, must not be empty"),
 		}
 	}
 
@@ -3661,8 +3671,6 @@ func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User)
 			Scan(&refs).Error; err != nil {
 			return err
 		}
-	} else {
-		return fmt.Errorf("unkown error on content delete")
 	}
 
 	// delete found refs
