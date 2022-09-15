@@ -1311,7 +1311,8 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		go func(i int) {
 			d := deals[i]
 			defer wg.Done()
-			status, err := cm.checkDeal(ctx, &d)
+			
+			status, err := cm.checkDeal(ctx, &d, content)
 			if err != nil {
 				var dfe *DealFailureError
 				if xerrors.As(err, &dfe) {
@@ -1508,7 +1509,7 @@ func (cm *ContentManager) getDealStatus(ctx context.Context, d *contentDeal, mad
 	return providerDealState, isPushTransfer, err
 }
 
-func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, error) {
+func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content util.Content) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
 	defer cancel()
 
@@ -1578,21 +1579,18 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 
 	// Get deal UUID, if there is one for the deal.
 	// (There should be a UUID for deals made with deal protocol v1.2.0)
-	statusCheckID := d.PropCid.CID.String()
 	var dealUUID *uuid.UUID
 	if d.DealUUID != "" {
-		statusCheckID = d.DealUUID
-		parsed, parseErr := uuid.Parse(d.DealUUID)
-		if parseErr == nil {
-			dealUUID = &parsed
-		} else {
-			err = fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, parseErr)
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return DEAL_CHECK_UNKNOWN, fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
 		}
+		dealUUID = &parsed
 	}
 
 	provds, isPushTransfer, err := cm.getDealStatus(subctx, d, maddr, dealUUID)
 	if err != nil {
-		log.Warnf("failed to check deal status for deal %s with miner %s: %s", statusCheckID, maddr, err)
+		log.Warnf("failed to check deal status for deal %d with miner %s: %s", d.ID, maddr, err)
 		// if we cant get deal status from a miner and the data hasnt landed on
 		// chain what do we do?
 		expired, err := cm.dealHasExpired(ctx, d)
@@ -1614,7 +1612,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			}
 			return DEAL_CHECK_UNKNOWN, nil
 		}
-
 		// dont fail it out until they run out of time, they might just be offline momentarily
 		return DEAL_CHECK_PROGRESS, nil
 	}
@@ -1641,18 +1638,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 	}
 
 	if provds.State == storagemarket.StorageDealError {
-		log.Errorf("deal state for deal %s from miner %s is error: %s",
-			statusCheckID, maddr.String(), provds.Message)
-	}
-
-	content, err := cm.getContent(d.Content)
-	if err != nil {
-		return DEAL_CHECK_UNKNOWN, err
-	}
-
-	head, err := cm.Api.ChainHead(ctx)
-	if err != nil {
-		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
+		log.Errorf("deal state for deal %d from miner %s is error: %s", d.ID, maddr.String(), provds.Message)
 	}
 
 	if provds.DealID != 0 {
@@ -1671,18 +1657,23 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
-		log.Infof("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, provds.DealID)
+		log.Debugf("Confirmed deal ID, updating in database: %d %d %d", d.Content, d.ID, provds.DealID)
 		if err := cm.updateDealID(d, int64(provds.DealID)); err != nil {
 			return DEAL_CHECK_UNKNOWN, err
 		}
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
+	head, err := cm.Api.ChainHead(ctx)
+	if err != nil {
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
+	}
+
 	if provds.PublishCid != nil {
 		log.Debugw("checking publish CID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
-			log.Infof("failed to find message on chain: %s", *provds.PublishCid)
+			log.Debugf("failed to find message on chain: %s", *provds.PublishCid)
 			if provds.Proposal.StartEpoch < head.Height() {
 				// deal expired, miner didn`t start it in time
 				if err := cm.recordDealFailure(&DealFailureError{
@@ -1701,7 +1692,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal) (int, e
 			return DEAL_CHECK_PROGRESS, nil
 		}
 
-		log.Infof("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
+		log.Debugf("Found deal ID, updating in database: %d %d %d", d.Content, d.ID, id)
 		if err := cm.updateDealID(d, int64(id)); err != nil {
 			return DEAL_CHECK_UNKNOWN, err
 		}
@@ -2156,18 +2147,20 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 	// Now start up some data transfers!
 	// note: its okay if we dont start all the data transfers, we can just do it next time around
-	for _, deal := range readyDeals {
+    for _, rDeal := range readyDeals {
 		// If the data transfer is a pull transfer, we don't need to explicitly
 		// start the transfer (the Storage Provider will start pulling data as
 		// soon as it accepts the proposal)
-		if !deal.isPushTransfer {
+		if !rDeal.isPushTransfer {
 			continue
 		}
 
-		if err := cm.StartDataTransfer(ctx, deal.contentDeal); err != nil {
-			log.Errorw("failed to start data transfer", "err", err, "miner", deal.minerAddr)
-			continue
-		}
+		// start data transfer async
+		go func(d deal) {
+			if err := cm.StartDataTransfer(ctx, d.contentDeal); err != nil {
+				log.Errorw("failed to start data transfer", "err", err, "miner", d.minerAddr)
+			}
+		}(rDeal)
 	}
 	return nil
 }
@@ -2952,23 +2945,29 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			// (There should be a UUID for deals made with deal protocol v1.2.0)
 			var dealUUID *uuid.UUID
 			if d.DealUUID != "" {
-				parsed, parseErr := uuid.Parse(d.DealUUID)
-				if parseErr != nil {
+				parsed, err := uuid.Parse(d.DealUUID)
+				if err != nil {
 					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
-						d.DealUUID, d.ID, miner, parseErr)
-					return
+						d.DealUUID, d.ID, miner, err)
+					return err
 				}
 				dealUUID = &parsed
 			}
-			provds, err := s.CM.FilClient.DealStatus(subctx, miner, d.PropCid.CID, dealUUID)
+
+			provds, _, err := cm.getDealStatus(subctx, d, miner, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
-				return
+				return err
+			}
+
+			if provds == nil {
+				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID
+				return fmt.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
 			}
 
 			if provds.PublishCid == nil {
 				log.Errorf("no publish cid for deal: %d", d.DealID)
-				return
+				return fmt.Errorf("no publish cid for deal: %d", d.DealID)
 			}
 
 			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
