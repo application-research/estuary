@@ -143,7 +143,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	}
 
 	if op.MakeDeal {
-		s.CM.ToCheck <- op.ContId
+		s.CM.toCheck(op.ContId)
 	}
 
 	// this provide call goes out immediately
@@ -376,7 +376,6 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	})
 
 	if len(shuttles) == 0 {
-		//log.Info("no shuttles available for content to be delegated to")
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
@@ -924,11 +923,11 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	if cont.Active {
 		// content already active, no need to add objects, just update location
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"pinning":  false,
 			"location": handle,
 		}).Error; err != nil {
 			return err
 		}
-
 		// TODO: should we recheck the staging zones?
 		return nil
 	}
@@ -956,7 +955,6 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 
-	cm.ToCheck <- cont.ID
-
+	cm.toCheck(cont.ID)
 	return nil
 }

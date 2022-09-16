@@ -15,19 +15,6 @@ definitions:
       uuid:
         type: string
     type: object
-  main.addContentToCollectionParams:
-    properties:
-      cids:
-        items:
-          type: string
-        type: array
-      coluuid:
-        type: string
-      contents:
-        items:
-          type: integer
-        type: array
-    type: object
   main.createCollectionBody:
     properties:
       description:
@@ -86,6 +73,19 @@ definitions:
           type: string
         type: array
       root:
+        type: string
+    type: object
+  util.ContentAddResponse:
+    properties:
+      cid:
+        type: string
+      estuaryId:
+        type: integer
+      providers:
+        items:
+          type: string
+        type: array
+      retrieval_url:
         type: string
     type: object
   util.HttpError:
@@ -238,143 +238,7 @@ paths:
       summary: Marks autoretrieve server as up
       tags:
         - autoretrieve
-  /collections/{coluuid}:
-    delete:
-      description: This endpoint is used to delete an existing collection.
-      parameters:
-        - description: Collection ID
-          in: path
-          name: coluuid
-          required: true
-          type: string
-      responses: {}
-      summary: Deletes a collection
-      tags:
-        - collections
-  /collections/{coluuid}/commit:
-    post:
-      description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
-      parameters:
-        - description: coluuid
-          in: path
-          name: coluuid
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-      summary: Produce a CID of the collection contents
-      tags:
-        - collections
-  /collections/add-content:
-    post:
-      consumes:
-        - application/json
-      description: When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
-      parameters:
-        - description: Contents to add to collection
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/main.addContentToCollectionParams'
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-      summary: Add contents to a collection
-      tags:
-        - collections
-  /collections/content:
-    get:
-      description: This endpoint is used to get contents in a collection. If no colpath query param is passed
-      parameters:
-        - description: Collection UUID
-          in: query
-          name: coluuid
-          required: true
-          type: string
-        - description: Directory
-          in: query
-          name: dir
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-      summary: Get contents in a collection
-      tags:
-        - collections
-  /collections/create:
-    post:
-      description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
-      parameters:
-        - description: Collection name and description
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/main.createCollectionBody'
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/main.Collection'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "404":
-          description: Not Found
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Create a new collection
-      tags:
-        - collections
-  /collections/fs/add:
-    post:
-      description: This endpoint adds a file to a collection
-      parameters:
-        - description: Collection ID
-          in: query
-          name: coluuid
-          required: true
-          type: string
-        - description: Content
-          in: query
-          name: content
-          required: true
-          type: string
-        - description: Path to file
-          in: query
-          name: path
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses: {}
-      summary: Add a file to a collection
-      tags:
-        - collections
-  /collections/list:
+  /collections/:
     get:
       description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
       parameters:
@@ -407,6 +271,141 @@ paths:
       summary: List all collections
       tags:
         - collections
+    post:
+      description: This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
+      parameters:
+        - description: Collection name and description
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.createCollectionBody'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Collection'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create a new collection
+      tags:
+        - collections
+  /collections/{coluuid}:
+    delete:
+      description: This endpoint is used to delete an existing collection.
+      parameters:
+        - description: Collection ID
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      responses: {}
+      summary: Deletes a collection
+      tags:
+        - collections
+    get:
+      description: This endpoint is used to get contents in a collection. If no colpath query param is passed
+      parameters:
+        - description: Collection UUID
+          in: query
+          name: coluuid
+          required: true
+          type: string
+        - description: Directory
+          in: query
+          name: dir
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Get contents in a collection
+      tags:
+        - collections
+    post:
+      consumes:
+        - application/json
+      description: This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
+      parameters:
+        - description: Content IDs to add to collection
+          in: body
+          name: body
+          required: true
+          schema:
+            items:
+              type: integer
+            type: array
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Add contents to a collection
+      tags:
+        - collections
+  /collections/{coluuid}/commit:
+    post:
+      description: This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
+      parameters:
+        - description: coluuid
+          in: path
+          name: coluuid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      summary: Produce a CID of the collection contents
+      tags:
+        - collections
+  /collections/fs/add:
+    post:
+      description: This endpoint adds a file to a collection
+      parameters:
+        - description: Collection ID
+          in: query
+          name: coluuid
+          required: true
+          type: string
+        - description: Content
+          in: query
+          name: content
+          required: true
+          type: string
+        - description: Path to file
+          in: query
+          name: path
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Add a file to a collection
+      tags:
+        - collections
   /content/add:
     post:
       consumes:
@@ -428,7 +427,11 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ContentAddResponse'
       summary: Add new content
       tags:
         - content
@@ -1018,7 +1021,7 @@ paths:
       description: This endpoint returns all miners
       parameters:
         - description: Filter by miner
-          in: query
+          in: path
           name: miner
           type: string
       produces:
@@ -1043,6 +1046,21 @@ paths:
       tags:
         - public
         - miner
+  /public/miners/storage/query/{miner}:
+    get:
+      description: This endpoint returns the ask for a given CID
+      parameters:
+        - description: CID
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses: {}
+      summary: Query Ask
+      tags:
+        - deals
   /public/net/addrs:
     get:
       description: This endpoint is used to get net addrs

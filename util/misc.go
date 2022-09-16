@@ -11,17 +11,25 @@ import (
 	"github.com/multiformats/go-multihash"
 )
 
-func TransferTerminated(st *filclient.ChannelState) bool {
+func CanRestartTransfer(st *filclient.ChannelState) bool {
 	switch st.Status {
 	case datatransfer.Cancelled,
 		datatransfer.Failed,
 		datatransfer.Completed:
-
-		return true
-	default:
 		return false
+	default:
+		return true
 	}
+}
 
+func TransferFailed(st *filclient.ChannelState) (bool, string) {
+	msg, _ := datatransfer.Statuses[st.Status]
+	switch st.Status {
+	case datatransfer.Cancelled, datatransfer.Failed:
+		return true, msg
+	default:
+		return false, msg
+	}
 }
 
 func ParseDealLabel(s string) (cid.Cid, error) {

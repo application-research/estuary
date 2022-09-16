@@ -13,7 +13,6 @@ import (
 	"net/http"
 	httpprof "net/http/pprof"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"sort"
@@ -100,12 +99,12 @@ func (s *Server) ServeAPI() error {
 
 	e.Binder = new(binder)
 
-	if s.estuaryCfg.Logging.ApiEndpointLogging {
+	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
 
 	e.Use(s.tracingMiddleware)
-	e.Use(util.AppVersionMiddleware(s.estuaryCfg.AppVersion))
+	e.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
 
 	e.GET("/debug/pprof/:prof", serveProfile)
@@ -193,11 +192,13 @@ func (s *Server) ServeAPI() error {
 
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
-	cols.GET("/list", withUser(s.handleListCollections))
+
+	cols.GET("/", withUser(s.handleListCollections))
+	cols.POST("/", withUser(s.handleCreateCollection))
+
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
-	cols.POST("/create", withUser(s.handleCreateCollection))
-	cols.POST("/add-content", withUser(s.handleAddContentsToCollection))
-	cols.GET("/content", withUser(s.handleGetCollectionContents))
+	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
+	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
@@ -309,10 +310,10 @@ func (s *Server) ServeAPI() error {
 	e.GET("/shuttle/conn", s.handleShuttleConnection)
 	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
 
-	if os.Getenv("ENABLE_SWAGGER_ENDPOINT") == "true" {
+	if !s.cfg.DisableSwaggerEndpoint {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(s.estuaryCfg.ApiListen)
+	return e.Start(s.cfg.ApiListen)
 }
 
 type binder struct{}
@@ -782,7 +783,7 @@ func (s *Server) handleAddCar(c echo.Context, u *User) error {
 
 	go func() {
 		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck <- cont.ID
+		s.CM.toCheck(cont.ID)
 	}()
 
 	go func() {
@@ -815,6 +816,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Param        file formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
 // @Param        dir path string false "Directory"
+// @Success      200  {object}  util.ContentAddResponse
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -944,7 +946,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	go func() {
-		s.CM.ToCheck <- content.ID
+		s.CM.toCheck(content.ID)
 	}()
 
 	if c.QueryParam("lazy-provide") != "true" {
@@ -1181,7 +1183,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.ToCheck <- content.ID
+	s.CM.toCheck(content.ID)
 	return nil
 }
 
@@ -1309,7 +1311,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, &content)
+			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
 			}
@@ -1413,7 +1415,7 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 		return nil, err
 	}
 
-	chanst, err := s.CM.GetTransferStatus(ctx, &deal, &content)
+	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		log.Errorf("failed to get transfer status: %s", err)
 	}
@@ -1538,6 +1540,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 // @Produce      json
 // @Param 		 miner path string true "CID"
 // @Router       /deal/query/{miner} [get]
+// @router       /public/miners/storage/query/{miner} [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -1603,7 +1606,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 		}
 	}
 
-	id, err := s.CM.makeDealWithMiner(ctx, cont, addr, true)
+	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
@@ -1708,7 +1711,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal.ID); err != nil {
+	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
 		return err
 	}
 	return nil
@@ -1963,7 +1966,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 
 	resp := map[string]interface{}{
 		"data": map[string]interface{}{
-			"primary":  s.estuaryCfg,
+			"primary":  s.cfg,
 			"shuttles": shts,
 		},
 	}
@@ -2347,7 +2350,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Param miner query string false "Filter by miner"
+// @Param miner path string false "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -3066,10 +3069,10 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
 			Replication:           s.CM.Replication,
-			Verified:              s.CM.VerifiedDeal,
-			DealDuration:          constants.DealDuration,
-			MaxStagingWait:        constants.MaxStagingZoneLifetime,
-			FileStagingThreshold:  int64(constants.IndividualDealThreshold),
+			Verified:              s.cfg.Deal.IsVerified,
+			DealDuration:          s.cfg.Deal.Duration,
+			MaxStagingWait:        s.cfg.StagingBucket.MaxLifeTime,
+			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
@@ -3101,6 +3104,11 @@ func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
 	defer s.CM.shuttlesLk.Unlock()
 	var shuttles []Shuttle
 	for hnd, sh := range s.CM.shuttles {
+		if sh.ContentAddingDisabled {
+			log.Debugf("shuttle %+v content adding is disabled", sh)
+			continue
+		}
+
 		if sh.hostname == "" {
 			log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
@@ -3249,7 +3257,7 @@ type createCollectionBody struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/create [post]
+// @Router       /collections/ [post]
 func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
@@ -3280,7 +3288,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/list [get]
+// @Router       /collections/ [get]
 func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	var cols []Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
@@ -3290,61 +3298,39 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, cols)
 }
 
-type addContentToCollectionParams struct {
-	Contents     []uint   `json:"contents"`
-	CollectionID string   `json:"coluuid"`
-	Cids         []string `json:"cids"`
-}
-
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
-// @Description  When a collection is created, users with valid API keys can add contents to the collection. This endpoint can be used to add contents to a collection.
+// @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        body     body     main.addContentToCollectionParams  true     "Contents to add to collection"
+// @Param        body     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
-// @Router       /collections/add-content [post]
+// @Router       /collections/{coluuid} [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
-	var params addContentToCollectionParams
-	if err := c.Bind(&params); err != nil {
+	coluuid := c.Param("coluuid")
+
+	var contentIDs []uint
+	if err := c.Bind(&contentIDs); err != nil {
 		return err
 	}
 
-	if len(params.Contents) > 128 {
-		return fmt.Errorf("too many contents specified: %d (max 128)", len(params.Contents))
-	}
-
-	if len(params.Cids) > 128 {
-		return fmt.Errorf("too many cids specified: %d (max 128)", len(params.Cids))
+	if len(contentIDs) > 128 {
+		return fmt.Errorf("too many contents specified: %d (max 128)", len(contentIDs))
 	}
 
 	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
 
 	var contents []util.Content
-	if err := s.DB.Find(&contents, "id in ? and user_id = ?", params.Contents, u.ID).Error; err != nil {
+	if err := s.DB.Find(&contents, "id in ? and user_id = ?", contentIDs, u.ID).Error; err != nil {
 		return err
 	}
 
-	for _, c := range params.Cids {
-		cc, err := cid.Decode(c)
-		if err != nil {
-			return fmt.Errorf("cid in params was improperly formatted: %w", err)
-		}
-
-		var cont util.Content
-		if err := s.DB.First(&cont, "cid = ? and user_id = ?", util.DbCID{CID: cc}, u.ID).Error; err != nil {
-			return fmt.Errorf("failed to find content by given cid %s: %w", cc, err)
-		}
-
-		contents = append(contents, cont)
-	}
-
-	if len(contents) != len(params.Contents)+len(params.Cids) {
-		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(params.Contents)-len(contents))
+	if len(contents) != len(contentIDs) {
+		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
 	var colrefs []CollectionRef
@@ -3461,9 +3447,9 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Success      200  {object}  string
 // @Param        coluuid query string true "Collection UUID"
 // @Param        dir query string false "Directory"
-// @Router       /collections/content [get]
+// @Router       /collections/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
-	coluuid := c.QueryParam("coluuid")
+	coluuid := c.Param("coluuid")
 
 	var col Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
@@ -4683,7 +4669,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		Cid:         util.DbCID{CID: rootCID},
 		Name:        req.Name,
 		Active:      false,
-		Pinning:     false,
+		Pinning:     true,
 		UserID:      u.ID,
 		Replication: s.CM.Replication,
 		Location:    req.Location,
@@ -4704,7 +4690,6 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 
 		path := &sp
-
 		if err := s.DB.Create(&CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
@@ -5056,7 +5041,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Cid:         util.DbCID{CID: root},
 		Name:        req.Name,
 		Active:      false,
-		Pinning:     false,
+		Pinning:     true,
 		UserID:      req.User,
 		Replication: s.CM.Replication,
 		Location:    req.Location,
