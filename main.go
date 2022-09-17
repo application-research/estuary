@@ -473,7 +473,7 @@ func main() {
 					UUID:     uuid.New().String(),
 					Username: username,
 					Salt:     salt,
-					PassHash: util.GetPasswordHash(password, salt),
+					PassHash: util.GetPasswordHashBase64(password, salt),
 					Perm:     100,
 				}
 				if err := db.Create(newUser).Error; err != nil {
