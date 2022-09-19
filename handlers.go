@@ -1820,6 +1820,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
+		Order("invite_codes.created_at ASC").
 		Scan(&invites).Error; err != nil {
 		return err
 	}
