@@ -96,7 +96,6 @@ import (
 func (s *Server) ServeAPI() error {
 
 	e := echo.New()
-	// Strip trailing slash from all requests
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	e.Binder = new(binder)
