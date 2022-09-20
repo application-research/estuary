@@ -96,6 +96,8 @@ import (
 func (s *Server) ServeAPI() error {
 
 	e := echo.New()
+	// Strip trailing slash from all requests
+	e.Pre(middleware.RemoveTrailingSlash())
 
 	e.Binder = new(binder)
 
@@ -193,8 +195,8 @@ func (s *Server) ServeAPI() error {
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
 
-	cols.GET("/", withUser(s.handleListCollections))
-	cols.POST("/", withUser(s.handleCreateCollection))
+	cols.GET("", withUser(s.handleListCollections))
+	cols.POST("", withUser(s.handleCreateCollection))
 
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
