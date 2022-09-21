@@ -165,14 +165,15 @@ func (m *Message) HasTraceCarrier() bool {
 }
 
 type MsgParams struct {
-	UpdatePinStatus *UpdatePinStatus `json:",omitempty"`
-	PinComplete     *PinComplete     `json:",omitempty"`
-	CommPComplete   *CommPComplete   `json:",omitempty"`
-	TransferStatus  *TransferStatus  `json:",omitempty"`
-	TransferStarted *TransferStarted `json:",omitempty"`
-	ShuttleUpdate   *ShuttleUpdate   `json:",omitempty"`
-	GarbageCheck    *GarbageCheck    `json:",omitempty"`
-	SplitComplete   *SplitComplete   `json:",omitempty"`
+	UpdatePinStatus  *UpdatePinStatus           `json:",omitempty"`
+	PinComplete      *PinComplete               `json:",omitempty"`
+	CommPComplete    *CommPComplete             `json:",omitempty"`
+	TransferStatus   *TransferStatus            `json:",omitempty"`
+	TransferStarted  *TransferStartedOrFinished `json:",omitempty"`
+	TransferFinished *TransferStartedOrFinished `json:",omitempty"`
+	ShuttleUpdate    *ShuttleUpdate             `json:",omitempty"`
+	GarbageCheck     *GarbageCheck              `json:",omitempty"`
+	SplitComplete    *SplitComplete             `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -206,8 +207,9 @@ type CommPComplete struct {
 }
 
 const OP_TransferStarted = "TransferStarted"
+const OP_TransferFinished = "TransferFinished"
 
-type TransferStarted struct {
+type TransferStartedOrFinished struct {
 	DealDBID uint
 	Chanid   string
 }

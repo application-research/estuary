@@ -442,18 +442,6 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 		}
 
 		d.trackTransfer(chanid, cmd.DealDBID)
-
-		if err := d.sendRpcMessage(ctx, &drpc.Message{
-			Op: drpc.OP_TransferStarted,
-			Params: drpc.MsgParams{
-				TransferStarted: &drpc.TransferStarted{
-					DealDBID: cmd.DealDBID,
-					Chanid:   chanid.String(),
-				},
-			},
-		}); err != nil {
-			log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
-		}
 	}()
 	return nil
 }

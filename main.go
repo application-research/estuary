@@ -638,10 +638,19 @@ func main() {
 
 		// Subscribe to data transfer events from Boost
 		_, err = s.FilClient.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
-			if st.Status == datatransfer.Requested {
+			// send start and finished state, so the accurate timestamps can be saved
+			if st.Status == datatransfer.Requested || st.Status == datatransfer.TransferFinished {
+				var isStarted bool
+				switch st.Status {
+				case datatransfer.Requested:
+					isStarted = true
+				default:
+					isStarted = false
+				}
+
 				go func() {
-					if err := s.CM.SetDealTransferStarted(dbid, st.TransferID); err != nil {
-						log.Errorf("failed to deal transfer start: %s", err)
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, st.TransferID, isStarted); err != nil {
+						log.Errorf("failed to set data transfer started from events: %s", err)
 					}
 				}()
 			}

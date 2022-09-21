@@ -1117,12 +1117,31 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	return *chid, nil
 }
 
-func (cm *ContentManager) SetDealTransferStarted(dealDBID uint, chanid string) error {
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealDBID).UpdateColumns(map[string]interface{}{
-		"dt_chan":           chanid,
-		"transfer_started":  time.Now(),
-		"transfer_finished": time.Time{},
-	}).Error; err != nil {
+func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanOrTransferID string, isStarted bool) error {
+	// get data trannsfer status (compatible with both del protocol v1 and v2)
+	chanst, err := cm.FilClient.TransferStatusByID(ctx, chanOrTransferID)
+	if err != nil && err != filclient.ErrNoTransferFound {
+		return err
+	}
+
+	updates := map[string]interface{}{
+		"dt_chan": chanOrTransferID,
+	}
+
+	switch isStarted {
+	case true:
+		updates["transfer_started"] = time.Now()
+		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
+			updates["transfer_started"] = s.CreatedTime.Time()
+		}
+	default:
+		updates["transfer_finished"] = time.Now()
+		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+			updates["transfer_finished"] = s.CreatedTime.Time()
+		}
+	}
+
+	if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 	return nil
@@ -1524,6 +1543,34 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
+	// get data trannsfer status (compatible with both del protocol v1 and v2)
+	chanst, err := cm.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
+	if err != nil && err != filclient.ErrNoTransferFound {
+		return DEAL_CHECK_UNKNOWN, err
+	}
+
+	// try to set the true transfer start time
+	if d.TransferStarted.IsZero() {
+		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+				"transfer_started": s.CreatedTime.Time(),
+			}).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+		}
+	}
+
+	// try to set the true transfer finish time
+	if d.TransferFinished.IsZero() {
+		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+				"transfer_finished": s.CreatedTime.Time(),
+			}).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
+			}
+		}
+	}
+
 	if d.DealID != 0 {
 		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
 		if err != nil {
@@ -1797,10 +1844,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-				"transfer_finished": time.Now(),
-			}).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
+			if d.TransferFinished.IsZero() {
+				updates := map[string]interface{}{
+					"transfer_finished": time.Now(),
+				}
+				if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+					updates["transfer_finished"] = s.CreatedTime.Time()
+				}
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
+					return DEAL_CHECK_UNKNOWN, err
+				}
 			}
 		}
 
@@ -2433,13 +2486,10 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 	cd.DTChan = chanid.String()
 
 	if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
-		"dt_chan":           chanid.String(),
-		"transfer_started":  time.Now(),
-		"transfer_finished": time.Time{},
+		"dt_chan": chanid.String(),
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
-
 	log.Debugw("Started data transfer", "chanid", chanid)
 	return nil
 }

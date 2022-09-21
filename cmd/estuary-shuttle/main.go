@@ -548,16 +548,34 @@ func main() {
 
 		// Subscribe to data transfer events from Boost
 		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
-			if st.Status == datatransfer.Requested {
+			// send start and finished state, so the accurate timestamps can be saved
+			if st.Status == datatransfer.Requested || st.Status == datatransfer.TransferFinished {
+				var op string
+				var params drpc.MsgParams
+
+				switch st.Status {
+				case datatransfer.Requested:
+					op = drpc.OP_TransferStarted
+					params = drpc.MsgParams{
+						TransferStarted: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   st.TransferID,
+						},
+					}
+				default:
+					op = drpc.OP_TransferFinished
+					params = drpc.MsgParams{
+						TransferFinished: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   st.TransferID,
+						},
+					}
+				}
+
 				go func() {
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-						Op: drpc.OP_TransferStarted,
-						Params: drpc.MsgParams{
-							TransferStarted: &drpc.TransferStarted{
-								DealDBID: dbid,
-								Chanid:   st.TransferID,
-							},
-						},
+						Op:     op,
+						Params: params,
 					}); err != nil {
 						log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
 					}

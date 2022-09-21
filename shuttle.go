@@ -191,6 +191,16 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_TransferFinished:
+		param := msg.Params.TransferFinished
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcTransferFinished(ctx, handle, param); err != nil {
+			log.Errorf("handling transfer finished message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	case drpc.OP_TransferStatus:
 		param := msg.Params.TransferStatus
 		if param == nil {
@@ -319,11 +329,19 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	return cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
 }
 
-func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStarted) error {
-	if err := cm.SetDealTransferStarted(param.DealDBID, param.Chanid); err != nil {
+func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, true); err != nil {
 		return err
 	}
 	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	return nil
+}
+
+func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, false); err != nil {
+		return err
+	}
+	log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
