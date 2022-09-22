@@ -1123,7 +1123,6 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
 		return nil, err
 	}
-
 	return content, nil
 }
 
@@ -1317,14 +1316,14 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 				// the UI needs to display a transfer state even for inntermitent errors
 				dstatus.TransferStatus = &filclient.ChannelState{
-					Message: "unknown",
+					Message: "Error",
 				}
 			}
 
 			// the transfer state is yet to be been announced - the UI needs to display a transfer state
 			if chanst == nil || err != nil {
 				dstatus.TransferStatus = &filclient.ChannelState{
-					Message: "starting",
+					Message: "Initializing",
 				}
 			}
 

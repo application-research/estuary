@@ -874,15 +874,17 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-	return cm.sendRestartTransferCmd(ctx, loc, chanid)
+	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
 
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{
 			RestartTransfer: &drpc.RestartTransfer{
-				ChanID: chanid,
+				ChanID:    chanid,
+				DealDBID:  d.ID,
+				ContentID: d.Content,
 			},
 		},
 	})

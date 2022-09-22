@@ -30,7 +30,6 @@ type Shuttle struct {
 	Content            Content       `json:"content"`
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
-	FilClient          FilClient     `json:"fil_client"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -154,12 +153,6 @@ func NewShuttle(appVersion string) *Shuttle {
 			Api:       "api.estuary.tech",
 			Handle:    "",
 			AuthToken: "",
-		},
-		FilClient: FilClient{
-			EventRateLimiter: EventRateLimiter{
-				CacheSize: 2000,
-				TTL:       30,
-			},
 		},
 	}
 }

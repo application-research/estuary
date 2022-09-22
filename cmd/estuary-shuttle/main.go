@@ -503,109 +503,150 @@ func main() {
 			dev:                cfg.Dev,
 			shuttleConfig:      cfg,
 		}
+
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 		})
-
 		go s.PinMgr.Run(100)
+
+		// Subscribe to legacy markets data transfer events (go-data-transfer)
+		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
+			fst := filclient.ChannelStateConv(dts)
+
+			s.tcLk.Lock()
+			defer s.tcLk.Unlock()
+
+			trk, ok := s.trackingChannels[fst.TransferID]
+			// if state has not been set by transfer start/restart, it cannot be processed - this should not happend though.
+			// because legacy transfer manager does not have context of deal db ID, it needs it to exist in the tracking map
+			// data transfer start and restart/resume should set the deal db ID
+			if !ok {
+				return
+			}
+
+			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+			if trk.last != nil && trk.last.Status == fst.Status {
+				return
+			}
+
+			trk.last = fst
+			dbid := trk.dbid
+
+			go func() {
+				// send start and finished state, so the accurate timestamps and transferID/chanID can be saved
+				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
+					var op string
+					var params drpc.MsgParams
+
+					switch fst.Status {
+					case datatransfer.Requested:
+						op = drpc.OP_TransferStarted
+						params = drpc.MsgParams{
+							TransferStarted: &drpc.TransferStartedOrFinished{
+								DealDBID: dbid,
+								Chanid:   fst.TransferID,
+							},
+						}
+					default:
+						op = drpc.OP_TransferFinished
+						params = drpc.MsgParams{
+							TransferFinished: &drpc.TransferStartedOrFinished{
+								DealDBID: dbid,
+								Chanid:   fst.TransferID,
+							},
+						}
+					}
+
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+					return
+				}
+
+				// send transfer update for every other events
+				trsFailed, msg := util.TransferFailed(fst)
+				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					Chanid:   fst.TransferID,
+					DealDBID: trk.dbid,
+					State:    fst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+				})
+			}()
+		})
+
+		// Subscribe to data transfer events from Boost
+		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
+			s.tcLk.Lock()
+			defer s.tcLk.Unlock()
+
+			trk, ok := s.trackingChannels[fst.TransferID]
+			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+			if trk.last != nil && trk.last.Status == fst.Status {
+				return
+			}
+
+			// if no state has been tracked for this ID, start tracking it (since both deal DB ID and chan ID exist)
+			if !ok {
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+			}
+
+			go func() {
+				// send start and finished state, so the accurate timestamps and transferID/chanID can be saved
+				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
+					var op string
+					var params drpc.MsgParams
+
+					switch fst.Status {
+					case datatransfer.Requested:
+						op = drpc.OP_TransferStarted
+						params = drpc.MsgParams{
+							TransferStarted: &drpc.TransferStartedOrFinished{
+								DealDBID: dbid,
+								Chanid:   fst.TransferID,
+							},
+						}
+					default:
+						op = drpc.OP_TransferFinished
+						params = drpc.MsgParams{
+							TransferFinished: &drpc.TransferStartedOrFinished{
+								DealDBID: dbid,
+								Chanid:   fst.TransferID,
+							},
+						}
+					}
+
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+					return
+				}
+
+				// send transfer update for every other events
+				trsFailed, msg := util.TransferFailed(&fst)
+				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					Chanid:   fst.TransferID,
+					DealDBID: dbid,
+					State:    &fst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+				})
+			}()
+		})
+		if err != nil {
+			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
+		}
 
 		if !cfg.NoReloadPinQueue {
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
-		}
-
-		// Subscribe to legacy markets data transfer events (go-data-transfer)
-		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
-			chid := st.ChannelID().String()
-			s.tcLk.Lock()
-			defer s.tcLk.Unlock()
-			trk, ok := s.trackingChannels[chid]
-			if !ok {
-				return
-			}
-
-			if trk.last == nil || trk.last.Status != st.Status() {
-				cst := filclient.ChannelStateConv(st)
-				trk.last = cst
-
-				trsFailed, msg := util.TransferFailed(cst)
-
-				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   chid,
-					DealDBID: trk.dbid,
-					State:    cst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", cst.Status, msg, cst.Message),
-				})
-			}
-		})
-
-		eventDebounceCache, err := lru.New(int(cfg.FilClient.EventRateLimiter.CacheSize))
-		if err != nil {
-			return err
-		}
-
-		// Subscribe to data transfer events from Boost
-		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
-			// send start and finished state, so the accurate timestamps can be saved
-			if st.Status == datatransfer.Requested || st.Status == datatransfer.TransferFinished {
-				var op string
-				var params drpc.MsgParams
-
-				switch st.Status {
-				case datatransfer.Requested:
-					op = drpc.OP_TransferStarted
-					params = drpc.MsgParams{
-						TransferStarted: &drpc.TransferStartedOrFinished{
-							DealDBID: dbid,
-							Chanid:   st.TransferID,
-						},
-					}
-				default:
-					op = drpc.OP_TransferFinished
-					params = drpc.MsgParams{
-						TransferFinished: &drpc.TransferStartedOrFinished{
-							DealDBID: dbid,
-							Chanid:   st.TransferID,
-						},
-					}
-				}
-
-				go func() {
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-						Op:     op,
-						Params: params,
-					}); err != nil {
-						log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
-					}
-				}()
-			}
-
-			go func() {
-				cachedTime, ok := eventDebounceCache.Get(st.TransferID)
-				if ok {
-					ct, ctOk := cachedTime.(time.Time)
-					if ctOk && ct.Add(cfg.FilClient.EventRateLimiter.TTL*time.Second).Before(time.Now()) {
-						return
-					}
-				}
-
-				eventDebounceCache.Add(st.TransferID, time.Now())
-
-				trsFailed, msg := util.TransferFailed(&st)
-
-				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   st.TransferID,
-					DealDBID: dbid,
-					State:    &st,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
-				})
-			}()
-		})
-		if err != nil {
-			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
 		go func() {
@@ -1733,11 +1774,12 @@ func (s *Shuttle) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
-	log.Infof("refreshing %d pins", len(toPin))
-	for _, c := range toPin {
-		s.addPinToQueue(c, nil, 0)
-	}
-
+	go func() {
+		log.Infof("refreshing %d pins", len(toPin))
+		for _, c := range toPin {
+			s.addPinToQueue(c, nil, 0)
+		}
+	}()
 	return nil
 }
 

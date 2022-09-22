@@ -259,7 +259,6 @@ func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string,
 	if ok {
 		return d.sendMessage(ctx, cmd)
 	}
-
 	return ErrNoShuttleConnection
 }
 
@@ -438,9 +437,10 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 	}
 
 	// TODO: do some sanity checks that the sub pieces were all made successfully...
-
 	if err := cm.DB.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"active":    false,
+		"size":      0,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to update content for split complete: %w", err)
 	}

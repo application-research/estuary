@@ -1284,13 +1284,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	// If this is a shuttle content and the shuttle is not online, do not proceed, retry it 15 mins
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
-		log.Debugf("content shuttle: %s, is not online", content.Location)
-		done(time.Minute * 15)
-		return nil
-	}
-
 	// If this content is already scheduled to be aggregated and is waiting in a bucket
 	if cm.contentInStagingZone(ctx, content) {
 		return nil
@@ -1362,6 +1355,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}(i)
 	}
 	wg.Wait()
+
+	// after reconciling content deals,
+	// check If this is a shuttle content and the it's shuttle is online to start data transfer
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
+		log.Debugf("content shuttle: %s, is not online", content.Location)
+		done(time.Minute * 15)
+		return nil
+	}
 
 	// return the last error found, log the rest
 	var retErr error
@@ -1487,7 +1488,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 		return fmt.Errorf("user does not have content splitting enabled")
 	}
 
-	log.Infof("splitting content %d (size: %d)", cont.ID, size)
+	log.Debugf("splitting content %d (size: %d)", cont.ID, size)
 
 	if cont.Location == constants.ContentLocationLocal {
 		go func() {
@@ -3083,7 +3084,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
-
 	return nil
 }
 
@@ -3093,7 +3093,6 @@ func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -3204,6 +3203,7 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	if err != nil {
 		return err
 	}
+
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_StartTransfer,
 		Params: drpc.CmdParams{
@@ -3331,7 +3331,6 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		if err != nil {
 			return err
 		}
-
 		boxCids = append(boxCids, cc)
 	}
 
@@ -3363,13 +3362,9 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		}()
 	}
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+	return cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
 		"active":    false,
 		"size":      0,
-	}).Error; err != nil {
-		return err
-	}
-
-	return nil
+	}).Error
 }

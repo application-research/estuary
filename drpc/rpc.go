@@ -143,7 +143,9 @@ type UnpinContent struct {
 const CMD_RestartTransfer = "RestartTransfer"
 
 type RestartTransfer struct {
-	ChanID datatransfer.ChannelID
+	ChanID    datatransfer.ChannelID
+	DealDBID  uint
+	ContentID uint
 }
 
 type ContentFetch struct {

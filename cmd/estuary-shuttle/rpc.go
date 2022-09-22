@@ -9,6 +9,7 @@ import (
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
+	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	blocks "github.com/ipfs/go-block-format"
@@ -294,6 +295,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 }
 
 func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+	// TODO, check no aggregate is already running
 	ctx, span := d.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
 		attribute.Int64("dbID", int64(cmd.DBID)),
 		attribute.Int64("userId", int64(cmd.UserID)),
@@ -378,13 +380,19 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	return nil
 }
 
-func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint) {
+func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) error {
 	s.tcLk.Lock()
 	defer s.tcLk.Unlock()
 
-	s.trackingChannels[chanid.String()] = &chanTrack{
-		dbid: dealdbid,
+	// only track it if not already being tracked, so we do not replace last state
+	_, ok := s.trackingChannels[chanid.String()]
+	if !ok {
+		s.trackingChannels[chanid.String()] = &chanTrack{
+			dbid: dealdbid,
+			last: st,
+		}
 	}
+	return nil
 }
 
 func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.PrepareForDataRequest) error {
@@ -418,8 +426,8 @@ func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc
 	return nil
 }
 
-func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
-	ctx, span := d.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
+func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
+	ctx, span := s.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
 		attribute.Int64("contentID", int64(cmd.ContentID)),
 		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
 		attribute.String("miner", cmd.Miner.String()),
@@ -428,22 +436,17 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 	))
 	defer span.End()
 
-	go func() {
-		chanid, err := d.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
-		if err != nil {
-			errMsg := fmt.Sprintf("failed to start data transfer: %s", err)
-			log.Error(errMsg)
-			d.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-				DealDBID: cmd.DealDBID,
-				Failed:   true,
-				Message:  errMsg,
-			})
-			return
-		}
-
-		d.trackTransfer(chanid, cmd.DealDBID)
-	}()
-	return nil
+	chanid, err := s.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
+	if err != nil {
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			DealDBID: cmd.DealDBID,
+			Chanid:   chanid.String(),
+			Failed:   true,
+			Message:  fmt.Sprintf("failed to start data transfer: %s", err),
+		})
+		return err
+	}
+	return s.trackTransfer(chanid, cmd.DealDBID, nil)
 }
 
 func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
@@ -454,6 +457,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	if st.State != nil {
 		extra = fmt.Sprintf("%d %s", st.State.Status, st.State.Message)
 	}
+
 	log.Debugf("sending transfer status update: %d %s", st.DealDBID, extra)
 	if err := d.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_TransferStatus,
@@ -485,8 +489,8 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 			Chanid: req.ChanID,
 
 			// NB: this parameter is only here because
-			//its wanted on the other side. We could probably just look up by
-			//channel ID instead.
+			// its wanted on the other side. We could probably just look up by
+			// channel ID instead.
 			DealDBID: req.DealDBID,
 
 			State:   st,
@@ -515,16 +519,16 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinCont
 	return nil
 }
 
-func (s *Shuttle) markStartSplit(cont uint) error {
+func (s *Shuttle) markStartSplit(cont uint) bool {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 
 	if s.splitsInProgress[cont] {
-		return fmt.Errorf("split for content %d already in progress", cont)
+		return false
 	}
 
 	s.splitsInProgress[cont] = true
-	return nil
+	return true
 }
 
 func (s *Shuttle) finishSplit(cont uint) {
@@ -534,8 +538,9 @@ func (s *Shuttle) finishSplit(cont uint) {
 }
 
 func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
-	if err := s.markStartSplit(req.Content); err != nil {
-		return err
+	// only progress if split is not allready in progress
+	if !s.markStartSplit(req.Content) {
+		return nil
 	}
 	defer s.finishSplit(req.Content)
 
@@ -547,7 +552,6 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	// Check if we've done this already...
 	if pin.DagSplit {
 		// This is only set once we've completed the splitting, so this should be fine
-
 		if pin.SplitFrom != 0 {
 			return fmt.Errorf("was asked to split content that is itself split from a larger piece")
 		}
@@ -635,17 +639,28 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 
 	cannotRestart := !util.CanRestartTransfer(st)
 	if cannotRestart {
-		trsFailed, msg := util.TransferFailed(st)
-		if trsFailed {
+		if trsFailed, msg := util.TransferFailed(st); trsFailed {
 			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-				Chanid:  req.ChanID.String(),
-				State:   st,
-				Failed:  true,
-				Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
+				DealDBID: req.DealDBID,
+				Chanid:   req.ChanID.String(),
+				State:    st,
+				Failed:   true,
+				Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 			})
 			return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 		}
 		return nil
 	}
-	return s.Filc.RestartTransfer(ctx, &req.ChanID)
+
+	if err = s.Filc.RestartTransfer(ctx, &req.ChanID); err != nil {
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			DealDBID: req.DealDBID,
+			Chanid:   req.ChanID.String(),
+			State:    st,
+			Failed:   true,
+			Message:  fmt.Sprintf("failed to restart data transfer: %s", err),
+		})
+		return err
+	}
+	return s.trackTransfer(&req.ChanID, req.DealDBID, st)
 }
