@@ -380,7 +380,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	return nil
 }
 
-func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) error {
+func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
 	s.tcLk.Lock()
 	defer s.tcLk.Unlock()
 
@@ -392,7 +392,6 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, s
 			last: st,
 		}
 	}
-	return nil
 }
 
 func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.PrepareForDataRequest) error {
@@ -446,7 +445,8 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 		})
 		return err
 	}
-	return s.trackTransfer(chanid, cmd.DealDBID, nil)
+	s.trackTransfer(chanid, cmd.DealDBID, nil)
+	return nil
 }
 
 func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
@@ -662,5 +662,6 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 		})
 		return err
 	}
-	return s.trackTransfer(&req.ChanID, req.DealDBID, st)
+	s.trackTransfer(&req.ChanID, req.DealDBID, st)
+	return nil
 }
