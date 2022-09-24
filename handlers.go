@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -2871,7 +2872,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		Username: username,
 		UUID:     uuid.New().String(),
 		Salt:     salt,
-		PassHash: util.GetPasswordHashBase64(reg.Password, salt),
+		PassHash: util.GetPasswordHash(reg.Password, salt, s.DB.Config.Dialector.Name()),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2931,8 +2932,20 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	}
 
 	//	validate password
-	if ((user.Salt != "") && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) || (user.PassHash != util.GetPasswordHashBase64(body.Password, user.Salt))) ||
-		((user.Salt == "") && (user.PassHash != body.Password)) {
+	//	SQLlite and Postgres has incompatibility in hashing and even though we are dropping support for sqlite later,
+	//	we still need to accommodate those who chooses to use SQLite for experimentation purposes.
+	var valid = true
+	var dbDialect = s.DB.Config.Dialector.Name()
+
+	//	check password hash (this is the way).
+	if (user.Salt != "" && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt, dbDialect))) || (user.Salt == "" && user.PassHash != body.Password) {
+		valid = false                                                                           //	assume it's not valid.
+		if bcrypt.CompareHashAndPassword([]byte(user.PassHash), []byte(body.Password)) == nil { //	we are using bcrypt, so we need to rehash it.
+			valid = true
+		}
+	}
+
+	if !valid {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2964,7 +2977,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 
 	updatedUserColumns := &User{
 		Salt:     salt,
-		PassHash: util.GetPasswordHashBase64(params.NewPassword, salt),
+		PassHash: util.GetPasswordHash(params.NewPassword, salt, s.DB.Config.Dialector.Name()),
 	}
 
 	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {

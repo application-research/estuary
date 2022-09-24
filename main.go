@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -469,13 +470,19 @@ func main() {
 				}
 
 				salt := uuid.New().String()
+
+				//	work with bcrypt on cli defined password.
+				var passwordBytes = []byte(password)
+				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+
 				newUser := &User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:     salt,
-					PassHash: util.GetPasswordHashBase64(password, salt),
+					Salt:     salt, // default salt.
+					PassHash: string(hashedPasswordBytes),
 					Perm:     100,
 				}
+
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}

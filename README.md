@@ -10,6 +10,7 @@ Requirements:
 - [jq](https://stedolan.github.io/jq/)
 - [hwloc](https://www.open-mpi.org/projects/hwloc/)
 - opencl
+- postgresql
 
 1. Run `make clean all` inside the estuary directory
 
