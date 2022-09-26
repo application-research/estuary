@@ -819,7 +819,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		dealUUID = &parsed
 	}
 
-	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)
+	_, isPushTransfer, err := cm.getMinerDealStatus(ctx, &d, maddr, dealUUID)
 	if err != nil {
 		return err
 	}
