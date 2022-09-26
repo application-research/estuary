@@ -1618,9 +1618,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		}
 
 		// checked sealed/active health - TODO set actual sealed time
-		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
+		if deal.State.SectorStartEpoch > 0 {
+			if d.SealedAt.IsZero() {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
+					return DEAL_CHECK_UNKNOWN, err
+				}
 			}
 			return DEAL_CHECK_SECTOR_ON_CHAIN, nil
 		}
