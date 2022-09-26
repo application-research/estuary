@@ -1313,17 +1313,16 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
-
 				// the UI needs to display a transfer state even for inntermitent errors
-				dstatus.TransferStatus = &filclient.ChannelState{
-					Message: "Error",
+				chanst = &filclient.ChannelState{
+					StatusStr: "Error",
 				}
 			}
 
 			// the transfer state is yet to be been announced - the UI needs to display a transfer state
-			if chanst == nil || err != nil {
-				dstatus.TransferStatus = &filclient.ChannelState{
-					Message: "Initializing",
+			if chanst == nil {
+				chanst = &filclient.ChannelState{
+					StatusStr: "Initializing",
 				}
 			}
 

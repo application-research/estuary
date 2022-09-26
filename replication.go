@@ -1124,18 +1124,20 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 		return err
 	}
 
+	if chanst == nil {
+		return nil // this should not happen given a transfer event was received, so the state should exist - but just be safe
+	}
+
 	updates := map[string]interface{}{
 		"dt_chan": chanOrTransferID,
 	}
 
 	switch isStarted {
 	case true:
-		updates["transfer_started"] = time.Now()
 		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
 			updates["transfer_started"] = s.CreatedTime.Time()
 		}
 	default:
-		updates["transfer_finished"] = time.Now()
 		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
 			updates["transfer_finished"] = s.CreatedTime.Time()
 		}
@@ -1338,7 +1340,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			countLk.Lock()
 			defer countLk.Unlock()
 			switch status {
-			case DEAL_CHECK_UNKNOWN, DEAL_NEARLY_EXPIRED:
+			case DEAL_CHECK_UNKNOWN, DEAL_NEARLY_EXPIRED, DEAL_CHECK_SLASHED:
 				if err := cm.repairDeal(&d); err != nil {
 					errs[i] = xerrors.Errorf("repairing deal failed: %w", err)
 					return
@@ -1516,10 +1518,11 @@ const (
 	DEAL_CHECK_DEALID_ON_CHAIN
 	DEAL_CHECK_SECTOR_ON_CHAIN
 	DEAL_NEARLY_EXPIRED
+	DEAL_CHECK_SLASHED
 )
 
 // first check deal protocol version 2, then check version 1
-func (cm *ContentManager) getDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (cm *ContentManager) getMinerDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -1544,34 +1547,42 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
-	// get data trannsfer status (compatible with both del protocol v1 and v2)
+	// get the deal data trannsfer state (compatible with both deal protocol v1 and v2)
 	chanst, err := cm.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
 	if err != nil && err != filclient.ErrNoTransferFound {
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
-	// try to set the true transfer start time
-	if d.TransferStarted.IsZero() {
-		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-				"transfer_started": s.CreatedTime.Time(),
-			}).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
+	// if data transfer state is available, set the actual start and finished data transfer times
+	if chanst != nil {
+		if d.TransferStarted.IsZero() {
+			if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+					"transfer_started": s.CreatedTime.Time(),
+				}).Error; err != nil {
+					return DEAL_CHECK_UNKNOWN, err
+				}
+			}
+		}
+
+		if d.TransferFinished.IsZero() {
+			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+					"transfer_finished": s.CreatedTime.Time(),
+				}).Error; err != nil {
+					return DEAL_CHECK_UNKNOWN, err
+				}
 			}
 		}
 	}
 
-	// try to set the true transfer finish time
-	if d.TransferFinished.IsZero() {
-		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-				"transfer_finished": s.CreatedTime.Time(),
-			}).Error; err != nil {
-				return DEAL_CHECK_UNKNOWN, err
-			}
-		}
+	// get chain head - needed to check expired deals below
+	head, err := cm.Api.ChainHead(ctx)
+	if err != nil {
+		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
 	}
 
+	// if the deal is on chain, then check is it still healthy (slashed, expired etc) and it's sealed(active) state
 	if d.DealID != 0 {
 		ok, deal, err := cm.FilClient.CheckChainDeal(ctx, abi.DealID(d.DealID))
 		if err != nil {
@@ -1581,8 +1592,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
+		// check slashed health
 		if deal.State.SlashEpoch > 0 {
-			// Deal slashed!
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
@@ -1598,18 +1609,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 			}); err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
-			return DEAL_CHECK_UNKNOWN, nil
+			return DEAL_CHECK_SLASHED, nil
 		}
 
-		head, err := cm.Api.ChainHead(ctx)
-		if err != nil {
-			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
-		}
-
+		// check expiration health
 		if deal.Proposal.EndEpoch-head.Height() < constants.MinSafeDealLifetime {
 			return DEAL_NEARLY_EXPIRED, nil
 		}
 
+		// checked sealed/active health - TODO set actual sealed time
 		if d.SealedAt.IsZero() && deal.State.SectorStartEpoch > 0 {
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
@@ -1619,14 +1627,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
-	// case where deal isnt yet on chain...
-
-	log.Debugw("checking deal status", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
+	// case where deal isnt yet on chain, then check deal state with miner/provider
+	log.Debugw("checking deal status with miner", "miner", maddr, "propcid", d.PropCid.CID, "dealUUID", d.DealUUID)
 	subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 	defer cancel()
 
-	// Get deal UUID, if there is one for the deal.
-	// (There should be a UUID for deals made with deal protocol v1.2.0)
 	var dealUUID *uuid.UUID
 	if d.DealUUID != "" {
 		parsed, err := uuid.Parse(d.DealUUID)
@@ -1636,15 +1641,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		dealUUID = &parsed
 	}
 
-	provds, isPushTransfer, err := cm.getDealStatus(subctx, d, maddr, dealUUID)
+	// pull deal state from miner/provider
+	provds, isPushTransfer, err := cm.getMinerDealStatus(subctx, d, maddr, dealUUID)
 	if err != nil {
-		log.Warnf("failed to check deal status for deal %d with miner %s: %s", d.ID, maddr, err)
-		// if we cant get deal status from a miner and the data hasnt landed on
-		// chain what do we do?
-		expired, err := cm.dealHasExpired(ctx, d)
+		// if we cant get deal status from a miner and the data hasnt landed on chain what do we do?
+		expired, err := cm.dealHasExpired(ctx, d, head)
 		if err != nil {
 			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to check if deal was expired: %w", err)
 		}
+
 		if expired {
 			// deal expired, miner didnt start it in time
 			if err := cm.recordDealFailure(&DealFailureError{
@@ -1664,6 +1669,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
+	// since not on chain and not on miner, give up and create a new deal
 	if provds == nil {
 		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup provider deal state")
 	}
@@ -1710,11 +1716,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 			return DEAL_CHECK_UNKNOWN, err
 		}
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
-	}
-
-	head, err := cm.Api.ChainHead(ctx)
-	if err != nil {
-		return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to check chain head: %w", err)
 	}
 
 	if provds.PublishCid != nil {
@@ -1845,10 +1846,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
-			updates := map[string]interface{}{
-				"transfer_finished": time.Now(),
-			}
-			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+			updates := map[string]interface{}{}
+			if s := status.Stages.GetStage("TransferFinished"); s != nil {
 				updates["transfer_finished"] = s.CreatedTime.Time()
 			}
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
@@ -1888,7 +1887,7 @@ func (cm *ContentManager) updateDealID(d *contentDeal, id int64) error {
 	return nil
 }
 
-func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (bool, error) {
+func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal, head *types.TipSet) (bool, error) {
 	prop, err := cm.getProposalRecord(d.PropCid.CID)
 	if err != nil {
 		log.Warnf("failed to get proposal record for deal %d: %s", d.ID, err)
@@ -1896,11 +1895,6 @@ func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal) (b
 		if time.Since(d.CreatedAt) > time.Hour*24*14 {
 			return true, nil
 		}
-		return false, err
-	}
-
-	head, err := cm.Api.ChainHead(ctx)
-	if err != nil {
 		return false, err
 	}
 
@@ -3002,12 +2996,13 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 				dealUUID = &parsed
 			}
 
-			provds, _, err := s.CM.getDealStatus(subctx, &d, miner, dealUUID)
+			provds, _, err := s.CM.getMinerDealStatus(subctx, &d, miner, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return
 			}
 
+			// this should not happen, but be safe
 			if provds == nil {
 				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
 				return
@@ -3032,7 +3027,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			}
 
 			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
-			log.Infof("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
 			if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
 				log.Error(err)
 				return
