@@ -636,29 +636,6 @@ func main() {
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		s.FilClient = fc
 
-		// Subscribe to data transfer events from Boost
-		_, err = s.FilClient.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
-			// send start and finished state, so the accurate timestamps can be saved
-			if st.Status == datatransfer.Requested || st.Status == datatransfer.TransferFinished {
-				var isStarted bool
-				switch st.Status {
-				case datatransfer.Requested:
-					isStarted = true
-				default:
-					isStarted = false
-				}
-
-				go func() {
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, st.TransferID, isStarted); err != nil {
-						log.Errorf("failed to set data transfer started from events: %s", err)
-					}
-				}()
-			}
-		})
-		if err != nil {
-			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
-		}
-
 		if cfg.EnableAutoRetrieve {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
