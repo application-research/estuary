@@ -1522,7 +1522,7 @@ const (
 )
 
 // first check deal protocol version 2, then check version 1
-func (cm *ContentManager) getMinerDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (cm *ContentManager) getPoviderDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -1644,7 +1644,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	// pull deal state from miner/provider
-	provds, isPushTransfer, err := cm.getMinerDealStatus(subctx, d, maddr, dealUUID)
+	provds, isPushTransfer, err := cm.getPoviderDealStatus(subctx, d, maddr, dealUUID)
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on chain what do we do?
 		expired, err := cm.dealHasExpired(ctx, d, head)
@@ -1750,8 +1750,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_DEALID_ON_CHAIN, nil
 	}
 
+	// proposal expired, miner didnt start it in time
 	if provds.Proposal.StartEpoch < head.Height() {
-		// deal expired, miner didnt start it in time
 		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:               maddr,
 			Phase:               "check-status",
@@ -1766,55 +1766,44 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_UNKNOWN, nil
 	}
 
-	// miner still has time...
-	if d.DTChan == "" {
-		if content.Location != constants.ContentLocationLocal {
-			log.Warnw("have not yet received confirmation of transfer start from remote", "loc", content.Location, "content", content.ID, "deal", d.ID)
-			if time.Since(d.CreatedAt) > time.Hour {
+	if chanst != nil {
+		if isPushTransfer {
+			log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
+
+			if err := cm.StartDataTransfer(ctx, d); err != nil {
+				log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
+				// If this fails out, just fail the deal and start from
+				// scratch. This is already a weird state.
 				return DEAL_CHECK_UNKNOWN, nil
 			}
-		} else {
-			if isPushTransfer {
-				// Weird case where we somehow dont have the data transfer started for this deal
-				log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
-				if err := cm.StartDataTransfer(ctx, d); err != nil {
-					log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
-					// If this fails out, just fail the deal and start from
-					// scratch. This is already a weird state.
-					return DEAL_CHECK_UNKNOWN, nil
-				}
+		}
+	}
+
+	// Weird case where we somehow dont have the data transfer started for this deal.
+	// if data transfer has not started and miner still has time, start the data transfer
+	if d.DTChan == "" && time.Since(d.CreatedAt) < time.Hour {
+		if isPushTransfer {
+			log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
+			if err := cm.StartDataTransfer(ctx, d); err != nil {
+				log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
+				// If this fails out, just fail the deal and start from
+				// scratch. This is already a weird state.
+				return DEAL_CHECK_UNKNOWN, nil
 			}
 		}
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
-	status, err := cm.GetTransferStatus(ctx, d, content.Cid.CID, content.Location)
-	if err != nil {
-		return DEAL_CHECK_UNKNOWN, err
+	if chanst == nil {
+		return DEAL_CHECK_PROGRESS, nil
 	}
 
-	if status == nil {
-		// no status for transfer, could be because the remote hasnt reported it to us yet?
-		log.Warnf("no status for deal: %d", d.ID)
-		if d.DTChan == "" {
-			// No channel ID yet, shouldnt be able to get here actually
-			return DEAL_CHECK_PROGRESS, fmt.Errorf("unexpected state, no transfer status despite earlier check")
-		} else {
-			if content.Location != constants.ContentLocationLocal {
-				if err := cm.sendRequestTransferStatusCmd(ctx, content.Location, d.ID, d.DTChan); err != nil {
-					return DEAL_CHECK_UNKNOWN, err
-				}
-			}
-			return DEAL_CHECK_PROGRESS, nil
-		}
-	}
-
-	switch status.Status {
+	switch chanst.Status {
 	case datatransfer.Failed:
 		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:               maddr,
 			Phase:               "data-transfer",
-			Message:             fmt.Sprintf("transfer failed: %s", status.Message),
+			Message:             fmt.Sprintf("transfer failed: %s", chanst.Message),
 			Content:             content.ID,
 			UserID:              d.UserID,
 			DealProtocolVersion: d.DealProtocolVersion,
@@ -1832,7 +1821,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		if err := cm.recordDealFailure(&DealFailureError{
 			Miner:               maddr,
 			Phase:               "data-transfer",
-			Message:             fmt.Sprintf("transfer cancelled: %s", status.Message),
+			Message:             fmt.Sprintf("transfer cancelled: %s", chanst.Message),
 			Content:             content.ID,
 			UserID:              d.UserID,
 			DealProtocolVersion: d.DealProtocolVersion,
@@ -1849,32 +1838,17 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
 			updates := map[string]interface{}{}
-			if s := status.Stages.GetStage("TransferFinished"); s != nil {
+			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
 				updates["transfer_finished"] = s.CreatedTime.Time()
 			}
 			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
-		// these are all okay
-		// fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
-		//fmt.Println("transfer status is ongoing!")
-		/* For now, dont call restart?
-		if err := cm.FilClient.CheckOngoingTransfer(ctx, maddr, status); err != nil {
-			cm.recordDealFailure(&DealFailureError{
-				Miner:   maddr,
-				Phase:   "data-transfer",
-				Message: fmt.Sprintf("error while checking transfer: %s", err),
-				Content: content.ID,
-				UserID:  d.UserID,
-			})
-			return DEAL_CHECK_UNKNOWN, nil // TODO: returning unknown==error here feels excessive
-		}
-		*/
 		// expected, this is fine
 	default:
-		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", status.Status, status.Message)
+		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", chanst.Status, chanst.Message)
 	}
 	return DEAL_CHECK_PROGRESS, nil
 }
@@ -2998,7 +2972,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 				dealUUID = &parsed
 			}
 
-			provds, _, err := s.CM.getMinerDealStatus(subctx, &d, miner, dealUUID)
+			provds, _, err := s.CM.getPoviderDealStatus(subctx, &d, miner, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return
