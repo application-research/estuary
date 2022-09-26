@@ -70,7 +70,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("dt-impl", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
-	_ = logging.SetLogLevel("filclient", level)
+	_ = logging.SetLogLevel("filclient", "warn")
 	_ = logging.SetLogLevel("dt_graphsync", level)
 	_ = logging.SetLogLevel("dt-chanmon", level)
 	_ = logging.SetLogLevel("markets", level)
@@ -819,7 +819,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		dealUUID = &parsed
 	}
 
-	_, isPushTransfer, err := cm.getMinerDealStatus(ctx, &d, maddr, dealUUID)
+	_, isPushTransfer, err := cm.getPoviderDealStatus(ctx, &d, maddr, dealUUID)
 	if err != nil {
 		return err
 	}

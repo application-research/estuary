@@ -91,7 +91,7 @@ func before(cctx *cli.Context) error {
 	logging.SetLogLevel("dt-impl", level)
 	logging.SetLogLevel("shuttle", level)
 	logging.SetLogLevel("paych", level)
-	logging.SetLogLevel("filclient", level)
+	logging.SetLogLevel("filclient", "warn")
 	logging.SetLogLevel("dt_graphsync", level)
 	logging.SetLogLevel("graphsync_allocator", level)
 	logging.SetLogLevel("dt-chanmon", level)
