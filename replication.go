@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 
 	"github.com/application-research/estuary/config"
@@ -326,7 +327,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Replication:                  cfg.Replication,
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:          make(chan *drpc.Message),
+		IncomingRPCMessages:          make(chan *drpc.Message, 100000),
 		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
 	qm := newQueueManager(func(c uint) {
@@ -1113,31 +1114,28 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 		err = fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record: %w", err)
 		return datatransfer.ChannelID{}, err
 	}
-
 	return *chid, nil
 }
 
-func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanOrTransferID string, isStarted bool) error {
+func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
 	// get data trannsfer status (compatible with both del protocol v1 and v2)
-	chanst, err := cm.FilClient.TransferStatusByID(ctx, chanOrTransferID)
+	chanst, err := cm.FilClient.TransferStatusByID(ctx, chanIDOrTransferID)
 	if err != nil && err != filclient.ErrNoTransferFound {
 		return err
 	}
 
-	if chanst == nil {
-		return nil // this should not happen given a transfer event was received, so the state should exist - but just be safe
-	}
-
 	updates := map[string]interface{}{
-		"dt_chan": chanOrTransferID,
+		"dt_chan": chanIDOrTransferID,
 	}
 
 	switch isStarted {
 	case true:
+		updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
 		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
 			updates["transfer_started"] = s.CreatedTime.Time()
 		}
 	default:
+		updates["transfer_finished"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
 		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
 			updates["transfer_finished"] = s.CreatedTime.Time()
 		}
@@ -1318,15 +1316,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	// check on each of the existing deals, see if they need fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
-	errs := make([]error, len(deals))
 	var wg sync.WaitGroup
-	for i := range deals {
+
+	errs := make([]error, len(deals))
+	for i, d := range deals {
+		dl := d
 		wg.Add(1)
 		go func(i int) {
 			d := deals[i]
 			defer wg.Done()
 
-			status, err := cm.checkDeal(ctx, &d, content)
+			status, err := cm.checkDeal(ctx, &dl, content)
 			if err != nil {
 				var dfe *DealFailureError
 				if xerrors.As(err, &dfe) {
@@ -1522,7 +1522,7 @@ const (
 )
 
 // first check deal protocol version 2, then check version 1
-func (cm *ContentManager) getPoviderDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -1548,30 +1548,40 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	// get the deal data trannsfer state (compatible with both deal protocol v1 and v2)
-	chanst, err := cm.FilClient.TransferStatusForContent(ctx, content.Cid.CID, maddr)
+	chanst, err := cm.FilClient.TransferStatusByID(ctx, d.DTChan)
 	if err != nil && err != filclient.ErrNoTransferFound {
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
-	// if data transfer state is available, set the actual start and finished data transfer times
+	// if data transfer state is available,
+	// try to set the actual timestamp of transfer states - start, finished, failed, cancelled etc
+	// NB: boost does not yet suppoort stages
 	if chanst != nil {
+		updates := make(map[string]interface{})
 		if d.TransferStarted.IsZero() {
 			if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-					"transfer_started": s.CreatedTime.Time(),
-				}).Error; err != nil {
-					return DEAL_CHECK_UNKNOWN, err
-				}
+				updates["transfer_started"] = s.CreatedTime.Time()
 			}
 		}
 
 		if d.TransferFinished.IsZero() {
 			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
-					"transfer_finished": s.CreatedTime.Time(),
-				}).Error; err != nil {
-					return DEAL_CHECK_UNKNOWN, err
-				}
+				updates["transfer_finished"] = s.CreatedTime.Time()
+			}
+		}
+
+		if d.FailedAt.IsZero() {
+			trsFailed, msgStage := util.TransferFailed(chanst) // Failed or Cancelled
+			s := chanst.Stages.GetStage(msgStage)
+			if trsFailed && s != nil {
+				updates["failed"] = true
+				updates["failed_at"] = s.CreatedTime.Time()
+			}
+		}
+
+		if len(updates) > 0 {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(updates).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
 	}
@@ -1644,7 +1654,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	// pull deal state from miner/provider
-	provds, isPushTransfer, err := cm.getPoviderDealStatus(subctx, d, maddr, dealUUID)
+	provds, isPushTransfer, err := cm.getProviderDealStatus(subctx, d, maddr, dealUUID)
 	if err != nil {
 		// if we cant get deal status from a miner and the data hasnt landed on chain what do we do?
 		expired, err := cm.dealHasExpired(ctx, d, head)
@@ -1766,19 +1776,6 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_UNKNOWN, nil
 	}
 
-	if chanst != nil {
-		if isPushTransfer {
-			log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
-
-			if err := cm.StartDataTransfer(ctx, d); err != nil {
-				log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
-				// If this fails out, just fail the deal and start from
-				// scratch. This is already a weird state.
-				return DEAL_CHECK_UNKNOWN, nil
-			}
-		}
-	}
-
 	// Weird case where we somehow dont have the data transfer started for this deal.
 	// if data transfer has not started and miner still has time, start the data transfer
 	if d.DTChan == "" && time.Since(d.CreatedAt) < time.Hour {
@@ -1794,61 +1791,24 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_PROGRESS, nil
 	}
 
-	if chanst == nil {
-		return DEAL_CHECK_PROGRESS, nil
-	}
-
-	switch chanst.Status {
-	case datatransfer.Failed:
-		if err := cm.recordDealFailure(&DealFailureError{
-			Miner:               maddr,
-			Phase:               "data-transfer",
-			Message:             fmt.Sprintf("transfer failed: %s", chanst.Message),
-			Content:             content.ID,
-			UserID:              d.UserID,
-			DealProtocolVersion: d.DealProtocolVersion,
-			MinerVersion:        d.MinerVersion,
-		}); err != nil {
-			return DEAL_CHECK_UNKNOWN, err
-		}
-
-		// TODO: returning unknown==error here feels excessive
-		// but since 'Failed' is a terminal state, we kinda just have to make a new deal altogether
-		if cm.FailDealOnTransferFailure {
-			return DEAL_CHECK_UNKNOWN, nil
-		}
-	case datatransfer.Cancelled:
-		if err := cm.recordDealFailure(&DealFailureError{
-			Miner:               maddr,
-			Phase:               "data-transfer",
-			Message:             fmt.Sprintf("transfer cancelled: %s", chanst.Message),
-			Content:             content.ID,
-			UserID:              d.UserID,
-			DealProtocolVersion: d.DealProtocolVersion,
-			MinerVersion:        d.MinerVersion,
-		}); err != nil {
-			return DEAL_CHECK_UNKNOWN, err
-		}
-		return DEAL_CHECK_UNKNOWN, nil
-	case datatransfer.Failing:
-		// I guess we just wait until its failed all the way?
-	case datatransfer.Requested:
-		// fmt.Println("transfer is requested, hasnt started yet")
-		// probably okay
-	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
-		if d.TransferFinished.IsZero() {
-			updates := map[string]interface{}{}
-			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
-				updates["transfer_finished"] = s.CreatedTime.Time()
-			}
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
+	if chanst != nil {
+		if trsFailed, _ := util.TransferFailed(chanst); trsFailed {
+			if err := cm.recordDealFailure(&DealFailureError{
+				Miner:               maddr,
+				Phase:               "data-transfer",
+				Message:             fmt.Sprintf("data transfer issue: %s", chanst.Message),
+				Content:             content.ID,
+				UserID:              d.UserID,
+				DealProtocolVersion: d.DealProtocolVersion,
+				MinerVersion:        d.MinerVersion,
+			}); err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
+
+			if cm.FailDealOnTransferFailure {
+				return DEAL_CHECK_UNKNOWN, nil
+			}
 		}
-	case datatransfer.Ongoing:
-		// expected, this is fine
-	default:
-		fmt.Printf("Unexpected data transfer state: %d (msg = %s)\n", chanst.Status, chanst.Message)
 	}
 	return DEAL_CHECK_PROGRESS, nil
 }
@@ -1890,20 +1850,17 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
-	if contLoc == constants.ContentLocationLocal {
-		return cm.getLocalTransferStatus(ctx, d, contCID)
+	// if shuttle, first check cache, then default to deal state with provider
+	if contLoc != constants.ContentLocationLocal {
+		val, ok := cm.remoteTransferStatus.Get(d.ID)
+		if ok {
+			tsr, ok := val.(*transferStatusRecord)
+			if ok {
+				return tsr.State, nil
+			}
+		}
 	}
-
-	val, ok := cm.remoteTransferStatus.Get(d.ID)
-	if !ok {
-		return nil, nil
-	}
-
-	tsr, ok := val.(*transferStatusRecord)
-	if !ok {
-		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
-	}
-	return tsr.State, nil
+	return cm.getTransferStatus(ctx, d, contCID)
 }
 
 func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {
@@ -1914,19 +1871,18 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 	})
 }
 
-func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
-	miner, err := d.MinerAddr()
-	if err != nil {
-		return nil, err
-	}
-
-	// this can check transfer status for both deal protocol versions
-	chanst, err := cm.FilClient.TransferStatusForContent(ctx, contCID, miner)
+func (cm *ContentManager) getTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
+	// can get data transfer state - supports both deal v1 and v2
+	chanst, err := cm.FilClient.TransferStatusByID(ctx, d.DTChan)
 	if err != nil && err != filclient.ErrNoTransferFound {
-		return nil, err
+		log.Errorf("failed to get transfer status: %s", err)
+		// the UI needs to display a transfer state even for inntermitent errors
+		chanst = &filclient.ChannelState{
+			StatusStr: "Error",
+		}
 	}
 
-	if chanst != nil {
+	if chanst != nil && d.DTChan == "" {
 		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 			"dt_chan": chanst.TransferID,
 		}).Error; err != nil {
@@ -2972,7 +2928,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 				dealUUID = &parsed
 			}
 
-			provds, _, err := s.CM.getPoviderDealStatus(subctx, &d, miner, dealUUID)
+			provds, _, err := s.CM.getProviderDealStatus(subctx, &d, miner, dealUUID)
 			if err != nil {
 				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return

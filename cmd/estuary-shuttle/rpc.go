@@ -387,9 +387,9 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, s
 	// only track it if not already being tracked, so we do not replace last state
 	_, ok := s.trackingChannels[chanid.String()]
 	if !ok {
-		s.trackingChannels[chanid.String()] = &chanTrack{
-			dbid: dealdbid,
-			last: st,
+		s.trackingChannels[chanid.String()] = &util.ChanTrack{
+			Dbid: dealdbid,
+			Last: st,
 		}
 	}
 }

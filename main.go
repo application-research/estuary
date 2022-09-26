@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/application-research/estuary/constants"
@@ -572,14 +573,15 @@ func main() {
 		}
 
 		s := &Server{
-			DB:          db,
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			cfg:         cfg,
+			DB:               db,
+			Node:             nd,
+			Api:              api,
+			StagingMgr:       sbmgr,
+			tracer:           otel.Tracer("api"),
+			cacher:           memo.NewCacher(),
+			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			cfg:              cfg,
+			trackingChannels: make(map[string]*util.ChanTrack),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -626,6 +628,56 @@ func main() {
 				fmt.Println("dht bootstrapping failed: ", err)
 			}
 		}()
+
+		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
+		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
+			s.tcLk.Lock()
+			defer s.tcLk.Unlock()
+
+			trk, ok := s.trackingChannels[fst.TransferID]
+			// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
+			if trk.Last != nil && trk.Last.Status == fst.Status {
+				return
+			}
+
+			// if no state has been tracked for this ID, start tracking it (since both deal DB ID and chan ID exist)
+			if !ok {
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+			}
+
+			go func() {
+				// send start and finished state, so the accurate timestamps can be saved
+				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
+					var isStarted bool
+					switch fst.Status {
+					case datatransfer.Requested:
+						isStarted = true
+					default:
+						isStarted = false
+					}
+
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, isStarted); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+					return
+				}
+
+				// for every other events, only register failed state
+				trsFailed, msg := util.TransferFailed(&fst)
+				if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+					Chanid:   fst.TransferID,
+					DealDBID: dbid,
+					State:    &fst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+				}); err != nil {
+					log.Errorf("failed to set data transfer update from event: %s", err)
+				}
+			}()
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
 
 		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
 		if err != nil {
@@ -735,6 +787,9 @@ type Server struct {
 	gwayHandler *gateway.GatewayHandler
 
 	cacher *memo.Cacher
+
+	tcLk             sync.Mutex
+	trackingChannels map[string]*util.ChanTrack
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
@@ -785,21 +840,37 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 		return err
 	}
 
-	for _, d := range deals {
-		chid, err := d.ChannelID()
-		if err != nil {
-			// Only legacy (push) transfers need to be restarted by Estuary.
-			// Newer (pull) transfers are restarted by the Storage Provider.
-			// So if it's not a legacy channel ID, ignore it.
-			continue
-		}
+	go func() {
+		for _, d := range deals {
+			chid, err := d.ChannelID()
+			if err != nil {
+				// Only legacy (push) transfers need to be restarted by Estuary.
+				// Newer (pull) transfers are restarted by the Storage Provider.
+				// So if it's not a legacy channel ID, ignore it.
+				continue
+			}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
-			log.Errorf("failed to restart transfer: %s", err)
-			continue
+			if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
+				log.Errorf("failed to restart transfer: %s", err)
+				continue
+			}
+		}
+	}()
+	return nil
+}
+
+func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
+	s.tcLk.Lock()
+	defer s.tcLk.Unlock()
+
+	// only track it if not already being tracked, so we do not replace last state
+	_, ok := s.trackingChannels[chanid.String()]
+	if !ok {
+		s.trackingChannels[chanid.String()] = &util.ChanTrack{
+			Dbid: dealdbid,
+			Last: st,
 		}
 	}
-	return nil
 }
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
@@ -819,7 +890,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		dealUUID = &parsed
 	}
 
-	_, isPushTransfer, err := cm.getPoviderDealStatus(ctx, &d, maddr, dealUUID)
+	_, isPushTransfer, err := cm.getProviderDealStatus(ctx, &d, maddr, dealUUID)
 	if err != nil {
 		return err
 	}
@@ -828,27 +899,33 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		return nil
 	}
 
-	if loc == constants.ContentLocationLocal {
-		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
-			return err
-		}
+	// get the deal data transfer state pull deals
+	st, err := cm.FilClient.TransferStatus(ctx, &chanid)
+	if err != nil {
+		return err
+	}
 
-		cannotRestart := !util.CanRestartTransfer(st)
-		if cannotRestart {
-			trsFailed, msg := util.TransferFailed(st)
-			if trsFailed {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-					"failed":    true,
-					"failed_at": time.Now(),
-				}).Error; err != nil {
-					return err
-				}
-				errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
-				return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
+	if st == nil {
+		return fmt.Errorf("no data transfer state was found")
+	}
+
+	cannotRestart := !util.CanRestartTransfer(st)
+	if cannotRestart {
+		trsFailed, msg := util.TransferFailed(st)
+		if trsFailed {
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				"failed":    true,
+				"failed_at": time.Now(),
+			}).Error; err != nil {
+				return err
 			}
-			return nil
+			errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
+			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
 		}
+		return nil
+	}
+
+	if loc == constants.ContentLocationLocal {
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
 	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)

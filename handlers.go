@@ -1301,7 +1301,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 	ds := make([]dealStatus, len(deals))
 	var wg sync.WaitGroup
-	for i := range deals {
+	for i, d := range deals {
+		dl := d
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -1310,8 +1311,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
-			if err != nil {
+			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
+			if err != nil && err != filclient.ErrNoTransferFound {
 				log.Errorf("failed to get transfer status: %s", err)
 				// the UI needs to display a transfer state even for inntermitent errors
 				chanst = &filclient.ChannelState{

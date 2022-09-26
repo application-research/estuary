@@ -488,7 +488,7 @@ func main() {
 
 			commpMemo: commpMemo,
 
-			trackingChannels: make(map[string]*chanTrack),
+			trackingChannels: make(map[string]*util.ChanTrack),
 			inflightCids:     make(map[cid.Cid]uint),
 			splitsInProgress: make(map[uint]bool),
 
@@ -503,11 +503,6 @@ func main() {
 			dev:                cfg.Dev,
 			shuttleConfig:      cfg,
 		}
-
-		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
-			MaxActivePerUser: 30,
-		})
-		go s.PinMgr.Run(100)
 
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
@@ -525,12 +520,12 @@ func main() {
 			}
 
 			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
-			if trk.last != nil && trk.last.Status == fst.Status {
+			if trk.Last != nil && trk.Last.Status == fst.Status {
 				return
 			}
 
-			trk.last = fst
-			dbid := trk.dbid
+			trk.Last = fst
+			dbid := trk.Dbid
 
 			go func() {
 				// send start and finished state, so the accurate timestamps and transferID/chanID can be saved
@@ -570,7 +565,7 @@ func main() {
 				trsFailed, msg := util.TransferFailed(fst)
 				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   fst.TransferID,
-					DealDBID: trk.dbid,
+					DealDBID: trk.Dbid,
 					State:    fst,
 					Failed:   trsFailed,
 					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
@@ -585,7 +580,7 @@ func main() {
 
 			trk, ok := s.trackingChannels[fst.TransferID]
 			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
-			if trk.last != nil && trk.last.Status == fst.Status {
+			if trk.Last != nil && trk.Last.Status == fst.Status {
 				return
 			}
 
@@ -643,7 +638,13 @@ func main() {
 			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
 		}
 
-		if !cfg.NoReloadPinQueue {
+		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
+			MaxActivePerUser: 30,
+		})
+		go s.PinMgr.Run(100)
+
+		// only refresh pin queue if pin queue refresh and local adding are enabled
+		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
 			if err := s.refreshPinQueue(); err != nil {
 				log.Errorf("failed to refresh pin queue: %s", err)
 			}
@@ -800,7 +801,7 @@ type Shuttle struct {
 	Tracer trace.Tracer
 
 	tcLk             sync.Mutex
-	trackingChannels map[string]*chanTrack
+	trackingChannels map[string]*util.ChanTrack
 
 	splitLk          sync.Mutex
 	splitsInProgress map[uint]bool
@@ -834,11 +835,6 @@ type Shuttle struct {
 func (d *Shuttle) isInflight(c cid.Cid) bool {
 	v, ok := d.inflightCids[c]
 	return ok && v > 0
-}
-
-type chanTrack struct {
-	dbid uint
-	last *filclient.ChannelState
 }
 
 func (d *Shuttle) RunRpcConnection() error {

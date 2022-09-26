@@ -339,17 +339,12 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	ctx, span := cm.tracer.Start(ctx, "selectLocation")
 	defer span.End()
 
-	var user User
-	if err := cm.DB.First(&user, "id = ?", uid).Error; err != nil {
-		return "", err
-	}
-
 	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
 	for d, sh := range cm.shuttles {
-		if !sh.private {
+		if !sh.private && !sh.ContentAddingDisabled {
 			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
 		} else {
@@ -384,9 +379,9 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	// TODO: take into account existing staging zones and their primary
 	// locations while choosing
-	ploc, err := cm.primaryStagingLocation(ctx, uid)
-	if err != nil {
-		return "", err
+	ploc := cm.primaryStagingLocation(ctx, uid)
+	if ploc == "" {
+		log.Warnf("empty staging zone set for user %d", uid)
 	}
 
 	if ploc != "" {
@@ -444,22 +439,20 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 	return shuttles[0].Handle, nil
 }
 
-func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) (string, error) {
+func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 	zones, ok := cm.buckets[uid]
 	if !ok {
-		return "", nil
+		return ""
 	}
 
 	// TODO: maybe we could make this more complex, but for now, if we have a
 	// staging zone opened in a particular location, just keep using that one
 	for _, z := range zones {
-		return z.Location, nil
+		return z.Location
 	}
-
-	log.Warnf("empty staging zone set for user %d", uid)
-	return "", nil
+	return ""
 }
 
 // handleListPins godoc
