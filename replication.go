@@ -1845,19 +1845,16 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		// probably okay
 	case datatransfer.TransferFinished, datatransfer.Finalizing, datatransfer.Completing, datatransfer.Completed:
 		if d.TransferFinished.IsZero() {
-			if d.TransferFinished.IsZero() {
-				updates := map[string]interface{}{
-					"transfer_finished": time.Now(),
-				}
-				if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
-					updates["transfer_finished"] = s.CreatedTime.Time()
-				}
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
-					return DEAL_CHECK_UNKNOWN, err
-				}
+			updates := map[string]interface{}{
+				"transfer_finished": time.Now(),
+			}
+			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+				updates["transfer_finished"] = s.CreatedTime.Time()
+			}
+			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(updates).Error; err != nil {
+				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
-
 		// these are all okay
 		// fmt.Println("transfer is finished-ish!", status.Status)
 	case datatransfer.Ongoing:
