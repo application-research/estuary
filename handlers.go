@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -1824,6 +1825,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
+		Order("invite_codes.created_at ASC").
 		Scan(&invites).Error; err != nil {
 		return err
 	}
@@ -2874,7 +2876,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		Username: username,
 		UUID:     uuid.New().String(),
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(reg.Password, salt),
+		PassHash: util.GetPasswordHash(reg.Password, salt, s.DB.Config.Dialector.Name()),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2934,8 +2936,20 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	}
 
 	//	validate password
-	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
-		((user.Salt == "") && (user.PassHash != body.Password)) {
+	//	SQLlite and Postgres has incompatibility in hashing and even though we are dropping support for sqlite later,
+	//	we still need to accommodate those who chooses to use SQLite for experimentation purposes.
+	var valid = true
+	var dbDialect = s.DB.Config.Dialector.Name()
+
+	//	check password hash (this is the way).
+	if (user.Salt != "" && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt, dbDialect))) || (user.Salt == "" && user.PassHash != body.Password) {
+		valid = false                                                                           //	assume it's not valid.
+		if bcrypt.CompareHashAndPassword([]byte(user.PassHash), []byte(body.Password)) == nil { //	we are using bcrypt, so we need to rehash it.
+			valid = true
+		}
+	}
+
+	if !valid {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2967,7 +2981,7 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *util.User) error {
 
 	updatedUserColumns := &util.User{
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+		PassHash: util.GetPasswordHash(params.NewPassword, salt, s.DB.Config.Dialector.Name()),
 	}
 
 	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {

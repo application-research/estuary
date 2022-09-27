@@ -10,6 +10,7 @@ Requirements:
 - [jq](https://stedolan.github.io/jq/)
 - [hwloc](https://www.open-mpi.org/projects/hwloc/)
 - opencl
+- postgresql
 
 1. Run `make clean all` inside the estuary directory
 
@@ -22,7 +23,7 @@ To run locally in a 'dev' environment, first run:
 ```
 
 Save the auth token that this outputs, you will need it for interacting with
-and controlling the node.
+and controlling the node. This username and password won't work to log in using the front end (estuary-www), but the auth token will.
 
 NOTE: if you want to use a different database than a sqlite instance stored in your local directory, you will need to configure that with the `--database` flag, like so: `./estuary setup --username=<uname> --password=<pword> --database=XXXXX`
 
@@ -89,15 +90,18 @@ npm run dev
 
 And then head to [localhost:4444/staging](http://localhost:4444/staging) to see the status of your deal.
 
-
 ## Contributing
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for contributing and development instructions.
 
 ## Troubleshooting
+
 Make sure to install all dependencies as indicated above. Here are a few issues that one can encounter while building estuary
 
 ### Guide for: `route ip+net: netlinkrib: too many open files`
+
 #### Error
+
 If you get the following error:
 
 ```sh
@@ -107,31 +111,39 @@ If you get the following error:
 It is because you do not have enough open file handles available.
 
 #### Solution
+
 Update this with the following command:
 
 ```sh
 ulimit -n 10000
 ```
+
 ### Guide for: Missing `hwloc` on M1 Macs
+
 The Portable Hardware Locality (hwloc) software package provides a portable abstraction of the hierarchical structure of current architectures, including NUMA memory nodes, sockets, shared caches, cores, and simultaneous multi-threading (across OS, versions, architectures, etc.).
 
 `lhwloc` is used by libp2p-core. Estuary uses libp2p for the majority of its features including network communication, pinning, replication and resource manager.
 
 #### Error
+
 ```
 `ld: library not found for -lhwloc`
 ```
 
 #### Solution
+
 For M1 Macs, here's the following steps needed
+
 - Step 1: `brew install go bzr jq pkg-config rustup hwloc` - Uninstall rust as it would clash with rustup in case you have installed.
 - Step 2: export LIBRARY_PATH=/opt/homebrew/lib
 - Step 3: Follow the steps as per the docs.
 
 ### Guide for: `cannot find -lfilcrypto collect2`
+
 Related issue [here](https://github.com/application-research/estuary/issues/71)
 
 #### Error
+
 When trying to build estuary in an ARM machine, it returns an error
 
 ```
@@ -139,6 +151,7 @@ When trying to build estuary in an ARM machine, it returns an error
 ```
 
 #### Solution
+
 Related solution [here](https://github.com/filecoin-project/lotus/issues/1779#issuecomment-629932097)
 
 ```
