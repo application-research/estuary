@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/xerrors"
@@ -30,6 +31,7 @@ const (
 	ERR_USER_CREATION_FAILED       = "ERR_USER_CREATION_FAILED"
 	ERR_USER_NOT_FOUND             = "ERR_USER_NOT_FOUND"
 	ERR_INVALID_PASSWORD           = "ERR_INVALID_PASSWORD"
+	ERR_INVALID_FILTER             = "ERR_INVALID_FILTER"
 	ERR_INVITE_ALREADY_USED        = "ERR_INVITE_ALREADY_USED"
 	ERR_CONTENT_ADDING_DISABLED    = "ERR_CONTENT_ADDING_DISABLED"
 	ERR_INVALID_INPUT              = "ERR_INVALID_INPUT"
@@ -42,6 +44,7 @@ const (
 	ERR_INVALID_PINNING_STATUS     = "ERR_INVALID_PINNING_STATUS"
 	ERR_INVALID_QUERY_PARAM_VALUE  = "ERR_INVALID_QUERY_PARAM_VALUE"
 	ERR_CONTENT_LENGTH_REQUIRED    = "ERR_CONTENT_LENGTH_REQUIRED"
+	ERR_VALUE_REQUIRED             = "ERR_VALUE_REQUIRED"
 )
 
 type HttpError struct {
@@ -121,15 +124,15 @@ func ExtractAuth(c echo.Context) (string, error) {
 }
 
 type UserSettings struct {
-	Replication           int           `json:"replication"`
-	Verified              bool          `json:"verified"`
-	DealDuration          int           `json:"dealDuration"`
-	MaxStagingWait        time.Duration `json:"maxStagingWait"`
-	FileStagingThreshold  int64         `json:"fileStagingThreshold"`
-	ContentAddingDisabled bool          `json:"contentAddingDisabled"`
-	DealMakingDisabled    bool          `json:"dealMakingDisabled"`
-	UploadEndpoints       []string      `json:"uploadEndpoints"`
-	Flags                 int           `json:"flags"`
+	Replication           int            `json:"replication"`
+	Verified              bool           `json:"verified"`
+	DealDuration          abi.ChainEpoch `json:"dealDuration"`
+	MaxStagingWait        time.Duration  `json:"maxStagingWait"`
+	FileStagingThreshold  int64          `json:"fileStagingThreshold"`
+	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
+	DealMakingDisabled    bool           `json:"dealMakingDisabled"`
+	UploadEndpoints       []string       `json:"uploadEndpoints"`
+	Flags                 int            `json:"flags"`
 }
 
 type ViewerResponse struct {

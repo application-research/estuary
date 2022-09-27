@@ -529,11 +529,14 @@ func main() {
 				cst := filclient.ChannelStateConv(st)
 				trk.last = cst
 
-				log.Infof("event(%d) message: %s", event.Code, event.Message)
+				trsFailed, msg := util.TransferFailed(cst)
+
 				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   chid,
 					DealDBID: trk.dbid,
 					State:    cst,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", cst.Status, msg, cst.Message),
 				})
 			}
 		})
@@ -571,33 +574,21 @@ func main() {
 				}
 
 				eventDebounceCache.Add(st.TransferID, time.Now())
+
+				trsFailed, msg := util.TransferFailed(&st)
+
 				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
 					Chanid:   st.TransferID,
 					DealDBID: dbid,
 					State:    &st,
+					Failed:   trsFailed,
+					Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 				})
 			}()
 		})
 		if err != nil {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
-
-		go func() {
-			http.Handle("/debug/metrics", estumetrics.Exporter())
-			http.HandleFunc("/debug/stack", func(w http.ResponseWriter, r *http.Request) {
-				if err := writeAllGoroutineStacks(w); err != nil {
-					log.Error(err)
-				}
-			})
-			server := &http.Server{
-				Addr:              "127.0.0.1:3105",
-				ReadHeaderTimeout: 5 * time.Second,
-			}
-
-			if err := server.ListenAndServe(); err != nil {
-				log.Errorf("failed to start http server for pprof endpoints: %s", err)
-			}
-		}()
 
 		go func() {
 			if err := s.RunRpcConnection(); err != nil {
@@ -891,6 +882,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 			ID:    d.Node.Host.ID(),
 			Addrs: d.Node.Host.Addrs(),
 		},
+		ContentAddingDisabled: d.disableLocalAdding,
 	}, nil
 }
 
@@ -1039,11 +1031,23 @@ func (s *Shuttle) ServeAPI() error {
 		e.Use(middleware.Logger())
 	}
 
-	e.Use(middleware.CORS())
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
-
 	e.HTTPErrorHandler = util.ErrorHandler
+
+	e.GET("/debug/metrics", func(e echo.Context) error {
+		estumetrics.Exporter().ServeHTTP(e.Response().Writer, e.Request())
+		return nil
+	})
+	e.GET("/debug/stack", func(e echo.Context) error {
+		err := writeAllGoroutineStacks(e.Response().Writer)
+		if err != nil {
+			log.Error(err)
+		}
+		return err
+	})
+
+	e.Use(middleware.CORS())
 
 	e.GET("/health", s.handleHealth)
 	e.GET("/net/addrs", s.handleGetNetAddress)
@@ -1082,6 +1086,10 @@ func (s *Shuttle) ServeAPI() error {
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
 	return e.Start(s.shuttleConfig.ApiListen)
+}
+
+func (s *Shuttle) isContentAddingDisabled(u *User) bool {
+	return s.disableLocalAdding || u.StorageDisabled
 }
 
 func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
@@ -1155,12 +1163,8 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if u.StorageDisabled || s.disableLocalAdding {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_ADDING_DISABLED,
-			Details: "uploading content to this node is not allowed at the moment",
-		}
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
+		return err
 	}
 
 	form, err := c.MultipartForm()
@@ -1226,7 +1230,6 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: nd.Cid()},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1290,7 +1293,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.ErrorIfContentAddingDisabled(u.StorageDisabled || s.disableLocalAdding); err != nil {
+	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
@@ -1363,7 +1366,6 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		Content: contid,
 		Cid:     util.DbCID{CID: root},
 		UserID:  u.ID,
-
 		Active:  false,
 		Pinning: true,
 	}
@@ -1466,7 +1468,6 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 			Name:     filename,
 			Location: s.shuttleHandle,
 		},
-
 		Collections:  cols,
 		DagSplitRoot: dagsplitroot,
 		User:         uid,
@@ -2126,7 +2127,8 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		if !util.TransferTerminated(filclient.ChannelStateConv(st)) {
+		canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st))
+		if canRestart {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)
@@ -2228,7 +2230,12 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 			return fmt.Errorf("getting deal info from chain: %w", err)
 		}
 
-		c, err := util.ParseDealLabel(deal.Proposal.Label)
+		dealLabelString, err := deal.Proposal.Label.ToString()
+		if err != nil {
+			return fmt.Errorf("getting deal label from chain: %w", err)
+		}
+		c, err := util.ParseDealLabel(dealLabelString)
+
 		if err != nil {
 			return fmt.Errorf("failed to parse deal label in deal %d: %w", id, err)
 		}
@@ -2264,7 +2271,6 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 			}
 			continue
 		}
-
 		break
 	}
 

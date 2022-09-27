@@ -6,11 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
@@ -142,12 +144,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Replication = cctx.Int("replication")
 		case "lowmem":
 			cfg.LowMem = cctx.Bool("lowmem")
-		case "no-storage-cron":
-			cfg.DisableFilecoinStorage = cctx.Bool("no-storage-cron")
-		case "disable-deal-making":
-			cfg.Deal.Disable = cctx.Bool("disable-deal-making")
+		case "disable-deals-storage":
+			cfg.DisableFilecoinStorage = cctx.Bool("disable-deals-storage")
+		case "disable-new-deals":
+			cfg.Deal.IsDisabled = cctx.Bool("disable-new-deals")
 		case "verified-deal":
-			cfg.Deal.Verified = cctx.Bool("verified-deal")
+			cfg.Deal.IsVerified = cctx.Bool("verified-deal")
 		case "fail-deals-on-transfer-failure":
 			cfg.Deal.FailOnTransferFailure = cctx.Bool("fail-deals-on-transfer-failure")
 		case "disable-local-content-adding":
@@ -170,11 +172,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "shuttle-message-handlers":
 			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
+		case "staging-bucket":
+			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
 		case "indexer-tick-interval":
 			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
-
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -188,7 +191,6 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if len(dprs) > 0 {
 				cfg.Deal.EnabledDealProtocolsVersions = dprs
 			}
-
 		default:
 		}
 	}
@@ -265,8 +267,8 @@ func main() {
 			Hidden: true,
 		},
 		&cli.BoolFlag{
-			Name:  "no-storage-cron",
-			Usage: "run estuary without processing files into deals",
+			Name:  "disable-deals-storage",
+			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node instead",
 			Value: cfg.DisableFilecoinStorage,
 		},
 		&cli.BoolFlag{
@@ -297,14 +299,19 @@ func main() {
 			Value: cfg.Deal.FailOnTransferFailure,
 		},
 		&cli.BoolFlag{
-			Name:  "disable-deal-making",
-			Usage: "do not create any new deals (existing deals will still be processed)",
-			Value: cfg.Deal.Disable,
+			Name:  "disable-new-deals",
+			Usage: "prevents the worker from making any new deals, but existing deals will still be updated/checked",
+			Value: cfg.Deal.IsDisabled,
+		},
+		&cli.BoolFlag{
+			Name:  "disable-swagger-endpoint",
+			Usage: "do not create the /swagger/* endpoints",
+			Value: cfg.DisableSwaggerEndpoint,
 		},
 		&cli.BoolFlag{
 			Name:  "verified-deal",
 			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
-			Value: cfg.Deal.Verified,
+			Value: cfg.Deal.IsVerified,
 		},
 		&cli.BoolFlag{
 			Name:  "disable-content-adding",
@@ -376,6 +383,11 @@ func main() {
 			Usage: "sets shuttle message handler count",
 			Value: cfg.ShuttleMessageHandlers,
 		},
+		&cli.BoolFlag{
+			Name:  "staging-bucket",
+			Usage: "enable staging bucket",
+			Value: cfg.StagingBucket.Enabled,
+		},
 		&cli.StringSliceFlag{
 			Name:  "deal-protocol-version",
 			Usage: "sets the deal protocol version. defaults to v110 (go-fil-markets) and v120 (boost)",
@@ -446,7 +458,7 @@ func main() {
 
 				username = strings.ToLower(username)
 
-				var exist *User
+				var exist *util.User
 				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
 					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 						return err
@@ -459,18 +471,24 @@ func main() {
 				}
 
 				salt := uuid.New().String()
-				newUser := &User{
+
+				//	work with bcrypt on cli defined password.
+				var passwordBytes = []byte(password)
+				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+
+				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:     salt,
-					PassHash: util.GetPasswordHash(password, salt),
+					Salt:     salt, // default salt.
+					PassHash: string(hashedPasswordBytes),
 					Perm:     100,
 				}
+
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
-				authToken := &AuthToken{
+				authToken := &util.AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
 					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
@@ -569,7 +587,7 @@ func main() {
 			tracer:      otel.Tracer("api"),
 			cacher:      memo.NewCacher(),
 			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			estuaryCfg:  cfg,
+			cfg:         cfg,
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -630,17 +648,8 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		go cm.ContentWatcher()
+		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-
-		// refresh pin queue for local contents
-		if !cm.globalContentAddingDisabled {
-			go func() {
-				if err := cm.refreshPinQueue(cctx.Context, constants.ContentLocationLocal); err != nil {
-					log.Errorf("failed to refresh pin queue: %s", err)
-				}
-			}()
-		}
 
 		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
 		if err != nil {
@@ -701,8 +710,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.Content{},
 		&util.Object{},
 		&util.ObjRef{},
-		&Collection{},
-		&CollectionRef{},
+		&collections.Collection{},
+		&collections.CollectionRef{},
 		&contentDeal{},
 		&dfeRecord{},
 		&PieceCommRecord{},
@@ -711,9 +720,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&retrievalSuccessRecord{},
 		&minerStorageAsk{},
 		&storageMiner{},
-		&User{},
-		&AuthToken{},
-		&InviteCode{},
+		&util.User{},
+		&util.AuthToken{},
+		&util.InviteCode{},
 		&Shuttle{},
 		&autoretrieve.Autoretrieve{}); err != nil {
 		return err
@@ -722,7 +731,7 @@ func migrateSchemas(db *gorm.DB) error {
 }
 
 type Server struct {
-	estuaryCfg *config.Estuary
+	cfg        *config.Estuary
 	tracer     trace.Tracer
 	Node       *node.Node
 	DB         *gorm.DB
@@ -793,7 +802,7 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 			continue
 		}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid, d.ID); err != nil {
+		if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
 			log.Errorf("failed to restart transfer: %s", err)
 			continue
 		}
@@ -801,21 +810,52 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 	return nil
 }
 
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, dealID uint) error {
-	if loc == "local" {
+// RestartTransfer tries to resume incomplete data transfers between client and storage providers.
+// It supports only legacy deals (PushTransfer)
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
+	maddr, err := d.MinerAddr()
+	if err != nil {
+		return err
+	}
+
+	var dealUUID *uuid.UUID
+	if d.DealUUID != "" {
+		parsed, err := uuid.Parse(d.DealUUID)
+		if err != nil {
+			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
+		}
+		dealUUID = &parsed
+	}
+
+	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)
+	if err != nil {
+		return err
+	}
+
+	if !isPushTransfer {
+		return nil
+	}
+
+	if loc == constants.ContentLocationLocal {
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
 		}
 
-		if util.TransferTerminated(st) {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealID).UpdateColumns(map[string]interface{}{
-				"failed":    true,
-				"failed_at": time.Now(),
-			}).Error; err != nil {
-				return err
+		cannotRestart := !util.CanRestartTransfer(st)
+		if cannotRestart {
+			trsFailed, msg := util.TransferFailed(st)
+			if trsFailed {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+					"failed":    true,
+					"failed_at": time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
+				return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
 			}
-			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %d", st.Status)
+			return nil
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}

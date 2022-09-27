@@ -21,19 +21,14 @@ import (
 
 type Shuttle struct {
 	gorm.Model
-
-	Handle string `gorm:"unique"`
-	Token  string
-
-	LastConnection time.Time
+	Handle         string `gorm:"unique"`
+	Token          string
 	Host           string
 	PeerID         string
-
-	Private bool
-
-	Open bool
-
-	Priority int
+	LastConnection time.Time
+	Private        bool
+	Open           bool
+	Priority       int
 }
 
 type ShuttleConnection struct {
@@ -45,7 +40,8 @@ type ShuttleConnection struct {
 	addrInfo peer.AddrInfo
 	address  address.Address
 
-	private bool
+	private               bool
+	ContentAddingDisabled bool
 
 	spaceLow       bool
 	blockstoreSize uint64
@@ -92,17 +88,18 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sc := &ShuttleConnection{
-		handle:   handle,
-		address:  hello.Address,
-		addrInfo: hello.AddrInfo,
-		hostname: hello.Host,
-		cmds:     make(chan *drpc.Command, 32),
-		ctx:      ctx,
-		private:  hello.Private,
+		handle:                handle,
+		address:               hello.Address,
+		addrInfo:              hello.AddrInfo,
+		hostname:              hello.Host,
+		cmds:                  make(chan *drpc.Command, 32),
+		ctx:                   ctx,
+		private:               hello.Private,
+		ContentAddingDisabled: hello.ContentAddingDisabled,
 	}
 
-	// when a shuttle connects, refresh its pin queue
-	if !cm.globalContentAddingDisabled {
+	// when a shuttle connects, if global content adding and shuttle content adding is enabled, refresh shuttle pin queue
+	if !cm.globalContentAddingDisabled && !hello.ContentAddingDisabled {
 		go func() {
 			if err := cm.refreshPinQueue(ctx, handle); err != nil {
 				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)
@@ -359,7 +356,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 
 		if oerr := cm.recordDealFailure(&DealFailureError{
 			Miner:               miner,
-			Phase:               "start-data-transfer-remote",
+			Phase:               "data-transfer-remote",
 			Message:             fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 			Content:             cd.Content,
 			UserID:              cd.UserID,
@@ -438,6 +435,5 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 	if err := cm.DB.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
 		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 	}
-
 	return nil
 }
