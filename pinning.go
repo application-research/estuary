@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
@@ -196,7 +197,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -339,7 +340,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	ctx, span := cm.tracer.Start(ctx, "selectLocation")
 	defer span.End()
 
-	var user User
+	var user util.User
 	if err := cm.DB.First(&user, "id = ?", uid).Error; err != nil {
 		return "", err
 	}
@@ -471,7 +472,7 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
-func (s *Server) handleListPins(e echo.Context, u *User) error {
+func (s *Server) handleListPins(e echo.Context, u *util.User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
 	defer span.End()
 
@@ -679,7 +680,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Param        cid   path  string  true  "cid"
 // @Param        name  path  string  true  "name"
 // @Router       /pinning/pins [post]
-func (s *Server) handleAddPin(e echo.Context, u *User) error {
+func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -691,9 +692,9 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var cols []*CollectionRef
+	var cols []*collections.CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
 			return err
 		}
@@ -709,7 +710,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 			colpath = &p
 		}
 
-		cols = []*CollectionRef{
+		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
 				Path:       colpath,
@@ -747,7 +748,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
-func (s *Server) handleGetPin(e echo.Context, u *User) error {
+func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
@@ -783,7 +784,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [post]
-func (s *Server) handleReplacePin(e echo.Context, u *User) error {
+func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -844,7 +845,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
-func (s *Server) handleDeletePin(e echo.Context, u *User) error {
+func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err

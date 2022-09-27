@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
@@ -457,7 +458,7 @@ func main() {
 
 				username = strings.ToLower(username)
 
-				var exist *User
+				var exist *util.User
 				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
 					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 						return err
@@ -475,7 +476,7 @@ func main() {
 				var passwordBytes = []byte(password)
 				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
 
-				newUser := &User{
+				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
 					Salt:     salt, // default salt.
@@ -487,7 +488,7 @@ func main() {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
-				authToken := &AuthToken{
+				authToken := &util.AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
 					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
@@ -709,8 +710,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.Content{},
 		&util.Object{},
 		&util.ObjRef{},
-		&Collection{},
-		&CollectionRef{},
+		&collections.Collection{},
+		&collections.CollectionRef{},
 		&contentDeal{},
 		&dfeRecord{},
 		&PieceCommRecord{},
@@ -719,9 +720,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&retrievalSuccessRecord{},
 		&minerStorageAsk{},
 		&storageMiner{},
-		&User{},
-		&AuthToken{},
-		&InviteCode{},
+		&util.User{},
+		&util.AuthToken{},
+		&util.InviteCode{},
 		&Shuttle{},
 		&autoretrieve.Autoretrieve{}); err != nil {
 		return err
