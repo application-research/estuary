@@ -21,6 +21,7 @@ jobs:
           SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS: ${{ secrets.SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS }}
         run: |
           apk add git
+          apk add curl
           apk add openssh
           printf "%s" "$SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS" > secret
           printf 'Host github.com\n   StrictHostKeyChecking no\n' > /etc/ssh/ssh_config
