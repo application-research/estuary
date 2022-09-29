@@ -24,7 +24,7 @@ jobs:
           apk add openssh
           git clone https://user:$GITHUB_TOKEN@github.com/snissn/estuary-swagger-clients.git
           cd estuary-swagger-clients
-          git config --unset-all http.https://github.com/.extraheader
+          git config -l | grep 'http\..*\.extraheader' | cut -d= -f1 | \ xargs -L1 git config --unset-all # let us push to othe repo
           sh build_all.sh
           git status
           git add *
