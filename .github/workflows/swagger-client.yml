@@ -1,4 +1,4 @@
-name: SwaggerClient
+name: BuildSwaggerClients
 
 on: push
 
@@ -11,7 +11,7 @@ on: push
 
 
 jobs:
-  docker:
+  BuildSwaggerClients:
     runs-on: ubuntu-latest
     container: swaggerapi/swagger-codegen-cli
 
@@ -22,8 +22,8 @@ jobs:
         run: |
           apk add git
           apk add openssh
-          git config --unset-all http.https://github.com/.extraheader
           git clone https://user:$GITHUB_TOKEN@github.com/snissn/estuary-swagger-clients.git
+          git config --unset-all http.https://github.com/.extraheader
           cd estuary-swagger-clients
           sh build_all.sh
           git status
