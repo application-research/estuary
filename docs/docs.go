@@ -26,7 +26,7 @@ const docTemplate = `{
     "paths": {
         "/admin/autoretrieve/init": {
             "post": {
-                "description": "This endpoint registers a new autoretrieve server Q@\u0026^5#^\u0026*Q^Wasdf",
+                "description": "This endpoint registers a new autoretrieve server Q@\u0026^5#^\u0026*Q^Wasdfalsdkjf",
                 "produces": [
                     "application/json"
                 ],

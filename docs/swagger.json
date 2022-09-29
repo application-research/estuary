@@ -19,7 +19,7 @@
   "paths": {
     "/admin/autoretrieve/init": {
       "post": {
-        "description": "This endpoint registers a new autoretrieve server Q@&^5#^&*Q^Wasdf",
+        "description": "This endpoint registers a new autoretrieve server Q@&^5#^&*Q^Wasdfalsdkjf",
         "produces": [
           "application/json"
         ],
