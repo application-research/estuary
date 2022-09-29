@@ -23,11 +23,10 @@ jobs:
           apk add git
           apk add openssh
           printf "%s" "$SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS" > secret
-          cat secret
-          wc secret
           chmod 400 secret
           eval `ssh-agent`
           ssh-add secret
+          ssh git@github.com
           git clone git@github.com:snissn/estuary-swagger-clients.git
           cd estuary-swagger-clients
           sh build_all.sh
