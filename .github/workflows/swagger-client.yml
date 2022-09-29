@@ -1,0 +1,30 @@
+name: Docker
+
+on:
+  push:
+    branches: ['main']
+    paths: ['docs/swagger.json']
+
+
+
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    container: swaggerapi/swagger-codegen-cli
+
+    steps:
+      - name: Build clients and push
+        run: |
+          apk add git
+          apk add openssh
+          git clone git@github.com:snissn/estuary-swagger-clients.git
+          cd estuary-swagger-clients
+          sh build_all.sh
+          git status
+          git add *
+          git config --global user.email "BuildBot@estuary-swagger-client.net"
+          git config --global user.name "Build Bot"
+
+          git commit -am "Commit from build bot. Build number $CIRCLE_BUILD_NUM. Workflow ID $CIRCLE_WORKFLOW_ID."
+          git push origin main
