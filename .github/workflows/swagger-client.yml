@@ -25,6 +25,7 @@ jobs:
           echo $SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS > secret
           echo >> secret # add new line
           cat secret
+          wc secret
           chmod 400 secret
           eval `ssh-agent`
           ssh-add secret
