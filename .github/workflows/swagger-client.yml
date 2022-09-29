@@ -2,9 +2,10 @@ name: BuildSwaggerClients
 
 
 on:
-  push:
-    branches: ['master']
-    paths: ['docs/swagger.json']
+  workflow_run:
+    workflows: ["Swagger docs"]
+    types:
+      - completed
 
 
 
