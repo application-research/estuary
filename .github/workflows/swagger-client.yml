@@ -1,9 +1,11 @@
 name: SwaggerClient
 
-on:
-  push:
-    branches: ['master']
-    paths: ['*','docs/swagger.json']
+on: push
+
+#on:
+#push:
+##branches: ['master']
+#paths: ['*','docs/swagger.json']
 
 
 
