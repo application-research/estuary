@@ -23,8 +23,8 @@ jobs:
           apk add git
           apk add openssh
           git clone https://user:$GITHUB_TOKEN@github.com/snissn/estuary-swagger-clients.git
-          git config --unset-all http.https://github.com/.extraheader
           cd estuary-swagger-clients
+          git config --unset-all http.https://github.com/.extraheader
           sh build_all.sh
           git status
           git add *
