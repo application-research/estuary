@@ -23,8 +23,7 @@ jobs:
           apk add git
           apk add openssh
           printf "%s" "$SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS" > secret
-          printf 'Host github.com\n   StrictHostKeyChecking no\n' > ~/.ssh/config 
-          chmod 400 ~/.ssh/config
+          printf 'Host github.com\n   StrictHostKeyChecking no\n' > /etc/ssh/ssh_config
           chmod 400 secret
           eval `ssh-agent`
           ssh-add secret
