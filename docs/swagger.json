@@ -1,7 +1,7 @@
 {
   "swagger": "2.0",
   "info": {
-    "description": "This is the API for the Estuary alskdjfksdljfapplication.",
+    "description": "This is the API for the Estuary application.",
     "title": "Estuary API",
     "termsOfService": "http://estuary.tech",
     "contact": {
