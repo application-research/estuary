@@ -1,9 +1,9 @@
-name: Docker
+name: SwaggerClient
 
 on:
   push:
     branches: ['master']
-    paths: ['docs/swagger.json']
+    paths: ['*','docs/swagger.json']
 
 
 
