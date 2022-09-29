@@ -18,20 +18,19 @@ jobs:
     steps:
       - name: Build clients and push
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS: ${{ secrets.SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS }}
         run: |
           apk add git
           apk add openssh
-          git clone https://user:$GITHUB_TOKEN@github.com/snissn/estuary-swagger-clients.git
+          echo $SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS > secret
+          eval `ssh-agent`
+          ssh-add secret
+          git clone git@github.com:snissn/estuary-swagger-clients.git
           cd estuary-swagger-clients
-          for header in $( git config -l | grep 'http\..*\.extraheader' | cut -d= -f1); do
-            xargs -L1 git config --unset-all $header# let us push to othe repo
-          done;
           sh build_all.sh
           git status
           git add *
           git config --global user.email "BuildBot@estuary-swagger-client.net"
           git config --global user.name "Build Bot"
-
           git commit -am "Commit from build bot. Build number $CIRCLE_BUILD_NUM. Workflow ID $CIRCLE_WORKFLOW_ID."
           git push origin main
