@@ -20,7 +20,9 @@ jobs:
         run: |
           apk add git
           apk add openssh
-          git clone git@github.com:snissn/estuary-swagger-clients.git
+          git config --global url.https://github.com/.insteadOf git://github.com/
+
+          git clone https://github.com/snissn/estuary-swagger-clients.git
           cd estuary-swagger-clients
           sh build_all.sh
           git status
