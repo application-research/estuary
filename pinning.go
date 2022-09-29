@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
@@ -87,7 +88,7 @@ func (cm *ContentManager) pinStatus(cont util.Content, origins []*peer.AddrInfo)
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont util.Content) []string {
-	if cont.Location == util.ContentLocationLocal {
+	if cont.Location == constants.ContentLocationLocal {
 		var out []string
 		for _, a := range cm.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Host.ID()))
@@ -142,7 +143,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	}
 
 	if op.MakeDeal {
-		s.CM.ToCheck <- op.ContId
+		s.CM.toCheck(op.ContId)
 	}
 
 	// this provide call goes out immediately
@@ -182,7 +183,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 				_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
 			}
 
-			if c.Location == util.ContentLocationLocal {
+			if c.Location == constants.ContentLocationLocal {
 				cm.addPinToQueue(c, origins, 0, makeDeal)
 			} else {
 				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
@@ -254,7 +255,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	if loc == util.ContentLocationLocal {
+	if loc == constants.ContentLocationLocal {
 		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
@@ -265,7 +266,7 @@ func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid
 }
 
 func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
-	if cont.Location != util.ContentLocationLocal {
+	if cont.Location != constants.ContentLocationLocal {
 		log.Errorf("calling addPinToQueue on non-local content")
 	}
 
@@ -375,11 +376,10 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	})
 
 	if len(shuttles) == 0 {
-		//log.Info("no shuttles available for content to be delegated to")
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-		return util.ContentLocationLocal, nil
+		return constants.ContentLocationLocal, nil
 	}
 
 	// TODO: take into account existing staging zones and their primary
@@ -430,7 +430,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 		if cm.localContentAddingDisabled {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
-		return util.ContentLocationLocal, nil
+		return constants.ContentLocationLocal, nil
 	}
 
 	// prefer the shuttle the content is already on
@@ -923,11 +923,11 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	if cont.Active {
 		// content already active, no need to add objects, just update location
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"pinning":  false,
 			"location": handle,
 		}).Error; err != nil {
 			return err
 		}
-
 		// TODO: should we recheck the staging zones?
 		return nil
 	}
@@ -955,7 +955,6 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 
-	cm.ToCheck <- cont.ID
-
+	cm.toCheck(cont.ID)
 	return nil
 }

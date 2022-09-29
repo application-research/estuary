@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/config"
+	"github.com/application-research/estuary/constants"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
@@ -21,8 +22,6 @@ import (
 	"github.com/multiformats/go-multihash"
 	"gorm.io/gorm"
 )
-
-const QueryNewCIDs string = "select objects.cid from objects left join obj_refs on objects.id = obj_refs.object where obj_refs.content in (select id from contents where created_at > ?);"
 
 type Autoretrieve struct {
 	gorm.Model
@@ -84,7 +83,7 @@ func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
 // Returns an error if failed
 func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
 	var newCids []cid.Cid
-	err := db.Raw(QueryNewCIDs, lastAdvertisement).
+	err := db.Raw(constants.QueryNewCIDs, lastAdvertisement).
 		Scan(&newCids).
 		Error
 	if err != nil {

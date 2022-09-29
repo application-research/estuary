@@ -16,9 +16,10 @@ type Hello struct {
 
 	DiskSpaceFree int64
 
-	Address  address.Address
-	AddrInfo peer.AddrInfo
-	Private  bool
+	Address               address.Address
+	AddrInfo              peer.AddrInfo
+	Private               bool
+	ContentAddingDisabled bool
 }
 
 type Command struct {
@@ -214,13 +215,11 @@ type TransferStarted struct {
 const OP_TransferStatus = "TransferStatus"
 
 type TransferStatus struct {
+	Message  string
 	Chanid   string
 	DealDBID uint
-
-	State *filclient.ChannelState
-
-	Failed  bool
-	Message string
+	State    *filclient.ChannelState
+	Failed   bool
 }
 
 const OP_ShuttleUpdate = "ShuttleUpdate"

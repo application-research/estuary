@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/filecoin-project/go-legs"
 	"github.com/filecoin-project/go-legs/dtsync"
 	"github.com/filecoin-project/go-legs/httpsync"
@@ -30,18 +31,10 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	keyToCidMapPrefix      = "map/keyCid/"
-	cidToKeyMapPrefix      = "map/cidKey/"
-	keyToMetadataMapPrefix = "map/keyMD/"
-	latestAdvKey           = "sync/adv/"
-	linksCachePath         = "/cache/links"
-)
-
 var (
 	log = logging.Logger("provider/engine")
 
-	dsLatestAdvKey = datastore.NewKey(latestAdvKey)
+	dsLatestAdvKey = datastore.NewKey(constants.LatestAdvKey)
 )
 
 // Engine is an implementation of the core reference provider interface
@@ -104,8 +97,9 @@ func New(o ...Option) (*AutoretrieveEngine, error) {
 // See: AutoretrieveEngine.Shutdown, chunker.NewCachedEntriesChunker, dtsync.NewPublisherFromExisting.
 func (e *AutoretrieveEngine) Start(ctx context.Context) error {
 	// Create datastore entriesChunker
-	entriesCacheDs := dsn.Wrap(e.ds, datastore.NewKey(linksCachePath))
-	cachedChunker, err := chunker.NewCachedEntriesChunker(ctx, entriesCacheDs, e.entChunkSize, e.entCacheCap)
+	entriesCacheDs := dsn.Wrap(e.ds, datastore.NewKey(constants.LinksCachePath))
+	cachedChunker, err := chunker.NewCachedEntriesChunker(ctx, entriesCacheDs, e.entCacheCap, chunker.NewChainChunkerFunc(e.entChunkSize), true)
+
 	if err != nil {
 		return err
 	}
@@ -524,7 +518,7 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 	// this means there is a "cid too short" error in IPLD links serialization.
 	if prevAdvID != cid.Undef {
 		prev := ipld.Link(cidlink.Link{Cid: prevAdvID})
-		adv.PreviousID = &prev
+		adv.PreviousID = prev
 	} else {
 		log.Info("Latest advertisement CID was undefined - no previous advertisement")
 	}
@@ -539,17 +533,17 @@ func (e *AutoretrieveEngine) publishAdvForIndex(ctx context.Context, contextID [
 func (e *AutoretrieveEngine) putKeyCidMap(ctx context.Context, contextID []byte, c cid.Cid) error {
 	// We need to store the map Key-Cid to know what CidLink to put
 	// in advertisement when we notify a removal.
-	err := e.ds.Put(ctx, datastore.NewKey(keyToCidMapPrefix+string(contextID)), c.Bytes())
+	err := e.ds.Put(ctx, datastore.NewKey(constants.KeyToCidMapPrefix+string(contextID)), c.Bytes())
 	if err != nil {
 		return err
 	}
 	// And the other way around when graphsync ios making a request,
 	// so the lister in the linksystem knows to what contextID we are referring.
-	return e.ds.Put(ctx, datastore.NewKey(cidToKeyMapPrefix+c.String()), contextID)
+	return e.ds.Put(ctx, datastore.NewKey(constants.CidToKeyMapPrefix+c.String()), contextID)
 }
 
 func (e *AutoretrieveEngine) getKeyCidMap(ctx context.Context, contextID []byte) (cid.Cid, error) {
-	b, err := e.ds.Get(ctx, datastore.NewKey(keyToCidMapPrefix+string(contextID)))
+	b, err := e.ds.Get(ctx, datastore.NewKey(constants.KeyToCidMapPrefix+string(contextID)))
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -558,15 +552,15 @@ func (e *AutoretrieveEngine) getKeyCidMap(ctx context.Context, contextID []byte)
 }
 
 func (e *AutoretrieveEngine) deleteKeyCidMap(ctx context.Context, contextID []byte) error {
-	return e.ds.Delete(ctx, datastore.NewKey(keyToCidMapPrefix+string(contextID)))
+	return e.ds.Delete(ctx, datastore.NewKey(constants.KeyToCidMapPrefix+string(contextID)))
 }
 
 func (e *AutoretrieveEngine) deleteCidKeyMap(ctx context.Context, c cid.Cid) error {
-	return e.ds.Delete(ctx, datastore.NewKey(cidToKeyMapPrefix+c.String()))
+	return e.ds.Delete(ctx, datastore.NewKey(constants.CidToKeyMapPrefix+c.String()))
 }
 
 func (e *AutoretrieveEngine) getCidKeyMap(ctx context.Context, c cid.Cid) ([]byte, error) {
-	return e.ds.Get(ctx, datastore.NewKey(cidToKeyMapPrefix+c.String()))
+	return e.ds.Get(ctx, datastore.NewKey(constants.CidToKeyMapPrefix+c.String()))
 }
 
 func (e *AutoretrieveEngine) putKeyMetadataMap(ctx context.Context, contextID []byte, metadata *metadata.Metadata) error {
@@ -574,11 +568,11 @@ func (e *AutoretrieveEngine) putKeyMetadataMap(ctx context.Context, contextID []
 	if err != nil {
 		return err
 	}
-	return e.ds.Put(ctx, datastore.NewKey(keyToMetadataMapPrefix+string(contextID)), data)
+	return e.ds.Put(ctx, datastore.NewKey(constants.KeyToMetadataMapPrefix+string(contextID)), data)
 }
 
 func (e *AutoretrieveEngine) getKeyMetadataMap(ctx context.Context, contextID []byte) (metadata.Metadata, error) {
-	data, err := e.ds.Get(ctx, datastore.NewKey(keyToMetadataMapPrefix+string(contextID)))
+	data, err := e.ds.Get(ctx, datastore.NewKey(constants.KeyToMetadataMapPrefix+string(contextID)))
 	if err != nil {
 		return metadata.Metadata{}, err
 	}
@@ -590,7 +584,7 @@ func (e *AutoretrieveEngine) getKeyMetadataMap(ctx context.Context, contextID []
 }
 
 func (e *AutoretrieveEngine) deleteKeyMetadataMap(ctx context.Context, contextID []byte) error {
-	return e.ds.Delete(ctx, datastore.NewKey(keyToMetadataMapPrefix+string(contextID)))
+	return e.ds.Delete(ctx, datastore.NewKey(constants.KeyToMetadataMapPrefix+string(contextID)))
 }
 
 func (e *AutoretrieveEngine) putLatestAdv(ctx context.Context, advID []byte) error {

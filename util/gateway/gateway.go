@@ -30,7 +30,7 @@ import (
 type GatewayHandler struct {
 	bs       blockstore.Blockstore
 	dserv    mdagipld.DAGService
-	resolver *resolver.Resolver
+	resolver resolver.Resolver
 }
 
 type httpError struct {
@@ -50,10 +50,11 @@ func NewGatewayHandler(bs blockstore.Blockstore) *GatewayHandler {
 		return ipldbasicnode.Prototype.Any, nil
 	})
 
+	resolver := resolver.NewBasicResolver(ipldFetcher.WithReifier(unixfsnode.Reify))
 	return &GatewayHandler{
 		bs:       bs,
 		dserv:    merkledag.NewDAGService(bsvc),
-		resolver: resolver.NewBasicResolver(ipldFetcher.WithReifier(unixfsnode.Reify)),
+		resolver: resolver,
 	}
 }
 
