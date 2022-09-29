@@ -22,7 +22,7 @@ jobs:
         run: |
           apk add git
           apk add openssh
-          printf "%s\n" $SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS > secret
+          printf "%s\n" "$SSH_PRIVATE_KEY_ESTUARY_SWAGGER_CLIENTS" > secret
           cat secret
           wc secret
           chmod 400 secret
