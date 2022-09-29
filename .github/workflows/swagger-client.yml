@@ -17,12 +17,13 @@ jobs:
 
     steps:
       - name: Build clients and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           apk add git
           apk add openssh
-          git config --global url.https://github.com/.insteadOf git://github.com/
-
-          git clone https://github.com/snissn/estuary-swagger-clients.git
+          git config --unset-all http.https://github.com/.extraheader
+          git clone https://user:$GITHUB_TOKEN@github.com/snissn/estuary-swagger-clients.git
           cd estuary-swagger-clients
           sh build_all.sh
           git status
