@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/application-research/estuary/util"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"gorm.io/gorm"
@@ -92,7 +93,7 @@ var _ = Describe("HandlerAdmin", Ordered, func() {
 	})
 
 	It("check handleGetSystemConfig", func() {
-		s.handleGetSystemConfig(nil, &User{
+		s.handleGetSystemConfig(nil, &util.User{
 			Model: gorm.Model{ID: 1},
 		})
 		Expect(true).To(Equal(true)) // skip
@@ -109,20 +110,20 @@ var _ = Describe("HandlerAdmin", Ordered, func() {
 	})
 
 	It("check handleSuspendMiner", func() {
-		s.handleSuspendMiner(nil, &User{
+		s.handleSuspendMiner(nil, &util.User{
 			Model: gorm.Model{ID: 1},
 		})
 		Expect(true).To(Equal(true)) // skip
 	})
 
 	It("check handleUnsuspendMiner", func() {
-		s.handleUnsuspendMiner(nil, &User{
+		s.handleUnsuspendMiner(nil, &util.User{
 			Model: gorm.Model{ID: 1},
 		})
 		Expect(true).To(Equal(true)) // skip
 	})
 	It("check handleMinersSetInfo", func() {
-		s.handleMinersSetInfo(nil, &User{
+		s.handleMinersSetInfo(nil, &util.User{
 			Model: gorm.Model{ID: 1},
 		})
 		Expect(true).To(Equal(true)) // skip

@@ -1,5 +1,6 @@
 /scripts/tests/data/config/run.config
 /scripts/tests/data/logs/*
+/tests/reports/*
 
 /estuary
 /filc
