@@ -214,22 +214,13 @@ const docTemplate = `{
                     "collections"
                 ],
                 "summary": "List all collections",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/main.Collection"
+                                "$ref": "#/definitions/collections.Collection"
                             }
                         }
                     },
@@ -277,7 +268,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.Collection"
+                            "$ref": "#/definitions/collections.Collection"
                         }
                     },
                     "400": {
@@ -456,6 +447,66 @@ const docTemplate = `{
                 }
             }
         },
+        "/collections/{coluuid}/contents": {
+            "delete": {
+                "description": "This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Deletes a content from a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "contentid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Variable to use when filtering for files (must be either 'path' or 'content_id')",
+                        "name": "by",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Value of content_id or path to look for",
+                        "name": "value",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/content/add": {
             "post": {
                 "description": "This endpoint is used to upload new content.",
@@ -473,7 +524,7 @@ const docTemplate = `{
                     {
                         "type": "file",
                         "description": "File to upload",
-                        "name": "file",
+                        "name": "data",
                         "in": "formData",
                         "required": true
                     },
@@ -1624,7 +1675,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "main.Collection": {
+        "collections.Collection": {
             "type": "object",
             "properties": {
                 "cid": {

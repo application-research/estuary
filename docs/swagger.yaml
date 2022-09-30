@@ -1,6 +1,6 @@
 basePath: /
 definitions:
-  main.Collection:
+  collections.Collection:
     properties:
       cid:
         type: string
@@ -241,12 +241,6 @@ paths:
   /collections/:
     get:
       description: This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
-      parameters:
-        - description: User ID
-          in: path
-          name: id
-          required: true
-          type: integer
       produces:
         - application/json
       responses:
@@ -254,7 +248,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/main.Collection'
+              $ref: '#/definitions/collections.Collection'
             type: array
         "400":
           description: Bad Request
@@ -286,7 +280,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.Collection'
+            $ref: '#/definitions/collections.Collection'
         "400":
           description: Bad Request
           schema:
@@ -381,6 +375,46 @@ paths:
       summary: Produce a CID of the collection contents
       tags:
         - collections
+  /collections/{coluuid}/contents:
+    delete:
+      description: This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
+      parameters:
+        - description: Collection ID
+          in: path
+          name: coluuid
+          required: true
+          type: string
+        - description: Content ID
+          in: path
+          name: contentid
+          required: true
+          type: string
+        - description: Variable to use when filtering for files (must be either 'path' or 'content_id')
+          in: body
+          name: by
+          required: true
+          schema:
+            type: string
+        - description: Value of content_id or path to look for
+          in: body
+          name: value
+          required: true
+          schema:
+            type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Deletes a content from a collection
+      tags:
+        - collections
   /collections/fs/add:
     post:
       description: This endpoint adds a file to a collection
@@ -414,7 +448,7 @@ paths:
       parameters:
         - description: File to upload
           in: formData
-          name: file
+          name: data
           required: true
           type: file
         - description: Collection UUID
