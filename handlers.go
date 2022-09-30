@@ -818,7 +818,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        file formData file true "File to upload"
+// @Param        data formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
 // @Param        dir path string false "Directory"
 // @Success      200  {object}  util.ContentAddResponse
@@ -3301,7 +3301,6 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Param        id   path      int  true  "User ID"
 // @Success      200  {object}  []main.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
