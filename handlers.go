@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
@@ -819,8 +820,8 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param        file formData file true "File to upload"
-// @Param        coluuid path string false "Collection UUID"
-// @Param        dir path string false "Directory"
+// @Param        coluuid query string false "Collection UUID"
+// @Param        dir query string false "Directory"
 // @Success      200  {object}  util.ContentAddResponse
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *util.User) error {
