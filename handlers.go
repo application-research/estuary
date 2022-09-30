@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"golang.org/x/crypto/bcrypt"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -21,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -199,6 +201,9 @@ func (s *Server) ServeAPI() error {
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
 	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
+
+	cols.DELETE("/:coluuid/contents", withUser(s.handleDeleteContentFromCollection))
+
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
@@ -354,9 +359,9 @@ type statsResp struct {
 	AggregatedFiles int64   `json:"aggregatedFiles"`
 }
 
-func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
+func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 	return func(c echo.Context) error {
-		u, ok := c.Get("user").(*User)
+		u, ok := c.Get("user").(*util.User)
 		if !ok {
 			return &util.HttpError{
 				Code:    http.StatusUnauthorized,
@@ -375,7 +380,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 // @Param        limit path string true "limit"
 // @Produce      json
 // @Router       /content/stats [get]
-func (s *Server) handleStats(c echo.Context, u *User) error {
+func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	limit := 500
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -605,7 +610,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Produce      json
 // @Param        body body util.ContentAddIpfsBody true "IPFS Body"
 // @Router       /content/add-ipfs [post]
-func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
+func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -622,9 +627,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		filename = params.Root
 	}
 
-	var cols []*CollectionRef
+	var cols []*collections.CollectionRef
 	if params.CollectionID != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
 			return err
 		}
@@ -649,7 +654,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			filename = filepath.Base(colp)
 		}
 
-		cols = []*CollectionRef{
+		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
 				Path:       &path,
@@ -699,7 +704,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 // @Param 		 commp query string false "Commp"
 // @Param 		 size query string false "Size"
 // @Router       /content/add-car [post]
-func (s *Server) handleAddCar(c echo.Context, u *User) error {
+func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -813,12 +818,12 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        file formData file true "File to upload"
+// @Param        data formData file true "File to upload"
 // @Param        coluuid path string false "Collection UUID"
 // @Param        dir path string false "Directory"
 // @Success      200  {object}  util.ContentAddResponse
 // @Router       /content/add [post]
-func (s *Server) handleAdd(c echo.Context, u *User) error {
+func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
@@ -875,9 +880,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	coluuid := c.QueryParam("coluuid")
-	var col *Collection
+	var col *collections.Collection
 	if coluuid != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 			return err
 		}
@@ -932,7 +937,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	if col != nil {
 		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := s.DB.Create(&CollectionRef{
+		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 			Path:       &fullPath,
@@ -974,7 +979,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 // redirectContentAdding is called when localContentAddingDisabled is true
 // it finds available shuttles and adds the desired content in one of them
-func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
+func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
@@ -1102,7 +1107,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
@@ -1194,7 +1199,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Produce      json
 // @Success 	200 {array} string
 // @Router       /content/list [get]
-func (s *Server) handleListContent(c echo.Context, u *User) error {
+func (s *Server) handleListContent(c echo.Context, u *util.User) error {
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
@@ -1216,7 +1221,7 @@ type expandedContent struct {
 // @Param limit query int false "Limit"
 // @Param offset query int false "Offset"
 // @Router       /content/deals [get]
-func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
+func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error {
 
 	var limit int = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -1279,7 +1284,7 @@ type dealStatus struct {
 // @Produce      json
 // @Param id path int true "Content ID"
 // @Router       /content/status/{id} [get]
-func (s *Server) handleContentStatus(c echo.Context, u *User) error {
+func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	contID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1360,7 +1365,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Produce      json
 // @Param deal path int true "Deal ID"
 // @Router       /deals/status/{deal} [get]
-func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
+func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	val, err := strconv.Atoi(c.Param("deal"))
@@ -1383,7 +1388,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 // @Produce      json
 // @Param 		propcid path string true "PropCid"
 // @Router       /deal/status-by-proposal/{propcid} [get]
-func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
+func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	propcid, err := cid.Decode(c.Param("propcid"))
@@ -1566,7 +1571,7 @@ type dealRequest struct {
 // @Param miner path string true "Miner"
 // @Param dealRequest body string true "Deal Request"
 // @Router       /deals/make/{miner} [post]
-func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
+func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
@@ -1816,10 +1821,11 @@ type getInvitesResp struct {
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
-	if err := s.DB.Model(&InviteCode{}).
+	if err := s.DB.Model(&util.InviteCode{}).
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
+		Order("invite_codes.created_at ASC").
 		Scan(&invites).Error; err != nil {
 		return err
 	}
@@ -1827,9 +1833,9 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	return c.JSON(http.StatusOK, invites)
 }
 
-func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
+func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
-	invite := &InviteCode{
+	invite := &util.InviteCode{
 		Code:      code,
 		CreatedBy: u.ID,
 	}
@@ -1904,7 +1910,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numUsers int64
-	if err := s.DB.Model(&User{}).Count(&numUsers).Error; err != nil {
+	if err := s.DB.Model(&util.User{}).Count(&numUsers).Error; err != nil {
 		return err
 	}
 
@@ -1948,7 +1954,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // @Tags       	 admin
 // @Produce      json
 // @Router       /admin/system/config [get]
-func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
+func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
 	for _, sh := range s.CM.shuttles {
 		if sh.hostname == "" {
@@ -1956,7 +1962,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 			continue
 		}
 
-		out, err := s.getShuttleConfig(sh.hostname, u.authToken.Token)
+		out, err := s.getShuttleConfig(sh.hostname, u.AuthToken.Token)
 		if err != nil {
 			log.Warnf("failed to get shuttle config: %s", err)
 			continue
@@ -2027,7 +2033,7 @@ type minerSetInfoParams struct {
 	Name string `json:"name"`
 }
 
-func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
+func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2074,7 +2080,7 @@ type suspendMinerBody struct {
 	Reason string `json:"reason"`
 }
 
-func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
+func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2107,7 +2113,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
+func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2517,7 +2523,7 @@ type bandwidthResponse struct {
 // @Produce      json
 // @Param 		 content path string true "Content ID"
 // @Router       /content/bw-usage/{content} [get]
-func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
+func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2555,7 +2561,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 // @Param content path string true "Content ID"
 // @Success 	200 {object} string
 // @Router       /content/aggregated/{content} [get]
-func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
+func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2585,7 +2591,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 // @Param content path string true "Content ID"
 // @Success 	200 {object} string
 // @Router       /content/failures/{content} [get]
-func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
+func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2732,8 +2738,8 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) checkTokenAuth(token string) (*User, error) {
-	var authToken AuthToken
+func (s *Server) checkTokenAuth(token string) (*util.User, error) {
+	var authToken util.AuthToken
 	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -2753,7 +2759,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	var user User
+	var user util.User
 	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -2765,7 +2771,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
-	user.authToken = authToken
+	user.AuthToken = authToken
 	return &user, nil
 }
 
@@ -2791,7 +2797,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 
 			span.SetAttributes(attribute.Int("user", int(u.ID)))
 
-			if u.authToken.UploadOnly && level >= util.PermLevelUser {
+			if u.AuthToken.UploadOnly && level >= util.PermLevelUser {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
@@ -2829,7 +2835,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		return err
 	}
 
-	var invite InviteCode
+	var invite util.InviteCode
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2849,7 +2855,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	username := strings.ToLower(reg.Username)
 
-	var exist *User
+	var exist *util.User
 	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -2866,11 +2872,11 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	salt := uuid.New().String()
 
-	newUser := &User{
+	newUser := &util.User{
 		Username: username,
 		UUID:     uuid.New().String(),
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(reg.Password, salt),
+		PassHash: util.GetPasswordHash(reg.Password, salt, s.DB.Config.Dialector.Name()),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2881,7 +2887,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	authToken := &AuthToken{
+	authToken := &util.AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   newUser.ID,
 		Expiry: time.Now().Add(time.Hour * 24 * 7),
@@ -2918,7 +2924,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	var user User
+	var user util.User
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2930,8 +2936,20 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	}
 
 	//	validate password
-	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
-		((user.Salt == "") && (user.PassHash != body.Password)) {
+	//	SQLlite and Postgres has incompatibility in hashing and even though we are dropping support for sqlite later,
+	//	we still need to accommodate those who chooses to use SQLite for experimentation purposes.
+	var valid = true
+	var dbDialect = s.DB.Config.Dialector.Name()
+
+	//	check password hash (this is the way).
+	if (user.Salt != "" && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt, dbDialect))) || (user.Salt == "" && user.PassHash != body.Password) {
+		valid = false                                                                           //	assume it's not valid.
+		if bcrypt.CompareHashAndPassword([]byte(user.PassHash), []byte(body.Password)) == nil { //	we are using bcrypt, so we need to rehash it.
+			valid = true
+		}
+	}
+
+	if !valid {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2953,7 +2971,7 @@ type changePasswordParams struct {
 	NewPassword string `json:"newPasswordHash"`
 }
 
-func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
+func (s *Server) handleUserChangePassword(c echo.Context, u *util.User) error {
 	var params changePasswordParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -2961,12 +2979,12 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 
 	salt := uuid.New().String()
 
-	updatedUserColumns := &User{
+	updatedUserColumns := &util.User{
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+		PassHash: util.GetPasswordHash(params.NewPassword, salt, s.DB.Config.Dialector.Name()),
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
 		return err
 	}
 
@@ -2977,7 +2995,7 @@ type changeAddressParams struct {
 	Address string `json:"address"`
 }
 
-func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
+func (s *Server) handleUserChangeAddress(c echo.Context, u *util.User) error {
 	var params changeAddressParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -2993,7 +3011,7 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		}
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
 		return err
 	}
 
@@ -3012,7 +3030,7 @@ type userStatsResponse struct {
 // @Produce      json
 // @Success      200  {object}  userStatsResponse
 // @Router       /user/stats [get]
-func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
+func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
 						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
@@ -3024,7 +3042,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []string) (*AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -3041,7 +3059,7 @@ func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []strin
 		}
 	}
 
-	authToken := &AuthToken{
+	authToken := &util.AuthToken{
 		Token:      "EST" + uuid.New().String() + "ARY",
 		User:       user.ID,
 		Expiry:     expiry,
@@ -3055,7 +3073,7 @@ func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []strin
 	return authToken, nil
 }
 
-func (s *Server) handleGetViewer(c echo.Context, u *User) error {
+func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
@@ -3078,11 +3096,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
 		},
-		AuthExpiry: u.authToken.Expiry,
+		AuthExpiry: u.AuthToken.Expiry,
 	})
 }
 
-func (s *Server) getMinersOwnedByUser(u *User) []string {
+func (s *Server) getMinersOwnedByUser(u *util.User) []string {
 	var miners []storageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
 		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
@@ -3097,7 +3115,7 @@ func (s *Server) getMinersOwnedByUser(u *User) []string {
 	return out
 }
 
-func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
+func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 
 	// TODO: this should be a lotttttt smarter
 	s.CM.shuttlesLk.Lock()
@@ -3165,10 +3183,10 @@ type getApiKeysResp struct {
 // @Produce      json
 // @Param        key path string true "Key"
 // @Router       /user/api-keys/{key} [delete]
-func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
+func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key")
 
-	if err := s.DB.Delete(&AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
 		return err
 	}
 
@@ -3185,7 +3203,7 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
-func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
+func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 	expiry := time.Now().Add(time.Hour * 24 * 30)
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
@@ -3225,8 +3243,8 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [get]
-func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
-	var keys []AuthToken
+func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
+	var keys []util.AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
 		return err
 	}
@@ -3253,18 +3271,18 @@ type createCollectionBody struct {
 // @Tags         collections
 // @Produce      json
 // @Param        body     body     createCollectionBody  true        "Collection name and description"
-// @Success      200  {object}  Collection
+// @Success      200  {object}  collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [post]
-func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
+func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	col := &Collection{
+	col := &collections.Collection{
 		UUID:        uuid.New().String(),
 		Name:        body.Name,
 		Description: body.Description,
@@ -3283,14 +3301,13 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Param        id   path      int  true  "User ID"
 // @Success      200  {object}  []main.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [get]
-func (s *Server) handleListCollections(c echo.Context, u *User) error {
-	var cols []Collection
+func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
+	var cols []collections.Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
@@ -3307,7 +3324,7 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 // @Param        body     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
 // @Router       /collections/{coluuid} [post]
-func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
+func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var contentIDs []uint
@@ -3319,7 +3336,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("too many contents specified: %d (max 128)", len(contentIDs))
 	}
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
 	}
@@ -3333,11 +3350,13 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	var colrefs []CollectionRef
+	defaultPath := "/"
+	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
-		colrefs = append(colrefs, CollectionRef{
+		colrefs = append(colrefs, collections.CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
+			Path:       &defaultPath,
 		})
 	}
 
@@ -3356,16 +3375,16 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Router       /collections/{coluuid}/commit [post]
-func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
+func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
 		return err
 	}
 
 	contents := []util.ContentWithPath{}
-	if err := s.DB.Model(CollectionRef{}).
+	if err := s.DB.Model(collections.CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*, collection_refs.path").
@@ -3425,7 +3444,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
-	if err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
+	if err := s.DB.Model(collections.Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
 		return err
 	}
 
@@ -3448,17 +3467,17 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Param        coluuid query string true "Collection UUID"
 // @Param        dir query string false "Directory"
 // @Router       /collections/{coluuid} [get]
-func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
+func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 		return err
 	}
 
 	// TODO: optimize this a good deal
 	var refs []util.ContentWithPath
-	if err := s.DB.Model(CollectionRef{}).
+	if err := s.DB.Model(collections.CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*, collection_refs.path as path").
@@ -3576,10 +3595,10 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
 // @Router       /collections/{coluuid} [delete]
-func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
+func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -3595,6 +3614,80 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+type deleteContentFromCollectionBody struct {
+	By    string `json:"by"`
+	Value string `json:"value"`
+}
+
+// handleDeleteContentFromCollection godoc
+// @Summary      Deletes a content from a collection
+// @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
+// @Tags         collections
+// @Param        coluuid path string true "Collection ID"
+// @Param        contentid path string true "Content ID"
+// @Param        by body string true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
+// @Param        value body string true "Value of content_id or path to look for"
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Router       /collections/{coluuid}/contents [delete]
+func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
+	var body deleteContentFromCollectionBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+	coluuid := c.Param("coluuid")
+
+	// check if 'by' is either 'path' or 'content_id'
+	if body.By != "path" && body.By != "content_id" {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_INVALID_FILTER,
+			Details: fmt.Sprintf("invalid 'by' value, must be either 'content_id' or 'path', got %s", body.By),
+		}
+	}
+
+	if len(body.Value) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_VALUE_REQUIRED,
+			Details: fmt.Sprintf("invalid 'value' field, must not be empty"),
+		}
+	}
+
+	col, err := collections.GetCollection(coluuid, s.DB, u)
+	if err != nil {
+		return err
+	}
+
+	refs := []collections.CollectionRef{}
+	if body.By == "path" {
+		path := body.Value
+		refs, err = collections.GetContentsInPath(coluuid, path, s.DB, u)
+		if err != nil {
+			return err
+		}
+	} else if body.By == "content_id" {
+		contentid := body.Value
+		content, err := util.GetContent(contentid, s.DB, u)
+		if err != nil {
+			return err
+		}
+		if err := s.DB.Model(collections.CollectionRef{}).
+			Where("collection = ?", col.ID).
+			Where("content = ?", content.ID).
+			Scan(&refs).Error; err != nil {
+			return err
+		}
+	}
+
+	// delete found refs
+	if err := s.DB.Delete(&refs).Error; err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusOK)
@@ -3662,7 +3755,7 @@ type adminUserResponse struct {
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
 	if err := s.DB.Model(util.Content{}).
-		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&User{}).Select("username").Where("id = user_id")).
+		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&util.User{}).Select("username").Where("id = user_id")).
 		Group("user_id").Scan(&resp).Error; err != nil {
 		return err
 	}
@@ -3755,7 +3848,7 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 		return nil, err
 	}
 
-	if err := s.DB.Model(User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -3776,7 +3869,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Tags         content
 // @Produce      json
 // @Router       /content/staging-zones [get]
-func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
+func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
@@ -3787,7 +3880,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Router       /user/export [get]
-func (s *Server) handleUserExportData(c echo.Context, u *User) error {
+func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
 		return err
@@ -3994,7 +4087,7 @@ type dealPairs struct {
 // @Param        duration query string true "Duration"
 // @Param        all query string true "All"
 // @Router       /content/all-deals [get]
-func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
+func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	begin := time.Now().Add(time.Hour * 24)
 	duration := time.Hour * 24
@@ -4083,7 +4176,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var u User
+	var u util.User
 	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return err
 	}
@@ -4591,7 +4684,7 @@ func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 // @Tags         deals
 // @Produce      json
 // @Router       /deals/failures [get]
-func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
+func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	recs, err := s.getStorageFailure(c, u)
 	if err != nil {
 		return err
@@ -4599,7 +4692,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, recs)
 }
 
-func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error) {
+func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -4636,7 +4729,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error)
 // @Produce      json
 // @Param        body body string true "Content"
 // @Router       /content/create [post]
-func (s *Server) handleCreateContent(c echo.Context, u *User) error {
+func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
@@ -4654,7 +4747,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
-	var col Collection
+	var col collections.Collection
 	if req.CollectionID != "" {
 		if err := s.DB.First(&col, "uuid = ?", req.CollectionID).Error; err != nil {
 			return err
@@ -4690,7 +4783,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 
 		path := &sp
-		if err := s.DB.Create(&CollectionRef{
+		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 			Path:       path,
@@ -4710,7 +4803,7 @@ type claimMinerBody struct {
 	Name  string          `json:"name"`
 }
 
-func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
+func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	var cmb claimMinerBody
@@ -4819,7 +4912,7 @@ func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error 
 	return nil
 }
 
-func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
+func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -5224,12 +5317,12 @@ func sanitizePath(p string) (string, error) {
 // @Param        path query string true "Path to file"
 // @Produce      json
 // @Router       /collections/fs/add [post]
-func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
+func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")
 	contid := c.QueryParam("content")
 	npath := c.QueryParam("path")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
 		return err
 	}
@@ -5256,7 +5349,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		path = &p
 	}
 
-	if err := s.DB.Create(&CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
+	if err := s.DB.Create(&collections.CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
 		return errors.Wrap(err, "failed to add content to requested collection")
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -5324,7 +5417,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
 
-func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *User) (bool, error) {
+func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (bool, error) {
 	var count int64
 	if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
 		return false, err
@@ -5369,6 +5462,6 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 	return out, nil
 }
 
-func (s *Server) isContentAddingDisabled(u *User) bool {
+func (s *Server) isContentAddingDisabled(u *util.User) bool {
 	return (s.CM.globalContentAddingDisabled && s.CM.localContentAddingDisabled) || u.StorageDisabled
 }
