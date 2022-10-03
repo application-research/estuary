@@ -3445,7 +3445,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Param        coluuid query string true "Collection UUID"
+// @Param        coluuid path string true "Collection UUID"
 // @Param        dir query string false "Directory"
 // @Router       /collections/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
