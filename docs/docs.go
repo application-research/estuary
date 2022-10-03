@@ -343,7 +343,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Collection UUID",
                         "name": "coluuid",
-                        "in": "query",
+                        "in": "path",
                         "required": true
                     },
                     {
