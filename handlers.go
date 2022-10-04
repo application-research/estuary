@@ -2357,7 +2357,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2399,7 +2399,7 @@ type minerChainInfo struct {
 // @Description  This endpoint returns miner stats
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
