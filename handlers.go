@@ -3631,8 +3631,7 @@ type deleteContentFromCollectionBody struct {
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
 // @Param        contentid path string true "Content ID"
-// @Param        by body string true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
-// @Param        value body string true "Value of content_id or path to look for"
+// @Param        body body deleteContentFromCollectionBody true "{by: Variable to use when filtering for files (must be either 'path' or 'content_id'), value: Value of content_id or path to look for}"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
