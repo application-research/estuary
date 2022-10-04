@@ -4521,8 +4521,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Summary      Register autoretrieve server
 // @Description  This endpoint registers a new autoretrieve server
 // @Tags         autoretrieve
-// @Param        addresses body string true "Autoretrieve's comma-separated list of addresses"
-// @Param        pubKey body string true "Autoretrieve's public key"
+// @Param        addresses formData string true "Autoretrieve's comma-separated list of addresses"
+// @Param        pubKey formData string true "Autoretrieve's public key"
 // @Produce      json
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
