@@ -318,7 +318,7 @@ paths:
       description: This endpoint is used to get contents in a collection. If no colpath query param is passed
       parameters:
         - description: Collection UUID
-          in: path
+          in: query
           name: coluuid
           required: true
           type: string
