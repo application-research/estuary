@@ -119,7 +119,7 @@ info:
 paths:
   /admin/autoretrieve/init:
     post:
-      description: This endpoint registers a new autoretrieve server
+      description: This endpoint registers a new autoretrieve server Q@&^5#^&*Q^Wasdfalsdkjflkj
       parameters:
         - description: Autoretrieve's comma-separated list of addresses
           in: formData
@@ -394,12 +394,7 @@ paths:
           name: contentid
           required: true
           type: string
-        - description: '{by: Variable to use when filtering for files (must be either ''path'' or ''content_id''), value: Value of content_id or path to look for}'
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/main.deleteContentFromCollectionBody'
+
       produces:
         - application/json
       responses:

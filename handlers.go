@@ -4518,7 +4518,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 
 // handleAutoretrieveInit godoc
 // @Summary      Register autoretrieve server
-// @Description  This endpoint registers a new autoretrieve server
+// @Description  This endpoint registers a new autoretrieve server Q@&^5#^&*Q^Wasdfalsdkjflkj
 // @Tags         autoretrieve
 // @Param        addresses formData string true "Autoretrieve's comma-separated list of addresses"
 // @Param        pubKey formData string true "Autoretrieve's public key"

@@ -26,7 +26,7 @@ const docTemplate = `{
     "paths": {
         "/admin/autoretrieve/init": {
             "post": {
-                "description": "This endpoint registers a new autoretrieve server",
+                "description": "This endpoint registers a new autoretrieve server Q@\u0026^5#^\u0026*Q^Wasdfalsdkjflkj",
                 "produces": [
                     "application/json"
                 ],
@@ -469,12 +469,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "{by: Variable to use when filtering for files (must be either 'path' or 'content_id'), value: Value of content_id or path to look for}",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/main.deleteContentFromCollectionBody"
+
                         }
                     }
                 ],

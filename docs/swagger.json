@@ -19,7 +19,7 @@
   "paths": {
     "/admin/autoretrieve/init": {
       "post": {
-        "description": "This endpoint registers a new autoretrieve server",
+        "description": "This endpoint registers a new autoretrieve server Q@&^5#^&*Q^Wasdfalsdkjflkj",
         "produces": [
           "application/json"
         ],
@@ -460,16 +460,8 @@
             "name": "contentid",
             "in": "path",
             "required": true
-          },
-          {
-            "description": "{by: Variable to use when filtering for files (must be either 'path' or 'content_id'), value: Value of content_id or path to look for}",
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/main.deleteContentFromCollectionBody"
-            }
           }
+          
         ],
         "responses": {
           "200": {
