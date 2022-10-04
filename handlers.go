@@ -2489,7 +2489,7 @@ type minerDealsResp struct {
 // @Description  This endpoint returns all miners deals
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
