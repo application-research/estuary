@@ -394,7 +394,12 @@ paths:
           name: contentid
           required: true
           type: string
-
+        - description: '{by: Variable to use when filtering for files (must be either ''path'' or ''content_id''), value: Value of content_id or path to look for}'
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.deleteContentFromCollectionBody'
       produces:
         - application/json
       responses:
