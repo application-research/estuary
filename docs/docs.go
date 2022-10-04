@@ -36,22 +36,18 @@ const docTemplate = `{
                 "summary": "Register autoretrieve server",
                 "parameters": [
                     {
+                        "type": "string",
                         "description": "Autoretrieve's comma-separated list of addresses",
                         "name": "addresses",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
+                        "in": "formData",
+                        "required": true
                     },
                     {
+                        "type": "string",
                         "description": "Autoretrieve's public key",
                         "name": "pubKey",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
+                        "in": "formData",
+                        "required": true
                     }
                 ],
                 "responses": {}
@@ -214,22 +210,13 @@ const docTemplate = `{
                     "collections"
                 ],
                 "summary": "List all collections",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/main.Collection"
+                                "$ref": "#/definitions/collections.Collection"
                             }
                         }
                     },
@@ -277,7 +264,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.Collection"
+                            "$ref": "#/definitions/collections.Collection"
                         }
                     },
                     "400": {
@@ -456,6 +443,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/collections/{coluuid}/contents": {
+            "delete": {
+                "description": "This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Deletes a content from a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "contentid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "{by: Variable to use when filtering for files (must be either 'path' or 'content_id'), value: Value of content_id or path to look for}",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.deleteContentFromCollectionBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/content/add": {
             "post": {
                 "description": "This endpoint is used to upload new content.",
@@ -473,7 +511,7 @@ const docTemplate = `{
                     {
                         "type": "file",
                         "description": "File to upload",
-                        "name": "file",
+                        "name": "data",
                         "in": "formData",
                         "required": true
                     },
@@ -481,13 +519,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Collection UUID",
                         "name": "coluuid",
-                        "in": "path"
+                        "in": "query"
                     },
                     {
                         "type": "string",
                         "description": "Directory",
                         "name": "dir",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -1350,7 +1388,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {}
@@ -1372,7 +1411,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {}
@@ -1394,7 +1434,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {}
@@ -1624,7 +1665,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "main.Collection": {
+        "collections.Collection": {
             "type": "object",
             "properties": {
                 "cid": {
@@ -1654,6 +1695,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.deleteContentFromCollectionBody": {
+            "type": "object",
+            "properties": {
+                "by": {
+                    "type": "string"
+                },
+                "value": {
                     "type": "string"
                 }
             }

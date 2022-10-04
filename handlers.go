@@ -2357,7 +2357,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2399,7 +2399,7 @@ type minerChainInfo struct {
 // @Description  This endpoint returns miner stats
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
@@ -2489,7 +2489,7 @@ type minerDealsResp struct {
 // @Description  This endpoint returns all miners deals
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Param miner path string true "Filter by miner"
 // @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -3302,7 +3302,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  []main.Collection
+// @Success      200  {object}  []collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3631,8 +3631,7 @@ type deleteContentFromCollectionBody struct {
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
 // @Param        contentid path string true "Content ID"
-// @Param        by body string true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
-// @Param        value body string true "Value of content_id or path to look for"
+// @Param        body body deleteContentFromCollectionBody true "{by: Variable to use when filtering for files (must be either 'path' or 'content_id'), value: Value of content_id or path to look for}"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -4521,8 +4520,8 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Summary      Register autoretrieve server
 // @Description  This endpoint registers a new autoretrieve server
 // @Tags         autoretrieve
-// @Param        addresses body string true "Autoretrieve's comma-separated list of addresses"
-// @Param        pubKey body string true "Autoretrieve's public key"
+// @Param        addresses formData string true "Autoretrieve's comma-separated list of addresses"
+// @Param        pubKey formData string true "Autoretrieve's public key"
 // @Produce      json
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
