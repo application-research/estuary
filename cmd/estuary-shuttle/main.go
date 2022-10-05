@@ -11,7 +11,7 @@ import (
 	"net/http"
 
 	//#nosec G108 - exposing the profiling endpoint is expected
-	_ "net/http/pprof"
+	httpprof "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1046,6 +1046,7 @@ func (s *Shuttle) ServeAPI() error {
 		}
 		return err
 	})
+	e.GET("/debug/pprof/:prof", serveProfile)
 
 	e.Use(middleware.CORS())
 
@@ -1086,6 +1087,11 @@ func (s *Shuttle) ServeAPI() error {
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
 	return e.Start(s.shuttleConfig.ApiListen)
+}
+
+func serveProfile(c echo.Context) error {
+	httpprof.Handler(c.Param("prof")).ServeHTTP(c.Response().Writer, c.Request())
+	return nil
 }
 
 func (s *Shuttle) isContentAddingDisabled(u *User) bool {
