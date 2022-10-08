@@ -20,6 +20,9 @@ FFI_PATH:=extern/filecoin-ffi/
 FFI_DEPS:=.install-filcrypto
 FFI_DEPS:=$(addprefix $(FFI_PATH),$(FFI_DEPS))
 
+#For mac silicon
+export LIBRARY_PATH := /opt/homebrew/lib:$(LIBRARY_PATH)
+
 $(FFI_DEPS): build/.filecoin-install ;
 
 build/.filecoin-install: $(FFI_PATH)
