@@ -632,47 +632,40 @@ func main() {
 
 		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
 		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
-			s.tcLk.Lock()
-			defer s.tcLk.Unlock()
-
-			trk, ok := s.trackingChannels[fst.TransferID]
-			// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
-			if trk.Last != nil && trk.Last.Status == fst.Status {
-				return
-			}
-
-			// if no state has been tracked for this ID, start tracking it (since both deal DB ID and chan ID exist)
-			if !ok {
-				s.trackTransfer(&fst.ChannelID, dbid, &fst)
-			}
-
 			go func() {
-				// send start and finished state, so the accurate timestamps can be saved
-				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
-					var isStarted bool
-					switch fst.Status {
-					case datatransfer.Requested:
-						isStarted = true
-					default:
-						isStarted = false
-					}
+				s.tcLk.Lock()
+				trk, _ := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
 
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, isStarted); err != nil {
-						log.Errorf("failed to set data transfer started from event: %s", err)
-					}
+				// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
+				if trk != nil && trk.Last.Status == fst.Status {
 					return
 				}
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
 
-				// for every other events, only register failed state
-				trsFailed, msg := util.TransferFailed(&fst)
-				if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
-					Chanid:   fst.TransferID,
-					DealDBID: dbid,
-					State:    &fst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
-				}); err != nil {
-					log.Errorf("failed to set data transfer update from event: %s", err)
+				spew.Dump("=======event========", fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, true); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, false); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				default:
+					// for every other events
+					trsFailed, msg := util.TransferFailed(&fst)
+					if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: dbid,
+						State:    &fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					}); err != nil {
+						log.Errorf("failed to set data transfer update from event: %s", err)
+					}
 				}
 			}()
 		})
@@ -864,13 +857,9 @@ func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st
 	s.tcLk.Lock()
 	defer s.tcLk.Unlock()
 
-	// only track it if not already being tracked, so we do not replace last state
-	_, ok := s.trackingChannels[chanid.String()]
-	if !ok {
-		s.trackingChannels[chanid.String()] = &util.ChanTrack{
-			Dbid: dealdbid,
-			Last: st,
-		}
+	s.trackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
 	}
 }
 

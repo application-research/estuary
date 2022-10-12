@@ -42,7 +42,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	case drpc.CMD_TakeContent:
 		return d.handleRpcTakeContent(ctx, cmd.Params.TakeContent)
 	case drpc.CMD_AggregateContent:
-		return d.handleRpcAggregateContent(ctx, cmd.Params.AggregateContent)
+		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContent)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_PrepareForDataRequest:
@@ -279,35 +279,34 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		if err != nil {
 			return err
 		}
-		if count > 0 {
-			if count > 1 {
-				log.Errorf("have multiple pins for same content: %d", c.ID)
+
+		if count == 1 {
+			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, true); err != nil {
+				return err
 			}
 			continue
 		}
-
-		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, true); err != nil {
-			return err
-		}
+		log.Errorf("there a zero or multiple pins for same content: %d", c.ID)
 	}
-
 	return nil
 }
 
-func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
-	// TODO, check no aggregate is already running
-	ctx, span := d.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+	// only progress if aggr is not allready in progress
+	if !s.markStartAggr(cmd.DBID) {
+		return nil
+	}
+	defer s.finishAggr(cmd.DBID)
+
+	ctx, span := s.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
 		attribute.Int64("dbID", int64(cmd.DBID)),
 		attribute.Int64("userId", int64(cmd.UserID)),
 		attribute.String("root", cmd.Root.String()),
 	))
 	defer span.End()
 
-	d.addPinLk.Lock()
-	defer d.addPinLk.Unlock()
-
 	var p Pin
-	err := d.DB.First(&p, "content = ?", cmd.DBID).Error
+	err := s.DB.First(&p, "content = ?", cmd.DBID).Error
 	switch err {
 	default:
 		return err
@@ -321,7 +320,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	totalSize := int64(len(cmd.ObjData))
 	for _, c := range cmd.Contents {
 		var aggr Pin
-		if err := d.DB.First(&aggr, "content = ?", c).Error; err != nil {
+		if err := s.DB.First(&aggr, "content = ?", c).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
@@ -330,7 +329,6 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		if !aggr.Active || aggr.Failed {
 			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c)
 		}
-
 		totalSize += aggr.Size
 	}
 
@@ -343,7 +341,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		Pinning:   true,
 		Aggregate: true,
 	}
-	if err := d.DB.Create(pin).Error; err != nil {
+	if err := s.DB.Create(pin).Error; err != nil {
 		return err
 	}
 
@@ -351,13 +349,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	if err != nil {
 		return err
 	}
-	if err := d.Node.Blockstore.Put(ctx, blk); err != nil {
-		return err
-	}
-
-	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
-		"active": true,
-	}).Error; err != nil {
+	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
 		return err
 	}
 
@@ -365,18 +357,26 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		Cid:  util.DbCID{CID: blk.Cid()},
 		Size: len(blk.RawData()),
 	}
-	if err := d.DB.Create(obj).Error; err != nil {
+	if err := s.DB.Create(obj).Error; err != nil {
 		return err
 	}
+
 	ref := &ObjRef{
 		Pin:    pin.ID,
 		Object: obj.ID,
 	}
-	if err := d.DB.Create(ref).Error; err != nil {
+	if err := s.DB.Create(ref).Error; err != nil {
 		return err
 	}
 
-	go d.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, nil)
+	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+		"active":  true,
+		"pinning": false,
+	}).Error; err != nil {
+		return err
+	}
+
+	s.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, []*Object{obj})
 	return nil
 }
 
@@ -384,13 +384,9 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, s
 	s.tcLk.Lock()
 	defer s.tcLk.Unlock()
 
-	// only track it if not already being tracked, so we do not replace last state
-	_, ok := s.trackingChannels[chanid.String()]
-	if !ok {
-		s.trackingChannels[chanid.String()] = &util.ChanTrack{
-			Dbid: dealdbid,
-			Last: st,
-		}
+	s.trackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
 	}
 }
 
@@ -475,48 +471,72 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 	))
 	defer span.End()
 
-	go func() {
-		ctx := context.TODO()
-		st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
-		if err != nil {
-			log.Errorf("failed to get requested transfer status: %s", err)
-			return
-		}
+	ctx = context.TODO()
+	st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
+	if err != nil {
+		return err
+	}
 
-		trsFailed, msg := util.TransferFailed(st)
-
-		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-			Chanid: req.ChanID,
-
-			// NB: this parameter is only here because
-			// its wanted on the other side. We could probably just look up by
-			// channel ID instead.
-			DealDBID: req.DealDBID,
-
-			State:   st,
-			Failed:  trsFailed,
-			Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
-		})
-	}()
+	trsFailed, msg := util.TransferFailed(st)
+	s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+		Chanid:   req.ChanID,
+		DealDBID: req.DealDBID,
+		State:    st,
+		Failed:   trsFailed,
+		Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
+	})
 	return nil
 }
 
 func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
-	go func() {
-		if err := s.retrieveContent(ctx, req.Content, req.Cid, req.Deals); err != nil {
-			log.Errorf("failed to retrieve content: %s", err)
-		}
-	}()
-	return nil
+	return s.retrieveContent(ctx, req.Content, req.Cid, req.Deals)
 }
 
 func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinContent) error {
 	for _, c := range req.Contents {
-		if err := s.Unpin(ctx, c); err != nil {
-			return err
-		}
+		go func(cntID uint) {
+			if err := s.Unpin(ctx, cntID); err != nil {
+				log.Errorf("failed to unpin content %d: %s", cntID, err)
+			}
+		}(c)
 	}
 	return nil
+}
+
+func (s *Shuttle) markStartUnpin(cont uint) bool {
+	s.unpinLk.Lock()
+	defer s.unpinLk.Unlock()
+
+	if s.unpinInProgress[cont] {
+		return false
+	}
+
+	s.unpinInProgress[cont] = true
+	return true
+}
+
+func (s *Shuttle) finishUnpin(cont uint) {
+	s.unpinLk.Lock()
+	defer s.unpinLk.Unlock()
+	delete(s.unpinInProgress, cont)
+}
+
+func (s *Shuttle) markStartAggr(cont uint) bool {
+	s.aggrLk.Lock()
+	defer s.aggrLk.Unlock()
+
+	if s.aggrInProgress[cont] {
+		return false
+	}
+
+	s.aggrInProgress[cont] = true
+	return true
+}
+
+func (s *Shuttle) finishAggr(cont uint) {
+	s.aggrLk.Lock()
+	defer s.aggrLk.Unlock()
+	delete(s.aggrInProgress, cont)
 }
 
 func (s *Shuttle) markStartSplit(cont uint) bool {
@@ -618,6 +638,9 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"size":      0,
+		"active":    false,
+		"pinning":   false,
 	}).Error; err != nil {
 		return err
 	}

@@ -269,6 +269,16 @@ func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	}
 }
 
+func (cm *ContentManager) shuttleCanAddContent(handle string) bool {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if ok {
+		return d.ContentAddingDisabled
+	}
+	return true
+}
+
 func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
 	cm.shuttlesLk.Lock()
 	defer cm.shuttlesLk.Unlock()
@@ -386,7 +396,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}
 	}
 
-	// update remmote transfer for only shuttles
+	// update remote transfer for only shuttles
 	if handle != constants.ContentLocationLocal {
 		cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	}

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
 
 	"github.com/application-research/estuary/config"
@@ -533,64 +533,53 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
-func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
-	var cont util.Content
-	if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
-		return "", err
-	}
-	return cont.Location, nil
-}
-
-func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]util.Content, error) {
-	out := make(map[string][]util.Content)
+func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, b *contentStagingZone) (map[string]string, error) {
+	out := make(map[string]string)
 	for _, c := range b.Contents {
-		loc, err := cm.currentLocationForContent(c.ID)
-		if err != nil {
-			return nil, err
+		if c.Location != "" {
+			out[c.Location] = c.Location
 		}
-
-		out[loc] = append(out[loc], c)
 	}
 	return out, nil
 }
 
 func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *contentStagingZone) error {
-	var primary string
+	var dstLocation string
 	var curMax int64
 	dataByLoc := make(map[string]int64)
 	contentByLoc := make(map[string][]util.Content)
 
 	for _, c := range b.Contents {
-		loc, err := cm.currentLocationForContent(c.ID)
-		if err != nil {
-			return err
-		}
-
+		loc := c.Location
 		contentByLoc[loc] = append(contentByLoc[loc], c)
 
 		ntot := dataByLoc[loc] + c.Size
 		dataByLoc[loc] = ntot
 
 		// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
-		if ntot > curMax && loc != constants.ContentLocationLocal {
+		if loc == constants.ContentLocationLocal {
+			continue
+		}
+
+		if ntot > curMax && cm.shuttleCanAddContent(loc) {
 			curMax = ntot
-			primary = loc
+			dstLocation = loc
 		}
 	}
 
 	// okay, move everything to 'primary'
 	var toMove []util.Content
 	for loc, conts := range contentByLoc {
-		if loc != primary {
+		if loc != dstLocation {
 			toMove = append(toMove, conts...)
 		}
 	}
 
-	log.Debugw("consolidating content to single location for aggregation", "user", b.User, "primary", primary, "numItems", len(toMove), "primaryWeight", curMax)
-	if primary == constants.ContentLocationLocal {
+	log.Debugw("consolidating content to single location for aggregation", "user", b.User, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
+	if dstLocation == constants.ContentLocationLocal {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
-		return cm.sendConsolidateContentCmd(ctx, primary, toMove)
+		return cm.sendConsolidateContentCmd(ctx, dstLocation, toMove)
 	}
 }
 
@@ -598,13 +587,19 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
-	cbl, err := cm.stagedContentByLocation(ctx, b)
+	grpLocs, err := cm.getGroupedStagedContentLocations(ctx, b)
 	if err != nil {
 		return err
 	}
 
-	if len(cbl) > 1 {
-		// Need to migrate content all to the same shuttle
+	// should not happen, but be safe
+	if len(grpLocs) == 0 {
+		return fmt.Errorf("no staged contents location could is available for aggregation")
+	}
+
+	// if the staged contents of this bucket are in different locations (more than 1 group)
+	// Need to migrate/consolidate the contents to the same location
+	if len(grpLocs) > 1 {
 		cm.bucketLk.Lock()
 		// put the staging zone back in the list
 		cm.buckets[b.User] = append(cm.buckets[b.User], b)
@@ -615,14 +610,10 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 				log.Errorf("failed to consolidate staged content: %s", err)
 			}
 		}()
-
 		return nil
 	}
 
-	var loc string
-	for k := range cbl {
-		loc = k
-	}
+	// if all contents are already in one location, proceed to aggregate them
 
 	dir, err := cm.createAggregate(ctx, b.Contents)
 	if err != nil {
@@ -639,9 +630,16 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		log.Warnf("content %d aggregate dir apparent size is zero", b.ContID)
 	}
 
+	// get the consolidated location, set aggregate location to it
+	var loc string
+	for k := range grpLocs {
+		loc = k
+	}
+
 	if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
-		"cid":  util.DbCID{CID: ncid},
-		"size": size,
+		"cid":      util.DbCID{CID: ncid},
+		"size":     size,
+		"location": loc,
 	}).Error; err != nil {
 		return err
 	}
@@ -681,8 +679,8 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		go func() {
 			cm.toCheck(b.ContID)
 		}()
-
 		return nil
+
 	} else {
 		var ids []uint
 		for _, c := range b.Contents {
@@ -1120,7 +1118,7 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
 	// get data trannsfer status (compatible with both del protocol v1 and v2)
 	chanst, err := cm.FilClient.TransferStatusByID(ctx, chanIDOrTransferID)
-	if err != nil && err != filclient.ErrNoTransferFound {
+	if err != nil {
 		return err
 	}
 
@@ -1131,7 +1129,7 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	switch isStarted {
 	case true:
 		updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
+		if s := chanst.Stages.GetStage("Requested"); s != nil {
 			updates["transfer_started"] = s.CreatedTime.Time()
 		}
 	default:
@@ -1274,12 +1272,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	))
 	defer span.End()
 
+	// if the content is not active or is in pinning state, do not proceed
+	if !content.Active || content.Pinning {
+		return nil
+	}
+
 	// If this content is aggregated inside another piece of content, nothing to do here, that content will be processed
 	if content.AggregatedIn > 0 {
 		return nil
 	}
 
-	// If this is the 'root' of a split dag, we dont need to process it
+	// If this is the 'root' of a dag split, we dont need to process it, as the splits will be processed instead
 	if content.DagSplit && content.SplitFrom == 0 {
 		return nil
 	}
@@ -1358,14 +1361,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 	wg.Wait()
 
-	// after reconciling content deals,
-	// check If this is a shuttle content and the it's shuttle is online to start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
-		log.Debugf("content shuttle: %s, is not online", content.Location)
-		done(time.Minute * 15)
-		return nil
-	}
-
 	// return the last error found, log the rest
 	var retErr error
 	for _, err := range errs {
@@ -1379,13 +1374,21 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	if retErr != nil {
 		return fmt.Errorf("deal check errored: %w", retErr)
 	}
-	goodDeals := numSealed + numPublished + numProgress
+
+	// after reconciling content deals,
+	// check If this is a shuttle content and the it's shuttle is online to start data transfer
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleIsOnline(content.Location) {
+		log.Debugf("content shuttle: %s, is not online", content.Location)
+		done(time.Minute * 15)
+		return nil
+	}
 
 	replicationFactor := cm.Replication
 	if content.Replication > 0 {
 		replicationFactor = content.Replication
 	}
 
+	goodDeals := numSealed + numPublished + numProgress
 	dealsToBeMade := replicationFactor - goodDeals
 	if dealsToBeMade <= 0 {
 		if numSealed >= replicationFactor {
@@ -1549,7 +1552,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 
 	// get the deal data trannsfer state (compatible with both deal protocol v1 and v2)
 	chanst, err := cm.FilClient.TransferStatusByID(ctx, d.DTChan)
-	if err != nil && err != filclient.ErrNoTransferFound {
+	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
@@ -1558,15 +1561,19 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	// NB: boost does not yet suppoort stages
 	if chanst != nil {
 		updates := make(map[string]interface{})
-		if d.TransferStarted.IsZero() {
-			if s := chanst.Stages.GetStage("TransferStarted"); s != nil {
-				updates["transfer_started"] = s.CreatedTime.Time()
+		if chanst.Status == datatransfer.TransferFinished || chanst.Status == datatransfer.Completed {
+			if d.TransferStarted.IsZero() && chanst.Status == datatransfer.Completed {
+				updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
+				if s := chanst.Stages.GetStage("Requested"); s != nil {
+					updates["transfer_started"] = s.CreatedTime.Time()
+				}
 			}
-		}
 
-		if d.TransferFinished.IsZero() {
-			if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
-				updates["transfer_finished"] = s.CreatedTime.Time()
+			if d.TransferFinished.IsZero() {
+				updates["transfer_finished"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
+				if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+					updates["transfer_finished"] = s.CreatedTime.Time()
+				}
 			}
 		}
 
@@ -1575,7 +1582,11 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 			s := chanst.Stages.GetStage(msgStage)
 			if trsFailed && s != nil {
 				updates["failed"] = true
-				updates["failed_at"] = s.CreatedTime.Time()
+
+				updates["failed_at"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
+				if s := chanst.Stages.GetStage("Failed"); s != nil {
+					updates["failed_at"] = s.CreatedTime.Time()
+				}
 			}
 		}
 
@@ -3187,7 +3198,6 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 	tc := &drpc.TakeContent{}
 	for _, c := range contents {
 		fromLocs[c.Location] = struct{}{}
-
 		tc.Contents = append(tc.Contents, drpc.ContentFetch{
 			ID:     c.ID,
 			Cid:    c.Cid.CID,
@@ -3205,7 +3215,6 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 			log.Warnf("no addr info for node: %s", handle)
 			continue
 		}
-
 		tc.Sources = append(tc.Sources, *ai)
 	}
 
@@ -3262,7 +3271,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		content := &util.Content{
 			Cid:         util.DbCID{CID: c},
 			Name:        fmt.Sprintf("%s-%d", cont.Name, i),
-			Active:      true,
+			Active:      false, // will be active after it's blocks are saved
 			Pinning:     true,
 			UserID:      cont.UserID,
 			Replication: cont.Replication,
@@ -3286,9 +3295,14 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		}()
 	}
 
-	return cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
-		"active":    false,
 		"size":      0,
-	}).Error
+		"active":    false,
+		"pinning":   false,
+	}).Error; err != nil {
+		return err
+	}
+
+	return cm.DB.Where("content = ?", cont.ID).Delete(&util.ObjRef{}).Error
 }

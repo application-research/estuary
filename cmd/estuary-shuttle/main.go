@@ -491,6 +491,8 @@ func main() {
 			trackingChannels: make(map[string]*util.ChanTrack),
 			inflightCids:     make(map[cid.Cid]uint),
 			splitsInProgress: make(map[uint]bool),
+			aggrInProgress:   make(map[uint]bool),
+			unpinInProgress:  make(map[uint]bool),
 
 			outgoing:  make(chan *drpc.Message),
 			authCache: cache,
@@ -506,132 +508,123 @@ func main() {
 
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
-			fst := filclient.ChannelStateConv(dts)
-
-			s.tcLk.Lock()
-			defer s.tcLk.Unlock()
-
-			trk, ok := s.trackingChannels[fst.TransferID]
-			// if state has not been set by transfer start/restart, it cannot be processed - this should not happend though.
-			// because legacy transfer manager does not have context of deal db ID, it needs it to exist in the tracking map
-			// data transfer start and restart/resume should set the deal db ID
-			if !ok {
-				return
-			}
-
-			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
-			if trk.Last != nil && trk.Last.Status == fst.Status {
-				return
-			}
-
-			trk.Last = fst
-			dbid := trk.Dbid
-
 			go func() {
-				// send start and finished state, so the accurate timestamps and transferID/chanID can be saved
-				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
-					var op string
-					var params drpc.MsgParams
+				fst := filclient.ChannelStateConv(dts)
 
-					switch fst.Status {
-					case datatransfer.Requested:
-						op = drpc.OP_TransferStarted
-						params = drpc.MsgParams{
-							TransferStarted: &drpc.TransferStartedOrFinished{
-								DealDBID: dbid,
-								Chanid:   fst.TransferID,
-							},
-						}
-					default:
-						op = drpc.OP_TransferFinished
-						params = drpc.MsgParams{
-							TransferFinished: &drpc.TransferStartedOrFinished{
-								DealDBID: dbid,
-								Chanid:   fst.TransferID,
-							},
-						}
+				s.tcLk.Lock()
+				trk, ok := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
+
+				// if state has not been set by transfer start/restart, it cannot be processed - this should not happend though.
+				// because legacy transfer manager does not have context of deal db ID, it needs it to exist in the tracking map
+				// data transfer start and restart/resume should set the deal db ID
+				if !ok {
+					return
+				}
+
+				// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+				if trk.Last != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, trk.Dbid, fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					op := drpc.OP_TransferStarted
+					params := drpc.MsgParams{
+						TransferStarted: &drpc.TransferStartedOrFinished{
+							DealDBID: trk.Dbid,
+							Chanid:   fst.TransferID,
+						},
 					}
-
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
 						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
 					}
-					return
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					op := drpc.OP_TransferFinished
+					params := drpc.MsgParams{
+						TransferFinished: &drpc.TransferStartedOrFinished{
+							DealDBID: trk.Dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+				default:
+					// send transfer update for every other events
+					trsFailed, msg := util.TransferFailed(fst)
+					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: trk.Dbid,
+						State:    fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					})
 				}
-
-				// send transfer update for every other events
-				trsFailed, msg := util.TransferFailed(fst)
-				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   fst.TransferID,
-					DealDBID: trk.Dbid,
-					State:    fst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
-				})
 			}()
 		})
 
 		// Subscribe to data transfer events from Boost
 		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
-			s.tcLk.Lock()
-			defer s.tcLk.Unlock()
-
-			trk, ok := s.trackingChannels[fst.TransferID]
-			// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
-			if trk.Last != nil && trk.Last.Status == fst.Status {
-				return
-			}
-
-			// if no state has been tracked for this ID, start tracking it (since both deal DB ID and chan ID exist)
-			if !ok {
-				s.trackTransfer(&fst.ChannelID, dbid, &fst)
-			}
-
 			go func() {
-				// send start and finished state, so the accurate timestamps and transferID/chanID can be saved
-				if fst.Status == datatransfer.Requested || fst.Status == datatransfer.TransferFinished {
-					var op string
-					var params drpc.MsgParams
+				s.tcLk.Lock()
+				trk, _ := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
 
-					switch fst.Status {
-					case datatransfer.Requested:
-						op = drpc.OP_TransferStarted
-						params = drpc.MsgParams{
-							TransferStarted: &drpc.TransferStartedOrFinished{
-								DealDBID: dbid,
-								Chanid:   fst.TransferID,
-							},
-						}
-					default:
-						op = drpc.OP_TransferFinished
-						params = drpc.MsgParams{
-							TransferFinished: &drpc.TransferStartedOrFinished{
-								DealDBID: dbid,
-								Chanid:   fst.TransferID,
-							},
-						}
+				// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+				if trk != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					op := drpc.OP_TransferStarted
+					params := drpc.MsgParams{
+						TransferStarted: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   fst.TransferID,
+						},
 					}
-
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
 						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
 					}
-					return
-				}
 
-				// send transfer update for every other events
-				trsFailed, msg := util.TransferFailed(&fst)
-				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   fst.TransferID,
-					DealDBID: dbid,
-					State:    &fst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
-				})
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					op := drpc.OP_TransferFinished
+					params := drpc.MsgParams{
+						TransferFinished: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+				default:
+					// send transfer update for every other events
+					trsFailed, msg := util.TransferFailed(&fst)
+					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: dbid,
+						State:    &fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					})
+				}
 			}()
 		})
 		if err != nil {
@@ -805,6 +798,12 @@ type Shuttle struct {
 
 	splitLk          sync.Mutex
 	splitsInProgress map[uint]bool
+
+	aggrLk         sync.Mutex
+	aggrInProgress map[uint]bool
+
+	unpinLk         sync.Mutex
+	unpinInProgress map[uint]bool
 
 	addPinLk sync.Mutex
 
@@ -1081,6 +1080,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
+	e.Binder = new(util.Binder)
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -1889,6 +1889,12 @@ func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 }
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
+	// only progress if unpin is not already in progress for this content
+	if !s.markStartUnpin(contid) {
+		return nil
+	}
+	defer s.finishUnpin(contid)
+
 	ctx, span := s.Tracer.Start(ctx, "unpin")
 	defer span.End()
 
