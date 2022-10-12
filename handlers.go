@@ -378,7 +378,8 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
 // @Tags         content
-// @Param        limit path string true "limit"
+// @Param        limit query string true "limit"
+// @Param        offset query string true "offset"
 // @Produce      json
 // @Router       /content/stats [get]
 func (s *Server) handleStats(c echo.Context, u *util.User) error {
@@ -514,6 +515,7 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Param        body body []string true "Peer ids"
 // @Router       /admin/peering/peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
@@ -610,6 +612,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Tags         content
 // @Produce      json
 // @Param        body body util.ContentAddIpfsBody true "IPFS Body"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
 func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -701,9 +704,8 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Tags         content
 // @Produce      json
 // @Param        body body string true "Car"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Param 		 filename query string false "Filename"
-// @Param 		 commp query string false "Commp"
-// @Param 		 size query string false "Size"
 // @Router       /content/add-car [post]
 func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -820,7 +822,11 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param        data formData file true "File to upload"
+// @Param        filename formData string false "Filenam to use for upload"
 // @Param        coluuid query string false "Collection UUID"
+// @Param        replication query int false "Replication value"
+// @Param        ignore-dupes query string false "Ignore Dupes true/false"
+// @Param        lazy-provide query string false "Lazy Provide true/false"
 // @Param        dir query string false "Directory"
 // @Success      200  {object}  util.ContentAddResponse
 // @Router       /content/add [post]
@@ -1627,6 +1633,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 // @Description  This endpoint returns the status of a transfer
 // @Tags         deals
 // @Produce      json
+// @Param chanid body datatransfer.ChannelID true "Channel ID"
+
 // @Router       /deal/transfer/status [post]
 func (s *Server) handleTransferStatus(c echo.Context) error {
 	var chanid datatransfer.ChannelID
@@ -2490,6 +2498,7 @@ type minerDealsResp struct {
 // @Tags         public,miner
 // @Produce      json
 // @Param miner path string false "Filter by miner"
+// @Param 		 ignore-failed query string false "Ignore Failed"
 // @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -3199,6 +3208,8 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
 // @Tags         User
 // @Produce      json
+// @Param        expiry query string false "Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h"
+// @Param        perms query string false "Permissions -- currently unused"
 // @Success      200  {object}  getApiKeysResp
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
@@ -3302,7 +3313,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  []main.Collection
+// @Success      200  {object}  []collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3322,7 +3333,8 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        body     body     []uint  true     "Content IDs to add to collection"
+// @Param        coluuid path string true "coluuid"
+// @Param        contentIDs     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
 // @Router       /collections/{coluuid} [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
@@ -3465,7 +3477,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Param        coluuid query string true "Collection UUID"
+// @Param        coluuid     path     string  true     "coluuid"
 // @Param        dir query string false "Directory"
 // @Router       /collections/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
@@ -3631,8 +3643,7 @@ type deleteContentFromCollectionBody struct {
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
 // @Param        contentid path string true "Content ID"
-// @Param        by body string true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
-// @Param        value body string true "Value of content_id or path to look for"
+// @Param        body body deleteContentFromCollectionBody true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -4728,7 +4739,8 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
-// @Param        body body string true "Content"
+// @Param        req body util.ContentCreateBody true "Content"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Router       /content/create [post]
 func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
