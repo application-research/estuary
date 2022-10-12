@@ -16,7 +16,6 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/davecgh/go-spew/spew"
 	"github.com/multiformats/go-multiaddr"
 
 	"go.opencensus.io/stats/view"
@@ -650,8 +649,6 @@ func main() {
 					return
 				}
 				s.trackTransfer(&fst.ChannelID, dbid, &fst)
-
-				spew.Dump("=======event========", fst)
 
 				switch fst.Status {
 				case datatransfer.Requested:
