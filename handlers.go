@@ -1307,7 +1307,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 			}
 
 			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
-			if err != nil && err != filclient.ErrNoTransferFound {
+			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
 				// the UI needs to display a transfer state even for inntermitent errors
 				chanst = &filclient.ChannelState{
