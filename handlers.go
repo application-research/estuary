@@ -94,10 +94,8 @@ import (
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
-
 	e := echo.New()
-
-	e.Binder = new(binder)
+	e.Binder = new(util.Binder)
 
 	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -127,11 +125,8 @@ func (s *Server) ServeAPI() error {
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
-
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
-
 	e.GET("/gw/:path", s.handleGateway)
 
 	user := e.Group("/user")
@@ -208,10 +203,11 @@ func (s *Server) ServeAPI() error {
 	pinning.Use(openApiMiddleware)
 	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
-	pinning.POST("/pins", withUser(s.handleAddPin))
 	pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
-	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 	pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
+	pinning.Use(util.JSONPayloadMiddleware)
+	pinning.POST("/pins", withUser(s.handleAddPin))
+	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -314,13 +310,6 @@ func (s *Server) ServeAPI() error {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
 	return e.Start(s.cfg.ApiListen)
-}
-
-type binder struct{}
-
-func (b binder) Bind(i interface{}, c echo.Context) error {
-	defer c.Request().Body.Close()
-	return json.NewDecoder(c.Request().Body).Decode(i)
 }
 
 func serveCpuProfile(c echo.Context) error {
