@@ -6,12 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
@@ -894,33 +895,32 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		return nil
 	}
 
-	// get the deal data transfer state pull deals
-	st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-	if err != nil {
-		return err
-	}
-
-	if st == nil {
-		return fmt.Errorf("no data transfer state was found")
-	}
-
-	cannotRestart := !util.CanRestartTransfer(st)
-	if cannotRestart {
-		trsFailed, msg := util.TransferFailed(st)
-		if trsFailed {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-				"failed":    true,
-				"failed_at": time.Now(),
-			}).Error; err != nil {
-				return err
-			}
-			errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
-			return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
-		}
-		return nil
-	}
-
 	if loc == constants.ContentLocationLocal {
+		// get the deal data transfer state pull deals
+		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
+		if err != nil {
+			return err
+		}
+
+		if st == nil {
+			return fmt.Errorf("no data transfer state was found")
+		}
+
+		cannotRestart := !util.CanRestartTransfer(st)
+		if cannotRestart {
+			trsFailed, msg := util.TransferFailed(st)
+			if trsFailed {
+				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+					"failed":    true,
+					"failed_at": time.Now(),
+				}).Error; err != nil {
+					return err
+				}
+				errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
+				return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
+			}
+			return nil
+		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
 	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
