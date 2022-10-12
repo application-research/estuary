@@ -14,6 +14,7 @@ import (
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/multiformats/go-multiaddr"
 
 	"go.opencensus.io/stats/view"
@@ -71,7 +72,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("dt-impl", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
-	_ = logging.SetLogLevel("filclient", "warn")
+	_ = logging.SetLogLevel("filclient", "warn") // filclient is too chatting for default loglevel (info), maybe sub-system loglevel should be supported
 	_ = logging.SetLogLevel("dt_graphsync", level)
 	_ = logging.SetLogLevel("dt-chanmon", level)
 	_ = logging.SetLogLevel("markets", level)

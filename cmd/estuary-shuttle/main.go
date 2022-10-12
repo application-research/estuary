@@ -88,19 +88,19 @@ const (
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
-	logging.SetLogLevel("dt-impl", level)
-	logging.SetLogLevel("shuttle", level)
-	logging.SetLogLevel("paych", level)
-	logging.SetLogLevel("filclient", "warn")
-	logging.SetLogLevel("dt_graphsync", level)
-	logging.SetLogLevel("graphsync_allocator", level)
-	logging.SetLogLevel("dt-chanmon", level)
-	logging.SetLogLevel("markets", level)
-	logging.SetLogLevel("data_transfer_network", level)
-	logging.SetLogLevel("rpc", level)
-	logging.SetLogLevel("bs-wal", level)
-	logging.SetLogLevel("bs-migrate", level)
-	logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("shuttle", level)
+	_ = logging.SetLogLevel("paych", level)
+	_ = logging.SetLogLevel("filclient", "warn") // filclient is too chatting for default loglevel (info), maybe sub-system loglevel should be supported
+	_ = logging.SetLogLevel("dt_graphsync", level)
+	_ = logging.SetLogLevel("graphsync_allocator", level)
+	_ = logging.SetLogLevel("dt-chanmon", level)
+	_ = logging.SetLogLevel("markets", level)
+	_ = logging.SetLogLevel("data_transfer_network", level)
+	_ = logging.SetLogLevel("rpc", level)
+	_ = logging.SetLogLevel("bs-wal", level)
+	_ = logging.SetLogLevel("bs-migrate", level)
+	_ = logging.SetLogLevel("rcmgr", level)
 
 	return nil
 }
