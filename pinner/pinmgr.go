@@ -100,10 +100,33 @@ type PinningOperation struct {
 //TODO put this as a subfield inside PinningOperation
 type PinningOperationData struct {
 	Obj         cid.Cid
-	ContId      uint
-	UserId      uint
+	Name        string
+	//Peers       []*peer.AddrInfo
+	Meta        string
 	Status      types.PinningStatus
+	UserId      uint
+	ContId      uint
+	Replace     uint
+	Location    string
 	SkipLimiter bool
+	MakeDeal    bool
+}
+
+func getPinningData(po *PinningOperation) PinningOperationData{
+	return PinningOperationData{
+		Obj:         po.Obj,
+		Name:        po.Name,
+		//Peers:       po.Peers,
+		Meta:        po.Meta,
+		Status:      po.Status,
+		UserId:      po.UserId,
+		ContId:      po.ContId,
+		Replace:     po.Replace,
+		Location:    po.Location,
+		SkipLimiter: po.SkipLimiter,
+		MakeDeal:    po.MakeDeal,
+	}
+
 }
 
 func (po *PinningOperation) fail(err error) {
@@ -115,20 +138,15 @@ func (po *PinningOperation) fail(err error) {
 	po.lk.Unlock()
 }
 
-func (pm *PinManager) complete (po *PinningOperation) {
+func (pm *PinManager) complete(po *PinningOperation) {
 	po.lk.Lock()
 	defer po.lk.Unlock()
 
-	opdata := PinningOperationData{
-		ContId:      po.ContId,
-		UserId:      po.UserId,
-		Obj:         po.Obj,
-		Status:      po.Status,
-		SkipLimiter: po.SkipLimiter,
-	}
+
+	opdata := getPinningData(po)
   if _, ok := pm.duplicateGuard[opdata]; ok {
-      delete(pm.duplicateGuard,opdata)
-   }
+		delete(pm.duplicateGuard, opdata)
+	}
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
@@ -266,14 +284,7 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 
-	opdata := PinningOperationData{
-		ContId:      po.ContId,
-		UserId:      po.UserId,
-		Obj:         po.Obj,
-		Status:      po.Status,
-		SkipLimiter: po.SkipLimiter,
-	}
-
+	opdata := getPinningData(po)
 	_, work_exists := pm.duplicateGuard[opdata]
 	if work_exists {
 		//work already exists in the queue not adding duplicate
