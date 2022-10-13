@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/joncrlsn/dque"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
 )
@@ -32,7 +34,7 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 	}
 
 	return &PinManager{
-		pinQueue:         make(map[uint][]*PinningOperation),
+		pinQueue:         make(map[uint]*dque.DQue),
 		activePins:       make(map[uint]int),
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
@@ -40,27 +42,31 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
 		maxActivePerUser: opts.MaxActivePerUser,
+		QueueDataDir:     opts.QueueDataDir,
 	}
 }
 
 var DefaultOpts = &PinManagerOpts{
 	MaxActivePerUser: 15,
+	QueueDataDir:     "/tmp",
 }
 
 type PinManagerOpts struct {
 	MaxActivePerUser int
+	QueueDataDir     string
 }
 
 type PinManager struct {
 	pinQueueIn       chan *PinningOperation
 	pinQueueOut      chan *PinningOperation
 	pinComplete      chan *PinningOperation
-	pinQueue         map[uint][]*PinningOperation
+	pinQueue         map[uint]*dque.DQue
 	activePins       map[uint]int
 	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
 	StatusChangeFunc PinStatusFunc
 	maxActivePerUser int
+	QueueDataDir     string
 }
 
 // TODO: some of these fields are overkill for the generalized pin manager
@@ -93,6 +99,12 @@ type PinningOperation struct {
 	lk sync.Mutex
 
 	MakeDeal bool
+}
+
+// PinningOperationBuilder creates a new PinningOperation and returns a pointer to it.
+// This is used when we load a segment of the queue from disk for the Dque
+func PinningOperationBuilder() interface{} {
+	return &PinningOperation{}
 }
 
 func (po *PinningOperation) fail(err error) {
@@ -167,7 +179,7 @@ func (pm *PinManager) PinQueueSize() int {
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
 	for _, pq := range pm.pinQueue {
-		count += len(pq)
+		count += pq.Size()
 	}
 	return count
 }
@@ -231,15 +243,37 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 	pq := pm.pinQueue[user]
 
-	next := pq[0]
-
-	if len(pq) == 1 {
-		delete(pm.pinQueue, user)
-	} else {
-		pm.pinQueue[user] = pq[1:]
+	iface, err := pq.Dequeue()
+	// Dequeue the next item in the queue
+	if err != nil {
+		if err != dque.ErrEmpty {
+			log.Fatal("Error dequeuing item ", err)
+		}
 	}
-
+	// Assert type of the response to an Item pointer so we can work with it
+	next, ok := iface.(*PinningOperation)
+	if !ok {
+		log.Fatal("Dequeued object is not an Item pointer")
+	}
 	return next
+
+}
+
+func (pm *PinManager) createDQue(userid uint) *dque.DQue {
+	qName := "item-queue-" + fmt.Sprint(userid)
+	qDir := pm.QueueDataDir
+	segmentSize := 50
+
+	//queue is currently not expected to persist on reload of app
+	//so delete queue if it exists before creating it
+	os.RemoveAll(pm.QueueDataDir + "/" + qName)
+
+	q, err := dque.New(qName, qDir, segmentSize, PinningOperationBuilder)
+	if err != nil {
+		log.Fatal("Unable to create DQue. Out of disk?")
+	}
+	q.TurboOn() // don't fsync every write
+	return q
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
@@ -248,8 +282,17 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 		u = 0
 	}
 
-	q := pm.pinQueue[u]
-	pm.pinQueue[u] = append(q, po)
+	dq, contains := pm.pinQueue[u]
+	if !contains {
+		dq := pm.createDQue(u)
+		pm.pinQueue[u] = dq
+	}
+
+	err := dq.Enqueue(po)
+	if err != nil {
+		log.Fatal("Unable to add pin to queue.")
+	}
+
 }
 
 func (pm *PinManager) Run(workers int) {

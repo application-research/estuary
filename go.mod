@@ -94,6 +94,7 @@ require (
 	github.com/filecoin-project/go-legs v0.4.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
+	github.com/joncrlsn/dque v0.0.0-20211108142734-c2ef48c5192a
 	github.com/libp2p/go-libp2p-pubsub v0.7.1
 	github.com/pkg/errors v0.9.1
 )
