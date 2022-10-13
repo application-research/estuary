@@ -37,6 +37,7 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
 		pinComplete:      make(chan *PinningOperation, 64),
+		duplicateGuard:   make(map[PinningOperationData]bool),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
 		maxActivePerUser: opts.MaxActivePerUser,
@@ -55,6 +56,7 @@ type PinManager struct {
 	pinQueueIn       chan *PinningOperation
 	pinQueueOut      chan *PinningOperation
 	pinComplete      chan *PinningOperation
+	duplicateGuard   map[PinningOperationData]bool
 	pinQueue         map[uint][]*PinningOperation
 	activePins       map[uint]int
 	pinQueueLk       sync.Mutex
@@ -93,6 +95,15 @@ type PinningOperation struct {
 	lk sync.Mutex
 
 	MakeDeal bool
+}
+
+//TODO put this as a subfield inside PinningOperation
+type PinningOperationData struct {
+	Obj         cid.Cid
+	ContId      uint
+	UserId      uint
+	Status      types.PinningStatus
+	SkipLimiter bool
 }
 
 func (po *PinningOperation) fail(err error) {
@@ -243,6 +254,21 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
+
+	opdata := PinningOperationData{
+		ContId:      po.ContId,
+		UserId:      po.UserId,
+		Obj:         po.Obj,
+		Status:      po.Status,
+		SkipLimiter: po.SkipLimiter,
+	}
+
+	_, work_exists := pm.duplicateGuard[opdata]
+	if work_exists {
+		//work already exists in the queue not adding duplicate
+		return
+	}
+
 	u := po.UserId
 	if po.SkipLimiter {
 		u = 0
@@ -250,6 +276,7 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 
 	q := pm.pinQueue[u]
 	pm.pinQueue[u] = append(q, po)
+	pm.duplicateGuard[opdata] = true
 }
 
 func (pm *PinManager) Run(workers int) {
