@@ -115,9 +115,20 @@ func (po *PinningOperation) fail(err error) {
 	po.lk.Unlock()
 }
 
-func (po *PinningOperation) complete() {
+func (pm *PinManager) complete (po *PinningOperation) {
 	po.lk.Lock()
 	defer po.lk.Unlock()
+
+	opdata := PinningOperationData{
+		ContId:      po.ContId,
+		UserId:      po.UserId,
+		Obj:         po.Obj,
+		Status:      po.Status,
+		SkipLimiter: po.SkipLimiter,
+	}
+  if _, ok := pm.duplicateGuard[opdata]; ok {
+      delete(pm.duplicateGuard,opdata)
+   }
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
@@ -212,7 +223,7 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 		}
 		return errors.Wrap(err, "shuttle RunPinFunc failed")
 	}
-	op.complete()
+	pm.complete(op)
 	return pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinned)
 }
 
