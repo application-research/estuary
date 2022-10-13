@@ -2,6 +2,7 @@ package pinner
 
 import (
 	"context"
+	"time"
 
 	"testing"
 
@@ -24,7 +25,7 @@ func newManager() *PinManager {
 func newPinData(name string) PinningOperation {
 	return PinningOperation{
 		Name:   name,
-		UserId: 4,
+		UserId: 0,
 	}
 }
 
@@ -32,15 +33,14 @@ func newPinData(name string) PinningOperation {
 // for a valid return value.
 func TestHelloName(t *testing.T) {
 	mgr := newManager()
-	go mgr.Run(1)
-	t.Log("Say bye")
+	go mgr.Run(0)
 	mike := newPinData("mike")
 	go mgr.Add(&mike)
 	go mgr.Add(&mike)
 	go mgr.Add(&mike)
 	go mgr.Add(&mike)
 	go mgr.Add(&mike)
-	go mgr.Add(&mike)
+	time.Sleep(1 * time.Second)
 	t.Log("queue size", mgr.PinQueueSize())
 
 }
