@@ -15,6 +15,7 @@ import (
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -22,6 +23,8 @@ import (
 	"github.com/multiformats/go-multihash"
 	"gorm.io/gorm"
 )
+
+var arLog = logging.Logger("autoretrieve")
 
 type Autoretrieve struct {
 	gorm.Model
@@ -124,7 +127,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 		}
 
 		// find all new content entries since the last time we advertised for this autoretrieve server
-		log.Debugf("Querying for new CIDs now (this could take a while)")
+		arLog.Debugf("Querying for new CIDs now (this could take a while)")
 		newCids, err := findNewCids(db, ar.LastAdvertisement)
 		if err != nil {
 			return nil, err
@@ -134,7 +137,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 			return nil, fmt.Errorf("no new CIDs to announce")
 		}
 
-		log.Infof("announcing %d new CIDs", len(newCids))
+		arLog.Debugf("announcing %d new CIDs", len(newCids))
 
 		return &EstuaryMhIterator{
 			Cids: newCids,
@@ -166,7 +169,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
 		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
 		if err != nil {
-			log.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
+			arLog.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
 			continue
 		}
 		providerID = arAddrInfo.ID.String()
@@ -179,7 +182,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
 	}
 
-	log.Infof("sending announcement to %s", ar.Handle)
+	arLog.Debugf("sending announcement to %s", ar.Handle)
 	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
 	if err != nil {
 		return fmt.Errorf("could not announce new CIDs: %s", err)
@@ -190,7 +193,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
-	log.Infof("announced new CIDs: %s", adCid)
+	arLog.Debugf("announced new CIDs: %s", adCid)
 	return nil
 }
 
@@ -198,6 +201,8 @@ func (arEng *AutoretrieveEngine) Run() {
 	var autoretrieves []Autoretrieve
 	var lastTickTime time.Time
 	var curTime time.Time
+
+	arLog.Infof("starting autoretrieves engine")
 
 	// start ticker
 	ticker := time.NewTicker(arEng.TickInterval)
@@ -209,11 +214,11 @@ func (arEng *AutoretrieveEngine) Run() {
 		// Find all autoretrieve servers that are online (that sent heartbeat)
 		err := arEng.db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
 		if err != nil {
-			log.Errorf("unable to query autoretrieve servers from database: %s", err)
+			arLog.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return
 		}
 		if len(autoretrieves) == 0 {
-			log.Infof("no autoretrieve servers online")
+			arLog.Infof("no autoretrieve servers online")
 			// wait for next tick, or quit
 			select {
 			case <-ticker.C:
@@ -223,11 +228,11 @@ func (arEng *AutoretrieveEngine) Run() {
 			}
 		}
 
-		log.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
+		arLog.Debugf("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 		// send announcement with new CIDs for each autoretrieve server
 		for _, ar := range autoretrieves {
 			if err = arEng.announceForAR(ar); err != nil {
-				log.Error(err)
+				arLog.Error(err)
 			}
 		}
 

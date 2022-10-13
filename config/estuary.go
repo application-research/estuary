@@ -20,7 +20,7 @@ type Estuary struct {
 	ApiListen              string        `json:"api_listen"`
 	LightstepToken         string        `json:"lightstep_token"`
 	Hostname               string        `json:"hostname"`
-	EnableAutoRetrieve     bool          `json:"enable_autoretrieve"`
+	DisableAutoRetrieve    bool          `json:"enable_autoretrieve"`
 	LowMem                 bool          `json:"low_mem"`
 	DisableFilecoinStorage bool          `json:"disable_filecoin_storage"`
 	DisableSwaggerEndpoint bool          `json:"disable_swagger_endpoint"`
@@ -71,7 +71,7 @@ func NewEstuary(appVersion string) *Estuary {
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
-		EnableAutoRetrieve:     false,
+		DisableAutoRetrieve:    false,
 
 		Deal: Deal{
 			IsDisabled:            false,

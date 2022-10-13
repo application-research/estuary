@@ -6,11 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
@@ -70,6 +71,7 @@ func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
 	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("autoretrieve", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
 	_ = logging.SetLogLevel("filclient", level)
@@ -164,8 +166,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
 			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
-		case "enable-auto-retrieve":
-			cfg.EnableAutoRetrieve = cctx.Bool("enable-auto-retrieve")
+		case "disable-auto-retrieve":
+			cfg.DisableAutoRetrieve = cctx.Bool("disable-auto-retrieve")
 		case "bitswap-max-work-per-peer":
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
@@ -277,10 +279,9 @@ func main() {
 			Value: cfg.Logging.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
-			Name:   "enable-auto-retrieve",
-			Usage:  "enables autoretrieve",
-			Value:  cfg.EnableAutoRetrieve,
-			Hidden: true,
+			Name:  "disable-auto-retrieve",
+			Usage: "disables autoretrieve",
+			Value: cfg.DisableAutoRetrieve,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
@@ -644,20 +645,23 @@ func main() {
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		s.FilClient = fc
 
-		if cfg.EnableAutoRetrieve {
+		if !cfg.DisableAutoRetrieve {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
 		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
-		if err != nil {
-			return err
-		}
+		// Start autoretrieve if not disabled
+		if !cfg.DisableAutoRetrieve {
+			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
+			if err != nil {
+				return err
+			}
 
-		go s.Node.ArEngine.Run()
-		defer s.Node.ArEngine.Shutdown()
+			go s.Node.ArEngine.Run()
+			defer s.Node.ArEngine.Shutdown()
+		}
 
 		go func() {
 			time.Sleep(time.Second * 10)
