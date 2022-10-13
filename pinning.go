@@ -880,17 +880,18 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	if cont.Active {
 		// content already active, no need to add objects, just update location
+		// this is used by consolidated contents
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
 		}).Error; err != nil {
 			return err
 		}
-		// TODO: should we recheck the staging zones?
 		return nil
 	}
 
 	if cont.Aggregate {
+		// this is used by staging content aggregate
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"pinning":  false,
@@ -898,6 +899,8 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+		// after aggregate is done, make deal for it
+		cm.toCheck(cont.ID)
 		return nil
 	}
 

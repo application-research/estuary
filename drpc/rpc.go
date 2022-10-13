@@ -67,7 +67,6 @@ const CMD_TakeContent = "TakeContent"
 
 type TakeContent struct {
 	Contents []ContentFetch
-	Sources  []peer.AddrInfo
 }
 
 const CMD_AggregateContent = "AggregateContent"

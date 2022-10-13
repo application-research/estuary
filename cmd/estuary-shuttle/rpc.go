@@ -282,15 +282,14 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		}
 
 		if count > 0 {
-			if count > 1 {
-				log.Errorf("have multiple pins for same content: %d", c.ID)
-			}
 			continue
 		}
 
-		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
-			return err
-		}
+		go func(c drpc.ContentFetch) {
+			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
+				log.Errorf("failed to pin takeContent: %d", c.ID)
+			}
+		}(c)
 	}
 	return nil
 }
@@ -356,7 +355,8 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	}
 
 	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
-		"active": true,
+		"active":  true,
+		"pinning": false,
 	}).Error; err != nil {
 		return err
 	}
