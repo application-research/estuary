@@ -284,7 +284,7 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 
 	dq, contains := pm.pinQueue[u]
 	if !contains {
-		dq := pm.createDQue(u)
+		dq = pm.createDQue(u)
 		pm.pinQueue[u] = dq
 	}
 
