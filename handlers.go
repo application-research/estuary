@@ -4504,7 +4504,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
-				log.Errorf("failed to read message from shuttle: %s", err)
+				log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
 
@@ -5213,6 +5213,12 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 			return err
 		}
 
+		var origins []*peer.AddrInfo
+		// when refreshing pinning queue, use content origins if available
+		if cont.Origins != "" {
+			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
+		}
+
 		if err := s.CM.sendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
 			Op: drpc.CMD_AddPin,
 			Params: drpc.CmdParams{
@@ -5220,6 +5226,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 					DBID:   cont.ID,
 					UserId: cont.UserID,
 					Cid:    cont.Cid.CID,
+					Peers:  origins,
 				},
 			},
 		}); err != nil {

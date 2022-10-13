@@ -38,54 +38,45 @@ const (
 func (cm *ContentManager) pinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
 	delegates := cm.pinDelegatesForContent(cont)
 
-	cm.pinLk.Lock()
-	po, ok := cm.pinJobs[cont.ID]
-	cm.pinLk.Unlock()
-	if !ok {
-		meta := make(map[string]interface{}, 0)
-		if cont.PinMeta != "" {
-			if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
-				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
-			}
+	meta := make(map[string]interface{}, 0)
+	if cont.PinMeta != "" {
+		if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
+			log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 		}
-
-		originStrs := make([]string, 0)
-		for _, o := range origins {
-			ai, err := peer.AddrInfoToP2pAddrs(o)
-			if err == nil {
-				for _, a := range ai {
-					originStrs = append(originStrs, a.String())
-				}
-			}
-		}
-
-		ps := &types.IpfsPinStatusResponse{
-			RequestID: fmt.Sprintf("%d", cont.ID),
-			Status:    types.PinningStatusPinning,
-			Created:   cont.CreatedAt,
-			Pin: types.IpfsPin{
-				CID:     cont.Cid.CID.String(),
-				Name:    cont.Name,
-				Meta:    meta,
-				Origins: originStrs,
-			},
-			Delegates: delegates,
-			Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
-		}
-
-		if cont.Active {
-			ps.Status = types.PinningStatusPinned
-		}
-
-		if cont.Failed {
-			ps.Status = types.PinningStatusFailed
-		}
-		return ps, nil
 	}
 
-	status := po.PinStatus()
-	status.Delegates = delegates
-	return status, nil
+	originStrs := make([]string, 0)
+	for _, o := range origins {
+		ai, err := peer.AddrInfoToP2pAddrs(o)
+		if err == nil {
+			for _, a := range ai {
+				originStrs = append(originStrs, a.String())
+			}
+		}
+	}
+
+	ps := &types.IpfsPinStatusResponse{
+		RequestID: fmt.Sprintf("%d", cont.ID),
+		Status:    types.PinningStatusQueued,
+		Created:   cont.CreatedAt,
+		Pin: types.IpfsPin{
+			CID:     cont.Cid.CID.String(),
+			Name:    cont.Name,
+			Meta:    meta,
+			Origins: originStrs,
+		},
+		Delegates: delegates,
+		Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
+	}
+
+	if cont.Active {
+		ps.Status = types.PinningStatusPinned
+	} else if cont.Failed {
+		ps.Status = types.PinningStatusFailed
+	} else if cont.Pinning {
+		ps.Status = types.PinningStatusPinning
+	}
+	return ps, nil
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont util.Content) []string {
@@ -284,12 +275,6 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInf
 		MakeDeal: makeDeal,
 		Meta:     cont.PinMeta,
 	}
-
-	cm.pinLk.Lock()
-	// TODO: check if we are overwriting anything here
-	cm.pinJobs[cont.ID] = op
-	cm.pinLk.Unlock()
-
 	cm.pinMgr.Add(op)
 }
 
@@ -300,7 +285,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Con
 	))
 	defer span.End()
 
-	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
+	return cm.sendShuttleCommand(ctx, handle, &drpc.Command{
 		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
@@ -310,30 +295,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Con
 				Peers:  peers,
 			},
 		},
-	}); err != nil {
-		return err
-	}
-
-	op := &pinner.PinningOperation{
-		ContId:   cont.ID,
-		UserId:   cont.UserID,
-		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
-		Peers:    peers,
-		Started:  cont.CreatedAt,
-		Status:   types.PinningStatusQueued,
-		Replace:  replaceID,
-		Location: handle,
-		MakeDeal: makeDeal,
-		Meta:     cont.PinMeta,
-	}
-
-	cm.pinLk.Lock()
-	// TODO: check if we are overwriting anything here
-	cm.pinJobs[cont.ID] = op
-	cm.pinLk.Unlock()
-
-	return nil
+	})
 }
 
 func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
@@ -881,15 +843,11 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	return e.NoContent(http.StatusAccepted)
 }
 
+// even though there are 4 pin statuses, queued, pinning, pinned and failed
+// the UpdatePinStatus only changes DB stte for failed
+// when the content was added, status = pinning
+// when the pin process is complete, status = pinned
 func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
-	cm.pinLk.Lock()
-	op, ok := cm.pinJobs[contID]
-
-	cm.pinLk.Unlock()
-	if !ok {
-		return fmt.Errorf("got pin status update for unknown content: %d, status: %s, location: %s", contID, status, location)
-	}
-
 	if status == types.PinningStatusFailed {
 		var c util.Content
 		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
@@ -908,7 +866,6 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			log.Errorf("failed to mark content as failed in database: %s", err)
 		}
 	}
-	op.SetStatus(status)
 	return nil
 }
 

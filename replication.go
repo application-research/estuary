@@ -118,9 +118,6 @@ type ContentManager struct {
 
 	hostname string
 
-	pinJobs map[uint]*pinner.PinningOperation
-	pinLk   sync.Mutex
-
 	pinMgr *pinner.PinManager
 
 	shuttlesLk sync.Mutex
@@ -312,7 +309,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		ToCheck:                      make(chan uint, 100000),
 		retrievalsInProgress:         make(map[uint]*util.RetrievalProgress),
 		buckets:                      make(map[uint][]*contentStagingZone),
-		pinJobs:                      make(map[uint]*pinner.PinningOperation),
 		pinMgr:                       pinmgr,
 		remoteTransferStatus:         cache,
 		shuttles:                     make(map[string]*ShuttleConnection),
@@ -3221,7 +3217,6 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 			log.Warnf("no addr info for node: %s", handle)
 			continue
 		}
-
 		tc.Sources = append(tc.Sources, *ai)
 	}
 

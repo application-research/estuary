@@ -150,6 +150,7 @@ type ContentFetch struct {
 	ID     uint
 	Cid    cid.Cid
 	UserID uint
+	Peers  []*peer.AddrInfo
 }
 
 type Message struct {

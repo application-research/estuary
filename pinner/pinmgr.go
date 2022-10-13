@@ -185,9 +185,6 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 	defer cancel()
 
 	op.SetStatus(types.PinningStatusPinning)
-	if err := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinning); err != nil {
-		return err
-	}
 
 	if err := pm.RunPinFunc(ctx, op, func(size int64) {
 		op.lk.Lock()
@@ -202,7 +199,7 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 		return errors.Wrap(err, "shuttle RunPinFunc failed")
 	}
 	op.complete()
-	return pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinned)
+	return nil
 }
 
 func (pm *PinManager) popNextPinOp() *PinningOperation {
