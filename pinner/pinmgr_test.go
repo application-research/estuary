@@ -97,7 +97,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
 	var count int = 0
 	mgr := newManager(&count)
-	go mgr.Run(5)
+	go mgr.Run(1)
 
 	for j := 0; j < N; j++ {
 
@@ -156,7 +156,7 @@ func TestNDuplicateNames(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	var count int = 0
 	mgr := newManager(&count)
-	go mgr.Run(5)
+	go mgr.Run(1)
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
