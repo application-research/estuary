@@ -137,7 +137,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 			return nil, fmt.Errorf("no new CIDs to announce")
 		}
 
-		arLog.Debugf("announcing %d new CIDs", len(newCids))
+		arLog.Infof("announcing %d new CIDs", len(newCids))
 
 		return &EstuaryMhIterator{
 			Cids: newCids,
@@ -193,7 +193,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
-	arLog.Debugf("announced new CIDs: %s", adCid)
+	arLog.Infof("announced new CIDs: %s", adCid)
 	return nil
 }
 
@@ -228,7 +228,7 @@ func (arEng *AutoretrieveEngine) Run() {
 			}
 		}
 
-		arLog.Debugf("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
+		arLog.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 		// send announcement with new CIDs for each autoretrieve server
 		for _, ar := range autoretrieves {
 			if err = arEng.announceForAR(ar); err != nil {
