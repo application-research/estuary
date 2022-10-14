@@ -5409,7 +5409,8 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	var cont util.Content
 	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return "", nil
+			// if not pinned on any shuttle or local, check dweb
+			return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 		}
 		return "", err
 	}
