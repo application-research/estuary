@@ -354,6 +354,8 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		return err
 	}
 
+	// since aggregates only needs put the containing box in the blockstore,
+	// mark it as action and change pinning status
 	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"pinning": false,
