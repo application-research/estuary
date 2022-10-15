@@ -983,7 +983,7 @@ const docTemplate = `{
         },
         "/content/{id}": {
             "get": {
-                "description": "This endpoint returns a content",
+                "description": "This endpoint returns a content by its ID",
                 "produces": [
                     "application/json"
                 ],

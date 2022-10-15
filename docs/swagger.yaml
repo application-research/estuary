@@ -472,7 +472,7 @@ paths:
         - collections
   /content/{id}:
     get:
-      description: This endpoint returns a content
+      description: This endpoint returns a content by its ID
       parameters:
         - description: Content ID
           in: path
