@@ -1287,7 +1287,7 @@ type dealStatus struct {
 
 // handleGetContent godoc
 // @Summary      Content
-// @Description  This endpoint returns a content
+// @Description  This endpoint returns a content by its ID
 // @Tags         content
 // @Produce      json
 // @Param id path int true "Content ID"
