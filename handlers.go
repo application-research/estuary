@@ -1291,9 +1291,9 @@ type dealStatus struct {
 // @Tags         content
 // @Produce      json
 // @Param id path int true "Content ID"
-// @Router       /content/status/{id} [get]
+// @Router       /content/{id} [get]
 func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("id"))
+	contID, err := strconv.Atoi(c.Param("cont_id"))
 	if err != nil {
 		return err
 	}
