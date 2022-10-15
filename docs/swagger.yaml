@@ -470,6 +470,21 @@ paths:
       summary: Add a file to a collection
       tags:
         - collections
+  /content/{id}:
+    get:
+      description: This endpoint returns a content
+      parameters:
+        - description: Content ID
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses: {}
+      summary: Content
+      tags:
+        - content
   /content/add:
     post:
       consumes:
