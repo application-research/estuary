@@ -163,6 +163,7 @@ func (s *Server) ServeAPI() error {
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
+	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -1282,6 +1283,38 @@ type dealStatus struct {
 	Deal           contentDeal             `json:"deal"`
 	TransferStatus *filclient.ChannelState `json:"transfer"`
 	OnChainState   *onChainDealState       `json:"onChainState"`
+}
+
+// handleGetContent godoc
+// @Summary      Content
+// @Description  This endpoint returns a content
+// @Tags         content
+// @Produce      json
+// @Param id path int true "Content ID"
+// @Router       /content/status/{id} [get]
+func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
+	contID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, content)
 }
 
 // handleContentStatus godoc
