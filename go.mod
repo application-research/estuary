@@ -81,7 +81,7 @@ require (
 	go.opentelemetry.io/otel/exporters/jaeger v1.7.0
 	go.opentelemetry.io/otel/sdk v1.7.0
 	go.opentelemetry.io/otel/trace v1.7.0
-	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
+	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 	golang.org/x/net v0.0.0-20220517181318-183a9ca12b87
 	golang.org/x/sys v0.0.0-20220517195934-5e4e11fc645e
 	golang.org/x/xerrors v0.0.0-20220411194840-2f41105eb62f
@@ -187,6 +187,7 @@ require (
 	github.com/go-openapi/spec v0.20.4 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/gofrs/flock v0.7.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/glog v1.0.0 // indirect
