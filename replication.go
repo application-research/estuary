@@ -252,7 +252,7 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
-	// if this bucket is being consolidated, do not add anymoe content
+	// if this bucket is being consolidated, do not add anymore content
 	if cb.IsConsolidating {
 		return false, nil
 	}
@@ -547,7 +547,7 @@ func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
 func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]util.Content, error) {
 	out := make(map[string][]util.Content)
 	for _, c := range b.Contents {
-		// need to verify current location from db, incase this stage content was a part of a consolidated content
+		// need to get current location from db, incase this stage content was a part of a consolidated content - its location would have changed.
 		// so we can group it into its current location
 		loc, err := cm.currentLocationForContent(c.ID)
 		if err != nil {
@@ -610,7 +610,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if len(cbl) > 1 {
 		// Need to migrate content all to the same shuttle
-		// Only attempt consolidation on a zone if it has not be done before, prevents dups request
+		// Only attempt consolidation on a zone if it has not be done before, prevents re-consolidation request
 		if !b.IsConsolidating {
 			b.IsConsolidating = true
 			go func() {

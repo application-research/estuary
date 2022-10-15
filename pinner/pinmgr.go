@@ -2,8 +2,6 @@ package pinner
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"sync"
 	"time"
 
@@ -119,47 +117,6 @@ func (po *PinningOperation) SetStatus(st types.PinningStatus) {
 
 	po.Status = st
 	po.LastUpdate = time.Now()
-}
-
-func (po *PinningOperation) PinStatus() *types.IpfsPinStatusResponse {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	meta := make(map[string]interface{}, 0)
-	if po.Meta != "" {
-		if err := json.Unmarshal([]byte(po.Meta), &meta); err != nil {
-			log.Warnf("content %d has invalid meta: %s", po.ContId, err)
-		}
-	}
-
-	originStrs := make([]string, 0)
-	for _, o := range po.Peers {
-		ai, err := peer.AddrInfoToP2pAddrs(o)
-		if err == nil {
-			for _, a := range ai {
-				originStrs = append(originStrs, a.String())
-			}
-		}
-	}
-
-	return &types.IpfsPinStatusResponse{
-		RequestID: fmt.Sprint(po.ContId),
-		Status:    po.Status,
-		Created:   po.Started,
-		Pin: types.IpfsPin{
-			CID:     po.Obj.String(),
-			Name:    po.Name,
-			Origins: originStrs,
-			Meta:    meta,
-		},
-		Info: make(map[string]interface{}, 0),
-		/* Ref: https://github.com/ipfs/go-pinning-service-http-client/issues/12
-		Info: map[string]interface{}{
-			"obj_fetched":  po.NumFetched,
-			"size_fetched": po.SizeFetched,
-		},
-		*/
-	}
 }
 
 func (pm *PinManager) PinQueueSize() int {

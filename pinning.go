@@ -844,7 +844,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 }
 
 // even though there are 4 pin statuses, queued, pinning, pinned and failed
-// the UpdatePinStatus only changes DB stte for failed
+// the UpdatePinStatus only changes DB state for failed status
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
 func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
