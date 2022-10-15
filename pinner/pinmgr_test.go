@@ -153,6 +153,23 @@ func TestNDuplicateNames(t *testing.T) {
 	assert.Equal(t, 0, count, "no work")
 }
 
+func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
+	var count int = 0
+	mgr := newManager(&count)
+	go mgr.Run(5)
+	for k := 0; k < N; k++ {
+		for j := 0; j < N; j++ {
+			for i := 0; i < N; i++ {
+				pin := newPinData("name"+fmt.Sprint(i), j)
+				go mgr.Add(&pin)
+			}
+		}
+	}
+	time.Sleep(sleeptime * time.Millisecond)
+	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
+	assert.Equal(t, N*N*N, count, "work should have N pins in it")
+}
+
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	var count int = 0
 	mgr := newManager(&count)
@@ -188,3 +205,54 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	assert.Equal(t, N*N*N-1, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
 }
+
+/*
+
+test run that iterates above and makes the above code redundant.
+
+Unfortuantely there are some bugs that this exposes so for now we will keep it commented out until we can fix the bugs
+and then we can uncomment it and potentially just leave the code above anyway
+
+
+func test_run(worker_count int, repeat_count int, user_id_count int, name_count int, t *testing.T) {
+
+	var count int = 0
+	var work_completed_count int = 0
+	var queue_end_count int = repeat_count*user_id_count*name_count - 1 // total work done minus 1 because first entry is stored as "next" and doesnot enter queue
+	if worker_count > 0 {
+		work_completed_count = repeat_count * user_id_count * name_count
+		queue_end_count = 0 // queue shoud be empty at end
+		mgr := newManager(&count)
+		go mgr.Run(worker_count)
+
+		for k := 0; k < repeat_count; k++ {
+			for j := 0; j < user_id_count; j++ {
+				for i := 0; i < name_count; i++ {
+					pin := newPinData("name"+fmt.Sprint(i), j)
+					go mgr.Add(&pin)
+				}
+			}
+		}
+		time.Sleep(sleeptime * time.Millisecond)
+		assert.Equal(t, queue_end_count, mgr.PinQueueSize(), "queue has wrong number of pins in it")
+		assert.Equal(t, work_completed_count, count, "incorrect amount of work done")
+	}
+
+}
+
+func TestPinMgr(t *testing.T) {
+	t.Parallel() // marks TLog as capable of running in parallel with other tests
+
+	for worker_count := 0; worker_count < N; worker_count++ {
+
+		for repeat_count := 0; repeat_count < N; repeat_count++ {
+			for user_id_count := 0; user_id_count < N; user_id_count++ {
+				t.Run(fmt.Sprint("Test_%i_%i_%i_%i", worker_count, repeat_count, user_id_count, user_id_count), func(t *testing.T) {
+					t.Parallel() // marks each test case as capable of running in parallel with each other
+					test_run(worker_count, repeat_count, user_id_count, user_id_count, t)
+				})
+			}
+		}
+	}
+}
+*/
