@@ -32,6 +32,9 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 	if opts == nil {
 		opts = DefaultOpts
 	}
+	if opts.QueueDataDir == "" {
+		log.Fatal("Deque needs queue data dir")
+	}
 
 	return &PinManager{
 		pinQueue:         make(map[uint]*dque.DQue),
@@ -48,7 +51,7 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 
 var DefaultOpts = &PinManagerOpts{
 	MaxActivePerUser: 15,
-	QueueDataDir:     "/tmp",
+	QueueDataDir:     "/tmp/",
 }
 
 type PinManagerOpts struct {
@@ -248,12 +251,15 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 	if err != nil {
 		if err != dque.ErrEmpty {
 			log.Fatal("Error dequeuing item ", err)
+		} else {
+			//queue is empty
+			return nil
 		}
 	}
 	// Assert type of the response to an Item pointer so we can work with it
 	next, ok := iface.(*PinningOperation)
 	if !ok {
-		log.Fatal("Dequeued object is not an Item pointer")
+		log.Fatal("Dequeued object is not a PinningOperation pointer")
 	}
 	return next
 

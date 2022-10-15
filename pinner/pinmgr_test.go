@@ -19,10 +19,12 @@ func newManager(count *int) *PinManager {
 
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+			go cb(1)
 			*count += 1
 			return nil
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
+			QueueDataDir:     "/tmp/",
 		})
 }
 
