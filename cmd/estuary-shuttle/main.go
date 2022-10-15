@@ -1532,25 +1532,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dsess := dserv.Session(ctx)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
-		// pinning failed, we wont try again. mark pin as dead
-		/* maybe its fine if we retry later?
-		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
-			"pinning": false,
-		}).Error; err != nil {
-			log.Errorf("failed to update failed pin status: %s", err)
-		}
-		*/
-
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
-
-	/*
-		if op.Replace > 0 {
-			if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d", op.Replace)
-			}
-		}
-	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -1725,7 +1708,6 @@ func (s *Shuttle) refreshPinQueue() error {
 	for _, c := range toPin {
 		s.addPinToQueue(c, nil, 0)
 	}
-
 	return nil
 }
 

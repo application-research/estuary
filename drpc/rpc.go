@@ -67,7 +67,6 @@ const CMD_TakeContent = "TakeContent"
 
 type TakeContent struct {
 	Contents []ContentFetch
-	Sources  []peer.AddrInfo
 }
 
 const CMD_AggregateContent = "AggregateContent"
@@ -150,6 +149,7 @@ type ContentFetch struct {
 	ID     uint
 	Cid    cid.Cid
 	UserID uint
+	Peers  []*peer.AddrInfo
 }
 
 type Message struct {

@@ -154,6 +154,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	defer span.End()
 
 	log.Debugf("handling shuttle message: %s", msg.Op)
+
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
 		ups := msg.Params.UpdatePinStatus
