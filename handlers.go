@@ -163,6 +163,7 @@ func (s *Server) ServeAPI() error {
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
+	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -1284,6 +1285,38 @@ type dealStatus struct {
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
 
+// handleGetContent godoc
+// @Summary      Content
+// @Description  This endpoint returns a content by its ID
+// @Tags         content
+// @Produce      json
+// @Param id path int true "Content ID"
+// @Router       /content/{id} [get]
+func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
+	contID, err := strconv.Atoi(c.Param("cont_id"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, content)
+}
+
 // handleContentStatus godoc
 // @Summary      Content Status
 // @Description  This endpoint returns the status of a content
@@ -1300,6 +1333,13 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -1405,6 +1445,13 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 
 	var deal contentDeal
 	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal was not found for prop_cid: %s", propcid),
+			}
+		}
 		return err
 	}
 
@@ -1419,6 +1466,13 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
 	var deal contentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", dealid),
+			}
+		}
 		return nil, err
 	}
 
@@ -1616,6 +1670,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 				Details: fmt.Sprintf("content: %d was not found", req.ContentID),
 			}
 		}
+		return err
 	}
 
 	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
@@ -1700,6 +1755,13 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 
 	var deal contentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", dealid),
+			}
+		}
 		return err
 	}
 
@@ -1754,6 +1816,13 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 
 	var d contentDeal
 	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal was not found for prop_cid: %s", propCid),
+			}
+		}
 		return err
 	}
 
@@ -1790,6 +1859,13 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 
 	var proprec proposalRecord
 	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("proposal: %d was not found", propCid),
+			}
+		}
 		return err
 	}
 
@@ -2050,6 +2126,13 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2097,6 +2180,13 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2130,6 +2220,13 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2541,6 +2638,13 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -2579,6 +2683,13 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) err
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -2721,6 +2832,13 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", cont),
+			}
+		}
 		return err
 	}
 
@@ -2849,8 +2967,9 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:   http.StatusNotFound,
-				Reason: util.ERR_INVALID_INVITE,
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_INVALID_INVITE,
+				Details: "no such invite code was found",
 			}
 		}
 		return err
@@ -2858,8 +2977,9 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	if invite.ClaimedBy != 0 {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_INVITE_ALREADY_USED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVITE_ALREADY_USED,
+			Details: "the invite code as already been claimed",
 		}
 	}
 
@@ -2875,8 +2995,9 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	if exist != nil {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_USERNAME_TAKEN,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_USERNAME_TAKEN,
+			Details: "username already exist",
 		}
 	}
 
@@ -2938,8 +3059,9 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:   http.StatusForbidden,
-				Reason: util.ERR_USER_NOT_FOUND,
+				Code:    http.StatusForbidden,
+				Reason:  util.ERR_USER_NOT_FOUND,
+				Details: "no such user exist",
 			}
 		}
 		return err
@@ -3346,12 +3468,27 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 	}
 
 	if len(contentIDs) > 128 {
-		return fmt.Errorf("too many contents specified: %d (max 128)", len(contentIDs))
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("too many contents specified: %d (max 128)", len(contentIDs)),
+		}
 	}
 
 	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
-		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	var contents []util.Content
@@ -3392,7 +3529,18 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
 
 	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", colid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
 		return err
 	}
 
@@ -3484,7 +3632,18 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 	coluuid := c.Param("coluuid")
 
 	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
 		return err
 	}
 
@@ -3616,10 +3775,11 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
-				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
 				Details: fmt.Sprintf("collection with ID(%s) was not found", coluuid),
 			}
 		}
+		return err
 	}
 
 	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
@@ -4185,6 +4345,13 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", val),
+			}
+		}
 		return err
 	}
 
@@ -4996,6 +5163,13 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 
 	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", aggr),
+			}
+		}
 		return err
 	}
 
@@ -5178,11 +5352,14 @@ func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
 			var ar autoretrieve.Autoretrieve
 			if err := s.DB.First(&ar, "token = ?", auth).Error; err != nil {
 				log.Warnw("Autoretrieve server not authorized", "token", auth)
-				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Reason:  util.ERR_NOT_AUTHORIZED,
-					Details: "token not authorized",
+				if xerrors.Is(err, gorm.ErrRecordNotFound) {
+					return &util.HttpError{
+						Code:    http.StatusUnauthorized,
+						Reason:  util.ERR_NOT_AUTHORIZED,
+						Details: "token was not found",
+					}
 				}
+				return err
 			}
 			return next(c)
 		}
@@ -5200,9 +5377,12 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			var sh Shuttle
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
-				return &util.HttpError{
-					Code:   http.StatusUnauthorized,
-					Reason: util.ERR_NOT_AUTHORIZED,
+				if xerrors.Is(err, gorm.ErrRecordNotFound) {
+					return &util.HttpError{
+						Code:    http.StatusUnauthorized,
+						Reason:  util.ERR_NOT_AUTHORIZED,
+						Details: "shuttle token was not found",
+					}
 				}
 			}
 			return next(c)
@@ -5344,6 +5524,13 @@ func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 
 	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
 		return err
 	}
 
@@ -5353,6 +5540,13 @@ func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection content: %s was not found", contid),
+			}
+		}
 		return err
 	}
 
@@ -5379,7 +5573,6 @@ func (s *Server) handleRunGc(c echo.Context) error {
 	if err := s.CM.GarbageCollect(c.Request().Context()); err != nil {
 		return err
 	}
-
 	return nil
 }
 

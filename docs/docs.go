@@ -981,6 +981,28 @@ const docTemplate = `{
                 "responses": {}
             }
         },
+        "/content/{id}": {
+            "get": {
+                "description": "This endpoint returns a content by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Content",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Content ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            }
+        },
         "/deal/estimate": {
             "post": {
                 "description": "This endpoint estimates the cost of a deal",
