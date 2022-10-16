@@ -444,7 +444,6 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 				return err
 			}
 		}
-
 		out = append(out, st)
 	}
 
@@ -460,7 +459,10 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
-		return err
+		return &util.HttpError{
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVALID_INPUT,
+		}
 	}
 
 	//	validate the IDs and Addrs here
@@ -468,15 +470,12 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	for _, peerParam := range params {
 		//	validate the PeerID
 		peerParamId, err := peer.Decode(peerParam.ID)
-
 		if err != nil {
-			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
-			return c.JSON(http.StatusBadRequest,
-				util.PeeringPeerAddMessage{
-					Message:  "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
-					PeersAdd: params,
-				},
-			)
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_INPUT,
+				Details: "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
+			}
 		}
 
 		//	validate the Addrs for each PeerID
@@ -484,13 +483,11 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		for _, addr := range peerParam.Addrs {
 			a, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
-				log.Errorf("handlePeeringPeersAdd error: %s", err)
-				return c.JSON(http.StatusBadRequest,
-					util.PeeringPeerAddMessage{
-						Message:  "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
-						PeersAdd: params,
-					},
-				)
+				return &util.HttpError{
+					Code:    http.StatusBadRequest,
+					Reason:  util.ERR_INVALID_INPUT,
+					Details: "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
+				}
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
@@ -522,10 +519,9 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
 	if err := c.Bind(&params); err != nil {
-		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
-			Reason: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+			Reason: util.ERR_INVALID_INPUT,
 		}
 	}
 
@@ -567,7 +563,6 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 func (s *Server) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
 	if err != nil {
-		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_START_ERROR,
@@ -585,7 +580,6 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 func (s *Server) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
 	if err != nil {
-		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_STOP_ERROR,
