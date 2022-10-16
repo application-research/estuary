@@ -1244,24 +1244,31 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error 
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	err := s.DB.Model(&util.Content{}).
+		Limit(limit).
+		Offset(offset).
+		Order("contents.id desc").
+		Joins("inner join content_deals on contents.id = content_deals.content").
+		Where("contents.active and contents.user_id = ? and not contents.aggregated_in > 0", u.ID).
+		Group("contents.id").
+		Scan(&contents).Error
+
+	if err != nil {
 		return err
 	}
 
 	out := make([]expandedContent, 0, len(contents))
 	for _, cont := range contents {
-		if !s.CM.contentInStagingZone(c.Request().Context(), cont) {
-			ec := expandedContent{
-				Content: cont,
-			}
-			if cont.Aggregate {
-				if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
-					return err
-				}
-
-			}
-			out = append(out, ec)
+		ec := expandedContent{
+			Content: cont,
 		}
+		if cont.Aggregate {
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				return err
+			}
+
+		}
+		out = append(out, ec)
 	}
 
 	return c.JSON(http.StatusOK, out)
