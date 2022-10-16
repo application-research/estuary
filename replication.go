@@ -330,14 +330,13 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Replication:                  cfg.Replication,
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:          make(chan *drpc.Message),
+		IncomingRPCMessages:          make(chan *drpc.Message, 200000),
 		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
-	qm := newQueueManager(func(c uint) {
+
+	cm.queueMgr = newQueueManager(func(c uint) {
 		cm.toCheck(c)
 	})
-
-	cm.queueMgr = qm
 	return cm, nil
 }
 
