@@ -31,6 +31,7 @@ type Shuttle struct {
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
 	FilClient          FilClient     `json:"fil_client"`
+	RPCMessage         RPCMessage    `json:"rpc_message"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -160,6 +161,10 @@ func NewShuttle(appVersion string) *Shuttle {
 				CacheSize: 2000,
 				TTL:       30,
 			},
+		},
+		RPCMessage: RPCMessage{
+			OutgoingQueueSize: 100000,
+			IncomingQueueSize: 100000,
 		},
 	}
 }

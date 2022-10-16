@@ -92,7 +92,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		address:               hello.Address,
 		addrInfo:              hello.AddrInfo,
 		hostname:              hello.Host,
-		cmds:                  make(chan *drpc.Command, 100000),
+		cmds:                  make(chan *drpc.Command, cm.cfg.RPCMessage.OutgoingQueueSize),
 		ctx:                   ctx,
 		private:               hello.Private,
 		ContentAddingDisabled: hello.ContentAddingDisabled,

@@ -4655,7 +4655,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
+		outgoingRpcQueue, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register shuttle: %s", err)
 			return
@@ -4665,9 +4665,9 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		go func() {
 			for {
 				select {
-				case cmd := <-cmds:
+				case rpcMessage := <-outgoingRpcQueue:
 					// Write
-					err := websocket.JSON.Send(ws, cmd)
+					err := websocket.JSON.Send(ws, rpcMessage)
 					if err != nil {
 						log.Errorf("failed to write command to shuttle: %s", err)
 						return

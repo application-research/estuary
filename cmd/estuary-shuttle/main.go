@@ -181,6 +181,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.Dev = cctx.Bool("dev")
 		case "no-reload-pin-queue":
 			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
+		case "rpc-incoming-queue-size":
+			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+		case "rpc-outgoing-queue-size":
+			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
 		default:
 		}
 	}
@@ -348,6 +352,16 @@ func main() {
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
+		&cli.IntFlag{
+			Name:  "rpc-incoming-queue-size",
+			Usage: "sets incoming rpc message queue size",
+			Value: cfg.RPCMessage.IncomingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-outgoing-queue-size",
+			Usage: "sets outgoing rpc message queue size",
+			Value: cfg.RPCMessage.OutgoingQueueSize,
+		},
 	}
 
 	app.Commands = []*cli.Command{
@@ -492,7 +506,7 @@ func main() {
 			inflightCids:     make(map[cid.Cid]uint),
 			splitsInProgress: make(map[uint]bool),
 
-			outgoing:  make(chan *drpc.Message),
+			outgoing:  make(chan *drpc.Message, cfg.RPCMessage.OutgoingQueueSize),
 			authCache: cache,
 
 			hostname:           cfg.Hostname,

@@ -330,7 +330,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Replication:                  cfg.Replication,
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:          make(chan *drpc.Message, 200000),
+		IncomingRPCMessages:          make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
 
