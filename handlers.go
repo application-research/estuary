@@ -1864,7 +1864,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("proposal: %d was not found", propCid),
+				Details: fmt.Sprintf("proposal: %s was not found", propCid),
 			}
 		}
 		return err
