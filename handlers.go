@@ -1106,7 +1106,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
+	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
 
 func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {

@@ -2996,7 +2996,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -3008,7 +3008,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	var totalSize int64
 	for _, o := range objects {
 		refs = append(refs, util.ObjRef{
-			Content: content,
+			Content: contID,
 			Object:  o.ID,
 		})
 		totalSize += int64(o.Size)
@@ -3019,7 +3019,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 		attribute.Int("numObjects", len(objects)),
 	)
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"active":   true,
 		"size":     totalSize,
 		"pinning":  false,
@@ -3031,7 +3031,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
-
 	return nil
 }
 
