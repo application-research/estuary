@@ -118,9 +118,6 @@ type ContentManager struct {
 
 	hostname string
 
-	pinJobs map[uint]*pinner.PinningOperation
-	pinLk   sync.Mutex
-
 	pinMgr *pinner.PinManager
 
 	shuttlesLk sync.Mutex
@@ -168,6 +165,8 @@ type contentStagingZone struct {
 
 	MaxContentAge time.Duration `json:"max_content_age"`
 	MinDealSize   int64         `json:"min_deal_size"`
+
+	IsConsolidating bool `json:"is_consolidating"`
 
 	lk sync.Mutex
 }
@@ -252,6 +251,12 @@ func (cb *contentStagingZone) isReady() bool {
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
+
+	// if this bucket is being consolidated, do not add anymore content
+	if cb.IsConsolidating {
+		return false, nil
+	}
+
 	if cb.CurSize+c.Size > cb.MaxSize {
 		return false, nil
 	}
@@ -312,7 +317,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		ToCheck:                      make(chan uint, 100000),
 		retrievalsInProgress:         make(map[uint]*util.RetrievalProgress),
 		buckets:                      make(map[uint][]*contentStagingZone),
-		pinJobs:                      make(map[uint]*pinner.PinningOperation),
 		pinMgr:                       pinmgr,
 		remoteTransferStatus:         cache,
 		shuttles:                     make(map[string]*ShuttleConnection),
@@ -326,14 +330,13 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Replication:                  cfg.Replication,
 		tracer:                       otel.Tracer("replicator"),
 		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:          make(chan *drpc.Message),
+		IncomingRPCMessages:          make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
 	}
-	qm := newQueueManager(func(c uint) {
+
+	cm.queueMgr = newQueueManager(func(c uint) {
 		cm.toCheck(c)
 	})
-
-	cm.queueMgr = qm
 	return cm, nil
 }
 
@@ -543,6 +546,8 @@ func (cm *ContentManager) currentLocationForContent(c uint) (string, error) {
 func (cm *ContentManager) stagedContentByLocation(ctx context.Context, b *contentStagingZone) (map[string][]util.Content, error) {
 	out := make(map[string][]util.Content)
 	for _, c := range b.Contents {
+		// need to get current location from db, incase this stage content was a part of a consolidated content - its location would have changed.
+		// so we can group it into its current location
 		loc, err := cm.currentLocationForContent(c.ID)
 		if err != nil {
 			return nil, err
@@ -604,17 +609,20 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	if len(cbl) > 1 {
 		// Need to migrate content all to the same shuttle
-		cm.bucketLk.Lock()
+		// Only attempt consolidation on a zone if it has not be done before, prevents re-consolidation request
+		if !b.IsConsolidating {
+			b.IsConsolidating = true
+			go func() {
+				if err := cm.consolidateStagedContent(ctx, b); err != nil {
+					log.Errorf("failed to consolidate staged content: %s", err)
+				}
+			}()
+		}
+
 		// put the staging zone back in the list
+		cm.bucketLk.Lock()
 		cm.buckets[b.User] = append(cm.buckets[b.User], b)
 		cm.bucketLk.Unlock()
-
-		go func() {
-			if err := cm.consolidateStagedContent(ctx, b); err != nil {
-				log.Errorf("failed to consolidate staged content: %s", err)
-			}
-		}()
-
 		return nil
 	}
 
@@ -2988,7 +2996,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint, dserv ipld.NodeGetter, root cid.Cid, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -3000,7 +3008,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	var totalSize int64
 	for _, o := range objects {
 		refs = append(refs, util.ObjRef{
-			Content: content,
+			Content: contID,
 			Object:  o.ID,
 		})
 		totalSize += int64(o.Size)
@@ -3011,7 +3019,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 		attribute.Int("numObjects", len(objects)),
 	)
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", content).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"active":   true,
 		"size":     totalSize,
 		"pinning":  false,
@@ -3023,7 +3031,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, content uint
 	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
 		return xerrors.Errorf("failed to create refs: %w", err)
 	}
-
 	return nil
 }
 
@@ -3198,31 +3205,21 @@ func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, c
 }
 
 func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
-	fromLocs := make(map[string]struct{})
-
 	tc := &drpc.TakeContent{}
 	for _, c := range contents {
-		fromLocs[c.Location] = struct{}{}
+		prs := make([]*peer.AddrInfo, 0)
+
+		pr, _ := cm.addrInfoForShuttle(c.Location)
+		if pr != nil {
+			prs = append(prs, pr)
+		}
 
 		tc.Contents = append(tc.Contents, drpc.ContentFetch{
 			ID:     c.ID,
 			Cid:    c.Cid.CID,
 			UserID: c.UserID,
+			Peers:  prs,
 		})
-	}
-
-	for handle := range fromLocs {
-		ai, err := cm.addrInfoForShuttle(handle)
-		if err != nil {
-			return err
-		}
-
-		if ai == nil {
-			log.Warnf("no addr info for node: %s", handle)
-			continue
-		}
-
-		tc.Sources = append(tc.Sources, *ai)
 	}
 
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{

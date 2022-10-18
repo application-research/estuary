@@ -92,7 +92,7 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		address:               hello.Address,
 		addrInfo:              hello.AddrInfo,
 		hostname:              hello.Host,
-		cmds:                  make(chan *drpc.Command, 32),
+		cmds:                  make(chan *drpc.Command, cm.cfg.RPCMessage.OutgoingQueueSize),
 		ctx:                   ctx,
 		private:               hello.Private,
 		ContentAddingDisabled: hello.ContentAddingDisabled,
@@ -154,6 +154,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	defer span.End()
 
 	log.Debugf("handling shuttle message: %s", msg.Op)
+
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
 		ups := msg.Params.UpdatePinStatus

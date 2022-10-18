@@ -181,6 +181,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.Dev = cctx.Bool("dev")
 		case "no-reload-pin-queue":
 			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
+		case "rpc-incoming-queue-size":
+			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+		case "rpc-outgoing-queue-size":
+			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
 		default:
 		}
 	}
@@ -348,6 +352,16 @@ func main() {
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
+		&cli.IntFlag{
+			Name:  "rpc-incoming-queue-size",
+			Usage: "sets incoming rpc message queue size",
+			Value: cfg.RPCMessage.IncomingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-outgoing-queue-size",
+			Usage: "sets outgoing rpc message queue size",
+			Value: cfg.RPCMessage.OutgoingQueueSize,
+		},
 	}
 
 	app.Commands = []*cli.Command{
@@ -492,7 +506,7 @@ func main() {
 			inflightCids:     make(map[cid.Cid]uint),
 			splitsInProgress: make(map[uint]bool),
 
-			outgoing:  make(chan *drpc.Message),
+			outgoing:  make(chan *drpc.Message, cfg.RPCMessage.OutgoingQueueSize),
 			authCache: cache,
 
 			hostname:           cfg.Hostname,
@@ -959,11 +973,11 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("authentication check returned unexpected error: %s", bodyBytes)
+		return nil, &out.Error
 	}
 
 	var out util.ViewerResponse
@@ -1139,7 +1153,6 @@ func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
 			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
 		)
-
 		return err
 	}
 }
@@ -1533,25 +1546,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dsess := dserv.Session(ctx)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
-		// pinning failed, we wont try again. mark pin as dead
-		/* maybe its fine if we retry later?
-		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
-			"pinning": false,
-		}).Error; err != nil {
-			log.Errorf("failed to update failed pin status: %s", err)
-		}
-		*/
-
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
-
-	/*
-		if op.Replace > 0 {
-			if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d", op.Replace)
-			}
-		}
-	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -1726,7 +1722,6 @@ func (s *Shuttle) refreshPinQueue() error {
 	for _, c := range toPin {
 		s.addPinToQueue(c, nil, 0)
 	}
-
 	return nil
 }
 
@@ -1979,6 +1974,13 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d record not found in database", cont),
+			}
+		}
 		return err
 	}
 
@@ -1988,15 +1990,12 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	ctx := context.Background()
 	nd, err := dserv.Get(ctx, pin.Cid.CID)
 	if err != nil {
-		return c.JSON(400, map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
+
 	r, err := uio.NewDagReader(ctx, nd, dserv)
 	if err != nil {
-		return c.JSON(400, map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	_, err = io.Copy(c.Response(), r)
@@ -2015,9 +2014,14 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 
 	var obj Object
 	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
-		return c.JSON(404, map[string]interface{}{
-			"error": "object not found in database",
-		})
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("cid: %s record not found in database", cc),
+			}
+		}
+		return err
 	}
 
 	var pins []Pin
@@ -2080,6 +2084,13 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 
 	var p Pin
 	if err := s.DB.First(&p, "content = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d record not found in database", cont),
+			}
+		}
 		return err
 	}
 
@@ -2134,8 +2145,7 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st))
-		if canRestart {
+		if canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st)); canRestart {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)
@@ -2152,7 +2162,6 @@ func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, transfers)
 }
 
@@ -2166,7 +2175,6 @@ func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
