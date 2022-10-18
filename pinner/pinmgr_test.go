@@ -117,7 +117,8 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
-	assert.Equal(t, N+1, count, "Should do N work + 1 for the first item")
+	assert.Less(t, N+1, count, "Should do  at least N work + 1 for the first item")
+	assert.Greater(t, N*N+1, count, "Should less than N*N work + 1 for the first item")
 }
 
 func TestNUniqueNamesSameUser(t *testing.T) {
