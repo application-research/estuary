@@ -91,10 +91,10 @@ require (
 )
 
 require (
+	github.com/beeker1121/goque v2.1.0+incompatible
 	github.com/filecoin-project/go-legs v0.4.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
-	github.com/joncrlsn/dque v0.0.0-20211108142734-c2ef48c5192a
 	github.com/libp2p/go-libp2p-pubsub v0.7.1
 	github.com/pkg/errors v0.9.1
 )
@@ -187,7 +187,6 @@ require (
 	github.com/go-openapi/spec v0.20.4 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20210107165309-348f09dbbbc0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
-	github.com/gofrs/flock v0.7.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/glog v1.0.0 // indirect

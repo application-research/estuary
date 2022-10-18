@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/beeker1121/goque"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/joncrlsn/dque"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
 )
@@ -37,8 +37,8 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 	}
 
 	return &PinManager{
-		pinQueue:         make(map[uint]*dque.DQue),
-		activePins:       make(map[uint]int),
+		pinQueue:         createDQue(opts.QueueDataDir),
+		pinQueuePriority: createDQue(opts.QueueDataDir),
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
 		pinComplete:      make(chan *PinningOperation, 64),
@@ -63,8 +63,8 @@ type PinManager struct {
 	pinQueueIn       chan *PinningOperation
 	pinQueueOut      chan *PinningOperation
 	pinComplete      chan *PinningOperation
-	pinQueue         map[uint]*dque.DQue
-	activePins       map[uint]int
+	pinQueue         *goque.Queue
+	pinQueuePriority *goque.Queue
 	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
 	StatusChangeFunc PinStatusFunc
@@ -178,13 +178,9 @@ func (po *PinningOperation) PinStatus() *types.IpfsPinStatusResponse {
 }
 
 func (pm *PinManager) PinQueueSize() int {
-	var count int
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
-	for _, pq := range pm.pinQueue {
-		count += pq.Size()
-	}
-	return count
+	return int(pm.pinQueuePriority.Length() + pm.pinQueue.Length())
 }
 
 func (pm *PinManager) Add(op *PinningOperation) {
@@ -222,57 +218,42 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 
 func (pm *PinManager) popNextPinOp() *PinningOperation {
 
-	if len(pm.pinQueue) == 0 {
-		return nil
-	}
-
-	success := false
-	var user uint
-	for u := range pm.pinQueue {
-		if (pm.pinQueue[u].Size()) > 0 {
-			user = u
-			success = true
+	var pq *goque.Queue
+	if pm.pinQueuePriority.Length() > 0 {
+		pq = pm.pinQueuePriority
+	} else {
+		if pm.pinQueue.Length() == 0 {
+			return nil // no content in queue or priority queue
 		}
-	}
-	if !success {
-		return nil
+		pq = pm.pinQueue
 	}
 
-	pq := pm.pinQueue[user]
-
-	iface, err := pq.Dequeue()
+	item, err := pq.Dequeue()
 	// Dequeue the next item in the queue
 	if err != nil {
-		if err != dque.ErrEmpty {
-			log.Fatal("Error dequeuing item ", err)
-		} else {
-			//queue is empty
-			return nil
-		}
+		log.Fatal("Error dequeuing item ", err)
 	}
 	// Assert type of the response to an Item pointer so we can work with it
-	next, ok := iface.(*PinningOperation)
-	if !ok {
+	var next *PinningOperation
+	err = item.ToObject(&next)
+
+	if err != nil {
 		log.Fatal("Dequeued object is not a PinningOperation pointer")
 	}
 	return next
 
 }
 
-func (pm *PinManager) createDQue(userid uint) *dque.DQue {
-	qName := "item-queue-" + fmt.Sprint(userid)
-	qDir := pm.QueueDataDir
-	segmentSize := 50
+func createDQue(QueueDataDir string) *goque.Queue {
 
-	//queue is currently not expected to persist on reload of app
-	//so delete queue if it exists before creating it
-	os.RemoveAll(pm.QueueDataDir + "/" + qName)
+	//TODO figure out if we want to make this persistent or continue to use mkdirtemp and if so clean up the file
 
-	q, err := dque.New(qName, qDir, segmentSize, PinningOperationBuilder)
+	dname, err := os.MkdirTemp(QueueDataDir, "pinqueue")
+	//fmt.Println("make", dname)
+	q, err := goque.OpenQueue(dname)
 	if err != nil {
-		log.Fatal("Unable to create DQue. Out of disk?")
+		log.Fatal("Unable to create Queue. Out of disk? Too many open files? try ulimit -n 50000")
 	}
-	q.TurboOn() // don't fsync every write
 	return q
 }
 
@@ -281,14 +262,13 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 	if po.SkipLimiter {
 		u = 0
 	}
-
-	dq, contains := pm.pinQueue[u]
-	if !contains {
-		dq = pm.createDQue(u)
-		pm.pinQueue[u] = dq
+	var dq *goque.Queue
+	if u == 0 {
+		dq = pm.pinQueuePriority
+	} else {
+		dq = pm.pinQueue
 	}
-
-	err := dq.Enqueue(po)
+	_, err := dq.EnqueueObject(po)
 	if err != nil {
 		log.Fatal("Unable to add pin to queue.")
 	}
