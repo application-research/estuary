@@ -99,8 +99,8 @@ type PinningOperation struct {
 
 //TODO put this as a subfield inside PinningOperation
 type PinningOperationData struct {
-	Obj         cid.Cid
-	Name        string
+	Obj  cid.Cid
+	Name string
 	//Peers       []*peer.AddrInfo
 	Meta        string
 	Status      types.PinningStatus
@@ -112,10 +112,10 @@ type PinningOperationData struct {
 	MakeDeal    bool
 }
 
-func getPinningData(po *PinningOperation) PinningOperationData{
+func getPinningData(po *PinningOperation) PinningOperationData {
 	return PinningOperationData{
-		Obj:         po.Obj,
-		Name:        po.Name,
+		Obj:  po.Obj,
+		Name: po.Name,
 		//Peers:       po.Peers,
 		Meta:        po.Meta,
 		Status:      po.Status,
@@ -139,12 +139,13 @@ func (po *PinningOperation) fail(err error) {
 }
 
 func (pm *PinManager) complete(po *PinningOperation) {
+	pm.pinQueueLk.Lock()
 	po.lk.Lock()
+	defer pm.pinQueueLk.Unlock()
 	defer po.lk.Unlock()
 
-
 	opdata := getPinningData(po)
-  if _, ok := pm.duplicateGuard[opdata]; ok {
+	if _, ok := pm.duplicateGuard[opdata]; ok {
 		delete(pm.duplicateGuard, opdata)
 	}
 
