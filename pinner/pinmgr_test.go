@@ -38,7 +38,7 @@ func newPinData(name string, userid int) PinningOperation {
 	}
 }
 
-var N int = 10
+var N int = 20
 var sleeptime time.Duration = 100
 
 func TestSend1Pin1worker(t *testing.T) {
@@ -51,7 +51,7 @@ func TestSend1Pin1worker(t *testing.T) {
 	pin := newPinData("name"+fmt.Sprint(i), i)
 	go mgr.Add(&pin)
 
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "first pin doesn't enter queue")
 	assert.Equal(t, 1, count, "DoPin called once")
 
@@ -67,7 +67,7 @@ func TestSend1Pin0workers(t *testing.T) {
 	pin := newPinData("name"+fmt.Sprint(i), i)
 	go mgr.Add(&pin)
 
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "first pin doesn't enter queue")
 	assert.Equal(t, 0, count, "DoPin called once")
 }
@@ -81,7 +81,7 @@ func TestNUniqueNames(t *testing.T) {
 		pin := newPinData("name"+fmt.Sprint(i), i)
 		go mgr.Add(&pin)
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, N-1)
 	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N pins in it")
 }
 
@@ -93,7 +93,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 		pin := newPinData("name"+fmt.Sprint(i), i)
 		go mgr.Add(&pin)
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
 	assert.Equal(t, N, count, "work should be done N times")
 }
@@ -111,7 +111,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 			go mgr.Add(&pin)
 		}
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
 	assert.Equal(t, N*N, count, "queue should have N pins in it")
 }
@@ -127,7 +127,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 			go mgr.Add(&pin)
 		}
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, N*N-1)
 	assert.Equal(t, N*N-1, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, count, 0, "no work done")
 }
@@ -140,7 +140,7 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 		pin := newPinData("name", 0)
 		go mgr.Add(&pin)
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
 	assert.Equal(t, N, count, "work should have N pins in it")
 }
@@ -153,7 +153,7 @@ func TestNDuplicateNames(t *testing.T) {
 		pin := newPinData("name", 0)
 		go mgr.Add(&pin)
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, N-1)
 	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
 }
@@ -170,7 +170,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 			}
 		}
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
 	assert.Equal(t, N*N*N, count, "work should have N pins in it")
 }
@@ -187,9 +187,20 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 			}
 		}
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
 	assert.Equal(t, N*N*N, count, "work should have N pins in it")
+}
+
+func sleepWhileWork(mgr *PinManager, SIZE int) {
+	for i := 0; i < N; i++ {
+		time.Sleep(sleeptime * time.Millisecond)
+		if mgr.PinQueueSize() == SIZE {
+			time.Sleep(sleeptime * time.Millisecond)
+			return
+		}
+	}
+	fmt.Println("Waking up before finding correct result")
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
@@ -197,7 +208,6 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	var count int = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
-
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
@@ -206,7 +216,8 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 			}
 		}
 	}
-	time.Sleep(sleeptime * time.Millisecond)
+
+	sleepWhileWork(mgr, N*N*N-1)
 	assert.Equal(t, N*N*N-1, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
 }
@@ -214,10 +225,6 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 /*
 
 test run that iterates above and makes the above code redundant.
-
-Unfortuantely there are some bugs that this exposes so for now we will keep it commented out until we can fix the bugs
-and then we can uncomment it and potentially just leave the code above anyway
-
 
 func test_run(worker_count int, repeat_count int, user_id_count int, name_count int, t *testing.T) {
 
