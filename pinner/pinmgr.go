@@ -158,7 +158,12 @@ func (pm *PinManager) complete(po *PinningOperation) {
 
 	opdata := getPinningData(po)
 
-	pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
+	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
+	if err != nil {
+		//Delete will not returns error if key doesn't exist
+		log.Fatal("Error deleting item from duplicate guard ", err)
+
+	}
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
