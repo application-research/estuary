@@ -3,13 +3,15 @@ package pinner
 import (
 	"context"
 	"fmt"
-	"time"
-
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/stretchr/testify/assert"
 )
+
+var count_lock sync.Mutex
 
 func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
 	//fmt.Println("onPinStatusUpdate", status, cont)
@@ -20,7 +22,9 @@ func newManager(count *int) *PinManager {
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
 			go cb(1)
+			count_lock.Lock()
 			*count += 1
+			count_lock.Unlock()
 			return nil
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
