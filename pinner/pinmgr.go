@@ -221,26 +221,20 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 }
 
 func (pm *PinManager) popNextPinOp() *PinningOperation {
+
 	if len(pm.pinQueue) == 0 {
 		return nil
 	}
 
-	var minCount int = 10000
+	success := false
 	var user uint
 	for u := range pm.pinQueue {
-		active := pm.activePins[u]
-		if active < minCount {
-			minCount = active
+		if (pm.pinQueue[u].Size()) > 0 {
 			user = u
+			success = true
 		}
 	}
-
-	_, ok := pm.pinQueue[0]
-	if ok {
-		user = 0
-	}
-
-	if minCount >= pm.maxActivePerUser && user != 0 {
+	if !success {
 		return nil
 	}
 
@@ -328,17 +322,13 @@ func (pm *PinManager) Run(workers int) {
 			}
 		case send <- next:
 			pm.pinQueueLk.Lock()
-			pm.activePins[next.UserId]++
-
 			next = pm.popNextPinOp()
 			if next == nil {
 				send = nil
 			}
 			pm.pinQueueLk.Unlock()
-		case op := <-pm.pinComplete:
+		case <-pm.pinComplete:
 			pm.pinQueueLk.Lock()
-			pm.activePins[op.UserId]--
-
 			if next == nil {
 				next = pm.popNextPinOp()
 				if next != nil {
@@ -346,7 +336,6 @@ func (pm *PinManager) Run(workers int) {
 				}
 			}
 			pm.pinQueueLk.Unlock()
-
 		}
 	}
 }
