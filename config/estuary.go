@@ -31,8 +31,8 @@ type Estuary struct {
 	Logging                Logging       `json:"logging"`
 	FilClient              FilClient     `json:"fil_client"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
-	ShuttleMessageHandlers int           `json:"shuttle_message_Handlers"`
 	Replication            int           `json:"replication"`
+	RPCMessage             RPCMessage    `json:"rpc_message"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -167,6 +167,10 @@ func NewEstuary(appVersion string) *Estuary {
 				HighWater: 3000,
 			},
 		},
-		ShuttleMessageHandlers: 30,
+		RPCMessage: RPCMessage{
+			IncomingQueueSize: 100000,
+			OutgoingQueueSize: 100000,
+			QueueHandlers:     30,
+		},
 	}
 }
