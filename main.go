@@ -172,8 +172,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
-		case "shuttle-message-handlers":
-			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
+		case "rpc-incoming-queue-size":
+			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+		case "rpc-outgoing-queue-size":
+			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
+		case "rpc-queue-handlers":
+			cfg.RPCMessage.QueueHandlers = cctx.Int("rpc-queue-handlers")
 		case "staging-bucket":
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
@@ -380,9 +384,19 @@ func main() {
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 		&cli.IntFlag{
-			Name:  "shuttle-message-handlers",
-			Usage: "sets shuttle message handler count",
-			Value: cfg.ShuttleMessageHandlers,
+			Name:  "rpc-incoming-queue-size",
+			Usage: "sets incoming rpc message queue size",
+			Value: cfg.RPCMessage.IncomingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-outgoing-queue-size",
+			Usage: "sets outgoing rpc message queue size",
+			Value: cfg.RPCMessage.OutgoingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-queue-handlers",
+			Usage: "sets rpc message handler count",
+			Value: cfg.RPCMessage.QueueHandlers,
 		},
 		&cli.BoolFlag{
 			Name:  "staging-bucket",
@@ -649,8 +663,8 @@ func main() {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
-		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
+		go cm.handleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {

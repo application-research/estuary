@@ -409,7 +409,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and active", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -444,7 +444,6 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 				return err
 			}
 		}
-
 		out = append(out, st)
 	}
 
@@ -460,7 +459,10 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
-		return err
+		return &util.HttpError{
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVALID_INPUT,
+		}
 	}
 
 	//	validate the IDs and Addrs here
@@ -468,15 +470,12 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	for _, peerParam := range params {
 		//	validate the PeerID
 		peerParamId, err := peer.Decode(peerParam.ID)
-
 		if err != nil {
-			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
-			return c.JSON(http.StatusBadRequest,
-				util.PeeringPeerAddMessage{
-					Message:  "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
-					PeersAdd: params,
-				},
-			)
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_INPUT,
+				Details: "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
+			}
 		}
 
 		//	validate the Addrs for each PeerID
@@ -484,13 +483,11 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		for _, addr := range peerParam.Addrs {
 			a, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
-				log.Errorf("handlePeeringPeersAdd error: %s", err)
-				return c.JSON(http.StatusBadRequest,
-					util.PeeringPeerAddMessage{
-						Message:  "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
-						PeersAdd: params,
-					},
-				)
+				return &util.HttpError{
+					Code:    http.StatusBadRequest,
+					Reason:  util.ERR_INVALID_INPUT,
+					Details: "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
+				}
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
@@ -522,10 +519,9 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
 	if err := c.Bind(&params); err != nil {
-		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
-			Reason: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+			Reason: util.ERR_INVALID_INPUT,
 		}
 	}
 
@@ -567,7 +563,6 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 func (s *Server) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
 	if err != nil {
-		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_START_ERROR,
@@ -585,7 +580,6 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 func (s *Server) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
 	if err != nil {
-		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_STOP_ERROR,
@@ -1112,7 +1106,7 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
+	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
 
 func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
@@ -1250,24 +1244,31 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error 
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	err := s.DB.Model(&util.Content{}).
+		Limit(limit).
+		Offset(offset).
+		Order("contents.id desc").
+		Joins("inner join content_deals on contents.id = content_deals.content").
+		Where("contents.active and contents.user_id = ? and not contents.aggregated_in > 0", u.ID).
+		Group("contents.id").
+		Scan(&contents).Error
+
+	if err != nil {
 		return err
 	}
 
 	out := make([]expandedContent, 0, len(contents))
 	for _, cont := range contents {
-		if !s.CM.contentInStagingZone(c.Request().Context(), cont) {
-			ec := expandedContent{
-				Content: cont,
-			}
-			if cont.Aggregate {
-				if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
-					return err
-				}
-
-			}
-			out = append(out, ec)
+		ec := expandedContent{
+			Content: cont,
 		}
+		if cont.Aggregate {
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				return err
+			}
+
+		}
+		out = append(out, ec)
 	}
 
 	return c.JSON(http.StatusOK, out)
@@ -1863,7 +1864,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("proposal: %d was not found", propCid),
+				Details: fmt.Sprintf("proposal: %s was not found", propCid),
 			}
 		}
 		return err
@@ -4654,7 +4655,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
+		outgoingRpcQueue, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register shuttle: %s", err)
 			return
@@ -4664,9 +4665,9 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		go func() {
 			for {
 				select {
-				case cmd := <-cmds:
+				case rpcMessage := <-outgoingRpcQueue:
 					// Write
-					err := websocket.JSON.Send(ws, cmd)
+					err := websocket.JSON.Send(ws, rpcMessage)
 					if err != nil {
 						log.Errorf("failed to write command to shuttle: %s", err)
 						return
