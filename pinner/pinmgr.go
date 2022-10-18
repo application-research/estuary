@@ -42,6 +42,7 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
 		pinComplete:      make(chan *PinningOperation, 64),
+		duplicateGuard:   make(map[PinningOperationData]bool),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
 		maxActivePerUser: opts.MaxActivePerUser,
@@ -65,6 +66,7 @@ type PinManager struct {
 	pinComplete      chan *PinningOperation
 	pinQueue         *goque.Queue
 	pinQueuePriority *goque.Queue
+	duplicateGuard   map[PinningOperationData]bool
 	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
 	StatusChangeFunc PinStatusFunc
@@ -104,10 +106,35 @@ type PinningOperation struct {
 	MakeDeal bool
 }
 
-// PinningOperationBuilder creates a new PinningOperation and returns a pointer to it.
-// This is used when we load a segment of the queue from disk for the Dque
-func PinningOperationBuilder() interface{} {
-	return &PinningOperation{}
+//TODO put this as a subfield inside PinningOperation
+type PinningOperationData struct {
+	Obj  cid.Cid
+	Name string
+	//Peers       []*peer.AddrInfo
+	Meta        string
+	Status      types.PinningStatus
+	UserId      uint
+	ContId      uint
+	Replace     uint
+	Location    string
+	SkipLimiter bool
+	MakeDeal    bool
+}
+
+func getPinningData(po *PinningOperation) PinningOperationData {
+	return PinningOperationData{
+		Obj:  po.Obj,
+		Name: po.Name,
+		//Peers:       po.Peers,
+		Meta:        po.Meta,
+		Status:      po.Status,
+		UserId:      po.UserId,
+		ContId:      po.ContId,
+		Replace:     po.Replace,
+		Location:    po.Location,
+		SkipLimiter: po.SkipLimiter,
+		MakeDeal:    po.MakeDeal,
+	}
 }
 
 func (po *PinningOperation) fail(err error) {
@@ -119,9 +146,16 @@ func (po *PinningOperation) fail(err error) {
 	po.lk.Unlock()
 }
 
-func (po *PinningOperation) complete() {
+func (pm *PinManager) complete(po *PinningOperation) {
+	pm.pinQueueLk.Lock()
 	po.lk.Lock()
+	defer pm.pinQueueLk.Unlock()
 	defer po.lk.Unlock()
+
+	opdata := getPinningData(po)
+	if _, ok := pm.duplicateGuard[opdata]; ok {
+		delete(pm.duplicateGuard, opdata)
+	}
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
@@ -212,7 +246,7 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 		}
 		return errors.Wrap(err, "shuttle RunPinFunc failed")
 	}
-	op.complete()
+	pm.complete(op)
 	return pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinned)
 }
 
@@ -258,6 +292,14 @@ func createDQue(QueueDataDir string) *goque.Queue {
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
+
+	opdata := getPinningData(po)
+	_, work_exists := pm.duplicateGuard[opdata]
+	if work_exists {
+		//work already exists in the queue not adding duplicate
+		return
+	}
+
 	u := po.UserId
 	if po.SkipLimiter {
 		u = 0
@@ -273,6 +315,7 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 		log.Fatal("Unable to add pin to queue.")
 	}
 
+	pm.duplicateGuard[opdata] = true
 }
 
 func (pm *PinManager) Run(workers int) {
