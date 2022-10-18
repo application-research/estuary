@@ -1,7 +1,9 @@
 package pinner
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"os"
 	"strconv"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 var log = logging.Logger("pinner")
@@ -42,7 +45,7 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
 		pinComplete:      make(chan *PinningOperation, 64),
-		duplicateGuard:   make(map[PinningOperationData]bool),
+		duplicateGuard:   createLevelDB(opts.QueueDataDir),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
 		maxActivePerUser: opts.MaxActivePerUser,
@@ -64,7 +67,7 @@ type PinManager struct {
 	pinQueueIn       chan *PinningOperation
 	pinQueueOut      chan *PinningOperation
 	pinComplete      chan *PinningOperation
-	duplicateGuard   map[PinningOperationData]bool
+	duplicateGuard   *leveldb.DB
 	activePins       map[uint]int // used to limit the number of pins per user
 	pinQueueCount    map[uint]int // keep track of queue count per user
 	pinQueue         *goque.PrefixQueue
@@ -154,9 +157,8 @@ func (pm *PinManager) complete(po *PinningOperation) {
 	defer po.lk.Unlock()
 
 	opdata := getPinningData(po)
-	if _, ok := pm.duplicateGuard[opdata]; ok {
-		delete(pm.duplicateGuard, opdata)
-	}
+
+	pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
@@ -255,6 +257,26 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 }
 
+func createLevelDBKey(value PinningOperationData) []byte {
+	var buffer bytes.Buffer
+	enc := gob.NewEncoder(&buffer)
+	if err := enc.Encode(value); err != nil {
+		log.Fatal("Unable to encode value")
+	}
+	return buffer.Bytes()
+}
+
+func createLevelDB(QueueDataDir string) *leveldb.DB {
+	//todo make tmpfile
+	dname, _ := os.MkdirTemp(QueueDataDir, "duplicateGuard")
+
+	db, err := leveldb.OpenFile(dname, nil)
+	if err != nil {
+		log.Fatal("Unable to create LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
+	}
+	return db
+}
+
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
 	//TODO figure out if we want to make this persistent or continue to use mkdirtemp and if so how often should we clean up the file
@@ -273,8 +295,10 @@ func getUserForQueue(UserId uint) []byte {
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 
 	opdata := getPinningData(po)
-	_, work_exists := pm.duplicateGuard[opdata]
-	if work_exists {
+
+	_, err := pm.duplicateGuard.Get(createLevelDBKey(opdata), nil)
+
+	if err != leveldb.ErrNotFound {
 		//work already exists in the queue not adding duplicate
 		return
 	}
@@ -284,13 +308,17 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 		u = 0
 	}
 
-	_, err := pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
+	_, err = pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
 	pm.pinQueueCount[u]++
 	if err != nil {
 		log.Fatal("Unable to add pin to queue.")
 	}
 
-	pm.duplicateGuard[opdata] = true
+	err = pm.duplicateGuard.Put(createLevelDBKey(opdata), []byte{255}, nil)
+	// Add it to the queue.
+	if err != nil {
+		log.Fatal("Unable to add to duplicate guard.")
+	}
 }
 
 func (pm *PinManager) Run(workers int) {
