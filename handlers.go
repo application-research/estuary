@@ -245,6 +245,7 @@ func (s *Server) ServeAPI() error {
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
+	admin.GET("/fil-address", s.handleAdminFilAddress)
 	admin.GET("/balance", s.handleAdminBalance)
 	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
@@ -1932,6 +1933,10 @@ func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"code": invite.Code,
 	})
+}
+
+func (s *Server) handleAdminFilAddress(c echo.Context) error {
+	return c.JSON(http.StatusOK, s.FilClient.ClientAddr)
 }
 
 func (s *Server) handleAdminBalance(c echo.Context) error {
