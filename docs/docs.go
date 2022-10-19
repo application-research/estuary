@@ -108,6 +108,20 @@ const docTemplate = `{
                     "peers"
                 ],
                 "summary": "Remove peers on Peering Service",
+                "parameters": [
+                    {
+                        "description": "Peer ids",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                ],
                 "responses": {}
             }
         },
@@ -214,22 +228,13 @@ const docTemplate = `{
                     "collections"
                 ],
                 "summary": "List all collections",
-                "parameters": [
-                    {
-                        "type": "integer",
-                        "description": "User ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/main.Collection"
+                                "$ref": "#/definitions/collections.Collection"
                             }
                         }
                     },
@@ -277,7 +282,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.Collection"
+                            "$ref": "#/definitions/collections.Collection"
                         }
                     },
                     "400": {
@@ -350,9 +355,9 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection UUID",
+                        "description": "coluuid",
                         "name": "coluuid",
-                        "in": "query",
+                        "in": "path",
                         "required": true
                     },
                     {
@@ -385,8 +390,15 @@ const docTemplate = `{
                 "summary": "Add contents to a collection",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "coluuid",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
                         "description": "Content IDs to add to collection",
-                        "name": "body",
+                        "name": "contentIDs",
                         "in": "body",
                         "required": true,
                         "schema": {
@@ -456,6 +468,57 @@ const docTemplate = `{
                 }
             }
         },
+        "/collections/{coluuid}/contents": {
+            "delete": {
+                "description": "This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "collections"
+                ],
+                "summary": "Deletes a content from a collection",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Collection ID",
+                        "name": "coluuid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Content ID",
+                        "name": "contentid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Variable to use when filtering for files (must be either 'path' or 'content_id')",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.deleteContentFromCollectionBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/content/add": {
             "post": {
                 "description": "This endpoint is used to upload new content.",
@@ -473,21 +536,45 @@ const docTemplate = `{
                     {
                         "type": "file",
                         "description": "File to upload",
-                        "name": "file",
+                        "name": "data",
                         "in": "formData",
                         "required": true
                     },
                     {
                         "type": "string",
+                        "description": "Filenam to use for upload",
+                        "name": "filename",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
                         "description": "Collection UUID",
                         "name": "coluuid",
-                        "in": "path"
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Replication value",
+                        "name": "replication",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes true/false",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lazy Provide true/false",
+                        "name": "lazy-provide",
+                        "in": "query"
                     },
                     {
                         "type": "string",
                         "description": "Directory",
                         "name": "dir",
-                        "in": "path"
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -522,20 +609,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Filename",
                         "name": "filename",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Commp",
-                        "name": "commp",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Size",
-                        "name": "size",
                         "in": "query"
                     }
                 ],
@@ -561,6 +642,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/util.ContentAddIpfsBody"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
                     }
                 ],
                 "responses": {}
@@ -666,12 +753,18 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "description": "Content",
-                        "name": "body",
+                        "name": "req",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentCreateBody"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
                     }
                 ],
                 "responses": {}
@@ -852,7 +945,14 @@ const docTemplate = `{
                         "type": "string",
                         "description": "limit",
                         "name": "limit",
-                        "in": "path",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
                         "required": true
                     }
                 ],
@@ -869,6 +969,28 @@ const docTemplate = `{
                     "content"
                 ],
                 "summary": "Content Status",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Content ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {}
+            }
+        },
+        "/content/{id}": {
+            "get": {
+                "description": "This endpoint returns a content by its ID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Content",
                 "parameters": [
                     {
                         "type": "integer",
@@ -1037,14 +1159,6 @@ const docTemplate = `{
         },
         "/deal/transfer/status": {
             "post": {
-                "description": "This endpoint returns the status of a transfer",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Transfer Status",
                 "responses": {}
             }
         },
@@ -1351,6 +1465,12 @@ const docTemplate = `{
                         "description": "Filter by miner",
                         "name": "miner",
                         "in": "path"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Failed",
+                        "name": "ignore-failed",
+                        "in": "query"
                     }
                 ],
                 "responses": {}
@@ -1532,6 +1652,20 @@ const docTemplate = `{
                     "User"
                 ],
                 "summary": "Create API keys for a user",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h",
+                        "name": "expiry",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Permissions -- currently unused",
+                        "name": "perms",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1624,7 +1758,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "main.Collection": {
+        "collections.Collection": {
             "type": "object",
             "properties": {
                 "cid": {
@@ -1654,6 +1788,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "main.deleteContentFromCollectionBody": {
+            "type": "object",
+            "properties": {
+                "by": {
+                    "type": "string"
+                },
+                "value": {
                     "type": "string"
                 }
             }
@@ -1757,6 +1902,29 @@ const docTemplate = `{
                 },
                 "retrieval_url": {
                     "type": "string"
+                }
+            }
+        },
+        "util.ContentCreateBody": {
+            "type": "object",
+            "properties": {
+                "coluuid": {
+                    "type": "string"
+                },
+                "dir": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "root": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "integer"
                 }
             }
         },

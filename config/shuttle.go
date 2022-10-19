@@ -30,6 +30,7 @@ type Shuttle struct {
 	Content            Content       `json:"content"`
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
+	RPCMessage         RPCMessage    `json:"rpc_message"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -153,6 +154,10 @@ func NewShuttle(appVersion string) *Shuttle {
 			Api:       "api.estuary.tech",
 			Handle:    "",
 			AuthToken: "",
+		},
+		RPCMessage: RPCMessage{
+			OutgoingQueueSize: 100000,
+			IncomingQueueSize: 100000,
 		},
 	}
 }

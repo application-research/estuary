@@ -20,7 +20,7 @@ type Estuary struct {
 	ApiListen              string        `json:"api_listen"`
 	LightstepToken         string        `json:"lightstep_token"`
 	Hostname               string        `json:"hostname"`
-	EnableAutoRetrieve     bool          `json:"enable_autoretrieve"`
+	DisableAutoRetrieve    bool          `json:"enable_autoretrieve"`
 	LowMem                 bool          `json:"low_mem"`
 	DisableFilecoinStorage bool          `json:"disable_filecoin_storage"`
 	DisableSwaggerEndpoint bool          `json:"disable_swagger_endpoint"`
@@ -30,8 +30,8 @@ type Estuary struct {
 	Content                Content       `json:"content"`
 	Logging                Logging       `json:"logging"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
-	ShuttleMessageHandlers int           `json:"shuttle_message_Handlers"`
 	Replication            int           `json:"replication"`
+	RPCMessage             RPCMessage    `json:"rpc_message"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -70,7 +70,7 @@ func NewEstuary(appVersion string) *Estuary {
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
-		EnableAutoRetrieve:     false,
+		DisableAutoRetrieve:    false,
 
 		Deal: Deal{
 			IsDisabled:            false,
@@ -166,6 +166,10 @@ func NewEstuary(appVersion string) *Estuary {
 				HighWater: 3000,
 			},
 		},
-		ShuttleMessageHandlers: 30,
+		RPCMessage: RPCMessage{
+			IncomingQueueSize: 100000,
+			OutgoingQueueSize: 100000,
+			QueueHandlers:     30,
+		},
 	}
 }

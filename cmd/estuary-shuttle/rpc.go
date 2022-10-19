@@ -17,6 +17,7 @@ import (
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipfs/go-merkledag"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -80,10 +81,10 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
-	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, false)
+	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, apo.Peers, false)
 }
 
-func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, skipLimiter bool) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
 	ctx, span := d.Tracer.Start(ctx, "addPin", trace.WithAttributes(
 		attribute.Int64("contID", int64(contid)),
 		attribute.Int64("userID", int64(user)),
@@ -161,6 +162,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		UserId:      user,
 		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
+		Peers:       peers,
 	}
 
 	d.PinMgr.Add(op)
@@ -266,6 +268,7 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 	}
 }
 
+// handleRpcTakeContent is used for consolidation, pulls pins from one shuttle to another shuttle
 func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
 	ctx, span := d.Tracer.Start(ctx, "handleTakeContent")
 	defer span.End()
@@ -279,14 +282,17 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		if err != nil {
 			return err
 		}
-
-		if count == 1 {
-			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, true); err != nil {
-				return err
-			}
+    
+    // if this content is already in this shuttle, ignore pinning it
+		if count > 0 {
 			continue
 		}
-		log.Errorf("there a zero or multiple pins for same content: %d", c.ID)
+
+		go func(c drpc.ContentFetch) {
+			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
+				log.Errorf("failed to pin takeContent: %d", c.ID)
+			}
+		}(c)
 	}
 	return nil
 }
@@ -349,7 +355,17 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	if err != nil {
 		return err
 	}
-	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
+
+	if err := d.Node.Blockstore.Put(ctx, blk); err != nil {
+		return err
+	}
+
+	// since aggregates only needs put the containing box in the blockstore (no need to pull blocks),
+	// mark it as active and change pinning status
+	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+		"active":  true,
+		"pinning": false,
+	}).Error; err != nil {
 		return err
 	}
 
