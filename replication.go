@@ -536,6 +536,14 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
+func (cm *ContentManager) currentLocationForContent(cntId uint) (string, error) {
+	var cont util.Content
+	if err := cm.DB.First(&cont, "id = ?", cntId).Error; err != nil {
+		return "", err
+	}
+	return cont.Location, nil
+}
+
 func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, b *contentStagingZone) (map[string]string, error) {
 	out := make(map[string]string)
 	for _, c := range b.Contents {
@@ -545,7 +553,7 @@ func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, 
 		if err != nil {
 			return nil, err
 		}
-    out[c.Location] = c.Location
+		out[c.Location] = loc
 	}
 	return out, nil
 }
@@ -557,7 +565,10 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	contentByLoc := make(map[string][]util.Content)
 
 	for _, c := range b.Contents {
-		loc := c.Location
+		loc, err := cm.currentLocationForContent(c.ID)
+		if err != nil {
+			return err
+		}
 		contentByLoc[loc] = append(contentByLoc[loc], c)
 
 		ntot := dataByLoc[loc] + c.Size
@@ -599,16 +610,10 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-
-	// should not happen, but be safe
-	if len(grpLocs) == 0 {
-		return fmt.Errorf("no staged contents location could is available for aggregation")
-	}
-
 	// if the staged contents of this bucket are in different locations (more than 1 group)
 	// Need to migrate/consolidate the contents to the same location
 	if len(grpLocs) > 1 {
-    cm.bucketLk.Lock()
+		cm.bucketLk.Lock()
 		// Need to migrate content all to the same shuttle
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
 		if !b.IsConsolidating {
@@ -618,10 +623,11 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 					log.Errorf("failed to consolidate staged content: %s", err)
 				}
 			}()
-     // put the staging zone back in the list
-		 cm.buckets[b.User] = append(cm.buckets[b.User], b)
-		 cm.bucketLk.Unlock()
 		}
+
+		// put the staging zone back in the list
+		cm.buckets[b.User] = append(cm.buckets[b.User], b)
+		cm.bucketLk.Unlock()
 		return nil
 	}
 
@@ -641,16 +647,16 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		log.Warnf("content %d aggregate dir apparent size is zero", b.ContID)
 	}
 
-	// get the consolidated location, set aggregate location to it
-	var loc string
+	// get the aggregate content location
+	var aggregateLoc string
 	for k := range grpLocs {
-		loc = k
+		aggregateLoc = k
 	}
 
 	if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
 		"cid":      util.DbCID{CID: ncid},
 		"size":     size,
-		"location": loc,
+		"location": aggregateLoc,
 	}).Error; err != nil {
 		return err
 	}
@@ -660,7 +666,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		return err
 	}
 
-	if loc == constants.ContentLocationLocal {
+	if aggregateLoc == constants.ContentLocationLocal {
 		obj := &util.Object{
 			Cid:  util.DbCID{CID: ncid},
 			Size: int(size),
@@ -697,7 +703,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		for _, c := range b.Contents {
 			ids = append(ids, c.ID)
 		}
-		return cm.sendAggregateCmd(ctx, loc, content, ids, dir.RawData())
+		return cm.sendAggregateCmd(ctx, aggregateLoc, content, ids, dir.RawData())
 	}
 }
 
@@ -1128,7 +1134,7 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 
 func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
 	// get data trannsfer status (compatible with both del protocol v1 and v2)
-	chanst, err := cm.FilClient.TransferStatusByID(ctx, chanIDOrTransferID)
+	chanst, err := cm.TransferStatusByID(ctx, chanIDOrTransferID)
 	if err != nil {
 		return err
 	}
@@ -1546,6 +1552,15 @@ func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *contentD
 	return providerDealState, isPushTransfer, err
 }
 
+// get the data transfer state by transfer ID (compatible with both deal protocol v1 and v2)
+func (cm *ContentManager) TransferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
+	chanst, err := cm.FilClient.TransferStatusByID(ctx, id)
+	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
+		return nil, err
+	}
+	return chanst, nil
+}
+
 func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content util.Content) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
 	defer cancel()
@@ -1561,15 +1576,15 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
-	// get the deal data trannsfer state (compatible with both deal protocol v1 and v2)
-	chanst, err := cm.FilClient.TransferStatusByID(ctx, d.DTChan)
-	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
+	// get the deal data transfer state
+	chanst, err := cm.TransferStatusByID(ctx, d.DTChan)
+	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
 	}
 
 	// if data transfer state is available,
 	// try to set the actual timestamp of transfer states - start, finished, failed, cancelled etc
-	// NB: boost does not yet suppoort stages
+	// NB: boost does not support stages
 	if chanst != nil {
 		updates := make(map[string]interface{})
 		if chanst.Status == datatransfer.TransferFinished || chanst.Status == datatransfer.Completed {
@@ -1588,16 +1603,13 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 			}
 		}
 
-		if d.FailedAt.IsZero() {
-			trsFailed, msgStage := util.TransferFailed(chanst) // Failed or Cancelled
-			s := chanst.Stages.GetStage(msgStage)
-			if trsFailed && s != nil {
-				updates["failed"] = true
-
-				updates["failed_at"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-				if s := chanst.Stages.GetStage("Failed"); s != nil {
-					updates["failed_at"] = s.CreatedTime.Time()
-				}
+		// if transfer is Failed or Cancelled
+		trsFailed, msgStage := util.TransferFailed(chanst)
+		if d.FailedAt.IsZero() && trsFailed {
+			updates["failed"] = true
+			updates["failed_at"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
+			if s := chanst.Stages.GetStage(msgStage); s != nil {
+				updates["failed_at"] = s.CreatedTime.Time()
 			}
 		}
 
@@ -1872,17 +1884,20 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
-	// if shuttle, first check cache, then default to deal state with provider
-	if contLoc != constants.ContentLocationLocal {
-		val, ok := cm.remoteTransferStatus.Get(d.ID)
-		if ok {
-			tsr, ok := val.(*transferStatusRecord)
-			if ok {
-				return tsr.State, nil
-			}
-		}
+	if contLoc == constants.ContentLocationLocal {
+		return cm.getLocalTransferStatus(ctx, d, contCID)
 	}
-	return cm.getTransferStatus(ctx, d, contCID)
+
+	val, ok := cm.remoteTransferStatus.Get(d.ID)
+	if !ok {
+		return nil, nil
+	}
+
+	tsr, ok := val.(*transferStatusRecord)
+	if !ok {
+		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
+	}
+	return tsr.State, nil
 }
 
 func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {
@@ -1893,15 +1908,10 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 	})
 }
 
-func (cm *ContentManager) getTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
-	// can get data transfer state - supports both deal v1 and v2
-	chanst, err := cm.FilClient.TransferStatusByID(ctx, d.DTChan)
-	if err != nil && err != filclient.ErrNoTransferFound {
-		log.Errorf("failed to get transfer status: %s", err)
-		// the UI needs to display a transfer state even for inntermitent errors
-		chanst = &filclient.ChannelState{
-			StatusStr: "Error",
-		}
+func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
+	chanst, err := cm.TransferStatusByID(ctx, d.DTChan)
+	if err != nil {
+		return nil, err
 	}
 
 	if chanst != nil && d.DTChan == "" {
@@ -3209,16 +3219,16 @@ func (cm *ContentManager) sendConsolidateContentCmd(ctx context.Context, loc str
 		prs := make([]*peer.AddrInfo, 0)
 
 		pr, err := cm.addrInfoForShuttle(c.Location)
-    if err != nil {
+		if err != nil {
 			return err
 		}
-    
+
 		if pr != nil {
 			prs = append(prs, pr)
 		}
-    
-    if ai == nil {
-			log.Warnf("no addr info for node: %s", handle)
+
+		if pr == nil {
+			log.Warnf("no addr info for node: %s", loc)
 		}
 
 		tc.Contents = append(tc.Contents, drpc.ContentFetch{

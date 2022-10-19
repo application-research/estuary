@@ -1356,7 +1356,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
-				// the UI needs to display a transfer state even for inntermitent errors
+				// the UI needs to display a transfer state even for intermittent errors
 				chanst = &filclient.ChannelState{
 					StatusStr: "Error",
 				}
@@ -1503,7 +1503,6 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 			}
 		}
 	}
-
 	return &dstatus, nil
 }
 
@@ -1706,11 +1705,10 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 }
 
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
-	status, err := s.FilClient.TransferStatusByID(context.TODO(), c.Param("id"))
+	status, err := s.CM.TransferStatusByID(context.TODO(), c.Param("id"))
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, status)
 }
 

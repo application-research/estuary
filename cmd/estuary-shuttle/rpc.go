@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
@@ -282,8 +283,8 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		if err != nil {
 			return err
 		}
-    
-    // if this content is already in this shuttle, ignore pinning it
+
+		// if this content is already in this shuttle, ignore pinning it
 		if count > 0 {
 			continue
 		}
@@ -356,13 +357,13 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 		return err
 	}
 
-	if err := d.Node.Blockstore.Put(ctx, blk); err != nil {
+	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
 		return err
 	}
 
 	// since aggregates only needs put the containing box in the blockstore (no need to pull blocks),
 	// mark it as active and change pinning status
-	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
 		"active":  true,
 		"pinning": false,
 	}).Error; err != nil {
@@ -489,7 +490,7 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 
 	ctx = context.TODO()
 	st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
-	if err != nil {
+	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
 		return err
 	}
 
