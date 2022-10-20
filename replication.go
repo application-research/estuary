@@ -143,6 +143,11 @@ func (cm *ContentManager) isInflight(c cid.Cid) bool {
 	return ok && v > 0
 }
 
+type stagingZoneReadiness struct {
+	IsReady         bool   `json:"isReady"`
+	ReadinessReason string `json:"readinessReason"`
+}
+
 type contentStagingZone struct {
 	ZoneOpened time.Time `json:"zoneOpened"`
 
@@ -168,6 +173,8 @@ type contentStagingZone struct {
 
 	IsConsolidating bool `json:"is_consolidating"`
 
+	Readiness stagingZoneReadiness `json:"readiness"`
+
 	lk sync.Mutex
 }
 
@@ -188,6 +195,7 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 		Location:        cb.Location,
 		MaxContentAge:   cb.MaxContentAge,
 		MinDealSize:     cb.MinSize,
+		Readiness:       cb.Readiness,
 	}
 	copy(cb2.Contents, cb.Contents)
 	return cb2
@@ -220,32 +228,61 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		User:          user,
 		ContID:        content.ID,
 		Location:      content.Location,
+		Readiness:     stagingZoneReadiness{false, "Readiness not yet evaluated"},
 	}, nil
 }
 
-func (cb *contentStagingZone) isReady() bool {
+func (cb *contentStagingZone) updateReadiness() {
 	if cb.CurSize < cb.MinDealSize {
-		return false
+		cb.Readiness.IsReady = false
+		cb.Readiness.ReadinessReason = fmt.Sprintf(
+			"Current deal size of %d bytes is below minimum deal size of %d bytes",
+			cb.CurSize,
+			cb.MinDealSize)
+		return
 	}
 
 	// if its above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {
-		return true
+		cb.Readiness.IsReady = true
+		cb.Readiness.ReadinessReason = fmt.Sprintf(
+			"Current deal size of %d bytes is above minimum size of %d bytes",
+			cb.CurSize,
+			cb.MinSize)
+		return
 	}
 
 	if time.Now().After(cb.CloseTime) {
-		return true
+		cb.Readiness.IsReady = true
+		cb.Readiness.ReadinessReason = "Staging zone's closing time has passed"
+		return
 	}
 
 	if time.Since(cb.EarliestContent) > cb.MaxContentAge {
-		return true
+		cb.Readiness.IsReady = true
+		cb.Readiness.ReadinessReason = "The earliest content in the staging zone has reached the max content age"
+		return
 	}
 
 	// if its above the items count requirement, go right ahead
 	if len(cb.Contents) >= cb.MaxItems {
-		return true
+		cb.Readiness.IsReady = true
+		cb.Readiness.ReadinessReason = fmt.Sprintf(
+			"The item count is %d, which is above the threshold of %d to trigger dealmaking",
+			len(cb.Contents),
+			cb.MaxItems)
+		return
 	}
-	return false
+	cb.Readiness.IsReady = false
+	cb.Readiness.ReadinessReason = fmt.Sprintf(
+		"At least one of the following conditions must be met:\n"+
+			" - Minimum size requirement (current: %d bytes, minimum: %d bytes)\n"+
+			" - Pass staging zone's closing time\n"+
+			" - Item count (current: %d, minimum: %d)",
+		cb.CurSize,
+		cb.MinSize,
+		len(cb.Contents),
+		cb.MaxItems)
 }
 
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
@@ -1235,7 +1272,8 @@ func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
 	for uid, blist := range cm.buckets {
 		var keep []*contentStagingZone
 		for _, b := range blist {
-			if b.isReady() {
+			b.updateReadiness()
+			if b.Readiness.IsReady {
 				out = append(out, b)
 			} else {
 				keep = append(keep, b)
