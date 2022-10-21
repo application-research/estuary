@@ -140,11 +140,7 @@ func (e *AutoretrieveEngine) newPublisher() (legs.Publisher, error) {
 		return nil, nil
 	case DataTransferPublisher:
 		dtOpts := []dtsync.Option{dtsync.Topic(e.pubTopic), dtsync.WithExtraData(e.pubExtraGossipData)}
-		if e.pubDT != nil {
-			return dtsync.NewPublisherFromExisting(e.pubDT, e.h, e.pubTopicName, e.lsys, dtOpts...)
-		}
-		ds := dsn.Wrap(e.ds, datastore.NewKey("/legs/dtsync/pub"))
-		return dtsync.NewPublisher(e.h, ds, e.lsys, e.pubTopicName, dtOpts...)
+		return dtsync.NewPublisherFromExisting(e.pubDT, e.h, e.pubTopicName, e.lsys, dtOpts...)
 	case HttpPublisher:
 		return httpsync.NewPublisher(e.pubHttpListenAddr, e.lsys, e.h.ID(), e.key)
 	default:
