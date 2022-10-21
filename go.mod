@@ -15,12 +15,12 @@ require (
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-data-transfer v1.15.2
-	github.com/filecoin-project/go-fil-markets v1.24.3
+	github.com/filecoin-project/go-fil-markets v1.24.2
 	github.com/filecoin-project/go-jsonrpc v0.1.7
 	github.com/filecoin-project/go-padreader v0.0.1
-	github.com/filecoin-project/go-state-types v0.1.12
+	github.com/filecoin-project/go-state-types v0.9.4
 	github.com/filecoin-project/index-provider v0.9.0
-	github.com/filecoin-project/lotus v1.17.0
+	github.com/filecoin-project/lotus v1.17.2
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.28
 	github.com/go-openapi/swag v0.21.1 // indirect
@@ -147,6 +147,7 @@ require (
 	github.com/filecoin-project/go-amt-ipld/v4 v4.0.0 // indirect
 	github.com/filecoin-project/go-bitfield v0.2.4 // indirect
 	github.com/filecoin-project/go-commp-utils v0.1.3 // indirect
+	github.com/filecoin-project/go-commp-utils/nonffi v0.0.0-20220905160352-62059082a837 // indirect
 	github.com/filecoin-project/go-crypto v0.0.1 // indirect
 	github.com/filecoin-project/go-ds-versioning v0.1.2 // indirect
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
