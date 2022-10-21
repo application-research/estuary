@@ -13,6 +13,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	provider "github.com/filecoin-project/index-provider"
+	"github.com/filecoin-project/index-provider/engine"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
@@ -61,6 +62,13 @@ type AutoretrieveInitResponse struct {
 	AdvertiseInterval string         `json:AdvertiseInterval`
 }
 
+type AutoretrieveEngine struct {
+	ProviderEngine *engine.Engine
+	context        context.Context
+	TickInterval   time.Duration
+	db             *gorm.DB
+}
+
 // EstuaryMhIterator contains objects to query the database
 // incrementally, to avoid having all CIDs in memory at once
 type EstuaryMhIterator struct {
@@ -100,17 +108,18 @@ func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching, dtMgr datatransfer.Manager) (*AutoretrieveEngine, error) {
-	newEngine, err := New(
-		WithHost(libp2pHost), // need to be localhost/estuary
-		WithPublisherKind(DataTransferPublisher),
-		WithDirectAnnounce(cfg.Node.IndexerURL),
-		WithDatastore(ds),
+func NewAutoretrieveProvider(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching, dtMgr datatransfer.Manager) (*AutoretrieveEngine, error) {
+	newEngine, err := engine.New(
+		engine.WithHost(libp2pHost), // need to be localhost/estuary
+		engine.WithPublisherKind(engine.DataTransferPublisher),
+		engine.WithDirectAnnounce(cfg.Node.IndexerURL),
+		engine.WithDatastore(ds),
 		WithDataTransfer(dtMgr),
 	)
 	if err != nil {
 		return nil, err
 	}
+	newAutoretrieveEngine := AutoretrieveEngine{ProviderEngine: newEngine}
 
 	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
 	// this needs to keep running continuously because storetheindex
@@ -146,16 +155,16 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 		}, nil
 	})
 
-	newEngine.context = ctx
-	newEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
-	newEngine.db = db
+	newAutoretrieveEngine.context = ctx
+	newAutoretrieveEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
+	newAutoretrieveEngine.db = db
 
 	// start engine
-	if err := newEngine.Start(newEngine.context); err != nil {
+	if err := newEngine.Start(newAutoretrieveEngine.context); err != nil {
 		return nil, err
 	}
 
-	return newEngine, nil
+	return &newAutoretrieveEngine, nil
 }
 
 func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
@@ -185,7 +194,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	}
 
 	arLog.Debugf("sending announcement to %s", ar.Handle)
-	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
+	adCid, err := arEng.ProviderEngine.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
 	if err != nil {
 		return fmt.Errorf("could not announce new CIDs: %s", err)
 	}
