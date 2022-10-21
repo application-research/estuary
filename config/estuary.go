@@ -29,7 +29,6 @@ type Estuary struct {
 	Deal                   Deal          `json:"deal"`
 	Content                Content       `json:"content"`
 	Logging                Logging       `json:"logging"`
-	FilClient              FilClient     `json:"fil_client"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
 	RPCMessage             RPCMessage    `json:"rpc_message"`

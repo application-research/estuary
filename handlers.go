@@ -97,10 +97,8 @@ import (
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
-
 	e := echo.New()
-
-	e.Binder = new(binder)
+	e.Binder = new(util.Binder)
 
 	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -130,11 +128,8 @@ func (s *Server) ServeAPI() error {
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
-
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
-
 	e.GET("/gw/:path", s.handleGateway)
 
 	user := e.Group("/user")
@@ -215,10 +210,11 @@ func (s *Server) ServeAPI() error {
 	pinning.Use(openApiMiddleware)
 	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
-	pinning.POST("/pins", withUser(s.handleAddPin))
 	pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
-	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 	pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
+	pinning.Use(util.JSONPayloadMiddleware)
+	pinning.POST("/pins", withUser(s.handleAddPin))
+	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -322,13 +318,6 @@ func (s *Server) ServeAPI() error {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
 	return e.Start(s.cfg.ApiListen)
-}
-
-type binder struct{}
-
-func (b binder) Bind(i interface{}, c echo.Context) error {
-	defer c.Request().Body.Close()
-	return json.NewDecoder(c.Request().Body).Decode(i)
 }
 
 func serveCpuProfile(c echo.Context) error {
@@ -1131,7 +1120,6 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User,
 	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
 		return nil, err
 	}
-
 	return content, nil
 }
 
@@ -1356,7 +1344,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 
 	ds := make([]dealStatus, len(deals))
 	var wg sync.WaitGroup
-	for i := range deals {
+	for i, d := range deals {
+		dl := d
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -1365,9 +1354,20 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
+			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
+				// the UI needs to display a transfer state even for intermittent errors
+				chanst = &filclient.ChannelState{
+					StatusStr: "Error",
+				}
+			}
+
+			// the transfer state is yet to be been announced - the UI needs to display a transfer state
+			if chanst == nil {
+				chanst = &filclient.ChannelState{
+					StatusStr: "Initializing",
+				}
 			}
 
 			dstatus.TransferStatus = chanst
@@ -1384,7 +1384,6 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 					}
 				}
 			}
-
 			ds[i] = dstatus
 		}(i)
 	}
@@ -1505,7 +1504,6 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 			}
 		}
 	}
-
 	return &dstatus, nil
 }
 
@@ -1708,11 +1706,10 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 }
 
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
-	status, err := s.FilClient.TransferStatusByID(context.TODO(), c.Param("id"))
+	status, err := s.CM.TransferStatusByID(context.TODO(), c.Param("id"))
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, status)
 }
 
@@ -1838,11 +1835,11 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		}
 		dealUUID = &parsed
 	}
+
 	status, err := s.FilClient.DealStatus(ctx, addr, propCid, dealUUID)
 	if err != nil {
 		return xerrors.Errorf("getting deal status: %w", err)
 	}
-
 	return c.JSON(http.StatusOK, status)
 }
 

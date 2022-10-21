@@ -1,6 +1,8 @@
 package util
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/application-research/filclient"
@@ -84,5 +86,32 @@ func WithContentLengthCheck(f func(echo.Context) error) func(echo.Context) error
 			}
 		}
 		return f(c)
+	}
+}
+
+type Binder struct{}
+
+func (b Binder) Bind(i interface{}, c echo.Context) error {
+	defer c.Request().Body.Close()
+	if err := json.NewDecoder(c.Request().Body).Decode(i); err != nil {
+		return &HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("one or more params has an invalid data type or not supported: %s", err),
+		}
+	}
+	return nil
+}
+
+func JSONPayloadMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if c.Request().Header.Get("Content-Type") != "application/json" {
+			return &HttpError{
+				Code:    http.StatusUnsupportedMediaType,
+				Reason:  ERR_UNSUPPORTED_CONTENT_TYPE,
+				Details: "this endpoint only supports json payloads",
+			}
+		}
+		return next(c)
 	}
 }
