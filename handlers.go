@@ -1364,7 +1364,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 			}
 
 			// the transfer state is yet to be been announced - the UI needs to display a transfer state
-			if chanst == nil {
+			if chanst == nil && d.DTChan == "" {
 				chanst = &filclient.ChannelState{
 					StatusStr: "Initializing",
 				}
@@ -1485,6 +1485,17 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		log.Errorf("failed to get transfer status: %s", err)
+		// the UI needs to display a transfer state even for intermittent errors
+		chanst = &filclient.ChannelState{
+			StatusStr: "Error",
+		}
+	}
+
+	// the transfer state is yet to be been announced - the UI needs to display a transfer state
+	if chanst == nil && deal.DTChan == "" {
+		chanst = &filclient.ChannelState{
+			StatusStr: "Initializing",
+		}
 	}
 
 	dstatus := dealStatus{
@@ -1697,7 +1708,24 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.FilClient.TransferStatus(context.TODO(), &chanid)
+	var deal contentDeal
+	if err := s.DB.First(&deal, "dt_chan = ?", chanid.ID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", chanid.ID),
+			}
+		}
+		return err
+	}
+
+	var cont util.Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1706,7 +1734,26 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 }
 
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
-	status, err := s.CM.TransferStatusByID(context.TODO(), c.Param("id"))
+	transferID := c.Param("id")
+
+	var deal contentDeal
+	if err := s.DB.First(&deal, "dt_chan = ?", transferID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %s was not found", transferID),
+			}
+		}
+		return err
+	}
+
+	var cont util.Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}

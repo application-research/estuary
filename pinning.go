@@ -677,7 +677,8 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
-			return err
+			log.Warnf("could not parse origin(%s): %s", p, err)
+			continue
 		}
 		origins = append(origins, ai)
 	}
@@ -688,7 +689,6 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	// TODO pinning should be async
 	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
