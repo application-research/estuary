@@ -1170,8 +1170,17 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 }
 
 func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
-	// get data trannsfer status (compatible with both del protocol v1 and v2)
-	chanst, err := cm.TransferStatusByID(ctx, chanIDOrTransferID)
+	var deal contentDeal
+	if err := cm.DB.First(&deal, "dt_chan = ?", chanIDOrTransferID).Error; err != nil {
+		return err
+	}
+
+	var cont util.Content
+	if err := cm.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	chanst, err := cm.GetTransferStatus(ctx, &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1591,7 +1600,7 @@ func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *contentD
 }
 
 // get the data transfer state by transfer ID (compatible with both deal protocol v1 and v2)
-func (cm *ContentManager) TransferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
+func (cm *ContentManager) transferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
 	chanst, err := cm.FilClient.TransferStatusByID(ctx, id)
 	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
 		return nil, err
@@ -1615,7 +1624,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	// get the deal data transfer state
-	chanst, err := cm.TransferStatusByID(ctx, d.DTChan)
+	chanst, err := cm.GetTransferStatus(ctx, d, content.Cid.CID, content.Location)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
 	}
@@ -1928,6 +1937,9 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
 	if !ok {
+		if err := cm.sendRequestTransferStatusCmd(ctx, contLoc, d.ID, d.DTChan); err != nil {
+			return nil, err
+		}
 		return nil, nil
 	}
 
@@ -1947,7 +1959,7 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 }
 
 func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
-	chanst, err := cm.TransferStatusByID(ctx, d.DTChan)
+	chanst, err := cm.transferStatusByID(ctx, d.DTChan)
 	if err != nil {
 		return nil, err
 	}
