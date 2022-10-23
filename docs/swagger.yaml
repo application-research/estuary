@@ -1,4 +1,4 @@
-basePath: /
+basePath: /v1/
 definitions:
   main.Collection:
     properties:
@@ -108,7 +108,7 @@ info:
     url: https://github.com/application-research/estuary/blob/master/LICENSE.md
   termsOfService: http://estuary.tech
   title: Estuary API
-  version: 0.0.0
+  version: 1.0.0
 paths:
   /admin/autoretrieve/init:
     post:
