@@ -77,7 +77,7 @@ import (
 )
 
 // @title Estuary API
-// @version 0.0.0
+// @version 1.0.0
 // @description This is the API for the Estuary application.
 // @termsOfService http://estuary.tech
 
@@ -88,24 +88,27 @@ import (
 // @license.url https://github.com/application-research/estuary/blob/master/LICENSE.md
 
 // @host api.estuary.tech
-// @BasePath  /
+// @BasePath  /v1/
 // @securityDefinitions.Bearer
 // @securityDefinitions.Bearer.type apiKey
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
 
-	e := echo.New()
-
-	e.Binder = new(binder)
+	myecho := echo.New()
+	myecho.Binder = new(binder)
 
 	if s.cfg.Logging.ApiEndpointLogging {
-		e.Use(middleware.Logger())
+		myecho.Use(middleware.Logger())
 	}
 
-	e.Use(s.tracingMiddleware)
-	e.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
-	e.HTTPErrorHandler = util.ErrorHandler
+	myecho.Use(s.tracingMiddleware)
+	myecho.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
+	myecho.HTTPErrorHandler = util.ErrorHandler
+
+	//prefix all http endpoints with v1. we also call addRoutesWithNoPrefix
+	//to register the same endponts without the v1 prefx, but this may be deprecated in the future
+	e := myecho.Group("/v1")
 
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
@@ -313,7 +316,24 @@ func (s *Server) ServeAPI() error {
 	if !s.cfg.DisableSwaggerEndpoint {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return e.Start(s.cfg.ApiListen)
+
+	addRoutesWithNoPrefix(myecho)
+
+	return myecho.Start(s.cfg.ApiListen)
+}
+
+func addRoutesWithNoPrefix(myecho *echo.Echo) {
+	for _, value := range myecho.Routes() {
+		var newpath string
+		if strings.HasPrefix(value.Path, "/v1/") {
+			newpath = value.Path[4:] // cut out /v1/
+			c := myecho.NewContext(nil, nil)
+			myecho.Router().Find(value.Method, value.Path, c)
+			h := c.Handler()
+			myecho.Add(value.Method, newpath, h)
+		}
+	}
+
 }
 
 type binder struct{}
