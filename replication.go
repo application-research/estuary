@@ -1185,6 +1185,10 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 		return err
 	}
 
+	if chanst == nil {
+		return nil
+	}
+
 	updates := map[string]interface{}{
 		"dt_chan": chanIDOrTransferID,
 	}

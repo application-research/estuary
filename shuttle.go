@@ -16,6 +16,7 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/libp2p/go-libp2p-core/peer"
 )
 
@@ -392,7 +393,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		}
 
 		param.State = &filclient.ChannelState{
-			Status:  param.State.Status,
+			Status:  datatransfer.Failed,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		}
 	}
