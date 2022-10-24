@@ -3,6 +3,7 @@ package pinner
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,9 @@ func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) e
 	return nil
 }
 func newManager(count *int) *PinManager {
+
+	_ = os.RemoveAll("/tmp/duplicateGuard")
+	_ = os.RemoveAll("/tmp/pinQueue")
 
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
@@ -208,7 +212,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 		go mgr.Add(&pin)
 	}
 
-	sleepWhileWork(mgr, 0)
+	sleepWhileWork(mgr, N-1)
 	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N*N pins in it")
 	assert.Equal(t, 0, count, "no work done")
 	mgr.closeQueueDataStructures()
@@ -258,8 +262,8 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 		}
 	}
 
-	sleepWhileWork(mgr, N*N)
-	assert.Equal(t, N*N, mgr.PinQueueSize(), "queue should have N pins in it")
+	sleepWhileWork(mgr, N)
+	assert.Equal(t, N, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
 	mgr.closeQueueDataStructures()
 }
