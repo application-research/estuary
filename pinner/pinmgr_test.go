@@ -36,6 +36,20 @@ func newManager(count *int) *PinManager {
 		})
 }
 
+func newManagerNoDelete(count *int) *PinManager {
+	return NewPinManager(
+		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+			go cb(1)
+			count_lock.Lock()
+			*count += 1
+			count_lock.Unlock()
+			return nil
+		}, onPinStatusUpdate, &PinManagerOpts{
+			MaxActivePerUser: 30,
+			QueueDataDir:     "/tmp/",
+		})
+}
+
 func newPinData(name string, userid int) PinningOperation {
 	return PinningOperation{
 		Name:   name,
@@ -266,6 +280,40 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	assert.Equal(t, N, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
 	mgr.closeQueueDataStructures()
+}
+func TestResumeQueue(t *testing.T) {
+
+	var count int = 0
+	mgr := newManager(&count)
+	go mgr.Run(0)
+	for k := 0; k < N; k++ {
+		for j := 0; j < N; j++ {
+			for i := 0; i < N; i++ {
+				pin := newPinData("name"+fmt.Sprint(i), j*N+i)
+				go mgr.Add(&pin)
+			}
+		}
+	}
+	sleepWhileWork(mgr, N*N)
+	assert.Equal(t, N*N, mgr.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+	mgr.closeQueueDataStructures()
+	time.Sleep(time.Second)
+
+	mgr2 := newManagerNoDelete(&count)
+	assert.Equal(t, N*N, mgr2.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+	mgr2.closeQueueDataStructures()
+
+	workermgr := newManagerNoDelete(&count)
+	assert.Equal(t, N*N, workermgr.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+
+	go workermgr.Run(N)
+	sleepWhileWork(workermgr, 0)
+	assert.Equal(t, 0, workermgr.PinQueueSize(), "queue should have no pins in it")
+	assert.Equal(t, N*N, count, "all work should be done")
+
 }
 
 /*

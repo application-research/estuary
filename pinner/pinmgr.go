@@ -42,10 +42,8 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 
 	pinQueue := createDQue(opts.QueueDataDir)
 	//we need to have a variable pinQueueCount which keeps track in memory count in the queue
-	//ideally we could use the leveldb library but t dosn't offr this variable or let us
-	//iterate over items in the queue so we create pinQueueCount. Since the disk dequeue is durable
-	//we need to initialize pinQueueCount on boot by iterating through leveldb
-
+	//Since the disk dequeue is durable
+	//we initialize pinQueueCount on boot by iterating through the queue
 	pinQueueCount := buildPinQueueCount(pinQueue)
 
 	return &PinManager{
@@ -149,7 +147,7 @@ func (pm *PinManager) complete(po *PinningOperation) {
 	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
 	if err != nil {
 		//Delete will not returns error if key doesn't exist
-		log.Fatal("Error deleting item from duplicate guard ", err)
+		log.Errorf("Error deleting item from duplicate guard ", err)
 	}
 
 	pm.activePins[po.UserId]--
@@ -251,14 +249,16 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 	// Dequeue the next item in the queue
 	if err != nil {
-		log.Fatal("Error dequeuing item ", err)
+		log.Errorf("Error dequeuing item ", err)
+		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
 	var next *PinningOperation
 	err = item.ToObject(&next)
 
 	if err != nil {
-		log.Fatal("Dequeued object is not a PinningOperation pointer")
+		log.Errorf("Dequeued object is not a PinningOperation pointer")
+		return nil
 	}
 	return next
 
