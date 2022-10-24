@@ -264,9 +264,17 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 }
 
+//currently only used for the tests since the tests need to open and close multiple dbs
+//handling errors paritally for gosec security scanner
 func (pm *PinManager) closeQueueDataStructures() {
-	pm.pinQueue.Close()
-	pm.duplicateGuard.Close()
+	err := pm.pinQueue.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = pm.duplicateGuard.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func createLevelDBKey(value PinningOperationData) []byte {
