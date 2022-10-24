@@ -91,7 +91,7 @@ require (
 )
 
 require (
-	github.com/application-research/goque v2.1.0+incompatible
+	github.com/application-research/goque v1.0.3-0.20221024210042-22e2e2c1a730
 	github.com/filecoin-project/go-legs v0.4.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1

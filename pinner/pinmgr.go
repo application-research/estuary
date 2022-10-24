@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -300,14 +299,18 @@ type queue struct {
 }
 
 func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
-	mapString := q.PrefixQueueCount()
+	mapString, err := q.PrefixQueueCount()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	mapUint := make(map[uint]int)
 	for key, element := range mapString {
 		keyU, err := strconv.ParseUint(key, 10, 32)
 		if err != nil {
 			log.Fatal(err)
 		}
-		mapUint[uint(keyU)] = element
+		mapUint[uint(keyU)] = int(element)
 	}
 	return mapUint
 
