@@ -438,6 +438,7 @@ func loadBlockstore(bscfg string, wal string, flush, walTruncate, nocache bool) 
 	if err != nil {
 		return nil, "", err
 	}
+	bstore = newIdBlockstore(bstore)
 
 	if wal != "" {
 		opts := badgerbs.DefaultOptions(wal)
@@ -561,4 +562,17 @@ func (dmw *deleteManyWrap) DeleteMany(ctx context.Context, cids []cid.Cid) error
 	}
 
 	return nil
+}
+
+// idBlockstoreWrap wrapper help put and retrieve identity/inline CIDs
+type idBlockstoreWrap struct {
+	blockstore.Blockstore
+}
+
+func newIdBlockstore(bStore blockstore.Blockstore) EstuaryBlockstore {
+	return idBlockstoreWrap{blockstore.NewIdStore(bStore)}
+}
+
+func (ibl idBlockstoreWrap) DeleteMany(ctx context.Context, cids []cid.Cid) error {
+	return ibl.DeleteMany(ctx, cids)
 }

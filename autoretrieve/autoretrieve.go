@@ -11,6 +11,7 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
@@ -99,12 +100,13 @@ func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
 // newIndexProvider creates a new index-provider engine to send announcements to storetheindex
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching) (*AutoretrieveEngine, error) {
+func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching, dtMgr datatransfer.Manager) (*AutoretrieveEngine, error) {
 	newEngine, err := New(
 		WithHost(libp2pHost), // need to be localhost/estuary
 		WithPublisherKind(DataTransferPublisher),
 		WithDirectAnnounce(cfg.Node.IndexerURL),
 		WithDatastore(ds),
+		WithDataTransfer(dtMgr),
 	)
 	if err != nil {
 		return nil, err

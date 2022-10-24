@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/application-research/estuary/constants"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
@@ -98,15 +99,6 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 		ContentAddingDisabled: hello.ContentAddingDisabled,
 	}
 
-	// when a shuttle connects, if global content adding and shuttle content adding is enabled, refresh shuttle pin queue
-	if !cm.globalContentAddingDisabled && !hello.ContentAddingDisabled {
-		go func() {
-			if err := cm.refreshPinQueue(ctx, handle); err != nil {
-				log.Errorf("failed to refresh shuttle: %s pin queue: %s", handle, err)
-			}
-		}()
-	}
-
 	cm.shuttles[handle] = sc
 
 	return sc.cmds, func() {
@@ -192,6 +184,16 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_TransferFinished:
+		param := msg.Params.TransferFinished
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := cm.handleRpcTransferFinished(ctx, handle, param); err != nil {
+			log.Errorf("handling transfer finished message from shuttle %s: %s", handle, err)
+		}
+		return nil
 	case drpc.OP_TransferStatus:
 		param := msg.Params.TransferStatus
 		if param == nil {
@@ -250,7 +252,6 @@ func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string,
 	if ok {
 		return d.sendMessage(ctx, cmd)
 	}
-
 	return ErrNoShuttleConnection
 }
 
@@ -268,6 +269,16 @@ func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	default:
 		return true
 	}
+}
+
+func (cm *ContentManager) shuttleCanAddContent(handle string) bool {
+	cm.shuttlesLk.Lock()
+	defer cm.shuttlesLk.Unlock()
+	d, ok := cm.shuttles[handle]
+	if ok {
+		return d.ContentAddingDisabled
+	}
+	return true
 }
 
 func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
@@ -320,33 +331,40 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	return cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
 }
 
-func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStarted) error {
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
-		"dt_chan":           param.Chanid,
-		"transfer_started":  time.Now(),
-		"transfer_finished": time.Time{},
-	}).Error; err != nil {
-		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, true); err != nil {
+		return err
 	}
-
 	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	return nil
+}
+
+func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, false); err != nil {
+		return err
+	}
+	log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
 func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
 	log.Debugf("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
 
+	if param.DealDBID == 0 {
+		return fmt.Errorf("received transfer status update with no identifier")
+	}
+
 	var cd contentDeal
-	if param.DealDBID != 0 {
-		if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
+	if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
+		return err
+	}
+
+	if cd.DTChan == "" {
+		if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
+			"dt_chan": param.Chanid,
+		}).Error; err != nil {
 			return err
 		}
-	} else if param.State != nil {
-		if err := cm.DB.First(&cd, "dt_chan = ?", param.State.TransferID).Error; err != nil {
-			return err
-		}
-	} else {
-		return fmt.Errorf("received transfer status update with no identifiers")
 	}
 
 	if param.Failed {
@@ -379,7 +397,11 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		}
 	}
-	cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
+
+	// update remote transfer for only shuttles
+	if handle != constants.ContentLocationLocal {
+		cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
+	}
 	return nil
 }
 
@@ -426,9 +448,10 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 	}
 
 	// TODO: do some sanity checks that the sub pieces were all made successfully...
-
 	if err := cm.DB.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"active":    false,
+		"size":      0,
 	}).Error; err != nil {
 		return fmt.Errorf("failed to update content for split complete: %w", err)
 	}

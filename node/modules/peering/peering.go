@@ -18,7 +18,7 @@ type EstuaryPeeringService struct {
 	*peering.PeeringService
 }
 
-//	NewEstuaryPeeringService Construct a new Estuary Peering Service
+// NewEstuaryPeeringService Construct a new Estuary Peering Service
 func NewEstuaryPeeringService(host host.Host) *EstuaryPeeringService {
 	return &EstuaryPeeringService{peering.NewPeeringService(host)}
 }
@@ -100,6 +100,7 @@ var DefaultPeers = []PeeringPeer{
 
 	//	Estuary
 	{ID: "12D3KooWCVXs8P7iq6ao4XhfAmKWrEeuKFWCJgqe9jGDMTqHYBjw", Addrs: []string{"/ip4/139.178.68.217/tcp/6744"}},
+	{ID: "12D3KooWCVXs8P7iq6ao4XhfAmKWrEeuKFWCJgqe9jGDMTqHYBjw", Addrs: []string{"/ip4/147.75.49.99/tcp/6744"}},
 	{ID: "12D3KooWGBWx9gyUFTVQcKMTenQMSyE2ad9m7c9fpjS4NMjoDien", Addrs: []string{"/ip4/147.75.49.71/tcp/6745"}},
 	{ID: "12D3KooWFrnuj5o3tx4fGD2ZVJRyDqTdzGnU3XYXmBbWbc8Hs8Nd", Addrs: []string{"/ip4/147.75.86.255/tcp/6745"}},
 	{ID: "12D3KooWN8vAoGd6eurUSidcpLYguQiGZwt4eVgDvbgaS7kiGTup", Addrs: []string{"/ip4/3.134.223.177/tcp/6745"}},

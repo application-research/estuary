@@ -30,7 +30,6 @@ type Shuttle struct {
 	Content            Content       `json:"content"`
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
-	FilClient          FilClient     `json:"fil_client"`
 	RPCMessage         RPCMessage    `json:"rpc_message"`
 }
 
@@ -155,12 +154,6 @@ func NewShuttle(appVersion string) *Shuttle {
 			Api:       "api.estuary.tech",
 			Handle:    "",
 			AuthToken: "",
-		},
-		FilClient: FilClient{
-			EventRateLimiter: EventRateLimiter{
-				CacheSize: 2000,
-				TTL:       30,
-			},
 		},
 		RPCMessage: RPCMessage{
 			OutgoingQueueSize: 100000,

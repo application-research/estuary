@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -74,7 +75,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("autoretrieve", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
-	_ = logging.SetLogLevel("filclient", level)
+	_ = logging.SetLogLevel("filclient", "warn") // filclient is too chatting for default loglevel (info), maybe sub-system loglevel should be supported
 	_ = logging.SetLogLevel("dt_graphsync", level)
 	_ = logging.SetLogLevel("dt-chanmon", level)
 	_ = logging.SetLogLevel("markets", level)
@@ -595,14 +596,15 @@ func main() {
 		}
 
 		s := &Server{
-			DB:          db,
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			cfg:         cfg,
+			DB:               db,
+			Node:             nd,
+			Api:              api,
+			StagingMgr:       sbmgr,
+			tracer:           otel.Tracer("api"),
+			cacher:           memo.NewCacher(),
+			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			cfg:              cfg,
+			trackingChannels: make(map[string]*util.ChanTrack),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -651,6 +653,47 @@ func main() {
 			}
 		}()
 
+		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
+		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
+			go func() {
+				s.tcLk.Lock()
+				trk, _ := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
+
+				// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
+				if trk != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, true); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, false); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				default:
+					// for every other events
+					trsFailed, msg := util.TransferFailed(&fst)
+					if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: dbid,
+						State:    &fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					}); err != nil {
+						log.Errorf("failed to set data transfer update from event: %s", err)
+					}
+				}
+			}()
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
+
 		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
 		if err != nil {
 			return err
@@ -669,7 +712,7 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
+			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore, s.FilClient.GetDtMgr())
 			if err != nil {
 				return err
 			}
@@ -762,6 +805,9 @@ type Server struct {
 	gwayHandler *gateway.GatewayHandler
 
 	cacher *memo.Cacher
+
+	tcLk             sync.Mutex
+	trackingChannels map[string]*util.ChanTrack
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
@@ -812,21 +858,33 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 		return err
 	}
 
-	for _, d := range deals {
-		chid, err := d.ChannelID()
-		if err != nil {
-			// Only legacy (push) transfers need to be restarted by Estuary.
-			// Newer (pull) transfers are restarted by the Storage Provider.
-			// So if it's not a legacy channel ID, ignore it.
-			continue
-		}
+	go func() {
+		for _, d := range deals {
+			chid, err := d.ChannelID()
+			if err != nil {
+				// Only legacy (push) transfers need to be restarted by Estuary.
+				// Newer (pull) transfers are restarted by the Storage Provider.
+				// So if it's not a legacy channel ID, ignore it.
+				continue
+			}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
-			log.Errorf("failed to restart transfer: %s", err)
-			continue
+			if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
+				log.Errorf("failed to restart transfer: %s", err)
+				continue
+			}
 		}
-	}
+	}()
 	return nil
+}
+
+func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
+	s.tcLk.Lock()
+	defer s.tcLk.Unlock()
+
+	s.trackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
+	}
 }
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
@@ -846,7 +904,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		dealUUID = &parsed
 	}
 
-	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)
+	_, isPushTransfer, err := cm.getProviderDealStatus(ctx, &d, maddr, dealUUID)
 	if err != nil {
 		return err
 	}
@@ -856,9 +914,14 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	}
 
 	if loc == constants.ContentLocationLocal {
+		// get the deal data transfer state pull deals
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
+		}
+
+		if st == nil {
+			return fmt.Errorf("no data transfer state was found")
 		}
 
 		cannotRestart := !util.CanRestartTransfer(st)
@@ -878,15 +941,17 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-	return cm.sendRestartTransferCmd(ctx, loc, chanid)
+	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
 
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{
 			RestartTransfer: &drpc.RestartTransfer{
-				ChanID: chanid,
+				ChanID:    chanid,
+				DealDBID:  d.ID,
+				ContentID: d.Content,
 			},
 		},
 	})
