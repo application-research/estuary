@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/application-research/estuary/pinner/types"
-	"github.com/beeker1121/goque"
+	"github.com/application-research/goque"
+
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -38,10 +41,18 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		log.Fatal("Deque needs queue data dir")
 	}
 
+	pinQueue := createDQue(opts.QueueDataDir)
+	//we need to have a variable pinQueueCount which keeps track in memory count in the queue
+	//ideally we could use the leveldb library but t dosn't offr this variable or let us
+	//iterate over items in the queue so we create pinQueueCount. Since the disk dequeue is durable
+	//we need to initialize pinQueueCount on boot by iterating through leveldb
+
+	pinQueueCount := buildPinQueueCount(pinQueue)
+
 	return &PinManager{
-		pinQueue:         createDQue(opts.QueueDataDir),
+		pinQueue:         pinQueue,
 		activePins:       make(map[uint]int),
-		pinQueueCount:    make(map[uint]int),
+		pinQueueCount:    pinQueueCount,
 		pinQueueIn:       make(chan *PinningOperation, 64),
 		pinQueueOut:      make(chan *PinningOperation),
 		pinComplete:      make(chan *PinningOperation, 64),
@@ -110,34 +121,13 @@ type PinningOperation struct {
 	MakeDeal bool
 }
 
-//TODO put this as a subfield inside PinningOperation
 type PinningOperationData struct {
-	Obj  cid.Cid
-	Name string
-	//Peers       []*peer.AddrInfo
-	Meta        string
-	Status      types.PinningStatus
-	UserId      uint
-	ContId      uint
-	Replace     uint
-	Location    string
-	SkipLimiter bool
-	MakeDeal    bool
+	ContId uint
 }
 
 func getPinningData(po *PinningOperation) PinningOperationData {
 	return PinningOperationData{
-		Obj:  po.Obj,
-		Name: po.Name,
-		//Peers:       po.Peers,
-		Meta:        po.Meta,
-		Status:      po.Status,
-		UserId:      po.UserId,
-		ContId:      po.ContId,
-		Replace:     po.Replace,
-		Location:    po.Location,
-		SkipLimiter: po.SkipLimiter,
-		MakeDeal:    po.MakeDeal,
+		ContId: po.ContId,
 	}
 }
 
@@ -157,12 +147,15 @@ func (pm *PinManager) complete(po *PinningOperation) {
 	defer po.lk.Unlock()
 
 	opdata := getPinningData(po)
-
 	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
 	if err != nil {
 		//Delete will not returns error if key doesn't exist
 		log.Fatal("Error deleting item from duplicate guard ", err)
+	}
 
+	pm.activePins[po.UserId]--
+	if pm.activePins[po.UserId] == 0 {
+		delete(pm.activePins, po.UserId)
 	}
 
 	po.EndTime = time.Now()
@@ -222,10 +215,11 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 	var minCount int = 10000
 	var user uint
-
+	success := false
 	//if user id = 0 has any pins to work on, use that
 	if pm.pinQueueCount[0] > 0 {
 		user = 0
+		success = true
 	} else {
 		//if not find user with least number of active workers and use that
 		for u := range pm.pinQueueCount {
@@ -233,11 +227,18 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 			if active < minCount {
 				minCount = active
 				user = u
+				success = true
+
 			}
 		}
 	}
 	if minCount >= pm.maxActivePerUser && user != 0 {
 		//return nil if the min count is greater than the limit and user is not 0
+		//TODO investigate whether we should pop the work off anyway and not return nil
+		return nil
+	}
+	if !success {
+		//no valid pin found
 		return nil
 	}
 
@@ -246,6 +247,8 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 	if pm.pinQueueCount[user] == 0 {
 		delete(pm.pinQueueCount, user)
 	}
+
+	pm.activePins[user]++
 
 	// Dequeue the next item in the queue
 	if err != nil {
@@ -262,19 +265,27 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 
 }
 
+func (pm *PinManager) closeQueueDataStructures() {
+	pm.pinQueue.Close()
+	pm.duplicateGuard.Close()
+}
+
 func createLevelDBKey(value PinningOperationData) []byte {
 	var buffer bytes.Buffer
 	enc := gob.NewEncoder(&buffer)
-	if err := enc.Encode(value); err != nil {
+	if err := enc.Encode(value.ContId); err != nil {
 		log.Fatal("Unable to encode value")
 	}
 	return buffer.Bytes()
 }
 
 func createLevelDB(QueueDataDir string) *leveldb.DB {
-	//todo make tmpfile
-	dname, _ := os.MkdirTemp(QueueDataDir, "duplicateGuard")
 
+	dname := filepath.Join(QueueDataDir, "duplicateGuard")
+	err := os.MkdirAll(dname, os.ModePerm)
+	if err != nil {
+		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
+	}
 	db, err := leveldb.OpenFile(dname, nil)
 	if err != nil {
 		log.Fatal("Unable to create LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
@@ -282,10 +293,33 @@ func createLevelDB(QueueDataDir string) *leveldb.DB {
 	return db
 }
 
+// queue defines the unique queue for a prefix.
+type queue struct {
+	Head uint64
+	Tail uint64
+}
+
+func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
+	mapString := q.PrefixQueueCount()
+	mapUint := make(map[uint]int)
+	for key, element := range mapString {
+		keyU, err := strconv.ParseUint(key, 10, 32)
+		if err != nil {
+			log.Fatal(err)
+		}
+		mapUint[uint(keyU)] = element
+	}
+	return mapUint
+
+}
+
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
-	//TODO figure out if we want to make this persistent or continue to use mkdirtemp and if so how often should we clean up the file
-	dname, err := os.MkdirTemp(QueueDataDir, "pinqueue")
+	dname := filepath.Join(QueueDataDir, "pinQueue")
+	err := os.MkdirAll(dname, os.ModePerm)
+	if err != nil {
+		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
+	}
 	q, err := goque.OpenPrefixQueue(dname)
 	if err != nil {
 		log.Fatal("Unable to create Queue. Out of disk? Too many open files? try ulimit -n 50000")
