@@ -21,10 +21,10 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.1.5
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.1.10
-	github.com/filecoin-project/index-provider v0.8.2
+	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
 	github.com/filecoin-project/lotus v1.17.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
-	github.com/filecoin-project/storetheindex v0.4.18
+	github.com/filecoin-project/storetheindex v0.4.18 // indirect
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
@@ -72,7 +72,7 @@ require (
 	github.com/stretchr/testify v1.7.1
 	github.com/swaggo/echo-swagger v1.3.0
 	github.com/swaggo/swag v1.7.9
-	github.com/urfave/cli/v2 v2.8.1
+	github.com/urfave/cli/v2 v2.11.1
 	github.com/whyrusleeping/cbor-gen v0.0.0-20220514204315-f29c37e9c44c
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20211215015044-d56d1cad3b9e
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
@@ -91,11 +91,8 @@ require (
 )
 
 require (
-	github.com/filecoin-project/go-legs v0.4.6
 	github.com/gabriel-vasile/mimetype v1.4.0
-	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
-	github.com/libp2p/go-libp2p-pubsub v0.7.1
 	github.com/pkg/errors v0.9.1
 )
 
@@ -131,7 +128,7 @@ require (
 	github.com/cilium/ebpf v0.6.2 // indirect
 	github.com/containerd/cgroups v1.0.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.1 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
 	github.com/cskr/pubsub v1.0.2 // indirect
 	github.com/daaku/go.zipexe v1.0.0 // indirect
@@ -160,6 +157,7 @@ require (
 	github.com/filecoin-project/go-hamt-ipld v0.1.5 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.1.0 // indirect
+	github.com/filecoin-project/go-legs v0.4.7 // indirect
 	github.com/filecoin-project/go-paramfetch v0.0.4 // indirect
 	github.com/filecoin-project/go-statemachine v1.0.2 // indirect
 	github.com/filecoin-project/go-statestore v0.2.0 // indirect
@@ -202,6 +200,7 @@ require (
 	github.com/hannahhoward/cbor-gen-for v0.0.0-20200817222906-ea96cece81f1 // indirect
 	github.com/hannahhoward/go-pubsub v0.0.0-20200423002714-8d62886cc36e // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/huin/goupnp v1.0.3 // indirect
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
@@ -265,6 +264,7 @@ require (
 	github.com/libp2p/go-libp2p-kbucket v0.4.7 // indirect
 	github.com/libp2p/go-libp2p-loggables v0.1.0 // indirect
 	github.com/libp2p/go-libp2p-peerstore v0.7.0 // indirect
+	github.com/libp2p/go-libp2p-pubsub v0.7.1 // indirect
 	github.com/libp2p/go-libp2p-swarm v0.11.0 // indirect
 	github.com/libp2p/go-libp2p-xor v0.1.0 // indirect
 	github.com/libp2p/go-msgio v0.2.0 // indirect
@@ -357,7 +357,7 @@ require (
 	gopkg.in/cheggaaa/pb.v1 v1.0.28 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 	howett.net/plist v0.0.0-20181124034731-591f970eefbb // indirect
 	lukechampine.com/blake3 v1.1.7 // indirect
 )
@@ -369,5 +369,3 @@ replace github.com/raulk/go-bs-tests => github.com/whyrusleeping/go-bs-tests v0.
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
 replace github.com/filecoin-project/go-bs-lmdb => github.com/gmelodie/go-bs-lmdb v0.1.0
-
-replace github.com/filecoin-project/index-provider => github.com/gmelodie/index-provider v0.8.2

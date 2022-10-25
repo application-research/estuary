@@ -717,7 +717,7 @@ func main() {
 			}
 
 			go s.Node.ArEngine.Run()
-			defer s.Node.ArEngine.Shutdown()
+			defer s.Node.ArEngine.RawEngine.Shutdown()
 		}
 
 		go func() {

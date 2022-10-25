@@ -13,6 +13,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	provider "github.com/filecoin-project/index-provider"
+	"github.com/filecoin-project/index-provider/engine"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
@@ -26,6 +27,14 @@ import (
 )
 
 var arLog = logging.Logger("autoretrieve")
+
+// Engine is an implementation of the core reference provider interface
+type AutoretrieveEngine struct {
+	RawEngine    *engine.Engine
+	Context      context.Context
+	TickInterval time.Duration
+	Db           *gorm.DB
+}
 
 type Autoretrieve struct {
 	gorm.Model
@@ -101,12 +110,13 @@ func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
 // this needs to keep running continuously because storetheindex
 // will come to fetch advertisements "when it feels like it"
 func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching, dtMgr datatransfer.Manager) (*AutoretrieveEngine, error) {
-	newEngine, err := New(
-		WithHost(libp2pHost), // need to be localhost/estuary
-		WithPublisherKind(DataTransferPublisher),
-		WithDirectAnnounce(cfg.Node.IndexerURL),
-		WithDatastore(ds),
-		WithDataTransfer(dtMgr),
+	newEngine := &AutoretrieveEngine{}
+	newRawEngine, err := engine.New(
+		engine.WithHost(libp2pHost), // need to be localhost/estuary
+		engine.WithPublisherKind(engine.DataTransferPublisher),
+		engine.WithDirectAnnounce(cfg.Node.IndexerURL),
+		engine.WithDatastore(ds),
+		engine.WithDataTransfer(dtMgr),
 	)
 	if err != nil {
 		return nil, err
@@ -115,7 +125,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
 	// this needs to keep running continuously because storetheindex
 	// will come to fetch for advertisements "when it feels like it"
-	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
+	newRawEngine.RegisterMultihashLister(func(ctx context.Context, provider peer.ID, contextID []byte) (provider.MultihashIterator, error) {
 
 		// contextID = autoretrievehandle_randomnumber
 		arHandle := strings.Split(string(contextID), "_")[0]
@@ -146,12 +156,13 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 		}, nil
 	})
 
-	newEngine.context = ctx
+	newEngine.Context = ctx
 	newEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
-	newEngine.db = db
+	newEngine.Db = db
+	newEngine.RawEngine = newRawEngine
 
 	// start engine
-	if err := newEngine.Start(newEngine.context); err != nil {
+	if err := newRawEngine.Start(newEngine.Context); err != nil {
 		return nil, err
 	}
 
@@ -160,13 +171,13 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 
 func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
-	nBig, err := rand.Int(rand.Reader, big.NewInt(10000000000))
+	nBig, err := rand.Int(rand.Reader, big.NewInt(100000000000000))
 	if err != nil {
 		panic(err)
 	}
-	newContextID := []byte(ar.Handle + "_" + nBig.String())
+	newContextID := []byte(nBig.String())
 
-	retrievalAddresses := []string{}
+	retrievalAddresses := []multiaddr.Multiaddr{}
 	providerID := ""
 	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
 		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
@@ -175,7 +186,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 			continue
 		}
 		providerID = arAddrInfo.ID.String()
-		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
+		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0])
 	}
 	if providerID == "" {
 		return fmt.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
@@ -184,14 +195,16 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
 	}
 
+	arAddrInfo := peer.AddrInfo{ID: peer.ID(providerID), Addrs: retrievalAddresses}
+
 	arLog.Debugf("sending announcement to %s", ar.Handle)
-	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
+	adCid, err := arEng.RawEngine.NotifyPut(context.Background(), &arAddrInfo, newContextID, metadata.New(metadata.Bitswap{}))
 	if err != nil {
 		return fmt.Errorf("could not announce new CIDs: %s", err)
 	}
 
 	// update lastAdvertisement time on database
-	if err := arEng.db.Model(&Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
+	if err := arEng.Db.Model(&Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
 		return fmt.Errorf("unable to update advertisement time on database: %s", err)
 	}
 
@@ -214,7 +227,7 @@ func (arEng *AutoretrieveEngine) Run() {
 		curTime = time.Now()
 		lastTickTime = curTime.Add(-arEng.TickInterval)
 		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := arEng.db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
+		err := arEng.Db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
 		if err != nil {
 			arLog.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return
@@ -225,7 +238,7 @@ func (arEng *AutoretrieveEngine) Run() {
 			select {
 			case <-ticker.C:
 				continue
-			case <-arEng.context.Done():
+			case <-arEng.Context.Done():
 				break
 			}
 		}
@@ -242,7 +255,7 @@ func (arEng *AutoretrieveEngine) Run() {
 		select {
 		case <-ticker.C:
 			continue
-		case <-arEng.context.Done():
+		case <-arEng.Context.Done():
 			break
 		}
 	}
