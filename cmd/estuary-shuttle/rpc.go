@@ -452,7 +452,6 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 	if err != nil {
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			DealDBID: cmd.DealDBID,
-			Chanid:   chanid.String(),
 			Failed:   true,
 			Message:  fmt.Sprintf("failed to start data transfer: %s", err),
 		})
@@ -492,6 +491,10 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 	st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
 	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
 		return err
+	}
+
+	if st == nil {
+		return nil
 	}
 
 	trsFailed, msg := util.TransferFailed(st)
@@ -673,8 +676,12 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
 	log.Debugf("restarting data transfer: %s", req.ChanID)
 	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
-	if err != nil {
+	if err != nil && err != filclient.ErrNoTransferFound {
 		return err
+	}
+
+	if st == nil {
+		return fmt.Errorf("no transfer state was found for chanID: %s", req.ChanID)
 	}
 
 	cannotRestart := !util.CanRestartTransfer(st)

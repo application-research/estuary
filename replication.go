@@ -1169,24 +1169,19 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	return *chid, nil
 }
 
-func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
+func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
+	if st == nil {
+		return nil
+	}
+
 	var deal contentDeal
-	if err := cm.DB.First(&deal, "dt_chan = ?", chanIDOrTransferID).Error; err != nil {
+	if err := cm.DB.First(&deal, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
 
 	var cont util.Content
 	if err := cm.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
 		return err
-	}
-
-	chanst, err := cm.GetTransferStatus(ctx, &deal, cont.Cid.CID, cont.Location)
-	if err != nil {
-		return err
-	}
-
-	if chanst == nil {
-		return nil
 	}
 
 	updates := map[string]interface{}{
@@ -1196,12 +1191,12 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	switch isStarted {
 	case true:
 		updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := chanst.Stages.GetStage("Requested"); s != nil {
+		if s := st.Stages.GetStage("Requested"); s != nil {
 			updates["transfer_started"] = s.CreatedTime.Time()
 		}
 	default:
 		updates["transfer_finished"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+		if s := st.Stages.GetStage("TransferFinished"); s != nil {
 			updates["transfer_finished"] = s.CreatedTime.Time()
 		}
 	}
@@ -1935,8 +1930,16 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
+	if d.DTChan == "" {
+		return nil, nil
+	}
+
 	if contLoc == constants.ContentLocationLocal {
-		return cm.getLocalTransferStatus(ctx, d, contCID)
+		chanst, err := cm.transferStatusByID(ctx, d.DTChan)
+		if err != nil {
+			return nil, err
+		}
+		return chanst, nil
 	}
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
@@ -1960,22 +1963,6 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 		Shuttle:  loc,
 		Received: time.Now(),
 	})
-}
-
-func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
-	chanst, err := cm.transferStatusByID(ctx, d.DTChan)
-	if err != nil {
-		return nil, err
-	}
-
-	if chanst != nil && d.DTChan == "" {
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-			"dt_chan": chanst.TransferID,
-		}).Error; err != nil {
-			return nil, err
-		}
-	}
-	return chanst, nil
 }
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
