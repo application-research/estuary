@@ -2,10 +2,8 @@ package autoretrieve
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"math/big"
 	"strings"
 	"time"
 
@@ -127,20 +125,16 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	// will come to fetch for advertisements "when it feels like it"
 	newRawEngine.RegisterMultihashLister(func(ctx context.Context, provider peer.ID, contextID []byte) (provider.MultihashIterator, error) {
 
-		// contextID = autoretrievehandle_randomnumber
-		arHandle := strings.Split(string(contextID), "_")[0]
-		// arHandle := contextID // contextID is the autoretrieve handle
-
-		// get the autoretrieve entry from the database
-		var ar Autoretrieve
-		err = db.Find(&ar, "handle = ?", arHandle).Error
+		// on advertiseForAR we set the contextID to LastAdvertisement
+		// so that we know that we need to advertise all CIDs uploaded after lastAdvertisement
+		lastAdvertisementForAR, err := time.Parse(time.RFC3339, string(contextID))
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("could not parse contextID: %v", err)
 		}
 
 		// find all new content entries since the last time we advertised for this autoretrieve server
 		arLog.Debugf("Querying for new CIDs now (this could take a while)")
-		newCids, err := findNewCids(db, ar.LastAdvertisement)
+		newCids, err := findNewCids(db, lastAdvertisementForAR)
 		if err != nil {
 			return nil, err
 		}
@@ -169,23 +163,21 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	return newEngine, nil
 }
 
-func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
-	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
-	nBig, err := rand.Int(rand.Reader, big.NewInt(100000000000000))
-	if err != nil {
-		panic(err)
-	}
-	newContextID := []byte(nBig.String())
+// Advertise on behalf an autoretrieve server
+func (arEng *AutoretrieveEngine) advertiseForAR(ar Autoretrieve) error {
+	// This is the time of the last advertisement because we parse it in RegisterMultihashLister
+	// to know which CIDs to advertise (we advertise all CIDs uploaded after LastAdvertisement)
+	newContextID := []byte(ar.LastAdvertisement.Format(time.RFC3339))
 
 	retrievalAddresses := []multiaddr.Multiaddr{}
-	providerID := ""
+	providerID := peer.ID("")
 	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
 		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
 		if err != nil {
 			arLog.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
 			continue
 		}
-		providerID = arAddrInfo.ID.String()
+		providerID = arAddrInfo.ID
 		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0])
 	}
 	if providerID == "" {
@@ -195,7 +187,7 @@ func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
 		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
 	}
 
-	arAddrInfo := peer.AddrInfo{ID: peer.ID(providerID), Addrs: retrievalAddresses}
+	arAddrInfo := peer.AddrInfo{ID: providerID, Addrs: retrievalAddresses}
 
 	arLog.Debugf("sending announcement to %s", ar.Handle)
 	adCid, err := arEng.RawEngine.NotifyPut(context.Background(), &arAddrInfo, newContextID, metadata.New(metadata.Bitswap{}))
@@ -226,14 +218,15 @@ func (arEng *AutoretrieveEngine) Run() {
 	for {
 		curTime = time.Now()
 		lastTickTime = curTime.Add(-arEng.TickInterval)
-		// Find all autoretrieve servers that are online (that sent heartbeat)
+
+		// Find all autoretrieve servers that are online (that sent heartbeat after lastTickTime)
 		err := arEng.Db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
 		if err != nil {
 			arLog.Errorf("unable to query autoretrieve servers from database: %s", err)
 			return
 		}
+		arLog.Infof("%d autoretrieve servers online", len(autoretrieves))
 		if len(autoretrieves) == 0 {
-			arLog.Infof("no autoretrieve servers online")
 			// wait for next tick, or quit
 			select {
 			case <-ticker.C:
@@ -246,7 +239,7 @@ func (arEng *AutoretrieveEngine) Run() {
 		arLog.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
 		// send announcement with new CIDs for each autoretrieve server
 		for _, ar := range autoretrieves {
-			if err = arEng.announceForAR(ar); err != nil {
+			if err = arEng.advertiseForAR(ar); err != nil {
 				arLog.Error(err)
 			}
 		}
