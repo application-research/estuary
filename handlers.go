@@ -136,7 +136,7 @@ func (s *Server) ServeAPI() error {
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
-	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
+	user.DELETE("/api-keys/:key-or-hash", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
@@ -2918,7 +2918,8 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 
 func (s *Server) checkTokenAuth(token string) (*util.User, error) {
 	var authToken util.AuthToken
-	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
+	tokenHash := util.GetTokenHash(token)
+	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
 				Code:    http.StatusUnauthorized,
@@ -3068,10 +3069,13 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
+	token := "EST" + uuid.New().String() + "ARY"
 	authToken := &util.AuthToken{
-		Token:  "EST" + uuid.New().String() + "ARY",
-		User:   newUser.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 7),
+		Token:     token,
+		TokenHash: util.GetTokenHash(token),
+		Label:     "on-register",
+		User:      newUser.ID,
+		Expiry:    time.Now().Add(time.Hour * 24 * 7),
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
@@ -3138,7 +3142,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil, "login")
 	if err != nil {
 		return err
 	}
@@ -3224,7 +3228,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string) (*util.AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -3241,14 +3245,16 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 		}
 	}
 
+	token := "EST" + uuid.New().String() + "ARY"
 	authToken := &util.AuthToken{
-		Token:      "EST" + uuid.New().String() + "ARY",
+		Token:      token,
+		TokenHash:  util.GetTokenHash(token),
+		Label:      label,
 		User:       user.ID,
 		Expiry:     expiry,
 		UploadOnly: uploadOnly,
 	}
-
-	if err := s.DB.Create(authToken).Error; err != nil {
+	if err := s.DB.Omit("token").Create(authToken).Error; err != nil {
 		return nil, err
 	}
 
@@ -3354,8 +3360,10 @@ func (s *Server) handleHealth(c echo.Context) error {
 }
 
 type getApiKeysResp struct {
-	Token  string    `json:"token"`
-	Expiry time.Time `json:"expiry"`
+	Token     string    `json:"token"`
+	TokenHash string    `json:"tokenHash"`
+	Label     string    `json:"label"`
+	Expiry    time.Time `json:"expiry"`
 }
 
 // handleUserRevokeApiKey godoc
@@ -3366,9 +3374,8 @@ type getApiKeysResp struct {
 // @Param        key path string true "Key"
 // @Router       /user/api-keys/{key} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
-	kval := c.Param("key")
-
-	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
+	kval := c.Param("key-or-hash")
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
 		return err
 	}
 
@@ -3406,14 +3413,18 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 		perms = strings.Split(p, ",")
 	}
 
-	authToken, err := s.newAuthTokenForUser(u, expiry, perms)
+	label := c.QueryParam("label")
+
+	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, &getApiKeysResp{
-		Token:  authToken.Token,
-		Expiry: authToken.Expiry,
+		Token:     authToken.Token,
+		TokenHash: authToken.TokenHash,
+		Label:     authToken.Label,
+		Expiry:    authToken.Expiry,
 	})
 }
 
@@ -3436,8 +3447,10 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 	out := []getApiKeysResp{}
 	for _, k := range keys {
 		out = append(out, getApiKeysResp{
-			Token:  k.Token,
-			Expiry: k.Expiry,
+			Token:     k.Token,
+			TokenHash: k.TokenHash,
+			Label:     k.Label,
+			Expiry:    k.Expiry,
 		})
 	}
 
