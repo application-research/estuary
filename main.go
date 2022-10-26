@@ -667,11 +667,11 @@ func main() {
 
 				switch fst.Status {
 				case datatransfer.Requested:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, true); err != nil {
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, true); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				case datatransfer.TransferFinished, datatransfer.Completed:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, false); err != nil {
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, false); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				default:
@@ -915,7 +915,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	if loc == constants.ContentLocationLocal {
 		// get the deal data transfer state pull deals
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
+		if err != nil && err != filclient.ErrNoTransferFound {
 			return err
 		}
 

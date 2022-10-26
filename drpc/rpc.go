@@ -214,6 +214,7 @@ const OP_TransferFinished = "TransferFinished"
 type TransferStartedOrFinished struct {
 	DealDBID uint
 	Chanid   string
+	State    *filclient.ChannelState
 }
 
 const OP_TransferStatus = "TransferStatus"

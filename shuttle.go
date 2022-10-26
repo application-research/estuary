@@ -332,7 +332,7 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 }
 
 func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
-	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, true); err != nil {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, true); err != nil {
 		return err
 	}
 	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
@@ -340,7 +340,7 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 }
 
 func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
-	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, false); err != nil {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, false); err != nil {
 		return err
 	}
 	log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
@@ -392,13 +392,18 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return err
 		}
 
+		sts := datatransfer.Failed
+		if param.State != nil {
+			sts = param.State.Status
+		}
+
 		param.State = &filclient.ChannelState{
-			Status:  datatransfer.Failed,
+			Status:  sts,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		}
 	}
 
-	// update remote transfer for only shuttles
+	// update transfer state for only shuttles
 	if handle != constants.ContentLocationLocal {
 		cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	}

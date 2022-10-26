@@ -549,6 +549,7 @@ func main() {
 						TransferStarted: &drpc.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
+							State:    fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -563,6 +564,7 @@ func main() {
 						TransferFinished: &drpc.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
+							State:    fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -605,6 +607,7 @@ func main() {
 						TransferStarted: &drpc.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
+							State:    &fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -620,6 +623,7 @@ func main() {
 						TransferFinished: &drpc.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
+							State:    &fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
