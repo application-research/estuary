@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/gabriel-vasile/mimetype"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	bsfetcher "github.com/ipfs/go-fetcher/impl/blockservice"
@@ -109,7 +111,46 @@ func (gw *GatewayHandler) serveUnixfs(ctx context.Context, cc cid.Cid, w http.Re
 		return err
 	}
 
+	err = gw.sniffMimeType(w, dr)
+	if err != nil {
+		return err
+	}
+
 	http.ServeContent(w, req, cc.String(), time.Time{}, dr)
+	return nil
+}
+
+func (gw *GatewayHandler) sniffMimeType(w http.ResponseWriter, dr uio.DagReader) error {
+	// see kubo https://github.com/ipfs/kubo/blob/df222053856d3967ff0b4d6bc513bdb66ceedd6f/core/corehttp/gateway_handler_unixfs_file.go
+	// see http ServeContent https://cs.opensource.google/go/go/+/refs/tags/go1.19.2:src/net/http/fs.go;l=221;drc=1f068f0dc7bc997446a7aac44cfc70746ad918e0
+
+	// Calculate deterministic value for Content-Type HTTP header
+	// (we prefer to do it here, rather than using implicit sniffing in http.ServeContent)
+	var ctype string
+	// uses https://github.com/gabriel-vasile/mimetype library to determine the content type.
+	// Fixes https://github.com/ipfs/kubo/issues/7252
+	mimeType, err := mimetype.DetectReader(dr)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("cannot detect content-type: %s", err.Error()), http.StatusInternalServerError)
+		return err
+	}
+
+	ctype = mimeType.String()
+	_, err = dr.Seek(0, io.SeekStart)
+	if err != nil {
+		http.Error(w, "seeker can't seek", http.StatusInternalServerError)
+		return err
+	}
+	// Strip the encoding from the HTML Content-Type header and let the
+	// browser figure it out.
+	//
+	// Fixes https://github.com/ipfs/kubo/issues/2203
+	if strings.HasPrefix(ctype, "text/html;") {
+		ctype = "text/html"
+	}
+	// Setting explicit Content-Type to avoid mime-type sniffing on the client
+	// (unifies behavior across gateways and web browsers)
+	w.Header().Set("Content-Type", ctype)
 	return nil
 }
 

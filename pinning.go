@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	drpc "github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
@@ -37,54 +38,45 @@ const (
 func (cm *ContentManager) pinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
 	delegates := cm.pinDelegatesForContent(cont)
 
-	cm.pinLk.Lock()
-	po, ok := cm.pinJobs[cont.ID]
-	cm.pinLk.Unlock()
-	if !ok {
-		meta := make(map[string]interface{}, 0)
-		if cont.PinMeta != "" {
-			if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
-				log.Warnf("content %d has invalid pinmeta: %s", cont, err)
-			}
+	meta := make(map[string]interface{}, 0)
+	if cont.PinMeta != "" {
+		if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
+			log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 		}
-
-		originStrs := make([]string, 0)
-		for _, o := range origins {
-			ai, err := peer.AddrInfoToP2pAddrs(o)
-			if err == nil {
-				for _, a := range ai {
-					originStrs = append(originStrs, a.String())
-				}
-			}
-		}
-
-		ps := &types.IpfsPinStatusResponse{
-			RequestID: fmt.Sprintf("%d", cont.ID),
-			Status:    types.PinningStatusPinning,
-			Created:   cont.CreatedAt,
-			Pin: types.IpfsPin{
-				CID:     cont.Cid.CID.String(),
-				Name:    cont.Name,
-				Meta:    meta,
-				Origins: originStrs,
-			},
-			Delegates: delegates,
-			Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
-		}
-
-		if cont.Active {
-			ps.Status = types.PinningStatusPinned
-		}
-
-		if cont.Failed {
-			ps.Status = types.PinningStatusFailed
-		}
-		return ps, nil
 	}
 
-	status := po.PinStatus()
-	status.Delegates = delegates
-	return status, nil
+	originStrs := make([]string, 0)
+	for _, o := range origins {
+		ai, err := peer.AddrInfoToP2pAddrs(o)
+		if err == nil {
+			for _, a := range ai {
+				originStrs = append(originStrs, a.String())
+			}
+		}
+	}
+
+	ps := &types.IpfsPinStatusResponse{
+		RequestID: fmt.Sprintf("%d", cont.ID),
+		Status:    types.PinningStatusQueued,
+		Created:   cont.CreatedAt,
+		Pin: types.IpfsPin{
+			CID:     cont.Cid.CID.String(),
+			Name:    cont.Name,
+			Meta:    meta,
+			Origins: originStrs,
+		},
+		Delegates: delegates,
+		Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
+	}
+
+	if cont.Active {
+		ps.Status = types.PinningStatusPinned
+	} else if cont.Failed {
+		ps.Status = types.PinningStatusFailed
+	} else if cont.Pinning {
+		ps.Status = types.PinningStatusPinning
+	}
+	return ps, nil
 }
 
 func (cm *ContentManager) pinDelegatesForContent(cont util.Content) []string {
@@ -196,7 +188,7 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 	return nil
 }
 
-func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -283,12 +275,6 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInf
 		MakeDeal: makeDeal,
 		Meta:     cont.PinMeta,
 	}
-
-	cm.pinLk.Lock()
-	// TODO: check if we are overwriting anything here
-	cm.pinJobs[cont.ID] = op
-	cm.pinLk.Unlock()
-
 	cm.pinMgr.Add(op)
 }
 
@@ -299,7 +285,7 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Con
 	))
 	defer span.End()
 
-	if err := cm.sendShuttleCommand(ctx, handle, &drpc.Command{
+	return cm.sendShuttleCommand(ctx, handle, &drpc.Command{
 		Op: drpc.CMD_AddPin,
 		Params: drpc.CmdParams{
 			AddPin: &drpc.AddPin{
@@ -309,47 +295,19 @@ func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Con
 				Peers:  peers,
 			},
 		},
-	}); err != nil {
-		return err
-	}
-
-	op := &pinner.PinningOperation{
-		ContId:   cont.ID,
-		UserId:   cont.UserID,
-		Obj:      cont.Cid.CID,
-		Name:     cont.Name,
-		Peers:    peers,
-		Started:  cont.CreatedAt,
-		Status:   types.PinningStatusQueued,
-		Replace:  replaceID,
-		Location: handle,
-		MakeDeal: makeDeal,
-		Meta:     cont.PinMeta,
-	}
-
-	cm.pinLk.Lock()
-	// TODO: check if we are overwriting anything here
-	cm.pinJobs[cont.ID] = op
-	cm.pinLk.Unlock()
-
-	return nil
+	})
 }
 
 func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
 	ctx, span := cm.tracer.Start(ctx, "selectLocation")
 	defer span.End()
 
-	var user User
-	if err := cm.DB.First(&user, "id = ?", uid).Error; err != nil {
-		return "", err
-	}
-
 	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
 	cm.shuttlesLk.Lock()
 	for d, sh := range cm.shuttles {
-		if !sh.private {
+		if !sh.private && !sh.ContentAddingDisabled {
 			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
 		} else {
@@ -384,9 +342,9 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 
 	// TODO: take into account existing staging zones and their primary
 	// locations while choosing
-	ploc, err := cm.primaryStagingLocation(ctx, uid)
-	if err != nil {
-		return "", err
+	ploc := cm.primaryStagingLocation(ctx, uid)
+	if ploc == "" {
+		log.Warnf("empty staging zone set for user %d", uid)
 	}
 
 	if ploc != "" {
@@ -444,22 +402,20 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 	return shuttles[0].Handle, nil
 }
 
-func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) (string, error) {
+func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 	zones, ok := cm.buckets[uid]
 	if !ok {
-		return "", nil
+		return ""
 	}
 
 	// TODO: maybe we could make this more complex, but for now, if we have a
 	// staging zone opened in a particular location, just keep using that one
 	for _, z := range zones {
-		return z.Location, nil
+		return z.Location
 	}
-
-	log.Warnf("empty staging zone set for user %d", uid)
-	return "", nil
+	return ""
 }
 
 // handleListPins godoc
@@ -471,7 +427,7 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
-func (s *Server) handleListPins(e echo.Context, u *User) error {
+func (s *Server) handleListPins(e echo.Context, u *util.User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
 	defer span.End()
 
@@ -679,7 +635,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Param        cid   path  string  true  "cid"
 // @Param        name  path  string  true  "name"
 // @Router       /pinning/pins [post]
-func (s *Server) handleAddPin(e echo.Context, u *User) error {
+func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -691,9 +647,9 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 		return err
 	}
 
-	var cols []*CollectionRef
+	var cols []*collections.CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
 			return err
 		}
@@ -709,7 +665,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 			colpath = &p
 		}
 
-		cols = []*CollectionRef{
+		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
 				Path:       colpath,
@@ -721,7 +677,8 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
-			return err
+			log.Warnf("could not parse origin(%s): %s", p, err)
+			continue
 		}
 		origins = append(origins, ai)
 	}
@@ -732,7 +689,6 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 	}
 
 	makeDeal := true
-	// TODO pinning should be async
 	status, err := s.CM.pinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
@@ -747,7 +703,7 @@ func (s *Server) handleAddPin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
-func (s *Server) handleGetPin(e echo.Context, u *User) error {
+func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
@@ -783,7 +739,7 @@ func (s *Server) handleGetPin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [post]
-func (s *Server) handleReplacePin(e echo.Context, u *User) error {
+func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -844,7 +800,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *User) error {
 // @Produce      json
 // @Param        pinid  path  string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
-func (s *Server) handleDeletePin(e echo.Context, u *User) error {
+func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
@@ -880,15 +836,11 @@ func (s *Server) handleDeletePin(e echo.Context, u *User) error {
 	return e.NoContent(http.StatusAccepted)
 }
 
+// even though there are 4 pin statuses, queued, pinning, pinned and failed
+// the UpdatePinStatus only changes DB state for failed status
+// when the content was added, status = pinning
+// when the pin process is complete, status = pinned
 func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
-	cm.pinLk.Lock()
-	op, ok := cm.pinJobs[contID]
-
-	cm.pinLk.Unlock()
-	if !ok {
-		return fmt.Errorf("got pin status update for unknown content: %d, status: %s, location: %s", contID, status, location)
-	}
-
 	if status == types.PinningStatusFailed {
 		var c util.Content
 		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
@@ -907,7 +859,6 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			log.Errorf("failed to mark content as failed in database: %s", err)
 		}
 	}
-	op.SetStatus(status)
 	return nil
 }
 
@@ -922,17 +873,18 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	if cont.Active {
 		// content already active, no need to add objects, just update location
+		// this is used by consolidated contents
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
 		}).Error; err != nil {
 			return err
 		}
-		// TODO: should we recheck the staging zones?
 		return nil
 	}
 
 	if cont.Aggregate {
+		// this is used by staging content aggregate
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"pinning":  false,
@@ -940,6 +892,8 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+		// after aggregate is done, make deal for it
+		cm.toCheck(cont.ID)
 		return nil
 	}
 
@@ -951,7 +905,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		})
 	}
 
-	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, nil, cid.Cid{}, objects, handle); err != nil {
+	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 

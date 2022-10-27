@@ -11,7 +11,7 @@ import (
 	"net/http"
 
 	//#nosec G108 - exposing the profiling endpoint is expected
-	_ "net/http/pprof"
+	httpprof "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -88,19 +88,19 @@ const (
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
-	logging.SetLogLevel("dt-impl", level)
-	logging.SetLogLevel("shuttle", level)
-	logging.SetLogLevel("paych", level)
-	logging.SetLogLevel("filclient", level)
-	logging.SetLogLevel("dt_graphsync", level)
-	logging.SetLogLevel("graphsync_allocator", level)
-	logging.SetLogLevel("dt-chanmon", level)
-	logging.SetLogLevel("markets", level)
-	logging.SetLogLevel("data_transfer_network", level)
-	logging.SetLogLevel("rpc", level)
-	logging.SetLogLevel("bs-wal", level)
-	logging.SetLogLevel("bs-migrate", level)
-	logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("shuttle", level)
+	_ = logging.SetLogLevel("paych", level)
+	_ = logging.SetLogLevel("filclient", "warn") // filclient is too chatting for default loglevel (info), maybe sub-system loglevel should be supported
+	_ = logging.SetLogLevel("dt_graphsync", level)
+	_ = logging.SetLogLevel("graphsync_allocator", level)
+	_ = logging.SetLogLevel("dt-chanmon", level)
+	_ = logging.SetLogLevel("markets", level)
+	_ = logging.SetLogLevel("data_transfer_network", level)
+	_ = logging.SetLogLevel("rpc", level)
+	_ = logging.SetLogLevel("bs-wal", level)
+	_ = logging.SetLogLevel("bs-migrate", level)
+	_ = logging.SetLogLevel("rcmgr", level)
 
 	return nil
 }
@@ -181,6 +181,10 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.Dev = cctx.Bool("dev")
 		case "no-reload-pin-queue":
 			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
+		case "rpc-incoming-queue-size":
+			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+		case "rpc-outgoing-queue-size":
+			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
 		default:
 		}
 	}
@@ -348,6 +352,16 @@ func main() {
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
+		&cli.IntFlag{
+			Name:  "rpc-incoming-queue-size",
+			Usage: "sets incoming rpc message queue size",
+			Value: cfg.RPCMessage.IncomingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-outgoing-queue-size",
+			Usage: "sets outgoing rpc message queue size",
+			Value: cfg.RPCMessage.OutgoingQueueSize,
+		},
 	}
 
 	app.Commands = []*cli.Command{
@@ -488,11 +502,13 @@ func main() {
 
 			commpMemo: commpMemo,
 
-			trackingChannels: make(map[string]*chanTrack),
+			trackingChannels: make(map[string]*util.ChanTrack),
 			inflightCids:     make(map[cid.Cid]uint),
 			splitsInProgress: make(map[uint]bool),
+			aggrInProgress:   make(map[uint]bool),
+			unpinInProgress:  make(map[uint]bool),
 
-			outgoing:  make(chan *drpc.Message),
+			outgoing:  make(chan *drpc.Message, cfg.RPCMessage.OutgoingQueueSize),
 			authCache: cache,
 
 			hostname:           cfg.Hostname,
@@ -503,91 +519,142 @@ func main() {
 			dev:                cfg.Dev,
 			shuttleConfig:      cfg,
 		}
-		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
-			MaxActivePerUser: 30,
-		})
-
-		go s.PinMgr.Run(100)
-
-		if !cfg.NoReloadPinQueue {
-			if err := s.refreshPinQueue(); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
-		}
 
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
-		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, st datatransfer.ChannelState) {
-			chid := st.ChannelID().String()
-			s.tcLk.Lock()
-			defer s.tcLk.Unlock()
-			trk, ok := s.trackingChannels[chid]
-			if !ok {
-				return
-			}
-
-			if trk.last == nil || trk.last.Status != st.Status() {
-				cst := filclient.ChannelStateConv(st)
-				trk.last = cst
-
-				trsFailed, msg := util.TransferFailed(cst)
-
-				go s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   chid,
-					DealDBID: trk.dbid,
-					State:    cst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", cst.Status, msg, cst.Message),
-				})
-			}
-		})
-
-		eventDebounceCache, err := lru.New(int(cfg.FilClient.EventRateLimiter.CacheSize))
-		if err != nil {
-			return err
-		}
-
-		// Subscribe to data transfer events from Boost
-		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, st filclient.ChannelState) {
-			if st.Status == datatransfer.Requested {
-				go func() {
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-						Op: drpc.OP_TransferStarted,
-						Params: drpc.MsgParams{
-							TransferStarted: &drpc.TransferStarted{
-								DealDBID: dbid,
-								Chanid:   st.TransferID,
-							},
-						},
-					}); err != nil {
-						log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
-					}
-				}()
-			}
-
+		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
 			go func() {
-				cachedTime, ok := eventDebounceCache.Get(st.TransferID)
-				if ok {
-					ct, ctOk := cachedTime.(time.Time)
-					if ctOk && ct.Add(cfg.FilClient.EventRateLimiter.TTL*time.Second).Before(time.Now()) {
-						return
-					}
+				fst := filclient.ChannelStateConv(dts)
+
+				s.tcLk.Lock()
+				trk, ok := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
+
+				// if state has not been set by transfer start/restart, it cannot be processed - this should not happend though.
+				// because legacy transfer manager does not have context of deal db ID, it needs it to exist in the tracking map
+				// data transfer start and restart/resume should set the deal db ID
+				if !ok {
+					return
 				}
 
-				eventDebounceCache.Add(st.TransferID, time.Now())
+				// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+				if trk.Last != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, trk.Dbid, fst)
 
-				trsFailed, msg := util.TransferFailed(&st)
+				switch fst.Status {
+				case datatransfer.Requested:
+					op := drpc.OP_TransferStarted
+					params := drpc.MsgParams{
+						TransferStarted: &drpc.TransferStartedOrFinished{
+							DealDBID: trk.Dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					op := drpc.OP_TransferFinished
+					params := drpc.MsgParams{
+						TransferFinished: &drpc.TransferStartedOrFinished{
+							DealDBID: trk.Dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+				default:
+					// send transfer update for every other events
+					trsFailed, msg := util.TransferFailed(fst)
+					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: trk.Dbid,
+						State:    fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					})
+				}
+			}()
+		})
 
-				s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
-					Chanid:   st.TransferID,
-					DealDBID: dbid,
-					State:    &st,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
-				})
+		// Subscribe to data transfer events from Boost
+		_, err = s.Filc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
+			go func() {
+				s.tcLk.Lock()
+				trk, _ := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
+
+				// if this state type is already announce, ignore it - rate limit events, only the most current state is needed
+				if trk != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					op := drpc.OP_TransferStarted
+					params := drpc.MsgParams{
+						TransferStarted: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					op := drpc.OP_TransferFinished
+					params := drpc.MsgParams{
+						TransferFinished: &drpc.TransferStartedOrFinished{
+							DealDBID: dbid,
+							Chanid:   fst.TransferID,
+						},
+					}
+					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+						Op:     op,
+						Params: params,
+					}); err != nil {
+						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
+					}
+				default:
+					// send transfer update for every other events
+					trsFailed, msg := util.TransferFailed(&fst)
+					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: dbid,
+						State:    &fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					})
+				}
 			}()
 		})
 		if err != nil {
-			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
+		}
+
+		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
+			MaxActivePerUser: 30,
+		})
+		go s.PinMgr.Run(100)
+
+		// only refresh pin queue if pin queue refresh and local adding are enabled
+		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
+			if err := s.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
 		}
 
 		go func() {
@@ -741,10 +808,16 @@ type Shuttle struct {
 	Tracer trace.Tracer
 
 	tcLk             sync.Mutex
-	trackingChannels map[string]*chanTrack
+	trackingChannels map[string]*util.ChanTrack
 
 	splitLk          sync.Mutex
 	splitsInProgress map[uint]bool
+
+	aggrLk         sync.Mutex
+	aggrInProgress map[uint]bool
+
+	unpinLk         sync.Mutex
+	unpinInProgress map[uint]bool
 
 	addPinLk sync.Mutex
 
@@ -775,11 +848,6 @@ type Shuttle struct {
 func (d *Shuttle) isInflight(c cid.Cid) bool {
 	v, ok := d.inflightCids[c]
 	return ok && v > 0
-}
-
-type chanTrack struct {
-	dbid uint
-	last *filclient.ChannelState
 }
 
 func (d *Shuttle) RunRpcConnection() error {
@@ -958,11 +1026,11 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			return nil, err
 		}
-		return nil, fmt.Errorf("authentication check returned unexpected error: %s", bodyBytes)
+		return nil, &out.Error
 	}
 
 	var out util.ViewerResponse
@@ -1026,6 +1094,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
+	e.Binder = new(util.Binder)
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -1046,6 +1115,7 @@ func (s *Shuttle) ServeAPI() error {
 		}
 		return err
 	})
+	e.GET("/debug/pprof/:prof", serveProfile)
 
 	e.Use(middleware.CORS())
 
@@ -1086,6 +1156,11 @@ func (s *Shuttle) ServeAPI() error {
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
 	return e.Start(s.shuttleConfig.ApiListen)
+}
+
+func serveProfile(c echo.Context) error {
+	httpprof.Handler(c.Param("prof")).ServeHTTP(c.Response().Writer, c.Request())
+	return nil
 }
 
 func (s *Shuttle) isContentAddingDisabled(u *User) bool {
@@ -1132,7 +1207,6 @@ func (s *Shuttle) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
 			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
 		)
-
 		return err
 	}
 }
@@ -1526,25 +1600,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dsess := dserv.Session(ctx)
 
 	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
-		// pinning failed, we wont try again. mark pin as dead
-		/* maybe its fine if we retry later?
-		if err := d.DB.Model(Pin{}).Where("content = ?", op.ContId).UpdateColumns(map[string]interface{}{
-			"pinning": false,
-		}).Error; err != nil {
-			log.Errorf("failed to update failed pin status: %s", err)
-		}
-		*/
-
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
-
-	/*
-		if op.Replace > 0 {
-			if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d", op.Replace)
-			}
-		}
-	*/
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -1715,11 +1772,12 @@ func (s *Shuttle) refreshPinQueue() error {
 	// Need to fix this, probably best option is just to add a 'replace' field
 	// to content, could be interesting to see the graph of replacements
 	// anyways
-	log.Infof("refreshing %d pins", len(toPin))
-	for _, c := range toPin {
-		s.addPinToQueue(c, nil, 0)
-	}
-
+	go func() {
+		log.Debugf("refreshing %d pins", len(toPin))
+		for _, c := range toPin {
+			s.addPinToQueue(c, nil, 0)
+		}
+	}()
 	return nil
 }
 
@@ -1833,6 +1891,12 @@ func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 }
 
 func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
+	// only progress if unpin is not already in progress for this content
+	if !s.markStartUnpin(contid) {
+		return nil
+	}
+	defer s.finishUnpin(contid)
+
 	ctx, span := s.Tracer.Start(ctx, "unpin")
 	defer span.End()
 
@@ -1972,6 +2036,13 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 
 	var pin Pin
 	if err := s.DB.First(&pin, "content = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d record not found in database", cont),
+			}
+		}
 		return err
 	}
 
@@ -1981,15 +2052,12 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	ctx := context.Background()
 	nd, err := dserv.Get(ctx, pin.Cid.CID)
 	if err != nil {
-		return c.JSON(400, map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
+
 	r, err := uio.NewDagReader(ctx, nd, dserv)
 	if err != nil {
-		return c.JSON(400, map[string]string{
-			"error": err.Error(),
-		})
+		return err
 	}
 
 	_, err = io.Copy(c.Response(), r)
@@ -2008,9 +2076,14 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 
 	var obj Object
 	if err := s.DB.First(&obj, "cid = ?", cc.Bytes()).Error; err != nil {
-		return c.JSON(404, map[string]interface{}{
-			"error": "object not found in database",
-		})
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("cid: %s record not found in database", cc),
+			}
+		}
+		return err
 	}
 
 	var pins []Pin
@@ -2073,6 +2146,13 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 
 	var p Pin
 	if err := s.DB.First(&p, "content = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d record not found in database", cont),
+			}
+		}
 		return err
 	}
 
@@ -2127,8 +2207,7 @@ func (s *Shuttle) handleRestartAllTransfers(e echo.Context) error {
 
 	var restarted int
 	for id, st := range transfers {
-		canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st))
-		if canRestart {
+		if canRestart := util.CanRestartTransfer(filclient.ChannelStateConv(st)); canRestart {
 			idcp := id
 			if err := s.Filc.RestartTransfer(ctx, &idcp); err != nil {
 				log.Warnf("failed to restart transfer: %s", err)
@@ -2145,7 +2224,6 @@ func (s *Shuttle) handleListAllTransfers(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, transfers)
 }
 
@@ -2159,7 +2237,6 @@ func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 

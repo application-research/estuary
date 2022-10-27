@@ -21,6 +21,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
@@ -94,10 +97,8 @@ import (
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
-
 	e := echo.New()
-
-	e.Binder = new(binder)
+	e.Binder = new(util.Binder)
 
 	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -127,11 +128,8 @@ func (s *Server) ServeAPI() error {
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
-
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
-
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
-
 	e.GET("/gw/:path", s.handleGateway)
 
 	user := e.Group("/user")
@@ -160,6 +158,7 @@ func (s *Server) ServeAPI() error {
 
 	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
+	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
@@ -199,6 +198,9 @@ func (s *Server) ServeAPI() error {
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
 	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
+
+	cols.DELETE("/:coluuid/contents", withUser(s.handleDeleteContentFromCollection))
+
 	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
 
 	colfs := cols.Group("/fs")
@@ -208,10 +210,11 @@ func (s *Server) ServeAPI() error {
 	pinning.Use(openApiMiddleware)
 	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.GET("/pins", withUser(s.handleListPins))
-	pinning.POST("/pins", withUser(s.handleAddPin))
 	pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
-	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 	pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
+	pinning.Use(util.JSONPayloadMiddleware)
+	pinning.POST("/pins", withUser(s.handleAddPin))
+	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
 
 	// explicitly public, for now
 	public := e.Group("/public")
@@ -238,6 +241,7 @@ func (s *Server) ServeAPI() error {
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
+	admin.GET("/fil-address", s.handleAdminFilAddress)
 	admin.GET("/balance", s.handleAdminBalance)
 	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
 	admin.GET("/dealstats", s.handleDealStats)
@@ -316,13 +320,6 @@ func (s *Server) ServeAPI() error {
 	return e.Start(s.cfg.ApiListen)
 }
 
-type binder struct{}
-
-func (b binder) Bind(i interface{}, c echo.Context) error {
-	defer c.Request().Body.Close()
-	return json.NewDecoder(c.Request().Body).Decode(i)
-}
-
 func serveCpuProfile(c echo.Context) error {
 	if err := pprof.StartCPUProfile(c.Response()); err != nil {
 		return err
@@ -354,9 +351,9 @@ type statsResp struct {
 	AggregatedFiles int64   `json:"aggregatedFiles"`
 }
 
-func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
+func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 	return func(c echo.Context) error {
-		u, ok := c.Get("user").(*User)
+		u, ok := c.Get("user").(*util.User)
 		if !ok {
 			return &util.HttpError{
 				Code:    http.StatusUnauthorized,
@@ -372,10 +369,11 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
 // @Tags         content
-// @Param        limit path string true "limit"
+// @Param        limit query string true "limit"
+// @Param        offset query string true "offset"
 // @Produce      json
 // @Router       /content/stats [get]
-func (s *Server) handleStats(c echo.Context, u *User) error {
+func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	limit := 500
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -401,7 +399,7 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and active", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
@@ -436,7 +434,6 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 				return err
 			}
 		}
-
 		out = append(out, st)
 	}
 
@@ -452,7 +449,10 @@ func (s *Server) handleStats(c echo.Context, u *User) error {
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
-		return err
+		return &util.HttpError{
+			Code:   http.StatusBadRequest,
+			Reason: util.ERR_INVALID_INPUT,
+		}
 	}
 
 	//	validate the IDs and Addrs here
@@ -460,15 +460,12 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	for _, peerParam := range params {
 		//	validate the PeerID
 		peerParamId, err := peer.Decode(peerParam.ID)
-
 		if err != nil {
-			log.Errorf("handlePeeringPeersAdd error on Decode: %s", err)
-			return c.JSON(http.StatusBadRequest,
-				util.PeeringPeerAddMessage{
-					Message:  "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
-					PeersAdd: params,
-				},
-			)
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_INPUT,
+				Details: "Adding Peer(s) on Peering failed, the peerID is invalid: " + peerParam.ID,
+			}
 		}
 
 		//	validate the Addrs for each PeerID
@@ -476,13 +473,11 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 		for _, addr := range peerParam.Addrs {
 			a, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
-				log.Errorf("handlePeeringPeersAdd error: %s", err)
-				return c.JSON(http.StatusBadRequest,
-					util.PeeringPeerAddMessage{
-						Message:  "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
-						PeersAdd: params,
-					},
-				)
+				return &util.HttpError{
+					Code:    http.StatusBadRequest,
+					Reason:  util.ERR_INVALID_INPUT,
+					Details: "Adding Peer(s) on Peering failed, the addr is invalid: " + addr,
+				}
 			}
 			multiAddrs = append(multiAddrs, a)
 		}
@@ -508,15 +503,15 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Param        body body []string true "Peer ids"
 // @Router       /admin/peering/peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
 	if err := c.Bind(&params); err != nil {
-		log.Errorf("handlePeeringPeersRemove error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
-			Reason: util.ERR_PEERING_PEERS_REMOVE_ERROR,
+			Reason: util.ERR_INVALID_INPUT,
 		}
 	}
 
@@ -558,7 +553,6 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 func (s *Server) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
 	if err != nil {
-		log.Errorf("handlePeeringStart error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_START_ERROR,
@@ -576,7 +570,6 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 func (s *Server) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
 	if err != nil {
-		log.Errorf("handlePeeringStop error: %s", err)
 		return &util.HttpError{
 			Code:   http.StatusBadRequest,
 			Reason: util.ERR_PEERING_PEERS_STOP_ERROR,
@@ -604,8 +597,9 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Tags         content
 // @Produce      json
 // @Param        body body util.ContentAddIpfsBody true "IPFS Body"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
-func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
+func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -622,9 +616,9 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 		filename = params.Root
 	}
 
-	var cols []*CollectionRef
+	var cols []*collections.CollectionRef
 	if params.CollectionID != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
 			return err
 		}
@@ -649,7 +643,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 			filename = filepath.Base(colp)
 		}
 
-		cols = []*CollectionRef{
+		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
 				Path:       &path,
@@ -695,11 +689,10 @@ func (s *Server) handleAddIpfs(c echo.Context, u *User) error {
 // @Tags         content
 // @Produce      json
 // @Param        body body string true "Car"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Param 		 filename query string false "Filename"
-// @Param 		 commp query string false "Commp"
-// @Param 		 size query string false "Size"
 // @Router       /content/add-car [post]
-func (s *Server) handleAddCar(c echo.Context, u *User) error {
+func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -813,12 +806,16 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        file formData file true "File to upload"
-// @Param        coluuid path string false "Collection UUID"
-// @Param        dir path string false "Directory"
+// @Param        data formData file true "File to upload"
+// @Param        filename formData string false "Filenam to use for upload"
+// @Param        coluuid query string false "Collection UUID"
+// @Param        replication query int false "Replication value"
+// @Param        ignore-dupes query string false "Ignore Dupes true/false"
+// @Param        lazy-provide query string false "Lazy Provide true/false"
+// @Param        dir query string false "Directory"
 // @Success      200  {object}  util.ContentAddResponse
 // @Router       /content/add [post]
-func (s *Server) handleAdd(c echo.Context, u *User) error {
+func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
@@ -875,9 +872,9 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 	}
 
 	coluuid := c.QueryParam("coluuid")
-	var col *Collection
+	var col *collections.Collection
 	if coluuid != "" {
-		var srchCol Collection
+		var srchCol collections.Collection
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 			return err
 		}
@@ -932,7 +929,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 	if col != nil {
 		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := s.DB.Create(&CollectionRef{
+		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 			Path:       &fullPath,
@@ -974,7 +971,7 @@ func (s *Server) handleAdd(c echo.Context, u *User) error {
 
 // redirectContentAdding is called when localContentAddingDisabled is true
 // it finds available shuttles and adds the desired content in one of them
-func (s *Server) redirectContentAdding(c echo.Context, u *User) error {
+func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
@@ -1099,10 +1096,10 @@ func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont
 	if err != nil {
 		return err
 	}
-	return cm.addObjectsToDatabase(ctx, cont, dserv, root, objects, constants.ContentLocationLocal)
+	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
 
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
+func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
 	defer span.End()
 
@@ -1123,7 +1120,6 @@ func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *User, dser
 	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
 		return nil, err
 	}
-
 	return content, nil
 }
 
@@ -1194,7 +1190,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Produce      json
 // @Success 	200 {array} string
 // @Router       /content/list [get]
-func (s *Server) handleListContent(c echo.Context, u *User) error {
+func (s *Server) handleListContent(c echo.Context, u *util.User) error {
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
@@ -1216,7 +1212,7 @@ type expandedContent struct {
 // @Param limit query int false "Limit"
 // @Param offset query int false "Offset"
 // @Router       /content/deals [get]
-func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
+func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error {
 
 	var limit int = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -1237,24 +1233,31 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("id desc").Find(&contents, "active and user_id = ? and not aggregated_in > 0", u.ID).Error; err != nil {
+	err := s.DB.Model(&util.Content{}).
+		Limit(limit).
+		Offset(offset).
+		Order("contents.id desc").
+		Joins("inner join content_deals on contents.id = content_deals.content").
+		Where("contents.active and contents.user_id = ? and not contents.aggregated_in > 0", u.ID).
+		Group("contents.id").
+		Scan(&contents).Error
+
+	if err != nil {
 		return err
 	}
 
 	out := make([]expandedContent, 0, len(contents))
 	for _, cont := range contents {
-		if !s.CM.contentInStagingZone(c.Request().Context(), cont) {
-			ec := expandedContent{
-				Content: cont,
-			}
-			if cont.Aggregate {
-				if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
-					return err
-				}
-
-			}
-			out = append(out, ec)
+		ec := expandedContent{
+			Content: cont,
 		}
+		if cont.Aggregate {
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				return err
+			}
+
+		}
+		out = append(out, ec)
 	}
 
 	return c.JSON(http.StatusOK, out)
@@ -1272,6 +1275,38 @@ type dealStatus struct {
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
 
+// handleGetContent godoc
+// @Summary      Content
+// @Description  This endpoint returns a content by its ID
+// @Tags         content
+// @Produce      json
+// @Param id path int true "Content ID"
+// @Router       /content/{id} [get]
+func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
+	contID, err := strconv.Atoi(c.Param("cont_id"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, content)
+}
+
 // handleContentStatus godoc
 // @Summary      Content Status
 // @Description  This endpoint returns the status of a content
@@ -1279,7 +1314,7 @@ type dealStatus struct {
 // @Produce      json
 // @Param id path int true "Content ID"
 // @Router       /content/status/{id} [get]
-func (s *Server) handleContentStatus(c echo.Context, u *User) error {
+func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	contID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1288,6 +1323,13 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -1302,7 +1344,8 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 
 	ds := make([]dealStatus, len(deals))
 	var wg sync.WaitGroup
-	for i := range deals {
+	for i, d := range deals {
+		dl := d
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -1311,9 +1354,20 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &d, content.Cid.CID, content.Location)
+			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
 				log.Errorf("failed to get transfer status: %s", err)
+				// the UI needs to display a transfer state even for intermittent errors
+				chanst = &filclient.ChannelState{
+					StatusStr: "Error",
+				}
+			}
+
+			// the transfer state is yet to be been announced - the UI needs to display a transfer state
+			if chanst == nil && d.DTChan == "" {
+				chanst = &filclient.ChannelState{
+					StatusStr: "Initializing",
+				}
 			}
 
 			dstatus.TransferStatus = chanst
@@ -1330,7 +1384,6 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 					}
 				}
 			}
-
 			ds[i] = dstatus
 		}(i)
 	}
@@ -1360,7 +1413,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *User) error {
 // @Produce      json
 // @Param deal path int true "Deal ID"
 // @Router       /deals/status/{deal} [get]
-func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
+func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	val, err := strconv.Atoi(c.Param("deal"))
@@ -1383,7 +1436,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *User) error {
 // @Produce      json
 // @Param 		propcid path string true "PropCid"
 // @Router       /deal/status-by-proposal/{propcid} [get]
-func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
+func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	propcid, err := cid.Decode(c.Param("propcid"))
@@ -1393,6 +1446,13 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 
 	var deal contentDeal
 	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal was not found for prop_cid: %s", propcid),
+			}
+		}
 		return err
 	}
 
@@ -1407,6 +1467,13 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *User) error {
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
 	var deal contentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", dealid),
+			}
+		}
 		return nil, err
 	}
 
@@ -1418,6 +1485,17 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		log.Errorf("failed to get transfer status: %s", err)
+		// the UI needs to display a transfer state even for intermittent errors
+		chanst = &filclient.ChannelState{
+			StatusStr: "Error",
+		}
+	}
+
+	// the transfer state is yet to be been announced - the UI needs to display a transfer state
+	if chanst == nil && deal.DTChan == "" {
+		chanst = &filclient.ChannelState{
+			StatusStr: "Initializing",
+		}
 	}
 
 	dstatus := dealStatus{
@@ -1437,7 +1515,6 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 			}
 		}
 	}
-
 	return &dstatus, nil
 }
 
@@ -1566,7 +1643,7 @@ type dealRequest struct {
 // @Param miner path string true "Miner"
 // @Param dealRequest body string true "Deal Request"
 // @Router       /deals/make/{miner} [post]
-func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
+func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
@@ -1604,6 +1681,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 				Details: fmt.Sprintf("content: %d was not found", req.ContentID),
 			}
 		}
+		return err
 	}
 
 	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
@@ -1621,6 +1699,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *User) error {
 // @Description  This endpoint returns the status of a transfer
 // @Tags         deals
 // @Produce      json
+// @Param chanid body datatransfer.ChannelID true "Channel ID"
+
 // @Router       /deal/transfer/status [post]
 func (s *Server) handleTransferStatus(c echo.Context) error {
 	var chanid datatransfer.ChannelID
@@ -1628,7 +1708,24 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.FilClient.TransferStatus(context.TODO(), &chanid)
+	var deal contentDeal
+	if err := s.DB.First(&deal, "dt_chan = ?", chanid.ID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", chanid.ID),
+			}
+		}
+		return err
+	}
+
+	var cont util.Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1637,11 +1734,29 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 }
 
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
-	status, err := s.FilClient.TransferStatusByID(context.TODO(), c.Param("id"))
-	if err != nil {
+	transferID := c.Param("id")
+
+	var deal contentDeal
+	if err := s.DB.First(&deal, "dt_chan = ?", transferID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %s was not found", transferID),
+			}
+		}
 		return err
 	}
 
+	var cont util.Content
+	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+		return err
+	}
+
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	if err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, status)
 }
 
@@ -1686,6 +1801,13 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 
 	var deal contentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal: %d was not found", dealid),
+			}
+		}
 		return err
 	}
 
@@ -1740,6 +1862,13 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 
 	var d contentDeal
 	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("deal was not found for prop_cid: %s", propCid),
+			}
+		}
 		return err
 	}
 
@@ -1753,11 +1882,11 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		}
 		dealUUID = &parsed
 	}
+
 	status, err := s.FilClient.DealStatus(ctx, addr, propCid, dealUUID)
 	if err != nil {
 		return xerrors.Errorf("getting deal status: %w", err)
 	}
-
 	return c.JSON(http.StatusOK, status)
 }
 
@@ -1776,6 +1905,13 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 
 	var proprec proposalRecord
 	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("proposal: %s was not found", propCid),
+			}
+		}
 		return err
 	}
 
@@ -1816,10 +1952,11 @@ type getInvitesResp struct {
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
-	if err := s.DB.Model(&InviteCode{}).
+	if err := s.DB.Model(&util.InviteCode{}).
 		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
+		Order("invite_codes.created_at ASC").
 		Scan(&invites).Error; err != nil {
 		return err
 	}
@@ -1827,9 +1964,9 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	return c.JSON(http.StatusOK, invites)
 }
 
-func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
+func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
-	invite := &InviteCode{
+	invite := &util.InviteCode{
 		Code:      code,
 		CreatedBy: u.ID,
 	}
@@ -1840,6 +1977,10 @@ func (s *Server) handleAdminCreateInvite(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"code": invite.Code,
 	})
+}
+
+func (s *Server) handleAdminFilAddress(c echo.Context) error {
+	return c.JSON(http.StatusOK, s.FilClient.ClientAddr)
 }
 
 func (s *Server) handleAdminBalance(c echo.Context) error {
@@ -1904,7 +2045,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numUsers int64
-	if err := s.DB.Model(&User{}).Count(&numUsers).Error; err != nil {
+	if err := s.DB.Model(&util.User{}).Count(&numUsers).Error; err != nil {
 		return err
 	}
 
@@ -1948,7 +2089,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // @Tags       	 admin
 // @Produce      json
 // @Router       /admin/system/config [get]
-func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
+func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
 	for _, sh := range s.CM.shuttles {
 		if sh.hostname == "" {
@@ -1956,7 +2097,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *User) error {
 			continue
 		}
 
-		out, err := s.getShuttleConfig(sh.hostname, u.authToken.Token)
+		out, err := s.getShuttleConfig(sh.hostname, u.AuthToken.Token)
 		if err != nil {
 			log.Warnf("failed to get shuttle config: %s", err)
 			continue
@@ -2027,7 +2168,7 @@ type minerSetInfoParams struct {
 	Name string `json:"name"`
 }
 
-func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
+func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2035,6 +2176,13 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2074,7 +2222,7 @@ type suspendMinerBody struct {
 	Reason string `json:"reason"`
 }
 
-func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
+func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2082,6 +2230,13 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2107,7 +2262,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
+func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2115,6 +2270,13 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *User) error {
 
 	var sm storageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %s was not found", m),
+			}
+		}
 		return err
 	}
 
@@ -2483,6 +2645,7 @@ type minerDealsResp struct {
 // @Tags         public,miner
 // @Produce      json
 // @Param miner path string false "Filter by miner"
+// @Param 		 ignore-failed query string false "Ignore Failed"
 // @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2517,7 +2680,7 @@ type bandwidthResponse struct {
 // @Produce      json
 // @Param 		 content path string true "Content ID"
 // @Router       /content/bw-usage/{content} [get]
-func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
+func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2525,6 +2688,13 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -2555,7 +2725,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *User) error {
 // @Param content path string true "Content ID"
 // @Success 	200 {object} string
 // @Router       /content/aggregated/{content} [get]
-func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
+func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2563,6 +2733,13 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("miner: %d was not found", contID),
+			}
+		}
 		return err
 	}
 
@@ -2585,7 +2762,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *User) error {
 // @Param content path string true "Content ID"
 // @Success 	200 {object} string
 // @Router       /content/failures/{content} [get]
-func (s *Server) handleGetContentFailures(c echo.Context, u *User) error {
+func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2705,6 +2882,13 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", cont),
+			}
+		}
 		return err
 	}
 
@@ -2732,8 +2916,8 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) checkTokenAuth(token string) (*User, error) {
-	var authToken AuthToken
+func (s *Server) checkTokenAuth(token string) (*util.User, error) {
+	var authToken util.AuthToken
 	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -2753,7 +2937,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	var user User
+	var user util.User
 	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -2765,7 +2949,7 @@ func (s *Server) checkTokenAuth(token string) (*User, error) {
 		return nil, err
 	}
 
-	user.authToken = authToken
+	user.AuthToken = authToken
 	return &user, nil
 }
 
@@ -2791,7 +2975,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 
 			span.SetAttributes(attribute.Int("user", int(u.ID)))
 
-			if u.authToken.UploadOnly && level >= util.PermLevelUser {
+			if u.AuthToken.UploadOnly && level >= util.PermLevelUser {
 				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
@@ -2829,12 +3013,13 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		return err
 	}
 
-	var invite InviteCode
+	var invite util.InviteCode
 	if err := s.DB.First(&invite, "code = ?", reg.InviteCode).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:   http.StatusNotFound,
-				Reason: util.ERR_INVALID_INVITE,
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_INVALID_INVITE,
+				Details: "no such invite code was found",
 			}
 		}
 		return err
@@ -2842,14 +3027,15 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	if invite.ClaimedBy != 0 {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_INVITE_ALREADY_USED,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVITE_ALREADY_USED,
+			Details: "the invite code as already been claimed",
 		}
 	}
 
 	username := strings.ToLower(reg.Username)
 
-	var exist *User
+	var exist *util.User
 	if err := s.DB.First(&exist, "username = ?", username).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -2859,18 +3045,19 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 
 	if exist != nil {
 		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_USERNAME_TAKEN,
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_USERNAME_TAKEN,
+			Details: "username already exist",
 		}
 	}
 
 	salt := uuid.New().String()
 
-	newUser := &User{
+	newUser := &util.User{
 		Username: username,
 		UUID:     uuid.New().String(),
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(reg.Password, salt),
+		PassHash: util.GetPasswordHash(reg.Password, salt, s.DB.Config.Dialector.Name()),
 		Perm:     util.PermLevelUser,
 	}
 
@@ -2881,7 +3068,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	authToken := &AuthToken{
+	authToken := &util.AuthToken{
 		Token:  "EST" + uuid.New().String() + "ARY",
 		User:   newUser.ID,
 		Expiry: time.Now().Add(time.Hour * 24 * 7),
@@ -2918,20 +3105,33 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		return err
 	}
 
-	var user User
+	var user util.User
 	if err := s.DB.First(&user, "username = ?", strings.ToLower(body.Username)).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
-				Code:   http.StatusForbidden,
-				Reason: util.ERR_USER_NOT_FOUND,
+				Code:    http.StatusForbidden,
+				Reason:  util.ERR_USER_NOT_FOUND,
+				Details: "no such user exist",
 			}
 		}
 		return err
 	}
 
 	//	validate password
-	if ((user.Salt != "") && user.PassHash != util.GetPasswordHash(body.Password, user.Salt)) ||
-		((user.Salt == "") && (user.PassHash != body.Password)) {
+	//	SQLlite and Postgres has incompatibility in hashing and even though we are dropping support for sqlite later,
+	//	we still need to accommodate those who chooses to use SQLite for experimentation purposes.
+	var valid = true
+	var dbDialect = s.DB.Config.Dialector.Name()
+
+	//	check password hash (this is the way).
+	if (user.Salt != "" && (user.PassHash != util.GetPasswordHash(body.Password, user.Salt, dbDialect))) || (user.Salt == "" && user.PassHash != body.Password) {
+		valid = false                                                                           //	assume it's not valid.
+		if bcrypt.CompareHashAndPassword([]byte(user.PassHash), []byte(body.Password)) == nil { //	we are using bcrypt, so we need to rehash it.
+			valid = true
+		}
+	}
+
+	if !valid {
 		return &util.HttpError{
 			Code:   http.StatusForbidden,
 			Reason: util.ERR_INVALID_PASSWORD,
@@ -2953,7 +3153,7 @@ type changePasswordParams struct {
 	NewPassword string `json:"newPasswordHash"`
 }
 
-func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
+func (s *Server) handleUserChangePassword(c echo.Context, u *util.User) error {
 	var params changePasswordParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -2961,12 +3161,12 @@ func (s *Server) handleUserChangePassword(c echo.Context, u *User) error {
 
 	salt := uuid.New().String()
 
-	updatedUserColumns := &User{
+	updatedUserColumns := &util.User{
 		Salt:     salt,
-		PassHash: util.GetPasswordHash(params.NewPassword, salt),
+		PassHash: util.GetPasswordHash(params.NewPassword, salt, s.DB.Config.Dialector.Name()),
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Updates(updatedUserColumns).Error; err != nil {
 		return err
 	}
 
@@ -2977,7 +3177,7 @@ type changeAddressParams struct {
 	Address string `json:"address"`
 }
 
-func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
+func (s *Server) handleUserChangeAddress(c echo.Context, u *util.User) error {
 	var params changeAddressParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -2993,7 +3193,7 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *User) error {
 		}
 	}
 
-	if err := s.DB.Model(User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Update("address", addr.String()).Error; err != nil {
 		return err
 	}
 
@@ -3012,7 +3212,7 @@ type userStatsResponse struct {
 // @Produce      json
 // @Success      200  {object}  userStatsResponse
 // @Router       /user/stats [get]
-func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
+func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
 						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
@@ -3024,7 +3224,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []string) (*AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -3041,7 +3241,7 @@ func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []strin
 		}
 	}
 
-	authToken := &AuthToken{
+	authToken := &util.AuthToken{
 		Token:      "EST" + uuid.New().String() + "ARY",
 		User:       user.ID,
 		Expiry:     expiry,
@@ -3055,7 +3255,7 @@ func (s *Server) newAuthTokenForUser(user *User, expiry time.Time, perms []strin
 	return authToken, nil
 }
 
-func (s *Server) handleGetViewer(c echo.Context, u *User) error {
+func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
@@ -3078,11 +3278,11 @@ func (s *Server) handleGetViewer(c echo.Context, u *User) error {
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
 		},
-		AuthExpiry: u.authToken.Expiry,
+		AuthExpiry: u.AuthToken.Expiry,
 	})
 }
 
-func (s *Server) getMinersOwnedByUser(u *User) []string {
+func (s *Server) getMinersOwnedByUser(u *util.User) []string {
 	var miners []storageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
 		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
@@ -3097,7 +3297,7 @@ func (s *Server) getMinersOwnedByUser(u *User) []string {
 	return out
 }
 
-func (s *Server) getPreferredUploadEndpoints(u *User) ([]string, error) {
+func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 
 	// TODO: this should be a lotttttt smarter
 	s.CM.shuttlesLk.Lock()
@@ -3165,10 +3365,10 @@ type getApiKeysResp struct {
 // @Produce      json
 // @Param        key path string true "Key"
 // @Router       /user/api-keys/{key} [delete]
-func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
+func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key")
 
-	if err := s.DB.Delete(&AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
 		return err
 	}
 
@@ -3180,12 +3380,14 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *User) error {
 // @Description  This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
 // @Tags         User
 // @Produce      json
+// @Param        expiry query string false "Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h"
+// @Param        perms query string false "Permissions -- currently unused"
 // @Success      200  {object}  getApiKeysResp
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
-func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
+func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 	expiry := time.Now().Add(time.Hour * 24 * 30)
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
@@ -3225,8 +3427,8 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *User) error {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [get]
-func (s *Server) handleUserGetApiKeys(c echo.Context, u *User) error {
-	var keys []AuthToken
+func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
+	var keys []util.AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
 		return err
 	}
@@ -3253,18 +3455,18 @@ type createCollectionBody struct {
 // @Tags         collections
 // @Produce      json
 // @Param        body     body     createCollectionBody  true        "Collection name and description"
-// @Success      200  {object}  Collection
+// @Success      200  {object}  collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [post]
-func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
+func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	col := &Collection{
+	col := &collections.Collection{
 		UUID:        uuid.New().String(),
 		Name:        body.Name,
 		Description: body.Description,
@@ -3283,14 +3485,13 @@ func (s *Server) handleCreateCollection(c echo.Context, u *User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Param        id   path      int  true  "User ID"
-// @Success      200  {object}  []main.Collection
+// @Success      200  {object}  []collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [get]
-func (s *Server) handleListCollections(c echo.Context, u *User) error {
-	var cols []Collection
+func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
+	var cols []collections.Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
@@ -3304,10 +3505,11 @@ func (s *Server) handleListCollections(c echo.Context, u *User) error {
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        body     body     []uint  true     "Content IDs to add to collection"
+// @Param        coluuid path string true "coluuid"
+// @Param        contentIDs     body     []uint  true     "Content IDs to add to collection"
 // @Success      200  {object}  map[string]string
 // @Router       /collections/{coluuid} [post]
-func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
+func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var contentIDs []uint
@@ -3316,12 +3518,27 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 	}
 
 	if len(contentIDs) > 128 {
-		return fmt.Errorf("too many contents specified: %d (max 128)", len(contentIDs))
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("too many contents specified: %d (max 128)", len(contentIDs)),
+		}
 	}
 
-	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
-		return fmt.Errorf("no collection found by that uuid for your user: %w", err)
+	var col collections.Collection
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		return err
 	}
 
 	var contents []util.Content
@@ -3333,11 +3550,13 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	var colrefs []CollectionRef
+	defaultPath := "/"
+	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
-		colrefs = append(colrefs, CollectionRef{
+		colrefs = append(colrefs, collections.CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
+			Path:       &defaultPath,
 		})
 	}
 
@@ -3356,16 +3575,27 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Router       /collections/{coluuid}/commit [post]
-func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
+func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
 
-	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", colid, u.ID).Error; err != nil {
+	var col collections.Collection
+	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", colid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
 		return err
 	}
 
 	contents := []util.ContentWithPath{}
-	if err := s.DB.Model(CollectionRef{}).
+	if err := s.DB.Model(collections.CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*, collection_refs.path").
@@ -3425,7 +3655,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 
 	// update DB with new collection CID
 	col.CID = collectionNode.Cid().String()
-	if err := s.DB.Model(Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
+	if err := s.DB.Model(collections.Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
 		return err
 	}
 
@@ -3445,20 +3675,31 @@ func (s *Server) handleCommitCollection(c echo.Context, u *User) error {
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Param        coluuid query string true "Collection UUID"
+// @Param        coluuid     path     string  true     "coluuid"
 // @Param        dir query string false "Directory"
 // @Router       /collections/{coluuid} [get]
-func (s *Server) handleGetCollectionContents(c echo.Context, u *User) error {
+func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var col Collection
-	if err := s.DB.First(&col, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
+	var col collections.Collection
+	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
 		return err
 	}
 
 	// TODO: optimize this a good deal
 	var refs []util.ContentWithPath
-	if err := s.DB.Model(CollectionRef{}).
+	if err := s.DB.Model(collections.CollectionRef{}).
 		Where("collection = ?", col.ID).
 		Joins("left join contents on contents.id = collection_refs.content").
 		Select("contents.*, collection_refs.path as path").
@@ -3576,18 +3817,19 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 // @Tags         collections
 // @Param        coluuid path string true "Collection ID"
 // @Router       /collections/{coluuid} [delete]
-func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
+func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
-				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
 				Details: fmt.Sprintf("collection with ID(%s) was not found", coluuid),
 			}
 		}
+		return err
 	}
 
 	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
@@ -3595,6 +3837,79 @@ func (s *Server) handleDeleteCollection(c echo.Context, u *User) error {
 	}
 
 	if err := s.DB.Delete(&col).Error; err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+type deleteContentFromCollectionBody struct {
+	By    string `json:"by"`
+	Value string `json:"value"`
+}
+
+// handleDeleteContentFromCollection godoc
+// @Summary      Deletes a content from a collection
+// @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
+// @Tags         collections
+// @Param        coluuid path string true "Collection ID"
+// @Param        contentid path string true "Content ID"
+// @Param        body body deleteContentFromCollectionBody true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Router       /collections/{coluuid}/contents [delete]
+func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
+	var body deleteContentFromCollectionBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+	coluuid := c.Param("coluuid")
+
+	// check if 'by' is either 'path' or 'content_id'
+	if body.By != "path" && body.By != "content_id" {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_INVALID_FILTER,
+			Details: fmt.Sprintf("invalid 'by' value, must be either 'content_id' or 'path', got %s", body.By),
+		}
+	}
+
+	if len(body.Value) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusNotFound,
+			Reason:  util.ERR_VALUE_REQUIRED,
+			Details: fmt.Sprintf("invalid 'value' field, must not be empty"),
+		}
+	}
+
+	col, err := collections.GetCollection(coluuid, s.DB, u)
+	if err != nil {
+		return err
+	}
+
+	refs := []collections.CollectionRef{}
+	if body.By == "path" {
+		path := body.Value
+		refs, err = collections.GetContentsInPath(coluuid, path, s.DB, u)
+		if err != nil {
+			return err
+		}
+	} else if body.By == "content_id" {
+		contentid := body.Value
+		content, err := util.GetContent(contentid, s.DB, u)
+		if err != nil {
+			return err
+		}
+		if err := s.DB.Model(collections.CollectionRef{}).
+			Where("collection = ?", col.ID).
+			Where("content = ?", content.ID).
+			Scan(&refs).Error; err != nil {
+			return err
+		}
+	}
+
+	// delete found refs
+	if err := s.DB.Delete(&refs).Error; err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusOK)
@@ -3662,7 +3977,7 @@ type adminUserResponse struct {
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
 	if err := s.DB.Model(util.Content{}).
-		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&User{}).Select("username").Where("id = user_id")).
+		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&util.User{}).Select("username").Where("id = user_id")).
 		Group("user_id").Scan(&resp).Error; err != nil {
 		return err
 	}
@@ -3755,7 +4070,7 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 		return nil, err
 	}
 
-	if err := s.DB.Model(User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
+	if err := s.DB.Model(util.User{}).Count(&stats.TotalUsers.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -3776,7 +4091,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Tags         content
 // @Produce      json
 // @Router       /content/staging-zones [get]
-func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
+func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
@@ -3787,7 +4102,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *User) error {
 // @Produce      json
 // @Success      200  {object}  string
 // @Router       /user/export [get]
-func (s *Server) handleUserExportData(c echo.Context, u *User) error {
+func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
 		return err
@@ -3994,7 +4309,7 @@ type dealPairs struct {
 // @Param        duration query string true "Duration"
 // @Param        all query string true "All"
 // @Router       /content/all-deals [get]
-func (s *Server) handleGetAllDealsForUser(c echo.Context, u *User) error {
+func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	begin := time.Now().Add(time.Hour * 24)
 	duration := time.Hour * 24
@@ -4080,10 +4395,17 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", val),
+			}
+		}
 		return err
 	}
 
-	var u User
+	var u util.User
 	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return err
 	}
@@ -4382,7 +4704,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			return
 		}
 
-		cmds, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
+		outgoingRpcQueue, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register shuttle: %s", err)
 			return
@@ -4392,9 +4714,9 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		go func() {
 			for {
 				select {
-				case cmd := <-cmds:
+				case rpcMessage := <-outgoingRpcQueue:
 					// Write
-					err := websocket.JSON.Send(ws, cmd)
+					err := websocket.JSON.Send(ws, rpcMessage)
 					if err != nil {
 						log.Errorf("failed to write command to shuttle: %s", err)
 						return
@@ -4410,7 +4732,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
-				log.Errorf("failed to read message from shuttle: %s", err)
+				log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
 
@@ -4591,7 +4913,7 @@ func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 // @Tags         deals
 // @Produce      json
 // @Router       /deals/failures [get]
-func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
+func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	recs, err := s.getStorageFailure(c, u)
 	if err != nil {
 		return err
@@ -4599,7 +4921,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *User) error {
 	return c.JSON(http.StatusOK, recs)
 }
 
-func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error) {
+func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -4634,9 +4956,10 @@ func (s *Server) getStorageFailure(c echo.Context, u *User) ([]dfeRecord, error)
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
-// @Param        body body string true "Content"
+// @Param        req body util.ContentCreateBody true "Content"
+// @Param 		 ignore-dupes query string false "Ignore Dupes"
 // @Router       /content/create [post]
-func (s *Server) handleCreateContent(c echo.Context, u *User) error {
+func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
@@ -4654,7 +4977,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 	}
 
-	var col Collection
+	var col collections.Collection
 	if req.CollectionID != "" {
 		if err := s.DB.First(&col, "uuid = ?", req.CollectionID).Error; err != nil {
 			return err
@@ -4690,7 +5013,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *User) error {
 		}
 
 		path := &sp
-		if err := s.DB.Create(&CollectionRef{
+		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 			Path:       path,
@@ -4710,7 +5033,7 @@ type claimMinerBody struct {
 	Name  string          `json:"name"`
 }
 
-func (s *Server) handleUserClaimMiner(c echo.Context, u *User) error {
+func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	var cmb claimMinerBody
@@ -4819,7 +5142,7 @@ func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error 
 	return nil
 }
 
-func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *User) error {
+func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -4890,6 +5213,13 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 
 	var cont util.Content
 	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", aggr),
+			}
+		}
 		return err
 	}
 
@@ -5072,11 +5402,14 @@ func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
 			var ar autoretrieve.Autoretrieve
 			if err := s.DB.First(&ar, "token = ?", auth).Error; err != nil {
 				log.Warnw("Autoretrieve server not authorized", "token", auth)
-				return &util.HttpError{
-					Code:    http.StatusUnauthorized,
-					Reason:  util.ERR_NOT_AUTHORIZED,
-					Details: "token not authorized",
+				if xerrors.Is(err, gorm.ErrRecordNotFound) {
+					return &util.HttpError{
+						Code:    http.StatusUnauthorized,
+						Reason:  util.ERR_NOT_AUTHORIZED,
+						Details: "token was not found",
+					}
 				}
+				return err
 			}
 			return next(c)
 		}
@@ -5094,9 +5427,12 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 			var sh Shuttle
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
-				return &util.HttpError{
-					Code:   http.StatusUnauthorized,
-					Reason: util.ERR_NOT_AUTHORIZED,
+				if xerrors.Is(err, gorm.ErrRecordNotFound) {
+					return &util.HttpError{
+						Code:    http.StatusUnauthorized,
+						Reason:  util.ERR_NOT_AUTHORIZED,
+						Details: "shuttle token was not found",
+					}
 				}
 			}
 			return next(c)
@@ -5119,6 +5455,12 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 			return err
 		}
 
+		var origins []*peer.AddrInfo
+		// when refreshing pinning queue, use content origins if available
+		if cont.Origins != "" {
+			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
+		}
+
 		if err := s.CM.sendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
 			Op: drpc.CMD_AddPin,
 			Params: drpc.CmdParams{
@@ -5126,6 +5468,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 					DBID:   cont.ID,
 					UserId: cont.UserID,
 					Cid:    cont.Cid.CID,
+					Peers:  origins,
 				},
 			},
 		}); err != nil {
@@ -5224,13 +5567,20 @@ func sanitizePath(p string) (string, error) {
 // @Param        path query string true "Path to file"
 // @Produce      json
 // @Router       /collections/fs/add [post]
-func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
+func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")
 	contid := c.QueryParam("content")
 	npath := c.QueryParam("path")
 
-	var col Collection
+	var col collections.Collection
 	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+			}
+		}
 		return err
 	}
 
@@ -5240,6 +5590,13 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 
 	var content util.Content
 	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_RECORD_NOT_FOUND,
+				Details: fmt.Sprintf("collection content: %s was not found", contid),
+			}
+		}
 		return err
 	}
 
@@ -5256,7 +5613,7 @@ func (s *Server) handleColfsAdd(c echo.Context, u *User) error {
 		path = &p
 	}
 
-	if err := s.DB.Create(&CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
+	if err := s.DB.Create(&collections.CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
 		return errors.Wrap(err, "failed to add content to requested collection")
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -5266,7 +5623,6 @@ func (s *Server) handleRunGc(c echo.Context) error {
 	if err := s.CM.GarbageCollect(c.Request().Context()); err != nil {
 		return err
 	}
-
 	return nil
 }
 
@@ -5303,7 +5659,8 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	var cont util.Content
 	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return "", nil
+			// if not pinned on any shuttle or local, check dweb
+			return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 		}
 		return "", err
 	}
@@ -5324,7 +5681,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
 
-func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *User) (bool, error) {
+func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (bool, error) {
 	var count int64
 	if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
 		return false, err
@@ -5369,6 +5726,6 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 	return out, nil
 }
 
-func (s *Server) isContentAddingDisabled(u *User) bool {
+func (s *Server) isContentAddingDisabled(u *util.User) bool {
 	return (s.CM.globalContentAddingDisabled && s.CM.localContentAddingDisabled) || u.StorageDisabled
 }

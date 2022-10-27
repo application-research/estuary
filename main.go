@@ -9,8 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
@@ -68,9 +72,10 @@ func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
 	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("autoretrieve", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
-	_ = logging.SetLogLevel("filclient", level)
+	_ = logging.SetLogLevel("filclient", "warn") // filclient is too chatting for default loglevel (info), maybe sub-system loglevel should be supported
 	_ = logging.SetLogLevel("dt_graphsync", level)
 	_ = logging.SetLogLevel("dt-chanmon", level)
 	_ = logging.SetLogLevel("markets", level)
@@ -162,14 +167,18 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.Jaeger.SamplerRatio = cctx.Float64("jaeger-sampler-ratio")
 		case "logging":
 			cfg.Logging.ApiEndpointLogging = cctx.Bool("logging")
-		case "enable-auto-retrieve":
-			cfg.EnableAutoRetrieve = cctx.Bool("enable-auto-retrieve")
+		case "disable-auto-retrieve":
+			cfg.DisableAutoRetrieve = cctx.Bool("disable-auto-retrieve")
 		case "bitswap-max-work-per-peer":
 			cfg.Node.Bitswap.MaxOutstandingBytesPerPeer = cctx.Int64("bitswap-max-work-per-peer")
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
-		case "shuttle-message-handlers":
-			cfg.ShuttleMessageHandlers = cctx.Int("shuttle-message-handlers")
+		case "rpc-incoming-queue-size":
+			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+		case "rpc-outgoing-queue-size":
+			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
+		case "rpc-queue-handlers":
+			cfg.RPCMessage.QueueHandlers = cctx.Int("rpc-queue-handlers")
 		case "staging-bucket":
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
@@ -275,10 +284,9 @@ func main() {
 			Value: cfg.Logging.ApiEndpointLogging,
 		},
 		&cli.BoolFlag{
-			Name:   "enable-auto-retrieve",
-			Usage:  "enables autoretrieve",
-			Value:  cfg.EnableAutoRetrieve,
-			Hidden: true,
+			Name:  "disable-auto-retrieve",
+			Usage: "disables autoretrieve",
+			Value: cfg.DisableAutoRetrieve,
 		},
 		&cli.StringFlag{
 			Name:    "lightstep-token",
@@ -377,9 +385,19 @@ func main() {
 			Value: cfg.Node.Bitswap.TargetMessageSize,
 		},
 		&cli.IntFlag{
-			Name:  "shuttle-message-handlers",
-			Usage: "sets shuttle message handler count",
-			Value: cfg.ShuttleMessageHandlers,
+			Name:  "rpc-incoming-queue-size",
+			Usage: "sets incoming rpc message queue size",
+			Value: cfg.RPCMessage.IncomingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-outgoing-queue-size",
+			Usage: "sets outgoing rpc message queue size",
+			Value: cfg.RPCMessage.OutgoingQueueSize,
+		},
+		&cli.IntFlag{
+			Name:  "rpc-queue-handlers",
+			Usage: "sets rpc message handler count",
+			Value: cfg.RPCMessage.QueueHandlers,
 		},
 		&cli.BoolFlag{
 			Name:  "staging-bucket",
@@ -456,7 +474,7 @@ func main() {
 
 				username = strings.ToLower(username)
 
-				var exist *User
+				var exist *util.User
 				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
 					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 						return err
@@ -469,18 +487,24 @@ func main() {
 				}
 
 				salt := uuid.New().String()
-				newUser := &User{
+
+				//	work with bcrypt on cli defined password.
+				var passwordBytes = []byte(password)
+				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+
+				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:     salt,
-					PassHash: util.GetPasswordHash(password, salt),
+					Salt:     salt, // default salt.
+					PassHash: string(hashedPasswordBytes),
 					Perm:     100,
 				}
+
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
-				authToken := &AuthToken{
+				authToken := &util.AuthToken{
 					Token:  "EST" + uuid.New().String() + "ARY",
 					User:   newUser.ID,
 					Expiry: time.Now().Add(time.Hour * 24 * 365),
@@ -572,14 +596,15 @@ func main() {
 		}
 
 		s := &Server{
-			DB:          db,
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			cfg:         cfg,
+			DB:               db,
+			Node:             nd,
+			Api:              api,
+			StagingMgr:       sbmgr,
+			tracer:           otel.Tracer("api"),
+			cacher:           memo.NewCacher(),
+			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			cfg:              cfg,
+			trackingChannels: make(map[string]*util.ChanTrack),
 		}
 
 		// TODO: this is an ugly self referential hack... should fix
@@ -627,6 +652,47 @@ func main() {
 			}
 		}()
 
+		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
+		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
+			go func() {
+				s.tcLk.Lock()
+				trk, _ := s.trackingChannels[fst.ChannelID.String()]
+				s.tcLk.Unlock()
+
+				// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
+				if trk != nil && trk.Last.Status == fst.Status {
+					return
+				}
+				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+
+				switch fst.Status {
+				case datatransfer.Requested:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, true); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				case datatransfer.TransferFinished, datatransfer.Completed:
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, false); err != nil {
+						log.Errorf("failed to set data transfer started from event: %s", err)
+					}
+				default:
+					// for every other events
+					trsFailed, msg := util.TransferFailed(&fst)
+					if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+						Chanid:   fst.TransferID,
+						DealDBID: dbid,
+						State:    &fst,
+						Failed:   trsFailed,
+						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
+					}); err != nil {
+						log.Errorf("failed to set data transfer update from event: %s", err)
+					}
+				}
+			}()
+		})
+		if err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
+
 		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
 		if err != nil {
 			return err
@@ -636,20 +702,23 @@ func main() {
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		s.FilClient = fc
 
-		if cfg.EnableAutoRetrieve {
+		if !cfg.DisableAutoRetrieve {
 			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
 		}
 
-		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
-		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
+		go cm.handleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
-		if err != nil {
-			return err
+		// Start autoretrieve if not disabled
+		if !cfg.DisableAutoRetrieve {
+			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore, s.FilClient.GetDtMgr())
+			if err != nil {
+				return err
+			}
+
+			go s.Node.ArEngine.Run()
+			defer s.Node.ArEngine.Shutdown()
 		}
-
-		go s.Node.ArEngine.Run()
-		defer s.Node.ArEngine.Shutdown()
 
 		go func() {
 			time.Sleep(time.Second * 10)
@@ -702,8 +771,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.Content{},
 		&util.Object{},
 		&util.ObjRef{},
-		&Collection{},
-		&CollectionRef{},
+		&collections.Collection{},
+		&collections.CollectionRef{},
 		&contentDeal{},
 		&dfeRecord{},
 		&PieceCommRecord{},
@@ -712,9 +781,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&retrievalSuccessRecord{},
 		&minerStorageAsk{},
 		&storageMiner{},
-		&User{},
-		&AuthToken{},
-		&InviteCode{},
+		&util.User{},
+		&util.AuthToken{},
+		&util.InviteCode{},
 		&Shuttle{},
 		&autoretrieve.Autoretrieve{}); err != nil {
 		return err
@@ -735,6 +804,9 @@ type Server struct {
 	gwayHandler *gateway.GatewayHandler
 
 	cacher *memo.Cacher
+
+	tcLk             sync.Mutex
+	trackingChannels map[string]*util.ChanTrack
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
@@ -785,21 +857,33 @@ func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string)
 		return err
 	}
 
-	for _, d := range deals {
-		chid, err := d.ChannelID()
-		if err != nil {
-			// Only legacy (push) transfers need to be restarted by Estuary.
-			// Newer (pull) transfers are restarted by the Storage Provider.
-			// So if it's not a legacy channel ID, ignore it.
-			continue
-		}
+	go func() {
+		for _, d := range deals {
+			chid, err := d.ChannelID()
+			if err != nil {
+				// Only legacy (push) transfers need to be restarted by Estuary.
+				// Newer (pull) transfers are restarted by the Storage Provider.
+				// So if it's not a legacy channel ID, ignore it.
+				continue
+			}
 
-		if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
-			log.Errorf("failed to restart transfer: %s", err)
-			continue
+			if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
+				log.Errorf("failed to restart transfer: %s", err)
+				continue
+			}
 		}
-	}
+	}()
 	return nil
+}
+
+func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
+	s.tcLk.Lock()
+	defer s.tcLk.Unlock()
+
+	s.trackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
+	}
 }
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
@@ -819,7 +903,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		dealUUID = &parsed
 	}
 
-	_, isPushTransfer, err := cm.getDealStatus(ctx, &d, maddr, dealUUID)
+	_, isPushTransfer, err := cm.getProviderDealStatus(ctx, &d, maddr, dealUUID)
 	if err != nil {
 		return err
 	}
@@ -829,9 +913,14 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	}
 
 	if loc == constants.ContentLocationLocal {
+		// get the deal data transfer state pull deals
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
 		if err != nil {
 			return err
+		}
+
+		if st == nil {
+			return fmt.Errorf("no data transfer state was found")
 		}
 
 		cannotRestart := !util.CanRestartTransfer(st)
@@ -851,15 +940,17 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		}
 		return cm.FilClient.RestartTransfer(ctx, &chanid)
 	}
-	return cm.sendRestartTransferCmd(ctx, loc, chanid)
+	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
 
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID) error {
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{
 			RestartTransfer: &drpc.RestartTransfer{
-				ChanID: chanid,
+				ChanID:    chanid,
+				DealDBID:  d.ID,
+				ContentID: d.Content,
 			},
 		},
 	})

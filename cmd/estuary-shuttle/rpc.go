@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
+	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	blocks "github.com/ipfs/go-block-format"
@@ -16,6 +18,7 @@ import (
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipfs/go-merkledag"
+	"github.com/libp2p/go-libp2p-core/peer"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
@@ -41,7 +44,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	case drpc.CMD_TakeContent:
 		return d.handleRpcTakeContent(ctx, cmd.Params.TakeContent)
 	case drpc.CMD_AggregateContent:
-		return d.handleRpcAggregateContent(ctx, cmd.Params.AggregateContent)
+		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContent)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_PrepareForDataRequest:
@@ -79,10 +82,10 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
-	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, false)
+	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, apo.Peers, false)
 }
 
-func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, skipLimiter bool) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
 	ctx, span := d.Tracer.Start(ctx, "addPin", trace.WithAttributes(
 		attribute.Int64("contID", int64(contid)),
 		attribute.Int64("userID", int64(user)),
@@ -160,6 +163,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		UserId:      user,
 		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
+		Peers:       peers,
 	}
 
 	d.PinMgr.Add(op)
@@ -265,6 +269,7 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 	}
 }
 
+// handleRpcTakeContent is used for consolidation, pulls pins from one shuttle to another shuttle
 func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
 	ctx, span := d.Tracer.Start(ctx, "handleTakeContent")
 	defer span.End()
@@ -278,34 +283,37 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		if err != nil {
 			return err
 		}
+
+		// if this content is already in this shuttle, ignore pinning it
 		if count > 0 {
-			if count > 1 {
-				log.Errorf("have multiple pins for same content: %d", c.ID)
-			}
 			continue
 		}
 
-		if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, true); err != nil {
-			return err
-		}
+		go func(c drpc.ContentFetch) {
+			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
+				log.Errorf("failed to pin takeContent: %d", c.ID)
+			}
+		}(c)
 	}
-
 	return nil
 }
 
-func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.AggregateContent) error {
-	ctx, span := d.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+	// only progress if aggr is not allready in progress
+	if !s.markStartAggr(cmd.DBID) {
+		return nil
+	}
+	defer s.finishAggr(cmd.DBID)
+
+	ctx, span := s.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
 		attribute.Int64("dbID", int64(cmd.DBID)),
 		attribute.Int64("userId", int64(cmd.UserID)),
 		attribute.String("root", cmd.Root.String()),
 	))
 	defer span.End()
 
-	d.addPinLk.Lock()
-	defer d.addPinLk.Unlock()
-
 	var p Pin
-	err := d.DB.First(&p, "content = ?", cmd.DBID).Error
+	err := s.DB.First(&p, "content = ?", cmd.DBID).Error
 	switch err {
 	default:
 		return err
@@ -319,7 +327,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	totalSize := int64(len(cmd.ObjData))
 	for _, c := range cmd.Contents {
 		var aggr Pin
-		if err := d.DB.First(&aggr, "content = ?", c).Error; err != nil {
+		if err := s.DB.First(&aggr, "content = ?", c).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
@@ -328,7 +336,6 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		if !aggr.Active || aggr.Failed {
 			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c)
 		}
-
 		totalSize += aggr.Size
 	}
 
@@ -341,7 +348,7 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		Pinning:   true,
 		Aggregate: true,
 	}
-	if err := d.DB.Create(pin).Error; err != nil {
+	if err := s.DB.Create(pin).Error; err != nil {
 		return err
 	}
 
@@ -349,12 +356,16 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 	if err != nil {
 		return err
 	}
-	if err := d.Node.Blockstore.Put(ctx, blk); err != nil {
+
+	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
 		return err
 	}
 
-	if err := d.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
-		"active": true,
+	// since aggregates only needs put the containing box in the blockstore (no need to pull blocks),
+	// mark it as active and change pinning status
+	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+		"active":  true,
+		"pinning": false,
 	}).Error; err != nil {
 		return err
 	}
@@ -363,27 +374,36 @@ func (d *Shuttle) handleRpcAggregateContent(ctx context.Context, cmd *drpc.Aggre
 		Cid:  util.DbCID{CID: blk.Cid()},
 		Size: len(blk.RawData()),
 	}
-	if err := d.DB.Create(obj).Error; err != nil {
+	if err := s.DB.Create(obj).Error; err != nil {
 		return err
 	}
+
 	ref := &ObjRef{
 		Pin:    pin.ID,
 		Object: obj.ID,
 	}
-	if err := d.DB.Create(ref).Error; err != nil {
+	if err := s.DB.Create(ref).Error; err != nil {
 		return err
 	}
 
-	go d.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, nil)
+	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
+		"active":  true,
+		"pinning": false,
+	}).Error; err != nil {
+		return err
+	}
+
+	s.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, []*Object{obj})
 	return nil
 }
 
-func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint) {
+func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
 	s.tcLk.Lock()
 	defer s.tcLk.Unlock()
 
-	s.trackingChannels[chanid.String()] = &chanTrack{
-		dbid: dealdbid,
+	s.trackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
 	}
 }
 
@@ -418,8 +438,8 @@ func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc
 	return nil
 }
 
-func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
-	ctx, span := d.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
+func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
+	ctx, span := s.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
 		attribute.Int64("contentID", int64(cmd.ContentID)),
 		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
 		attribute.String("miner", cmd.Miner.String()),
@@ -428,33 +448,17 @@ func (d *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 	))
 	defer span.End()
 
-	go func() {
-		chanid, err := d.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
-		if err != nil {
-			errMsg := fmt.Sprintf("failed to start data transfer: %s", err)
-			log.Error(errMsg)
-			d.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-				DealDBID: cmd.DealDBID,
-				Failed:   true,
-				Message:  errMsg,
-			})
-			return
-		}
-
-		d.trackTransfer(chanid, cmd.DealDBID)
-
-		if err := d.sendRpcMessage(ctx, &drpc.Message{
-			Op: drpc.OP_TransferStarted,
-			Params: drpc.MsgParams{
-				TransferStarted: &drpc.TransferStarted{
-					DealDBID: cmd.DealDBID,
-					Chanid:   chanid.String(),
-				},
-			},
-		}); err != nil {
-			log.Errorf("failed to notify estuary primary node about transfer start: %s", err)
-		}
-	}()
+	chanid, err := s.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
+	if err != nil {
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			DealDBID: cmd.DealDBID,
+			Chanid:   chanid.String(),
+			Failed:   true,
+			Message:  fmt.Sprintf("failed to start data transfer: %s", err),
+		})
+		return err
+	}
+	s.trackTransfer(chanid, cmd.DealDBID, nil)
 	return nil
 }
 
@@ -466,6 +470,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	if st.State != nil {
 		extra = fmt.Sprintf("%d %s", st.State.Status, st.State.Message)
 	}
+
 	log.Debugf("sending transfer status update: %d %s", st.DealDBID, extra)
 	if err := d.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_TransferStatus,
@@ -483,60 +488,84 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 	))
 	defer span.End()
 
-	go func() {
-		ctx := context.TODO()
-		st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
-		if err != nil {
-			log.Errorf("failed to get requested transfer status: %s", err)
-			return
-		}
+	ctx = context.TODO()
+	st, err := s.Filc.TransferStatusByID(ctx, req.ChanID)
+	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
+		return err
+	}
 
-		trsFailed, msg := util.TransferFailed(st)
-
-		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-			Chanid: req.ChanID,
-
-			// NB: this parameter is only here because
-			//its wanted on the other side. We could probably just look up by
-			//channel ID instead.
-			DealDBID: req.DealDBID,
-
-			State:   st,
-			Failed:  trsFailed,
-			Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
-		})
-	}()
+	trsFailed, msg := util.TransferFailed(st)
+	s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+		Chanid:   req.ChanID,
+		DealDBID: req.DealDBID,
+		State:    st,
+		Failed:   trsFailed,
+		Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
+	})
 	return nil
 }
 
 func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
-	go func() {
-		if err := s.retrieveContent(ctx, req.Content, req.Cid, req.Deals); err != nil {
-			log.Errorf("failed to retrieve content: %s", err)
-		}
-	}()
-	return nil
+	return s.retrieveContent(ctx, req.Content, req.Cid, req.Deals)
 }
 
 func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinContent) error {
 	for _, c := range req.Contents {
-		if err := s.Unpin(ctx, c); err != nil {
-			return err
-		}
+		go func(cntID uint) {
+			if err := s.Unpin(ctx, cntID); err != nil {
+				log.Errorf("failed to unpin content %d: %s", cntID, err)
+			}
+		}(c)
 	}
 	return nil
 }
 
-func (s *Shuttle) markStartSplit(cont uint) error {
+func (s *Shuttle) markStartUnpin(cont uint) bool {
+	s.unpinLk.Lock()
+	defer s.unpinLk.Unlock()
+
+	if s.unpinInProgress[cont] {
+		return false
+	}
+
+	s.unpinInProgress[cont] = true
+	return true
+}
+
+func (s *Shuttle) finishUnpin(cont uint) {
+	s.unpinLk.Lock()
+	defer s.unpinLk.Unlock()
+	delete(s.unpinInProgress, cont)
+}
+
+func (s *Shuttle) markStartAggr(cont uint) bool {
+	s.aggrLk.Lock()
+	defer s.aggrLk.Unlock()
+
+	if s.aggrInProgress[cont] {
+		return false
+	}
+
+	s.aggrInProgress[cont] = true
+	return true
+}
+
+func (s *Shuttle) finishAggr(cont uint) {
+	s.aggrLk.Lock()
+	defer s.aggrLk.Unlock()
+	delete(s.aggrInProgress, cont)
+}
+
+func (s *Shuttle) markStartSplit(cont uint) bool {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 
 	if s.splitsInProgress[cont] {
-		return fmt.Errorf("split for content %d already in progress", cont)
+		return false
 	}
 
 	s.splitsInProgress[cont] = true
-	return nil
+	return true
 }
 
 func (s *Shuttle) finishSplit(cont uint) {
@@ -546,8 +575,9 @@ func (s *Shuttle) finishSplit(cont uint) {
 }
 
 func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
-	if err := s.markStartSplit(req.Content); err != nil {
-		return err
+	// only progress if split is not allready in progress
+	if !s.markStartSplit(req.Content) {
+		return nil
 	}
 	defer s.finishSplit(req.Content)
 
@@ -559,7 +589,6 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	// Check if we've done this already...
 	if pin.DagSplit {
 		// This is only set once we've completed the splitting, so this should be fine
-
 		if pin.SplitFrom != 0 {
 			return fmt.Errorf("was asked to split content that is itself split from a larger piece")
 		}
@@ -626,6 +655,9 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
+		"size":      0,
+		"active":    false,
+		"pinning":   false,
 	}).Error; err != nil {
 		return err
 	}
@@ -647,17 +679,29 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 
 	cannotRestart := !util.CanRestartTransfer(st)
 	if cannotRestart {
-		trsFailed, msg := util.TransferFailed(st)
-		if trsFailed {
+		if trsFailed, msg := util.TransferFailed(st); trsFailed {
 			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
-				Chanid:  req.ChanID.String(),
-				State:   st,
-				Failed:  true,
-				Message: fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
+				DealDBID: req.DealDBID,
+				Chanid:   req.ChanID.String(),
+				State:    st,
+				Failed:   true,
+				Message:  fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message),
 			})
 			return fmt.Errorf("cannot restart transfer with status: %d", st.Status)
 		}
 		return nil
 	}
-	return s.Filc.RestartTransfer(ctx, &req.ChanID)
+
+	if err = s.Filc.RestartTransfer(ctx, &req.ChanID); err != nil {
+		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			DealDBID: req.DealDBID,
+			Chanid:   req.ChanID.String(),
+			State:    st,
+			Failed:   true,
+			Message:  fmt.Sprintf("failed to restart data transfer: %s", err),
+		})
+		return err
+	}
+	s.trackTransfer(&req.ChanID, req.DealDBID, st)
+	return nil
 }
