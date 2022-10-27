@@ -1826,7 +1826,13 @@ const docTemplate = `{
                 "expiry": {
                     "type": "string"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "token": {
+                    "type": "string"
+                },
+                "tokenHash": {
                     "type": "string"
                 }
             }
