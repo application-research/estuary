@@ -71,7 +71,7 @@ type storageMiner struct {
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
-	_ = logging.SetLogLevel("dt-impl", level)
+	_ = logging.SetLogLevel("provider/engine", level)
 	_ = logging.SetLogLevel("autoretrieve", level)
 	_ = logging.SetLogLevel("estuary", level)
 	_ = logging.SetLogLevel("paych", level)
