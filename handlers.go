@@ -136,7 +136,7 @@ func (s *Server) ServeAPI() error {
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
-	user.DELETE("/api-keys/:key-or-hash", withUser(s.handleUserRevokeApiKey))
+	user.DELETE("/api-keys/:key_or_hash", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
@@ -3374,7 +3374,7 @@ type getApiKeysResp struct {
 // @Param        key path string true "Key"
 // @Router       /user/api-keys/{key} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
-	kval := c.Param("key-or-hash")
+	kval := c.Param("key_or_hash")
 	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
 		return err
 	}
