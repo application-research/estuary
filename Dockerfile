@@ -1,4 +1,4 @@
-FROM golang:1.16.11-stretch AS builder
+FROM golang:1.17 AS builder
 RUN apt-get update && \
     apt-get install -y wget jq hwloc ocl-icd-opencl-dev git libhwloc-dev pkg-config make && \
     apt-get install -y cargo
@@ -10,7 +10,7 @@ RUN git clone https://github.com/application-research/estuary . && \
     RUSTFLAGS="-C target-cpu=native -g" FFI_BUILD_FROM_SOURCE=1 FFI_USE_BLST_PORTABLE=1 make
 RUN cp ./estuary ./estuary-shuttle ./benchest ./bsget /usr/local/bin
 
-FROM golang:1.16.11-stretch
+FROM golang:1.17
 RUN apt-get update && \
     apt-get install -y hwloc libhwloc-dev ocl-icd-opencl-dev
 
