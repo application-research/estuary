@@ -1851,6 +1851,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		if err := to.PutMany(ctx, batch); err != nil {
 			if retryCount <= 2 {
 				retryCount = retryCount + 1
+				time.Sleep(2 * time.Second)
 				goto retry
 			}
 			return err
