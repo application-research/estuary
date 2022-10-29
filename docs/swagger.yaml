@@ -15,6 +15,15 @@ definitions:
       uuid:
         type: string
     type: object
+  main.ChannelIDParam:
+    properties:
+      id:
+        type: integer
+      initiator:
+        type: string
+      responder:
+        type: string
+    type: object
   main.createCollectionBody:
     properties:
       description:
@@ -59,13 +68,6 @@ definitions:
         type: string
       name:
         type: string
-    type: object
-  main.userStatsResponse:
-    properties:
-      numPins:
-        type: integer
-      totalSize:
-        type: integer
     type: object
   util.ContentAddIpfsBody:
     properties:
@@ -137,20 +139,30 @@ paths:
       description: This endpoint registers a new autoretrieve server
       parameters:
         - description: Autoretrieve's comma-separated list of addresses
-          in: body
+          in: formData
           name: addresses
           required: true
-          schema:
-            type: string
+          type: string
         - description: Autoretrieve's public key
-          in: body
+          in: formData
           name: pubKey
           required: true
-          schema:
-            type: string
+          type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Register autoretrieve server
       tags:
         - autoretrieve
@@ -159,7 +171,19 @@ paths:
       description: This endpoint lists all registered autoretrieve servers
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List autoretrieve servers
       tags:
         - autoretrieve
@@ -169,15 +193,27 @@ paths:
       parameters:
         - description: Peer ids
           in: body
-          name: body
+          name: peerIds
           required: true
           schema:
             items:
-              type: string
+              type: boolean
             type: array
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Remove peers on Peering Service
       tags:
         - admin
@@ -187,7 +223,19 @@ paths:
       description: This endpoint can be used to list all peers on Peering Service
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List all Peering peers
       tags:
         - admin
@@ -197,7 +245,19 @@ paths:
       description: This endpoint can be used to add a Peer from the Peering Service
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add peers on Peering Service
       tags:
         - admin
@@ -208,7 +268,19 @@ paths:
       description: This endpoint can be used to start the Peering Service
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Start Peering
       tags:
         - admin
@@ -219,7 +291,19 @@ paths:
       description: This endpoint can be used to check the Peering status
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Check Peering Status
       tags:
         - admin
@@ -230,7 +314,19 @@ paths:
       description: This endpoint can be used to stop the Peering Service
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Stop Peering
       tags:
         - admin
@@ -241,7 +337,19 @@ paths:
       description: This endpoint is used to get system configs.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get systems(estuary/shuttle) config
       tags:
         - admin
@@ -250,7 +358,19 @@ paths:
       description: This endpoint is used to get all users.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get all users
       tags:
         - admin
@@ -265,7 +385,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Marks autoretrieve server as up
       tags:
         - autoretrieve
@@ -279,7 +411,9 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/collections.Collection'
+              items:
+                $ref: '#/definitions/collections.Collection'
+              type: array
             type: array
         "400":
           description: Bad Request
@@ -336,7 +470,19 @@ paths:
           name: coluuid
           required: true
           type: string
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Deletes a collection
       tags:
         - collections
@@ -359,6 +505,14 @@ paths:
           description: OK
           schema:
             type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get contents in a collection
       tags:
         - collections
@@ -389,6 +543,14 @@ paths:
             additionalProperties:
               type: string
             type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add contents to a collection
       tags:
         - collections
@@ -408,6 +570,14 @@ paths:
           description: OK
           schema:
             type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Produce a CID of the collection contents
       tags:
         - collections
@@ -442,6 +612,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Deletes a content from a collection
       tags:
         - collections
@@ -466,7 +640,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add a file to a collection
       tags:
         - collections
@@ -481,7 +667,19 @@ paths:
           type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Content
       tags:
         - content
@@ -527,6 +725,14 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/util.ContentAddResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add new content
       tags:
         - content
@@ -550,7 +756,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add Car object
       tags:
         - content
@@ -570,7 +788,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add IPFS object
       tags:
         - content
@@ -590,6 +820,14 @@ paths:
           description: OK
           schema:
             type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get aggregated content stats
       tags:
         - content
@@ -614,7 +852,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get all deals for a user
       tags:
         - content
@@ -629,7 +879,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get content bandwidth
       tags:
         - content
@@ -649,7 +911,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add a new content
       tags:
         - content
@@ -667,7 +941,19 @@ paths:
           type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Content with deals
       tags:
         - content
@@ -682,7 +968,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Ensure Replication
       tags:
         - content
@@ -702,6 +1000,14 @@ paths:
           description: OK
           schema:
             type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List all failures for a content
       tags:
         - content
@@ -717,7 +1023,19 @@ paths:
             $ref: '#/definitions/main.importDealBody'
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Import a deal
       tags:
         - content
@@ -730,9 +1048,15 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              type: string
-            type: array
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: List all pinned content
       tags:
         - content
@@ -747,7 +1071,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Read content
       tags:
         - content
@@ -756,7 +1092,19 @@ paths:
       description: This endpoint is used to get staging zone for user.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get staging zone for user
       tags:
         - content
@@ -776,7 +1124,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get content statistics
       tags:
         - content
@@ -791,7 +1151,19 @@ paths:
           type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Content Status
       tags:
         - content
@@ -807,7 +1179,19 @@ paths:
             $ref: '#/definitions/main.estimateDealBody'
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Estimate the cost of a deal
       tags:
         - deals
@@ -822,7 +1206,19 @@ paths:
           type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get Deal Info
       tags:
         - deals
@@ -837,7 +1233,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get Proposal
       tags:
         - deals
@@ -852,7 +1260,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Query Ask
       tags:
         - deals
@@ -867,7 +1287,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get Deal Status by PropCid
       tags:
         - deals
@@ -887,7 +1319,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Deal Status
       tags:
         - deals
@@ -896,19 +1340,68 @@ paths:
       description: This endpoint returns the in-progress transfers
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Transfer In Progress
       tags:
         - deals
   /deal/transfer/status:
     post:
-      responses: {}
+      description: This endpoint returns the status of a transfer
+      parameters:
+        - description: Channel ID
+          in: body
+          name: chanid
+          required: true
+          schema:
+            $ref: '#/definitions/main.ChannelIDParam'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Transfer Status
+      tags:
+        - deals
   /deals/failures:
     get:
       description: This endpoint returns a list of storage failures for user
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get storage failures for user
       tags:
         - deals
@@ -929,7 +1422,19 @@ paths:
             type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Make Deal
       tags:
         - deals
@@ -944,7 +1449,19 @@ paths:
           type: integer
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get Deal Status
       tags:
         - deals
@@ -957,9 +1474,15 @@ paths:
         "200":
           description: OK
           schema:
-            items:
-              type: string
-            type: array
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Net Addrs
       tags:
         - net
@@ -969,6 +1492,10 @@ paths:
       produces:
         - application/json
       responses:
+        "200":
+          description: OK
+          schema:
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -999,7 +1526,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Add and pin object
       tags:
         - pinning
@@ -1014,7 +1553,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Delete a pinned object
       tags:
         - pinning
@@ -1028,7 +1579,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get a pin status object
       tags:
         - pinning
@@ -1042,7 +1605,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Replace a pinned object
       tags:
         - pinning
@@ -1057,7 +1632,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get Content by Cid
       tags:
         - public
@@ -1066,7 +1653,19 @@ paths:
       description: This endpoint returns a list of storage failures
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get storage failures
       tags:
         - deals
@@ -1075,7 +1674,19 @@ paths:
       description: This endpoint returns information about the node
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get public node info
       tags:
         - public
@@ -1084,7 +1695,19 @@ paths:
       description: This endpoint is used to get deal metrics
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get deal metrics
       tags:
         - public
@@ -1094,7 +1717,19 @@ paths:
       description: This endpoint returns all miners
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get all miners
       tags:
         - public
@@ -1106,6 +1741,7 @@ paths:
         - description: Filter by miner
           in: path
           name: miner
+          required: true
           type: string
         - description: Ignore Failed
           in: query
@@ -1113,7 +1749,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get all miners deals
       tags:
         - public
@@ -1128,7 +1776,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get all miners
       tags:
         - public
@@ -1143,7 +1803,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Get miner stats
       tags:
         - public
@@ -1159,7 +1831,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Query Ask
       tags:
         - deals
@@ -1191,6 +1875,14 @@ paths:
             items:
               type: string
             type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Net Peers
       tags:
         - public
@@ -1200,7 +1892,19 @@ paths:
       description: This endpoint is used to get public stats.
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Public stats
       tags:
         - public
@@ -1214,7 +1918,9 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/main.getApiKeysResp'
+              items:
+                $ref: '#/definitions/main.getApiKeysResp'
+              type: array
             type: array
         "400":
           description: Bad Request
@@ -1234,7 +1940,7 @@ paths:
     post:
       description: This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
       parameters:
-        - description: Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h
+        - description: Expiration - Expiration - Valid time units are ns, us (or µs),  ms,  s,  m,  h.  for  example  300h
           in: query
           name: expiry
           type: string
@@ -1275,7 +1981,19 @@ paths:
           type: string
       produces:
         - application/json
-      responses: {}
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Revoke a User API Key.
       tags:
         - User
@@ -1289,6 +2007,14 @@ paths:
           description: OK
           schema:
             type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Export user data
       tags:
         - User
@@ -1301,7 +2027,15 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.userStatsResponse'
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
       summary: Create API keys for a user
       tags:
         - User
