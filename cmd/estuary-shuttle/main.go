@@ -1233,6 +1233,9 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1363,6 +1366,9 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 // @Description  This endpoint uploads content via a car file
 // @Tags         content
 // @Produce      json
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /content/add-car [post]
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1878,7 +1884,9 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 // @Description  This endpoint is used to get net addrs
 // @Tags         net
 // @Produce      json
-// @Success      200  {array}  string
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /net/addrs [get]
 func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 	id := s.Node.Host.ID()
@@ -2026,7 +2034,10 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 // @Description  This endpoint reads content from the blockstore
 // @Tags         content
 // @Produce      json
-// @Param        cont path string true "CID"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        cont  path      string  true  "CID"
 // @Router       /content/read/{cont} [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("cont"))
@@ -2288,7 +2299,10 @@ type importDealBody struct {
 // @Description  This endpoint imports a deal into the shuttle.
 // @Tags         content
 // @Produce      json
-// @Param        body body main.importDealBody true "Import a deal"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        body  body      main.importDealBody  true  "Import a deal"
 // @Router       /content/importdeal [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
