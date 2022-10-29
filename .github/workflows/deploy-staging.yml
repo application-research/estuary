@@ -14,6 +14,7 @@ jobs:
           command: |
             cd ~/estuary-docker
             docker-compose stop
+            docker-compose build --build-arg BRANCH="dev"
             docker-compose up -d
           host: staging.estuary.tech
           key: ${{ secrets.STAGING_SSH_KEY }}

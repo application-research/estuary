@@ -2,6 +2,8 @@
 
 > An experimental ipfs node
 
+Questions? Reach out! [![slack](https://img.shields.io/badge/slack-filecoin-blue.svg?logo=slack)](https://filecoinproject.slack.com/)
+
 ## Building
 
 Requirements:
