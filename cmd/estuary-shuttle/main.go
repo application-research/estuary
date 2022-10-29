@@ -1316,13 +1316,16 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {}); err != nil {
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {})
+	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
 		log.Warnf("failed to provide: %+v", err)
@@ -1452,13 +1455,16 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {})
+	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	if err := s.Provide(ctx, root); err != nil {
 		log.Warn(err)
@@ -1603,9 +1609,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	if err != nil {
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
+
+	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -1616,13 +1625,13 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
 	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var dbpin Pin
 	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
-		return errors.Wrap(err, "failed to retrieve content")
+		return 0, nil, errors.Wrap(err, "failed to retrieve content")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1700,7 +1709,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return errors.Wrap(err, "failed to walk DAG")
+		return 0, nil, errors.Wrap(err, "failed to walk DAG")
 	}
 
 	span.SetAttributes(
@@ -1709,7 +1718,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	)
 
 	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return errors.Wrap(err, "failed to create objects in db")
+		return 0, nil, errors.Wrap(err, "failed to create objects in db")
 	}
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
@@ -1717,7 +1726,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		"size":    totalSize,
 		"pinning": false,
 	}).Error; err != nil {
-		return errors.Wrap(err, "failed to update content in database")
+		return 0, nil, errors.Wrap(err, "failed to update content in database")
 	}
 
 	refs := make([]ObjRef, len(objects))
@@ -1727,12 +1736,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	}
 
 	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return errors.Wrap(err, "failed to create refs")
+		return 0, nil, errors.Wrap(err, "failed to create refs")
 	}
-
-	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
-
-	return nil
+	return totalSize, objects, nil
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
@@ -2360,10 +2366,25 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil); err != nil {
+	pin := &Pin{
+		Content: contid,
+		Cid:     util.DbCID{CID: cc},
+		UserID:  u.ID,
+		Active:  false,
+		Pinning: true,
+	}
+
+	if err := s.DB.Create(pin).Error; err != nil {
 		return err
 	}
+
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	if err != nil {
+		return err
+	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          cc.String(),

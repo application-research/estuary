@@ -128,6 +128,7 @@ type StorageDeal struct {
 }
 
 type RetrieveContent struct {
+	UserID  uint
 	Content uint
 	Cid     cid.Cid
 	Deals   []StorageDeal
