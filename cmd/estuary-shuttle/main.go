@@ -1830,6 +1830,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		return err
 	}
 
+	var batches [][]blocks.Block
 	var batch []blocks.Block
 
 	for k := range keys {
@@ -1837,23 +1838,31 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		if err != nil {
 			return err
 		}
-
 		batch = append(batch, blk)
 
 		if len(batch) > 500 {
-			if err := to.PutMany(ctx, batch); err != nil {
-				return err
-			}
+			batches = append(batches, batch)
 			batch = batch[:0]
 		}
 	}
 
 	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+
+	for _, batch := range batches {
+		var retryCount int
+	retry:
+
 		if err := to.PutMany(ctx, batch); err != nil {
+			if retryCount <= 2 {
+				retryCount = retryCount + 1
+				time.Sleep(2 * time.Second)
+				goto retry
+			}
 			return err
 		}
 	}
-
 	return nil
 }
 
