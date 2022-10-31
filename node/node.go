@@ -369,7 +369,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	if !strings.HasPrefix(bscfg, ":") {
 		lmdbs, err := lmdb.Open(&lmdb.Options{
 			Path:   bscfg,
-			NoSync: true,
+			NoSync: false,
 		})
 		if err != nil {
 			return nil, "", err
@@ -386,7 +386,7 @@ func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {
 	case "lmdb":
 		lmdbs, err := lmdb.Open(&lmdb.Options{
 			Path:   path,
-			NoSync: true,
+			NoSync: false,
 		})
 		if err != nil {
 			return nil, path, err
