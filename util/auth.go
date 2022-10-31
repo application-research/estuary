@@ -48,5 +48,5 @@ func GetPasswordHashBase64(password, salt string) string {
 func GetTokenHash(token string) string {
 	tokenHashBytes := sha256.Sum256([]byte(token))
 	// needs to be URL-encodable to send revoke token requests by hash
-	return b64.StdEncoding.EncodeToString(tokenHashBytes[:])
+	return b64.RawURLEncoding.EncodeToString(tokenHashBytes[:])
 }
