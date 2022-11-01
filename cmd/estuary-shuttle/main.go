@@ -70,7 +70,7 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
 )
