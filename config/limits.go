@@ -1,6 +1,6 @@
 package config
 
-import rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+import rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
 type SystemLimit struct {
 	MinMemory      int64   `json:"min_memory"`
