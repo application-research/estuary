@@ -42,7 +42,7 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 	return addrInfo, nil
 }
 
-type PublishedContents struct {
+type PublishedContent struct {
 	gorm.Model
 
 	ContentID          uint `gorm:"unique"`
@@ -172,27 +172,44 @@ func (provider *Provider) Run(ctx context.Context) error {
 			return
 		}
 
-		// TODO: unnecessary
-		if len(autoretrieves) == 0 {
-			log.Errorf("No autoretrieves registered")
-			return
-		}
-
-		addrInfo, err := autoretrieves[0].AddrInfo()
-		if err != nil {
-			log.Errorf("Failed to get autoretrieve address info: %v", err)
-			return
-		}
-
-		for _, contentID := range contentIDs {
-			log.Infof("(CONTENT ID)==> %d", contentID)
-			adCid, err := provider.engine.NotifyPut(ctx, addrInfo, makeContextID(contentID), metadata.New(metadata.Bitswap{}))
+		for _, autoretrieve := range autoretrieves {
+			addrInfo, err := autoretrieve.AddrInfo()
 			if err != nil {
-				log.Errorf("Failed to publish: %v", err)
-				continue
+				log.Errorf("Failed to get autoretrieve address info: %v", err)
+				return
 			}
 
-			log.Infof("Published advertisement CID: %s", adCid)
+			for _, contentID := range contentIDs {
+				// Check if this content has already been advertised
+				var count uint
+				if err := provider.db.Raw("SELECT COUNT(1) FROM published_contents WHERE autoretrieve_handle = ? AND content_id = ?", autoretrieve.Handle, contentID).Scan(&count).Error; err != nil {
+					log.Errorf("Failed to get autoretrieve published content count for content ID %d: %v", contentID, err)
+					continue
+				}
+
+				advertised := count != 0
+
+				// If not advertised, notify put and write to the database that it was completed
+				if !advertised {
+					adCid, err := provider.engine.NotifyPut(ctx, addrInfo, makeContextID(contentID), metadata.New(metadata.Bitswap{}))
+					if err != nil {
+						log.Errorf("Failed to publish: %v", err)
+						continue
+					}
+
+					if err := provider.db.Create(&PublishedContent{
+						ContentID:          contentID,
+						AutoretrieveHandle: autoretrieve.Handle,
+					}).Error; err != nil {
+						log.Errorf("Failed to set content as published in database: %v", err)
+						continue
+					}
+
+					log.Infof("Published advertisement for content ID %d with CID %s", contentID, adCid)
+				} else {
+					log.Infof("Skipping already advertised content ID %d", contentID)
+				}
+			}
 		}
 	}()
 

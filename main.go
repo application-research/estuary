@@ -786,7 +786,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.InviteCode{},
 		&Shuttle{},
 		&autoretrieve.Autoretrieve{},
-		&autoretrieve.PublishedContents{},
+		&autoretrieve.PublishedContent{},
 	); err != nil {
 		return err
 	}
