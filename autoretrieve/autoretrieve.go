@@ -87,11 +87,7 @@ func NewIterator(db *gorm.DB, contentID uint) (*Iterator, error) {
 
 	// Read CID strings for this content ID
 	var cidStrings []string
-	if err := db.Raw(`
-		SELECT objects.cid FROM objects 
-			LEFT JOIN obj_refs ON objects.id = obj_refs.object 
-			WHERE obj_refs.content IN (SELECT id FROM contents WHERE contents.id = ?)
-	`, contentID).Scan(&cidStrings).Error; err != nil {
+	if err := db.Raw(`SELECT cid FROM objects WHERE id IN (SELECT object FROM obj_refs WHERE content IN (SELECT id FROM contents WHERE contents.id = ?))`, contentID).Scan(&cidStrings).Error; err != nil {
 		return nil, err
 	}
 	if len(cidStrings) == 0 {
