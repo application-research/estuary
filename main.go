@@ -711,13 +711,13 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore, s.FilClient.GetDtMgr())
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db)
 			if err != nil {
 				return err
 			}
 
-			go s.Node.ArEngine.Run()
-			defer s.Node.ArEngine.Shutdown()
+			go s.Node.AutoretrieveProvider.Run(context.Background())
+			defer s.Node.AutoretrieveProvider.Stop()
 		}
 
 		go func() {
@@ -785,7 +785,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.AuthToken{},
 		&util.InviteCode{},
 		&Shuttle{},
-		&autoretrieve.Autoretrieve{}); err != nil {
+		&autoretrieve.Autoretrieve{},
+		&autoretrieve.PublishedContents{},
+	); err != nil {
 		return err
 	}
 	return nil
