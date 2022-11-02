@@ -73,8 +73,9 @@ type AutoretrieveInitResponse struct {
 }
 
 type Provider struct {
-	engine *engine.Engine
-	db     *gorm.DB
+	engine            *engine.Engine
+	db                *gorm.DB
+	advertiseInterval time.Duration
 }
 
 type Iterator struct {
@@ -126,7 +127,7 @@ func (iter *Iterator) Next() (multihash.Multihash, error) {
 	return mh, nil
 }
 
-func NewProvider(db *gorm.DB) (*Provider, error) {
+func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error) {
 	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce("http://127.0.0.1:3001"))
 	if err != nil {
 		return nil, fmt.Errorf("failed to init engine: %v", err)
@@ -146,8 +147,9 @@ func NewProvider(db *gorm.DB) (*Provider, error) {
 	})
 
 	return &Provider{
-		engine: eng,
-		db:     db,
+		engine:            eng,
+		db:                db,
+		advertiseInterval: advertiseInterval,
 	}, nil
 }
 
@@ -156,7 +158,17 @@ func (provider *Provider) Run(ctx context.Context) error {
 		return err
 	}
 
-	go func() {
+	// time.Tick will drop ticks to make up for slow advertisements
+	log.Infof("Starting autoretrieve update loop every %s", provider.advertiseInterval)
+	ticker := time.NewTicker(provider.advertiseInterval)
+	for range ticker.C {
+		if ctx.Err() != nil {
+			ticker.Stop()
+			break
+		}
+
+		log.Infof("Starting autoretrieve advertisement tick")
+
 		ctx := context.Background()
 
 		var contentIDs []uint
@@ -169,14 +181,14 @@ func (provider *Provider) Run(ctx context.Context) error {
 		var autoretrieves []Autoretrieve
 		if err := provider.db.Find(&autoretrieves).Error; err != nil {
 			log.Errorf("Failed to get autoretrieves: %v", err)
-			return
+			continue
 		}
 
 		for _, autoretrieve := range autoretrieves {
 			addrInfo, err := autoretrieve.AddrInfo()
 			if err != nil {
 				log.Errorf("Failed to get autoretrieve address info: %v", err)
-				return
+				continue
 			}
 
 			for _, contentID := range contentIDs {
@@ -193,7 +205,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 				if !advertised {
 					adCid, err := provider.engine.NotifyPut(ctx, addrInfo, makeContextID(contentID), metadata.New(metadata.Bitswap{}))
 					if err != nil {
-						log.Errorf("Failed to publish: %v", err)
+						log.Errorf("Failed to publish content ID %d: %v", contentID, err)
 						continue
 					}
 
@@ -211,7 +223,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 				}
 			}
 		}
-	}()
+	}
 
 	return nil
 }
