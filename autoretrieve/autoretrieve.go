@@ -138,6 +138,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 		if err != nil {
 			return nil, err
 		}
+		arLog.Debugf("CIDS:", newCids)
 
 		if len(newCids) == 0 {
 			return nil, fmt.Errorf("no new CIDs to announce")
