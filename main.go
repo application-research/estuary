@@ -711,7 +711,7 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db, time.Duration(cfg.Node.IndexerTickInterval)*time.Minute)
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db, time.Duration(cfg.Node.IndexerTickInterval)*time.Minute, cfg.Node.IndexerURL)
 			if err != nil {
 				return err
 			}

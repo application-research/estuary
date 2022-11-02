@@ -145,8 +145,8 @@ func (iter *Iterator) Next() (multihash.Multihash, error) {
 	return mh, nil
 }
 
-func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error) {
-	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce("http://127.0.0.1:3001"))
+func NewProvider(db *gorm.DB, advertiseInterval time.Duration, indexerURL string) (*Provider, error) {
+	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce(indexerURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to init engine: %v", err)
 	}
@@ -170,7 +170,7 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error
 		engine:            eng,
 		db:                db,
 		advertiseInterval: advertiseInterval,
-		batchSize:         250000,
+		batchSize:         25000,
 	}, nil
 }
 
