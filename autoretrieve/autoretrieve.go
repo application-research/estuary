@@ -42,12 +42,16 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 	return addrInfo, nil
 }
 
-type PublishedContent struct {
+// A batch that has been published for a specific autoretrieve
+type PublishedBatch struct {
 	gorm.Model
 
-	ContentID          uint `gorm:"unique"`
+	FirstContentID     uint `gorm:"unique"`
+	Count              uint
 	AutoretrieveHandle string
 }
+
+func (PublishedBatch) TableName() string { return "published_batches" }
 
 type HeartbeatAutoretrieveResponse struct {
 	Handle            string         `json:"handle"`
@@ -76,25 +80,38 @@ type Provider struct {
 	engine            *engine.Engine
 	db                *gorm.DB
 	advertiseInterval time.Duration
+	batchSize         uint
 }
 
 type Iterator struct {
-	mhs       []multihash.Multihash
-	index     uint
-	contentID uint
+	mhs            []multihash.Multihash
+	index          uint
+	firstContentID uint
+	count          uint
 }
 
-func NewIterator(db *gorm.DB, contentID uint) (*Iterator, error) {
+func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error) {
 
 	// Read CID strings for this content ID
 	var cidStrings []string
-	if err := db.Raw(`SELECT cid FROM objects WHERE id IN (SELECT object FROM obj_refs WHERE content = ?)`, contentID).Scan(&cidStrings).Error; err != nil {
+	if err := db.Raw(
+		"SELECT objects.cid FROM objects LEFT JOIN obj_refs ON objects.id = obj_refs.object WHERE obj_refs.content BETWEEN ? AND ?",
+		firstContentID,
+		firstContentID+count,
+	).Scan(&cidStrings).Error; err != nil {
 		return nil, err
 	}
+
 	if len(cidStrings) == 0 {
 		return nil, fmt.Errorf("no multihashes for this content")
 	}
-	log.Infof("Creating iterator for %d (%d MHs)", contentID, len(cidStrings))
+
+	log.Infof(
+		"Creating iterator for content IDs %d to %d (%d MHs)",
+		firstContentID,
+		firstContentID+count,
+		len(cidStrings),
+	)
 
 	// Parse CID strings and extract multihashes
 	var mhs []multihash.Multihash
@@ -110,8 +127,9 @@ func NewIterator(db *gorm.DB, contentID uint) (*Iterator, error) {
 	}
 
 	return &Iterator{
-		mhs:       mhs,
-		contentID: contentID,
+		mhs:            mhs,
+		firstContentID: firstContentID,
+		count:          count,
 	}, nil
 }
 
@@ -138,7 +156,9 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error
 		peer peer.ID,
 		contextID []byte,
 	) (provider.MultihashIterator, error) {
-		iter, err := NewIterator(db, readContextID(contextID))
+		firstContentID, count := readContextID(contextID)
+		log.Infof("Found content ID: first: %d, count: %d", firstContentID, count)
+		iter, err := NewIterator(db, firstContentID, count)
 		if err != nil {
 			return nil, err
 		}
@@ -150,6 +170,7 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error
 		engine:            eng,
 		db:                db,
 		advertiseInterval: advertiseInterval,
+		batchSize:         2,
 	}, nil
 }
 
@@ -161,7 +182,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 	// time.Tick will drop ticks to make up for slow advertisements
 	log.Infof("Starting autoretrieve update loop every %s", provider.advertiseInterval)
 	ticker := time.NewTicker(provider.advertiseInterval)
-	for range ticker.C {
+	for ; true; <-ticker.C {
 		if ctx.Err() != nil {
 			ticker.Stop()
 			break
@@ -171,55 +192,93 @@ func (provider *Provider) Run(ctx context.Context) error {
 
 		ctx := context.Background()
 
-		var contentIDs []uint
-		if err := provider.db.Model(&util.Content{}).Select("id").Find(&contentIDs).Error; err != nil {
-			log.Errorf("No good: %v", err)
+		// Find the highest current content ID for later
+		var lastContent util.Content
+		if err := provider.db.Last(&lastContent).Error; err != nil {
+			log.Infof("Failed to get last provider content ID: %v", err)
+			continue
 		}
 
-		log.Infof("Got content IDs")
-
-		var autoretrieves []Autoretrieve
-		if err := provider.db.Find(&autoretrieves).Error; err != nil {
+		// TODO: make sure last advertised is within threshold
+		var onlineAutoretrieves []Autoretrieve
+		if err := provider.db.Find(&onlineAutoretrieves).Error; err != nil {
 			log.Errorf("Failed to get autoretrieves: %v", err)
 			continue
 		}
 
-		for _, autoretrieve := range autoretrieves {
+		// For each currently available autoretrieve...
+		for _, autoretrieve := range onlineAutoretrieves {
+
 			addrInfo, err := autoretrieve.AddrInfo()
 			if err != nil {
 				log.Errorf("Failed to get autoretrieve address info: %v", err)
 				continue
 			}
 
-			for _, contentID := range contentIDs {
-				// Check if this content has already been advertised
-				var count uint
-				if err := provider.db.Raw("SELECT COUNT(1) FROM published_contents WHERE autoretrieve_handle = ? AND content_id = ?", autoretrieve.Handle, contentID).Scan(&count).Error; err != nil {
-					log.Errorf("Failed to get autoretrieve published content count for content ID %d: %v", contentID, err)
+			// For each batch that should be advertised...
+			for firstContentID := uint(0); firstContentID <= lastContent.ID; firstContentID += provider.batchSize {
+
+				// Find the amount of contents in this batch (likely less than
+				// the batch size if this is the last batch)
+				count := provider.batchSize
+				remaining := lastContent.ID - firstContentID
+				if remaining < count {
+					count = remaining
+				}
+
+				// Search for an entry (this array will have either 0 or 1
+				// elements)
+				var publishedBatches []PublishedBatch
+				if err := provider.db.Where("autoretrieve_handle = ? AND first_content_id = ?", autoretrieve.Handle, firstContentID).Find(&publishedBatches).Error; err != nil {
+					log.Errorf("Failed to get published contents: %v", err)
 					continue
 				}
 
-				advertised := count != 0
+				// And check if it's...
 
-				// If not advertised, notify put and write to the database that it was completed
-				if !advertised {
-					adCid, err := provider.engine.NotifyPut(ctx, addrInfo, makeContextID(contentID), metadata.New(metadata.Bitswap{}))
-					if err != nil {
-						log.Errorf("Failed to publish content ID %d: %v", contentID, err)
-						continue
-					}
+				// 1. fully advertised: do nothing
+				if len(publishedBatches) != 0 && publishedBatches[0].Count == provider.batchSize {
+					continue
+				}
 
-					if err := provider.db.Create(&PublishedContent{
-						ContentID:          contentID,
+				// In other cases, we will definitely notify put, so do it first
+				adCid, err := provider.engine.NotifyPut(
+					ctx,
+					addrInfo,
+					// The batch size should always be the same unless the
+					// config changes
+					makeContextID(firstContentID, provider.batchSize),
+					metadata.New(metadata.Bitswap{}),
+				)
+				if err != nil {
+					log.Errorf("Failed to publish batch: %v", err)
+					continue
+				}
+
+				log.Infof("Published ad CID: %s", adCid)
+
+				// 2. not advertised: now that notify put is called, create DB
+				// entry, continue
+				if len(publishedBatches) == 0 {
+					if err := provider.db.Create(&PublishedBatch{
+						FirstContentID:     firstContentID,
 						AutoretrieveHandle: autoretrieve.Handle,
+						Count:              count,
 					}).Error; err != nil {
-						log.Errorf("Failed to set content as published in database: %v", err)
-						continue
+						log.Errorf("Failed to write batch to database")
 					}
+					continue
+				}
 
-					log.Infof("Published advertisement for content ID %d with CID %s", contentID, adCid)
-				} else {
-					log.Infof("Skipping already advertised content ID %d", contentID)
+				// 3. incompletely advertised: now that notify put is called,
+				// update DB entry, continue
+				publishedBatch := publishedBatches[0]
+				if publishedBatch.Count != count {
+					publishedBatch.Count = count
+					if err := provider.db.Save(&publishedBatch).Error; err != nil {
+						log.Errorf("Failed to update batch in database")
+					}
+					continue
 				}
 			}
 		}
@@ -233,13 +292,15 @@ func (provider *Provider) Stop() error {
 }
 
 // Content ID to context ID
-func makeContextID(contentID uint) []byte {
-	contextID := make([]byte, 4)
-	binary.BigEndian.PutUint32(contextID, uint32(contentID))
+func makeContextID(firstContentID uint, count uint) []byte {
+	contextID := make([]byte, 8)
+	binary.BigEndian.PutUint32(contextID[0:4], uint32(firstContentID))
+	binary.BigEndian.PutUint32(contextID[4:8], uint32(count))
 	return contextID
 }
 
 // Context ID to content ID
-func readContextID(contextID []byte) uint {
-	return uint(binary.BigEndian.Uint32(contextID))
+func readContextID(contextID []byte) (uint, uint) {
+	return uint(binary.BigEndian.Uint32(contextID[0:4])),
+		uint(binary.BigEndian.Uint32(contextID[4:8]))
 }
