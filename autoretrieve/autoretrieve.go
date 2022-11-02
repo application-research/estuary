@@ -123,7 +123,7 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 
 		mhs = append(mhs, cid.Hash())
 
-		log.Infof("Multihash: %s", cid.Hash())
+		log.Infof("CID: %s", cid)
 	}
 
 	return &Iterator{
