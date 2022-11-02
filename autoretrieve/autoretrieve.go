@@ -170,7 +170,7 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration) (*Provider, error
 		engine:            eng,
 		db:                db,
 		advertiseInterval: advertiseInterval,
-		batchSize:         2,
+		batchSize:         250000,
 	}, nil
 }
 
