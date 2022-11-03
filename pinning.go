@@ -636,8 +636,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @in           200,400,default  string  Token "token"
-// @Param        cid   path  string  true  "cid"
-// @Param        name  path  string  true  "name"
+// @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Router       /pinning/pins [post]
 func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
@@ -697,7 +696,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-	return e.JSON(http.StatusAccepted, status)
+	return e.JSON(http.StatusOK, status)
 }
 
 // handleGetPin  godoc
