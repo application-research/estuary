@@ -3619,7 +3619,7 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 // @Produce      json
 // @Param        coluuid     path      string  true  "coluuid"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
-// @Success      200         {object}  map[string]string
+// @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid} [post]
