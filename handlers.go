@@ -97,18 +97,18 @@ import (
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *Server) ServeAPI() error {
-	myecho := echo.New()
-	myecho.Binder = new(util.Binder)
+	echoEngine := echo.New()
+	echoEngine.Binder = new(util.Binder)
 
 	if s.cfg.Logging.ApiEndpointLogging {
-		myecho.Use(middleware.Logger())
+		echoEngine.Use(middleware.Logger())
 	}
 
-	myecho.Use(s.tracingMiddleware)
-	myecho.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
-	myecho.HTTPErrorHandler = util.ErrorHandler
+	echoEngine.Use(s.tracingMiddleware)
+	echoEngine.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
+	echoEngine.HTTPErrorHandler = util.ErrorHandler
 
-	e := myecho.Group("/v1")
+	e := echoEngine.Group("/v1")
 	e.GET("/debug/pprof/:prof", serveProfile)
 	e.GET("/debug/cpuprofile", serveCpuProfile)
 
@@ -319,20 +319,20 @@ func (s *Server) ServeAPI() error {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
 
-	addRoutesWithNoPrefix(myecho)
+	addRoutesWithNoPrefix(echoEngine)
 
-	return myecho.Start(s.cfg.ApiListen)
+	return echoEngine.Start(s.cfg.ApiListen)
 }
 
-func addRoutesWithNoPrefix(myecho *echo.Echo) {
-	for _, value := range myecho.Routes() {
+func addRoutesWithNoPrefix(echoEngine *echo.Echo) {
+	for _, value := range echoEngine.Routes() {
 		var newpath string
 		if strings.HasPrefix(value.Path, "/v1/") {
 			newpath = value.Path[4:] // cut out /v1/
-			c := myecho.NewContext(nil, nil)
-			myecho.Router().Find(value.Method, value.Path, c)
+			c := echoEngine.NewContext(nil, nil)
+			echoEngine.Router().Find(value.Method, value.Path, c)
 			h := c.Handler()
-			myecho.Add(value.Method, newpath, h)
+			echoEngine.Add(value.Method, newpath, h)
 		}
 	}
 }
