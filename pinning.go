@@ -696,7 +696,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-	return e.JSON(http.StatusOK, status)
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
