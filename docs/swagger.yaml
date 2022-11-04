@@ -69,6 +69,20 @@ definitions:
       name:
         type: string
     type: object
+  types.IpfsPin:
+    properties:
+      cid:
+        type: string
+      meta:
+        additionalProperties: true
+        type: object
+      name:
+        type: string
+      origins:
+        items:
+          type: string
+        type: array
+    type: object
   util.ContentAddIpfsBody:
     properties:
       coluuid:
@@ -540,9 +554,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties:
-              type: string
-            type: object
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -1514,16 +1526,12 @@ paths:
     post:
       description: This endpoint adds a pin to the IPFS daemon.
       parameters:
-        - description: cid
-          in: path
-          name: cid
+        - description: Pin Body {cid:cid, name:name}
+          in: body
+          name: pin
           required: true
-          type: string
-        - description: name
-          in: path
-          name: name
-          required: true
-          type: string
+          schema:
+            $ref: '#/definitions/types.IpfsPin'
       produces:
         - application/json
       responses:
