@@ -632,8 +632,8 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Tags         pinning
 // @Produce      json
 // @in           200,400,default  string  Token "token"
-// @Param        cid   path  string  true  "cid"
-// @Param        name  path  string  true  "name"
+// @Param        cid   body  string  true  "cid"
+// @Param        name  body  string  true  "name"
 // @Router       /pinning/pins [post]
 func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
