@@ -28,10 +28,10 @@ var arLog = logging.Logger("autoretrieve")
 
 // Engine is an implementation of the core reference provider interface
 type AutoretrieveEngine struct {
-	RawEngine    *engine.Engine
-	Context      context.Context
-	TickInterval time.Duration
-	Db           *gorm.DB
+	RawEngine         *engine.Engine
+	Context           context.Context
+	AdvertiseInterval time.Duration
+	Db                *gorm.DB
 }
 
 type Autoretrieve struct {
@@ -152,7 +152,7 @@ func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB
 	})
 
 	newEngine.Context = ctx
-	newEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
+	newEngine.AdvertiseInterval = time.Duration(cfg.Node.IndexerAdvertiseInterval) * time.Minute
 	newEngine.Db = db
 	newEngine.RawEngine = newRawEngine
 
@@ -213,12 +213,12 @@ func (arEng *AutoretrieveEngine) Run() {
 	arLog.Infof("starting autoretrieves engine")
 
 	// start ticker
-	ticker := time.NewTicker(arEng.TickInterval)
+	ticker := time.NewTicker(arEng.AdvertiseInterval)
 	defer ticker.Stop()
 
 	for {
 		curTime = time.Now()
-		lastTickTime = curTime.Add(-arEng.TickInterval)
+		lastTickTime = curTime.Add(-arEng.AdvertiseInterval)
 
 		// Find all autoretrieve servers that are online (that sent heartbeat after lastTickTime)
 		err := arEng.Db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error

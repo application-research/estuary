@@ -4778,7 +4778,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 		Token:             ar.Token,
 		LastConnection:    ar.LastConnection,
 		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
+		AdvertiseInterval: s.Node.ArEngine.AdvertiseInterval.String(),
 	})
 }
 
@@ -4852,7 +4852,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		LastConnection:    ar.LastConnection,
 		LastAdvertisement: ar.LastAdvertisement,
 		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
+		AdvertiseInterval: s.Node.ArEngine.AdvertiseInterval.String(),
 	}
 
 	return c.JSON(http.StatusOK, out)

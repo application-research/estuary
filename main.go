@@ -183,8 +183,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
-		case "indexer-tick-interval":
-			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
+		case "indexer-advertise-interval":
+			cfg.Node.IndexerAdvertiseInterval = cctx.Int("indexer-advertise-interval")
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -414,9 +414,9 @@ func main() {
 			Value: cfg.Node.IndexerURL,
 		},
 		&cli.IntFlag{
-			Name:  "indexer-tick-interval",
+			Name:  "indexer-advertise-interval",
 			Usage: "sets the indexer advertisement interval in minutes",
-			Value: cfg.Node.IndexerTickInterval,
+			Value: cfg.Node.IndexerAdvertiseInterval,
 		},
 	}
 	app.Commands = []*cli.Command{

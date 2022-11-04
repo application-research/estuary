@@ -9,7 +9,7 @@ type Node struct {
 	ListenAddrs               []string              `json:"listen_addrs"`
 	AnnounceAddrs             []string              `json:"announce_addrs"`
 	PeeringPeers              []peering.PeeringPeer `json:"peering_peers"`
-	IndexerTickInterval       int                   `json:"indexer_tick_interval"`
+	IndexerAdvertiseInterval  int                   `json:"indexer_advertise_interval"`
 	EnableWebsocketListenAddr bool                  `json:"enable_websocket_listen_addr"`
 	HardFlushWriteLog         bool                  `json:"hard_flush_write_log"`
 	WriteLogTruncate          bool                  `json:"write_log_truncate"`
