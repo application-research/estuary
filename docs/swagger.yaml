@@ -988,15 +988,17 @@ paths:
       description: This endpoint adds a pin to the IPFS daemon.
       parameters:
         - description: cid
-          in: path
+          in: body
           name: cid
           required: true
-          type: string
+          schema:
+            type: string
         - description: name
-          in: path
+          in: body
           name: name
           required: true
-          type: string
+          schema:
+            type: string
       produces:
         - application/json
       responses: {}

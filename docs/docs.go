@@ -1293,18 +1293,22 @@ const docTemplate = `{
                 "summary": "Add and pin object",
                 "parameters": [
                     {
-                        "type": "string",
                         "description": "cid",
                         "name": "cid",
-                        "in": "path",
-                        "required": true
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
                     },
                     {
-                        "type": "string",
                         "description": "name",
                         "name": "name",
-                        "in": "path",
-                        "required": true
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {}
