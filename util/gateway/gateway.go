@@ -182,10 +182,9 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n mdagipld.Node, w
 	fmt.Fprintf(w, "<html><body><ul>")
 
 	requestURI, err := url.ParseRequestURI(req.RequestURI)
-	originalURLPath := requestURI.Path
 
 	if err := dir.ForEachLink(ctx, func(lnk *mdagipld.Link) error {
-		href := gopath.Join(originalURLPath, lnk.Name)
+		href := gopath.Join(requestURI.Path, lnk.Name)
 		fmt.Fprintf(w, "<li><a href=\"%s\">%s</a></li>", href, lnk.Name)
 		return nil
 	}); err != nil {
