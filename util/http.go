@@ -107,6 +107,12 @@ func ExtractAuth(c echo.Context) (string, error) {
 	}
 
 	parts := strings.Split(auth, " ")
+
+	//if auth is sent in as "EST-----ARY" instead of "Bearer Est---ARY", fix the user's error
+	if len(parts) == 1 && strings.HasPrefix(auth, "EST") && strings.HasSuffix(auth, "ARY") {
+		parts = []string{"Bearer", auth}
+	}
+
 	if len(parts) != 2 {
 		return "", &HttpError{
 			Code:    http.StatusUnauthorized,
