@@ -118,12 +118,11 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 	for _, cidString := range cidStrings {
 		_, cid, err := cid.CidFromBytes([]byte(cidString))
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse cid string '%s': %v", cidString, err)
+			log.Warnf("Failed to parse cid string '%s': %v", cidString, err)
+			continue
 		}
 
 		mhs = append(mhs, cid.Hash())
-
-		log.Infof("CID: %s", cid)
 	}
 
 	return &Iterator{
@@ -157,7 +156,7 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration, indexerURL string
 		contextID []byte,
 	) (provider.MultihashIterator, error) {
 		firstContentID, count := readContextID(contextID)
-		log.Infof("Found content ID: first: %d, count: %d", firstContentID, count)
+		log.Infof("Received pull request (first content ID: %d, count: %d)", firstContentID, count)
 		iter, err := NewIterator(db, firstContentID, count)
 		if err != nil {
 			return nil, err
@@ -226,6 +225,8 @@ func (provider *Provider) Run(ctx context.Context) error {
 					count = remaining
 				}
 
+				log := log.With("first_content_id", firstContentID, "count", count)
+
 				// Search for an entry (this array will have either 0 or 1
 				// elements)
 				var publishedBatches []PublishedBatch
@@ -238,6 +239,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 
 				// 1. fully advertised: do nothing
 				if len(publishedBatches) != 0 && publishedBatches[0].Count == provider.batchSize {
+					log.Errorf("Skipping already advertised batch")
 					continue
 				}
 
@@ -260,6 +262,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 				// 2. not advertised: now that notify put is called, create DB
 				// entry, continue
 				if len(publishedBatches) == 0 {
+					log.Infof("Published new batch")
 					if err := provider.db.Create(&PublishedBatch{
 						FirstContentID:     firstContentID,
 						AutoretrieveHandle: autoretrieve.Handle,
@@ -274,6 +277,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 				// update DB entry, continue
 				publishedBatch := publishedBatches[0]
 				if publishedBatch.Count != count {
+					log.Infof("Updated incomplete batch")
 					publishedBatch.Count = count
 					if err := provider.db.Save(&publishedBatch).Error; err != nil {
 						log.Errorf("Failed to update batch in database")
