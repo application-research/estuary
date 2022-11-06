@@ -2,7 +2,9 @@ package autoretrieve
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -118,7 +120,7 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 	for _, cidString := range cidStrings {
 		_, cid, err := cid.CidFromBytes([]byte(cidString))
 		if err != nil {
-			log.Warnf("Failed to parse cid string '%s': %v", cidString, err)
+			log.Warnf("Failed to parse CID string '%s': %v", cidString, err)
 			continue
 		}
 
@@ -155,9 +157,18 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 		peer peer.ID,
 		contextID []byte,
 	) (provider.MultihashIterator, error) {
-		firstContentID, count := readContextID(contextID)
-		log.Infof("Received pull request (first content ID: %d, count: %d)", firstContentID, count)
-		iter, err := NewIterator(db, firstContentID, count)
+		params, err := readContextID(contextID)
+		if err != nil {
+			return nil, err
+		}
+
+		log.Infof(
+			"Received pull request (peer ID: %s, first content ID: %d, count: %d)",
+			params.provider,
+			params.firstContentID,
+			params.count,
+		)
+		iter, err := NewIterator(db, params.firstContentID, params.count)
 		if err != nil {
 			return nil, err
 		}
@@ -192,8 +203,13 @@ func (provider *Provider) Run(ctx context.Context) error {
 		// Find the highest current content ID for later
 		var lastContent util.Content
 		if err := provider.db.Last(&lastContent).Error; err != nil {
-			log.Infof("Failed to get last provider content ID: %v", err)
-			continue
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Infof("Failed to get last provider content ID: %v", err)
+				continue
+			} else {
+				log.Warnf("No contents to advertise")
+				continue
+			}
 		}
 
 		var autoretrieves []Autoretrieve
@@ -252,23 +268,33 @@ func (provider *Provider) Run(ctx context.Context) error {
 					continue
 				}
 
-				// In other cases, we will definitely notify put, so do it first
-				adCid, err := provider.engine.NotifyPut(
-					ctx,
-					addrInfo,
-					// The batch size should always be the same unless the
-					// config changes
-					makeContextID(firstContentID, provider.batchSize),
-					metadata.New(metadata.Bitswap{}),
-				)
+				// The batch size should always be the same unless the
+				// config changes
+				contextID, err := makeContextID(contextParams{
+					provider:       addrInfo.ID,
+					firstContentID: firstContentID,
+					count:          provider.batchSize,
+				})
 				if err != nil {
-					log.Errorf("Failed to publish batch: %v", err)
+					log.Errorf("Failed to make context ID: %v", err)
 					continue
 				}
 
-				// 2. not advertised: now that notify put is called, create DB
-				// entry, continue
+				log.Infof("Using context ID '%s'", base64.StdEncoding.EncodeToString(contextID))
+
+				// 2. not advertised: notify put, create DB entry, continue
 				if len(publishedBatches) == 0 {
+					adCid, err := provider.engine.NotifyPut(
+						ctx,
+						addrInfo,
+						contextID,
+						metadata.New(metadata.Bitswap{}),
+					)
+					if err != nil {
+						log.Errorf("Failed to publish batch: %v", err)
+						continue
+					}
+
 					log.Infof("Published new batch with advertisement CID %s", adCid)
 					if err := provider.db.Create(&PublishedBatch{
 						FirstContentID:     firstContentID,
@@ -280,11 +306,31 @@ func (provider *Provider) Run(ctx context.Context) error {
 					continue
 				}
 
-				// 3. incompletely advertised: now that notify put is called,
+				// 3. incompletely advertised: delete and then notify put,
 				// update DB entry, continue
 				publishedBatch := publishedBatches[0]
 				if publishedBatch.Count != count {
-					log.Infof("Updated incomplete batch")
+					oldAdCid, err := provider.engine.NotifyRemove(
+						ctx,
+						addrInfo.ID,
+						contextID,
+					)
+					if err != nil {
+						log.Warnf("Failed to remove batch (but continuing to re-publish anyway): %v", err)
+					}
+
+					adCid, err := provider.engine.NotifyPut(
+						ctx,
+						addrInfo,
+						contextID,
+						metadata.New(metadata.Bitswap{}),
+					)
+					if err != nil {
+						log.Errorf("Failed to publish batch: %v", err)
+						continue
+					}
+
+					log.Infof("Updated incomplete batch with new ad CID %s (previously %s)", adCid, oldAdCid)
 					publishedBatch.Count = count
 					if err := provider.db.Save(&publishedBatch).Error; err != nil {
 						log.Errorf("Failed to update batch in database")
@@ -302,16 +348,36 @@ func (provider *Provider) Stop() error {
 	return provider.engine.Shutdown()
 }
 
+type contextParams struct {
+	provider       peer.ID
+	firstContentID uint
+	count          uint
+}
+
 // Content ID to context ID
-func makeContextID(firstContentID uint, count uint) []byte {
+func makeContextID(params contextParams) ([]byte, error) {
 	contextID := make([]byte, 8)
-	binary.BigEndian.PutUint32(contextID[0:4], uint32(firstContentID))
-	binary.BigEndian.PutUint32(contextID[4:8], uint32(count))
-	return contextID
+	binary.BigEndian.PutUint32(contextID[0:4], uint32(params.firstContentID))
+	binary.BigEndian.PutUint32(contextID[4:8], uint32(params.count))
+
+	peerIDBytes, err := params.provider.MarshalBinary()
+	if err != nil {
+		return nil, fmt.Errorf("failed to write context peer ID: %v", err)
+	}
+	contextID = append(contextID, peerIDBytes...)
+	return contextID, nil
 }
 
 // Context ID to content ID
-func readContextID(contextID []byte) (uint, uint) {
-	return uint(binary.BigEndian.Uint32(contextID[0:4])),
-		uint(binary.BigEndian.Uint32(contextID[4:8]))
+func readContextID(contextID []byte) (contextParams, error) {
+	peerID, err := peer.IDFromBytes(contextID[8:])
+	if err != nil {
+		return contextParams{}, fmt.Errorf("failed to read context peer ID: %v", err)
+	}
+
+	return contextParams{
+		provider:       peerID,
+		firstContentID: uint(binary.BigEndian.Uint32(contextID[0:4])),
+		count:          uint(binary.BigEndian.Uint32(contextID[4:8])),
+	}, nil
 }
