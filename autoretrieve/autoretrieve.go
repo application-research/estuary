@@ -19,7 +19,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var log = logging.Logger("estuary")
+var log = logging.Logger("autoretrieve")
 
 type Autoretrieve struct {
 	gorm.Model
@@ -77,10 +77,10 @@ type AutoretrieveInitResponse struct {
 }
 
 type Provider struct {
-	engine            *engine.Engine
-	db                *gorm.DB
-	advertiseInterval time.Duration
-	batchSize         uint
+	engine                *engine.Engine
+	db                    *gorm.DB
+	advertisementInterval time.Duration
+	batchSize             uint
 }
 
 type Iterator struct {
@@ -144,7 +144,7 @@ func (iter *Iterator) Next() (multihash.Multihash, error) {
 	return mh, nil
 }
 
-func NewProvider(db *gorm.DB, advertiseInterval time.Duration, indexerURL string) (*Provider, error) {
+func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL string) (*Provider, error) {
 	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce(indexerURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to init engine: %v", err)
@@ -166,10 +166,10 @@ func NewProvider(db *gorm.DB, advertiseInterval time.Duration, indexerURL string
 	})
 
 	return &Provider{
-		engine:            eng,
-		db:                db,
-		advertiseInterval: advertiseInterval,
-		batchSize:         25000,
+		engine:                eng,
+		db:                    db,
+		advertisementInterval: advertisementInterval,
+		batchSize:             25000,
 	}, nil
 }
 
@@ -179,8 +179,8 @@ func (provider *Provider) Run(ctx context.Context) error {
 	}
 
 	// time.Tick will drop ticks to make up for slow advertisements
-	log.Infof("Starting autoretrieve update loop every %s", provider.advertiseInterval)
-	ticker := time.NewTicker(provider.advertiseInterval)
+	log.Infof("Starting autoretrieve advertisement loop every %s", provider.advertisementInterval)
+	ticker := time.NewTicker(provider.advertisementInterval)
 	for ; true; <-ticker.C {
 		if ctx.Err() != nil {
 			ticker.Stop()
@@ -189,8 +189,6 @@ func (provider *Provider) Run(ctx context.Context) error {
 
 		log.Infof("Starting autoretrieve advertisement tick")
 
-		ctx := context.Background()
-
 		// Find the highest current content ID for later
 		var lastContent util.Content
 		if err := provider.db.Last(&lastContent).Error; err != nil {
@@ -198,16 +196,23 @@ func (provider *Provider) Run(ctx context.Context) error {
 			continue
 		}
 
-		// TODO: make sure last advertised is within threshold
-		var onlineAutoretrieves []Autoretrieve
-		if err := provider.db.Find(&onlineAutoretrieves).Error; err != nil {
+		var autoretrieves []Autoretrieve
+		if err := provider.db.Find(&autoretrieves).Error; err != nil {
 			log.Errorf("Failed to get autoretrieves: %v", err)
 			continue
 		}
 
-		// For each currently available autoretrieve...
-		for _, autoretrieve := range onlineAutoretrieves {
+		// For each registered autoretrieve...
+		for _, autoretrieve := range autoretrieves {
+			log := log.With("autoretrieve_handle", autoretrieve.Handle)
 
+			// Make sure it is online
+			if time.Since(autoretrieve.LastConnection) > provider.advertisementInterval {
+				log.Debugf("Skipping offline autoretrieve")
+				continue
+			}
+
+			// Get address info for later
 			addrInfo, err := autoretrieve.AddrInfo()
 			if err != nil {
 				log.Errorf("Failed to get autoretrieve address info: %v", err)
@@ -228,18 +233,22 @@ func (provider *Provider) Run(ctx context.Context) error {
 				log := log.With("first_content_id", firstContentID, "count", count)
 
 				// Search for an entry (this array will have either 0 or 1
-				// elements)
+				// elements depending on whether an advertisement was found)
 				var publishedBatches []PublishedBatch
-				if err := provider.db.Where("autoretrieve_handle = ? AND first_content_id = ?", autoretrieve.Handle, firstContentID).Find(&publishedBatches).Error; err != nil {
+				if err := provider.db.Where(
+					"autoretrieve_handle = ? AND first_content_id = ?",
+					autoretrieve.Handle,
+					firstContentID,
+				).Find(&publishedBatches).Error; err != nil {
 					log.Errorf("Failed to get published contents: %v", err)
 					continue
 				}
 
 				// And check if it's...
 
-				// 1. fully advertised: do nothing
-				if len(publishedBatches) != 0 && publishedBatches[0].Count == provider.batchSize {
-					log.Errorf("Skipping already advertised batch")
+				// 1. fully advertised, or no changes: do nothing
+				if len(publishedBatches) != 0 && publishedBatches[0].Count == count {
+					log.Debugf("Skipping already advertised batch")
 					continue
 				}
 
@@ -257,12 +266,10 @@ func (provider *Provider) Run(ctx context.Context) error {
 					continue
 				}
 
-				log.Infof("Published ad CID: %s", adCid)
-
 				// 2. not advertised: now that notify put is called, create DB
 				// entry, continue
 				if len(publishedBatches) == 0 {
-					log.Infof("Published new batch")
+					log.Infof("Published new batch with advertisement CID %s", adCid)
 					if err := provider.db.Create(&PublishedBatch{
 						FirstContentID:     firstContentID,
 						AutoretrieveHandle: autoretrieve.Handle,

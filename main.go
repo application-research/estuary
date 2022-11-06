@@ -183,8 +183,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
-		case "indexer-tick-interval":
-			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
+		case "indexer-advertisement-interval":
+			value, err := time.ParseDuration(cctx.String("indexer-advertisement-interval"))
+			if err != nil {
+				return fmt.Errorf("failed to parse indexer advertisement interval: %v", err)
+			}
+			cfg.Node.IndexerAdvertisementInterval = value
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -413,10 +417,10 @@ func main() {
 			Usage: "sets the indexer advertisement url",
 			Value: cfg.Node.IndexerURL,
 		},
-		&cli.IntFlag{
-			Name:  "indexer-tick-interval",
-			Usage: "sets the indexer advertisement interval in minutes",
-			Value: cfg.Node.IndexerTickInterval,
+		&cli.StringFlag{
+			Name:  "indexer-advertisement-interval",
+			Usage: "sets the indexer advertisement interval",
+			Value: cfg.Node.IndexerAdvertisementInterval.String(),
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -711,7 +715,7 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db, time.Duration(cfg.Node.IndexerTickInterval)*time.Minute, cfg.Node.IndexerURL)
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db, cfg.Node.IndexerAdvertisementInterval, cfg.Node.IndexerURL)
 			if err != nil {
 				return err
 			}
