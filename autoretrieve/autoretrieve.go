@@ -47,7 +47,7 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 type PublishedBatch struct {
 	gorm.Model
 
-	FirstContentID     uint `gorm:"unique"`
+	FirstContentID     uint
 	Count              uint
 	AutoretrieveHandle string
 }
@@ -298,7 +298,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 						AutoretrieveHandle: autoretrieve.Handle,
 						Count:              count,
 					}).Error; err != nil {
-						log.Errorf("Failed to write batch to database")
+						log.Errorf("Failed to write batch to database: %v", err)
 					}
 					continue
 				}
@@ -313,8 +313,9 @@ func (provider *Provider) Run(ctx context.Context) error {
 						contextID,
 					)
 					if err != nil {
-						log.Warnf("Failed to remove batch (but continuing to re-publish anyway): %v", err)
+						log.Warnf("Failed to remove batch (going to re-publish anyway): %v", err)
 					}
+					log.Infof("Removed old advertisement")
 
 					adCid, err := provider.engine.NotifyPut(
 						ctx,
