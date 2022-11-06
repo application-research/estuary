@@ -2,7 +2,6 @@ package autoretrieve
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -279,8 +278,6 @@ func (provider *Provider) Run(ctx context.Context) error {
 					log.Errorf("Failed to make context ID: %v", err)
 					continue
 				}
-
-				log.Infof("Using context ID '%s'", base64.StdEncoding.EncodeToString(contextID))
 
 				// 2. not advertised: notify put, create DB entry, continue
 				if len(publishedBatches) == 0 {
