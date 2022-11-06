@@ -123,7 +123,7 @@ func NewEstuary(appVersion string) *Estuary {
 			NoBlockstoreCache: false,
 
 			IndexerURL:                   "https://cid.contact",
-			IndexerAdvertisementInterval: 720,
+			IndexerAdvertisementInterval: time.Minute,
 
 			ApiURL: "wss://api.chain.love",
 
