@@ -951,7 +951,7 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 
 		proto, err := cm.FilClient.DealProtocolForMiner(ctx, m)
 		if err != nil {
-			log.Errorf("getting deal protocol for %s failed: %s", m, err)
+			log.Warnf("getting deal protocol for %s failed: %s", m, err)
 			continue
 		}
 
@@ -1007,7 +1007,7 @@ func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pie
 
 		proto, err := cm.FilClient.DealProtocolForMiner(ctx, dbm.Address.Addr)
 		if err != nil {
-			log.Errorf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
+			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
 			continue
 		}
 
@@ -1788,7 +1788,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	if provds.State == storagemarket.StorageDealError {
-		log.Errorf("deal state for deal %d from miner %s is error: %s", d.ID, maddr.String(), provds.Message)
+		log.Warnf("deal state for deal %d from miner %s is error: %s", d.ID, maddr.String(), provds.Message)
 	}
 
 	if provds.DealID != 0 {
@@ -1803,7 +1803,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		}
 
 		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
-			log.Errorf("proposal in deal ID miner sent back did not match our expectations")
+			log.Warnf("proposal in deal ID miner sent back did not match our expectations")
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
