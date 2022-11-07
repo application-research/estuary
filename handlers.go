@@ -3372,11 +3372,11 @@ type getApiKeysResp struct {
 
 // handleUserRevokeApiKey godoc
 // @Summary      Revoke a User API Key.
-// @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
+// @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.
 // @Tags         User
 // @Produce      json
-// @Param        key path string true "Key"
-// @Router       /user/api-keys/{key} [delete]
+// @Param        key_or_hash path string true "Key or Hash"
+// @Router       /user/api-keys/{key_or_hash} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key_or_hash")
 	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
