@@ -30,7 +30,7 @@ func (u *User) FlagSplitContent() bool {
 
 type AuthToken struct {
 	gorm.Model
-	Token      string
+	Token      string `gorm:"unique"`
 	TokenHash  string
 	Label      string
 	User       uint

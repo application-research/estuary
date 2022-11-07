@@ -316,7 +316,7 @@ func (q *UsersQuery) ExpectDelete() error {
 type AuthTokensQuery struct{ DB *gorm.DB }
 type AuthToken struct {
 	gorm.Model
-	Token     string
+	Token     string `gorm:"unique"`
 	TokenHash string
 	Label     string
 	User      UserID
