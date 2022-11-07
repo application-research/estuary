@@ -510,7 +510,7 @@ func main() {
 					TokenHash: util.GetTokenHash(token),
 					Label:     "admin",
 					User:      newUser.ID,
-					Expiry:    time.Now().Add(time.Hour * 24 * 365),
+					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
 				}
 				if err := db.Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)

@@ -3075,7 +3075,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		TokenHash: util.GetTokenHash(token),
 		Label:     "on-register",
 		User:      newUser.ID,
-		Expiry:    time.Now().Add(time.Hour * 24 * 7),
+		Expiry:    time.Now().Add(constants.TokenExpiryDurationRegister),
 	}
 
 	if err := s.DB.Create(authToken).Error; err != nil {
@@ -3142,7 +3142,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil, "login")
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, "login")
 	if err != nil {
 		return err
 	}
@@ -3395,10 +3395,10 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
-	expiry := time.Now().Add(time.Hour * 24 * 30)
+	expiry := time.Now().Add(constants.TokenExpiryDurationDefault)
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
-			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough
+			expiry = time.Now().Add(constants.TokenExpiryDurationPermanent)
 		} else {
 			dur, err := time.ParseDuration(exp)
 			if err != nil {
