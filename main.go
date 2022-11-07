@@ -204,6 +204,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 	return cfg.SetRequiredOptions()
 }
 
+const TOKEN_LABEL_ADMIN = "admin"
+
 func main() {
 	//set global time to UTC
 	utc, _ := time.LoadLocation("UTC")
@@ -508,7 +510,7 @@ func main() {
 				authToken := &util.AuthToken{
 					Token:     token,
 					TokenHash: util.GetTokenHash(token),
-					Label:     "admin",
+					Label:     TOKEN_LABEL_ADMIN,
 					User:      newUser.ID,
 					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
 				}

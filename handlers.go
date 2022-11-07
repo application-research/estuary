@@ -3008,6 +3008,8 @@ type registerBody struct {
 	InviteCode string `json:"inviteCode"`
 }
 
+const TOKEN_LABEL_ON_REGISTER = "on-register"
+
 func (s *Server) handleRegisterUser(c echo.Context) error {
 	var reg registerBody
 	if err := c.Bind(&reg); err != nil {
@@ -3073,7 +3075,7 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 	authToken := &util.AuthToken{
 		Token:     token,
 		TokenHash: util.GetTokenHash(token),
-		Label:     "on-register",
+		Label:     TOKEN_LABEL_ON_REGISTER,
 		User:      newUser.ID,
 		Expiry:    time.Now().Add(constants.TokenExpiryDurationRegister),
 	}
@@ -3102,6 +3104,8 @@ type loginResponse struct {
 	Token  string    `json:"token"`
 	Expiry time.Time `json:"expiry"`
 }
+
+const TOKEN_LABEL_ON_LOGIN = "on-login"
 
 func (s *Server) handleLoginUser(c echo.Context) error {
 	var body loginBody
@@ -3142,7 +3146,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, "login")
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN)
 	if err != nil {
 		return err
 	}
