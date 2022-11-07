@@ -3071,16 +3071,8 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	token := "EST" + uuid.New().String() + "ARY"
-	authToken := &util.AuthToken{
-		Token:     token,
-		TokenHash: util.GetTokenHash(token),
-		Label:     TOKEN_LABEL_ON_REGISTER,
-		User:      newUser.ID,
-		Expiry:    time.Now().Add(constants.TokenExpiryDurationRegister),
-	}
-
-	if err := s.DB.Create(authToken).Error; err != nil {
+	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER)
+	if err != nil {
 		return err
 	}
 
