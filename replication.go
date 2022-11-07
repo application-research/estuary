@@ -1510,6 +1510,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			return errors.New("verifed deals requires datacap, please see https://verify.glif.io or use the --verified-deal=false for non-verified deals")
 		}
 
+		if bl.VerifiedClientBalance == nil {
+			return errors.Wrap(err, "client balance has nil dataCap")
+		}
+
 		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
 			// how do we notify admin to top up datacap?
 			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
