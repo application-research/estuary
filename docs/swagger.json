@@ -29,25 +29,40 @@
         "summary": "Register autoretrieve server",
         "parameters": [
           {
+            "type": "string",
             "description": "Autoretrieve's comma-separated list of addresses",
             "name": "addresses",
-            "in": "body",
-            "required": true,
+            "in": "formData",
+            "required": true
+          },
+          {
+            "type": "string",
+            "description": "Autoretrieve's public key",
+            "name": "pubKey",
+            "in": "formData",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
             "schema": {
               "type": "string"
             }
           },
-          {
-            "description": "Autoretrieve's public key",
-            "name": "pubKey",
-            "in": "body",
-            "required": true,
+          "400": {
+            "description": "Bad Request",
             "schema": {
-              "type": "string"
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
-        ],
-        "responses": {}
+        }
       }
     },
     "/admin/autoretrieve/list": {
@@ -60,7 +75,26 @@
           "autoretrieve"
         ],
         "summary": "List autoretrieve servers",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/peering/peers": {
@@ -75,7 +109,26 @@
           "peers"
         ],
         "summary": "List all Peering peers",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       },
       "post": {
         "description": "This endpoint can be used to add a Peer from the Peering Service",
@@ -88,7 +141,26 @@
           "peers"
         ],
         "summary": "Add peers on Peering Service",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       },
       "delete": {
         "description": "This endpoint can be used to remove a Peer from the Peering Service",
@@ -104,18 +176,37 @@
         "parameters": [
           {
             "description": "Peer ids",
-            "name": "body",
+            "name": "peerIds",
             "in": "body",
             "required": true,
             "schema": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "boolean"
               }
             }
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/peering/start": {
@@ -130,7 +221,26 @@
           "peers"
         ],
         "summary": "Start Peering",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/peering/status": {
@@ -145,7 +255,26 @@
           "peers"
         ],
         "summary": "Check Peering Status",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/peering/stop": {
@@ -160,7 +289,26 @@
           "peers"
         ],
         "summary": "Stop Peering",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/system/config": {
@@ -173,7 +321,26 @@
           "admin"
         ],
         "summary": "Get systems(estuary/shuttle) config",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/admin/users": {
@@ -186,7 +353,26 @@
           "admin"
         ],
         "summary": "Get all users",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/autoretrieve/heartbeat": {
@@ -208,7 +394,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/collections/": {
@@ -227,7 +432,10 @@
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/collections.Collection"
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/collections.Collection"
+                }
               }
             }
           },
@@ -332,7 +540,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/collections/{coluuid}": {
@@ -365,6 +592,18 @@
             "description": "OK",
             "schema": {
               "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -406,10 +645,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -429,7 +677,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/collections/{coluuid}/commit": {
@@ -456,6 +723,18 @@
             "description": "OK",
             "schema": {
               "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -505,6 +784,12 @@
           },
           "400": {
             "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
             "schema": {
               "$ref": "#/definitions/util.HttpError"
             }
@@ -576,6 +861,18 @@
             "schema": {
               "$ref": "#/definitions/util.ContentAddResponse"
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
           }
         }
       }
@@ -613,7 +910,26 @@
             "in": "query"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/add-ipfs": {
@@ -643,7 +959,26 @@
             "in": "query"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/aggregated/{content}": {
@@ -670,6 +1005,18 @@
             "description": "OK",
             "schema": {
               "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -708,7 +1055,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/bw-usage/{content}": {
@@ -730,7 +1096,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/create": {
@@ -760,7 +1145,26 @@
             "in": "query"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/deals": {
@@ -787,7 +1191,26 @@
             "in": "query"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/ensure-replication/{datacid}": {
@@ -809,7 +1232,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/failures/{content}": {
@@ -837,6 +1279,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
           }
         }
       }
@@ -862,7 +1316,26 @@
             }
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/list": {
@@ -879,10 +1352,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -907,7 +1389,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/staging-zones": {
@@ -920,7 +1421,26 @@
           "content"
         ],
         "summary": "Get staging zone for user",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/stats": {
@@ -949,7 +1469,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/status/{id}": {
@@ -971,7 +1510,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/content/{id}": {
@@ -993,7 +1551,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/estimate": {
@@ -1017,7 +1594,26 @@
             }
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/info/{dealid}": {
@@ -1039,7 +1635,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/proposal/{propcid}": {
@@ -1061,7 +1676,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/query/{miner}": {
@@ -1083,7 +1717,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/status-by-proposal/{propcid}": {
@@ -1105,7 +1758,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/status/{miner}/{propcid}": {
@@ -1134,7 +1806,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/transfer/in-progress": {
@@ -1147,12 +1838,69 @@
           "deals"
         ],
         "summary": "Transfer In Progress",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deal/transfer/status": {
       "post": {
-        "responses": {}
+        "description": "This endpoint returns the status of a transfer",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "deals"
+        ],
+        "summary": "Transfer Status",
+        "parameters": [
+          {
+            "description": "Channel ID",
+            "name": "chanid",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.ChannelIDParam"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deals/failures": {
@@ -1165,7 +1913,26 @@
           "deals"
         ],
         "summary": "Get storage failures for user",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deals/make/{miner}": {
@@ -1196,7 +1963,26 @@
             }
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/deals/status/{deal}": {
@@ -1218,7 +2004,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/net/addrs": {
@@ -1235,10 +2040,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -1255,6 +2069,12 @@
         ],
         "summary": "List all pin status objects",
         "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
           "400": {
             "description": "Bad Request",
             "schema": {
@@ -1286,21 +2106,35 @@
         "summary": "Add and pin object",
         "parameters": [
           {
-            "type": "string",
-            "description": "cid",
-            "name": "cid",
-            "in": "path",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "name",
-            "name": "name",
-            "in": "path",
-            "required": true
+            "description": "Pin Body {cid:cid, name:name}",
+            "name": "pin",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/types.IpfsPin"
+            }
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/pinning/pins/{pinid}": {
@@ -1322,7 +2156,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       },
       "post": {
         "description": "This endpoint replaces a pinned object.",
@@ -1342,7 +2195,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       },
       "delete": {
         "description": "This endpoint deletes a pinned object.",
@@ -1362,7 +2234,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/by-cid/{cid}": {
@@ -1384,7 +2275,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/deals/failures": {
@@ -1397,7 +2307,26 @@
           "deals"
         ],
         "summary": "Get storage failures",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/info": {
@@ -1410,7 +2339,26 @@
           "public"
         ],
         "summary": "Get public node info",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/metrics/deals-on-chain": {
@@ -1424,7 +2372,26 @@
           "metrics"
         ],
         "summary": "Get deal metrics",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/miners": {
@@ -1438,7 +2405,26 @@
           "net"
         ],
         "summary": "Get all miners",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/miners/deals/{miner}": {
@@ -1457,7 +2443,8 @@
             "type": "string",
             "description": "Filter by miner",
             "name": "miner",
-            "in": "path"
+            "in": "path",
+            "required": true
           },
           {
             "type": "string",
@@ -1466,7 +2453,26 @@
             "in": "query"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/miners/failures/{miner}": {
@@ -1488,7 +2494,26 @@
             "in": "path"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/miners/stats/{miner}": {
@@ -1510,7 +2535,26 @@
             "in": "path"
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/miners/storage/query/{miner}": {
@@ -1532,7 +2576,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/public/net/addrs": {
@@ -1579,6 +2642,18 @@
                 "type": "string"
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
           }
         }
       }
@@ -1593,7 +2668,26 @@
           "public"
         ],
         "summary": "Public stats",
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/user/api-keys": {
@@ -1612,7 +2706,10 @@
             "schema": {
               "type": "array",
               "items": {
-                "$ref": "#/definitions/main.getApiKeysResp"
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/main.getApiKeysResp"
+                }
               }
             }
           },
@@ -1648,7 +2745,7 @@
         "parameters": [
           {
             "type": "string",
-            "description": "Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h",
+            "description": "Expiration - Expiration - Valid time units are ns, us (or µs),  ms,  s,  m,  h.  for  example  300h",
             "name": "expiry",
             "in": "query"
           },
@@ -1706,7 +2803,26 @@
             "required": true
           }
         ],
-        "responses": {}
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
       }
     },
     "/user/export": {
@@ -1724,6 +2840,18 @@
             "description": "OK",
             "schema": {
               "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -1743,7 +2871,19 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/main.userStatsResponse"
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
             }
           }
         }
@@ -1770,6 +2910,20 @@
           "type": "integer"
         },
         "uuid": {
+          "type": "string"
+        }
+      }
+    },
+    "main.ChannelIDParam": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "initiator": {
+          "type": "string"
+        },
+        "responder": {
           "type": "string"
         }
       }
@@ -1844,14 +2998,24 @@
         }
       }
     },
-    "main.userStatsResponse": {
+    "types.IpfsPin": {
       "type": "object",
       "properties": {
-        "numPins": {
-          "type": "integer"
+        "cid": {
+          "type": "string"
         },
-        "totalSize": {
-          "type": "integer"
+        "meta": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "name": {
+          "type": "string"
+        },
+        "origins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
         }
       }
     },
