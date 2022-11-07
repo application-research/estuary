@@ -180,7 +180,7 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n mdagipld.Node, w
 	fmt.Fprintf(w, "<html><body><ul>")
 
 	if err := dir.ForEachLink(ctx, func(lnk *mdagipld.Link) error {
-		fmt.Fprintf(w, "<li><a href=\"./%s\">%s</a></li>", lnk.Name, lnk.Name)
+		fmt.Fprintf(w, "<li><a href=\"%s/%s\">%s</a></li>", req.RequestURI, lnk.Name, lnk.Name)
 		return nil
 	}); err != nil {
 		return err
