@@ -1268,13 +1268,13 @@ paths:
       summary: Create API keys for a user
       tags:
         - User
-  /user/api-keys/{key}:
+  /user/api-keys/{key_or_hash}:
     delete:
-      description: This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
+      description: This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.
       parameters:
-        - description: Key
+        - description: Key or Hash
           in: path
-          name: key
+          name: key_or_hash
           required: true
           type: string
       produces:
