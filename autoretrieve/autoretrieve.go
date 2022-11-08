@@ -71,7 +71,6 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 		Addrs: addrs,
 	}
 
-	log.Warnf("Created addr info: %s", addrInfo)
 	if err != nil {
 		return nil, err
 	}
