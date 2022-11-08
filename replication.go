@@ -1506,7 +1506,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			return errors.Wrap(err, "could not retrieve dataCap from client balance")
 		}
 
-		if bl == nil {
+		if bl == nil || bl.VerifiedClientBalance == nil {
 			return errors.New("verifed deals requires datacap, please see https://verify.glif.io or use the --verified-deal=false for non-verified deals")
 		}
 
