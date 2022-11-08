@@ -423,10 +423,9 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 // @Description  This endpoint lists all pin status objects
 // @Tags         pinning
 // @Produce      json
-// @Success      200    {object}  string
-// @Failure      400    {object}  util.HttpError
-// @Failure      404  {object}  util.HttpError
-// @Failure      500    {object}  util.HttpError
+// @Success      200  {object}  types.IpfsListPinStatusResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
 func (s *Server) handleListPins(e echo.Context, u *util.User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
@@ -632,10 +631,9 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Description  This endpoint adds a pin to the IPFS daemon.
 // @Tags         pinning
 // @Produce      json
-// @Success      200    {object}  string
-// @Failure      400    {object}  util.HttpError
+// @Success      202	{object}  types.IpfsPinStatusResponse
 // @Failure      500    {object}  util.HttpError
-// @in           200,400,default  string  Token "token"
+// @in           202,default  string  Token "token"
 // @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Router       /pinning/pins [post]
 func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
@@ -704,8 +702,8 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200    {object}  string
-// @Failure      400    {object}  util.HttpError
+// @Success      200	{object}  types.IpfsPinStatusResponse
+// @Failure      404	{object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Param        pinid  path      string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
@@ -743,8 +741,8 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Description  This endpoint replaces a pinned object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
+// @Success      202	{object}	types.IpfsPinStatusResponse
+// @Failure      404	{object}	util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid		path      string  true  "Pin ID"
 // @Param        cid		body      string  true  "CID of new pin"
@@ -811,8 +809,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 // @Description  This endpoint deletes a pinned object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
+// @Success		 202
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid  path      string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]

@@ -73,6 +73,15 @@ definitions:
       name:
         type: string
     type: object
+  types.IpfsListPinStatusResponse:
+    properties:
+      count:
+        type: integer
+      results:
+        items:
+          $ref: '#/definitions/types.IpfsPinStatusResponse'
+        type: array
+    type: object
   types.IpfsPin:
     properties:
       cid:
@@ -86,6 +95,24 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  types.IpfsPinStatusResponse:
+    properties:
+      created:
+        type: string
+      delegates:
+        items:
+          type: string
+        type: array
+      info:
+        additionalProperties: true
+        type: object
+      pin:
+        $ref: '#/definitions/types.IpfsPin'
+      requestid:
+        type: string
+      status:
+        type: string
     type: object
   util.ContentAddIpfsBody:
     properties:
@@ -1511,13 +1538,9 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/types.IpfsListPinStatusResponse'
         "400":
           description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "404":
-          description: Not Found
           schema:
             $ref: '#/definitions/util.HttpError'
         "500":
@@ -1539,14 +1562,10 @@ paths:
       produces:
         - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
+            $ref: '#/definitions/types.IpfsPinStatusResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -1566,14 +1585,8 @@ paths:
       produces:
         - application/json
       responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
+        "202":
+          description: ""
         "500":
           description: Internal Server Error
           schema:
@@ -1595,9 +1608,9 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
-        "400":
-          description: Bad Request
+            $ref: '#/definitions/types.IpfsPinStatusResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/util.HttpError'
         "500":
@@ -1639,12 +1652,12 @@ paths:
       produces:
         - application/json
       responses:
-        "200":
-          description: OK
+        "202":
+          description: Accepted
           schema:
-            type: string
-        "400":
-          description: Bad Request
+            $ref: '#/definitions/types.IpfsPinStatusResponse'
+        "404":
+          description: Not Found
           schema:
             $ref: '#/definitions/util.HttpError'
         "500":

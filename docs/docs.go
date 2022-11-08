@@ -2079,17 +2079,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/types.IpfsListPinStatusResponse"
                         }
                     },
                     "400": {
                         "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "404": {
-                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/util.HttpError"
                         }
@@ -2123,16 +2117,10 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
+                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
                         }
                     },
                     "500": {
@@ -2167,11 +2155,11 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/util.HttpError"
                         }
@@ -2236,14 +2224,14 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
+                    "202": {
+                        "description": "Accepted",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
                         }
                     },
-                    "400": {
-                        "description": "Bad Request",
+                    "404": {
+                        "description": "Not Found",
                         "schema": {
                             "$ref": "#/definitions/util.HttpError"
                         }
@@ -2275,17 +2263,8 @@ const docTemplate = `{
                     }
                 ],
                 "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
+                    "202": {
+                        "description": ""
                     },
                     "500": {
                         "description": "Internal Server Error",
@@ -3044,6 +3023,20 @@ const docTemplate = `{
                 }
             }
         },
+        "types.IpfsListPinStatusResponse": {
+            "type": "object",
+            "properties": {
+                "count": {
+                    "type": "integer"
+                },
+                "results": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/types.IpfsPinStatusResponse"
+                    }
+                }
+            }
+        },
         "types.IpfsPin": {
             "type": "object",
             "properties": {
@@ -3062,6 +3055,33 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "types.IpfsPinStatusResponse": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "type": "string"
+                },
+                "delegates": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "info": {
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "pin": {
+                    "$ref": "#/definitions/types.IpfsPin"
+                },
+                "requestid": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
                 }
             }
         },
