@@ -2791,9 +2791,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/user/api-keys/{key}": {
+        "/user/api-keys/{key_or_hash}": {
             "delete": {
-                "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.",
+                "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.",
                 "produces": [
                     "application/json"
                 ],
@@ -2804,8 +2804,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Key",
-                        "name": "key",
+                        "description": "Key or Hash",
+                        "name": "key_or_hash",
                         "in": "path",
                         "required": true
                     }
@@ -2980,7 +2980,13 @@ const docTemplate = `{
                 "expiry": {
                     "type": "string"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "token": {
+                    "type": "string"
+                },
+                "tokenHash": {
                     "type": "string"
                 }
             }
