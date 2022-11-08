@@ -419,7 +419,7 @@ func main() {
 		},
 		&cli.StringFlag{
 			Name:  "indexer-advertisement-interval",
-			Usage: "sets the indexer advertisement interval",
+			Usage: "sets the indexer advertisement interval using a Go time string (e.g. '1m30s')",
 			Value: cfg.Node.IndexerAdvertisementInterval.String(),
 		},
 	}
