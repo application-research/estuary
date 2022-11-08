@@ -21,7 +21,6 @@ import (
 	"sync"
 	"time"
 
-	corecrypto "github.com/libp2p/go-libp2p-core/crypto"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
@@ -4757,42 +4756,6 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 
 	err := func() error {
-		// Validate Peer ID and addresses and also store them into an addr info
-
-		addrStrings := strings.Split(c.FormValue("addresses"), ",")
-
-		pubKeyBytes, err := corecrypto.ConfigDecodeKey(c.FormValue("pubKey"))
-		if err != nil {
-			return err
-		}
-		pubKey, err := corecrypto.UnmarshalPublicKey(pubKeyBytes)
-		if err != nil {
-			return err
-		}
-		peerID, err := peer.IDFromPublicKey(pubKey)
-		if err != nil {
-			return err
-		}
-
-		var addrs []multiaddr.Multiaddr
-		var invalidAddrStrings []string
-		for _, addrString := range addrStrings {
-			addr, err := multiaddr.NewMultiaddr(addrString)
-			if err != nil {
-				invalidAddrStrings = append(invalidAddrStrings, addrString)
-				continue
-			}
-			addrs = append(addrs, addr)
-		}
-		if len(invalidAddrStrings) != 0 {
-			return fmt.Errorf("got invalid addresses: %#v", invalidAddrStrings)
-		}
-
-		addrInfo := peer.AddrInfo{
-			ID:    peerID,
-			Addrs: addrs,
-		}
-
 		// If there's already an Autoretrieve database entry under the requested pub
 		// key, delete it first
 		if err := s.DB.Unscoped().Delete(&autoretrieve.Autoretrieve{}, "pub_key = ?", c.FormValue("pubKey")).Error; err != nil {
@@ -4812,11 +4775,16 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 			return err
 		}
 
+		addrInfo, err := ar.AddrInfo()
+		if err != nil {
+			return err
+		}
+
 		return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
 			Handle:            ar.Handle,
 			Token:             ar.Token,
 			LastConnection:    ar.LastConnection,
-			AddrInfo:          &addrInfo,
+			AddrInfo:          addrInfo,
 			AdvertiseInterval: (time.Minute * time.Duration(s.Node.Config.IndexerAdvertisementInterval)).String(),
 		})
 	}()

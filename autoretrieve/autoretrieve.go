@@ -16,7 +16,9 @@ import (
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"gorm.io/gorm"
 )
@@ -35,13 +37,46 @@ type Autoretrieve struct {
 }
 
 func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
-	addresses := strings.Split(autoretrieve.Addresses, ",")
-	addrInfo, err := peer.AddrInfoFromString(addresses[0])
+	addrStrings := strings.Split(autoretrieve.Addresses, ",")
+
+	pubKeyBytes, err := crypto.ConfigDecodeKey(autoretrieve.PubKey)
+	if err != nil {
+		return nil, err
+	}
+	pubKey, err := crypto.UnmarshalPublicKey(pubKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	peerID, err := peer.IDFromPublicKey(pubKey)
 	if err != nil {
 		return nil, err
 	}
 
-	return addrInfo, nil
+	var addrs []multiaddr.Multiaddr
+	var invalidAddrStrings []string
+	for _, addrString := range addrStrings {
+		addr, err := multiaddr.NewMultiaddr(addrString)
+		if err != nil {
+			invalidAddrStrings = append(invalidAddrStrings, addrString)
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	if len(invalidAddrStrings) != 0 {
+		return nil, fmt.Errorf("got invalid addresses: %#v", invalidAddrStrings)
+	}
+
+	addrInfo := peer.AddrInfo{
+		ID:    peerID,
+		Addrs: addrs,
+	}
+
+	log.Warnf("Created addr info: %s", addrInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	return &addrInfo, nil
 }
 
 // A batch that has been published for a specific autoretrieve
