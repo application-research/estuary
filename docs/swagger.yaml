@@ -566,7 +566,7 @@ paths:
         - application/json
       description: This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
       parameters:
-        - description: coluuid
+        - description: Collection UUID
           in: path
           name: coluuid
           required: true
