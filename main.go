@@ -615,6 +615,7 @@ func main() {
 		// TODO: this is an ugly self referential hack... should fix
 		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
+			QueueDataDir:     cfg.DataDir,
 		})
 		go pinmgr.Run(50)
 

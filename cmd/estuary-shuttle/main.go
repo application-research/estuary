@@ -651,6 +651,7 @@ func main() {
 
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
+			QueueDataDir:     cfg.DataDir,
 		})
 		go s.PinMgr.Run(100)
 

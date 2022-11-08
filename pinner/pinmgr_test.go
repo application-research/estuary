@@ -3,6 +3,7 @@ package pinner
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,9 @@ func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) e
 }
 func newManager(count *int) *PinManager {
 
+	_ = os.RemoveAll("/tmp/duplicateGuard")
+	_ = os.RemoveAll("/tmp/pinQueue")
+
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
 			go cb(1)
@@ -28,6 +32,21 @@ func newManager(count *int) *PinManager {
 			return nil
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
+			QueueDataDir:     "/tmp/",
+		})
+}
+
+func newManagerNoDelete(count *int) *PinManager {
+	return NewPinManager(
+		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+			go cb(1)
+			count_lock.Lock()
+			*count += 1
+			count_lock.Unlock()
+			return nil
+		}, onPinStatusUpdate, &PinManagerOpts{
+			MaxActivePerUser: 30,
+			QueueDataDir:     "/tmp/",
 		})
 }
 
@@ -35,6 +54,8 @@ func newPinData(name string, userid int) PinningOperation {
 	return PinningOperation{
 		Name:   name,
 		UserId: uint(userid),
+		lk:     sync.Mutex{},
+		ContId: uint(userid),
 	}
 }
 
@@ -52,9 +73,9 @@ func TestSend1Pin1worker(t *testing.T) {
 	go mgr.Add(&pin)
 
 	sleepWhileWork(mgr, 0)
-	assert.Equal(t, 0, mgr.PinQueueSize(), "first pin doesn't enter queue")
+	assert.Equal(t, 0, int(mgr.pinQueue.Length()), "first pin doesn't enter queue")
 	assert.Equal(t, 1, count, "DoPin called once")
-
+	mgr.closeQueueDataStructures()
 }
 
 func TestSend1Pin0workers(t *testing.T) {
@@ -70,6 +91,7 @@ func TestSend1Pin0workers(t *testing.T) {
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "first pin doesn't enter queue")
 	assert.Equal(t, 0, count, "DoPin called once")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNUniqueNames(t *testing.T) {
@@ -83,6 +105,7 @@ func TestNUniqueNames(t *testing.T) {
 	}
 	sleepWhileWork(mgr, N-1)
 	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N pins in it")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNUniqueNamesWorker(t *testing.T) {
@@ -96,13 +119,13 @@ func TestNUniqueNamesWorker(t *testing.T) {
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
 	assert.Equal(t, N, count, "work should be done N times")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
 	var count int = 0
 	mgr := newManager(&count)
-	go mgr.Run(1)
 
 	for j := 0; j < N; j++ {
 
@@ -111,9 +134,14 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 			go mgr.Add(&pin)
 		}
 	}
+
+	go mgr.Run(1)
+
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
-	assert.Equal(t, N*N, count, "queue should have N pins in it")
+	assert.LessOrEqual(t, N+1, count, "Should do  at least N work + 1 for the first item")
+	assert.Greater(t, N*N+1, count, "Should less than N*N work + 1 for the first item")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNUniqueNamesSameUser(t *testing.T) {
@@ -127,22 +155,33 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 			go mgr.Add(&pin)
 		}
 	}
-	sleepWhileWork(mgr, N*N-1)
-	assert.Equal(t, N*N-1, mgr.PinQueueSize(), "queue should have N pins in it")
+	sleepWhileWork(mgr, N)
+	assert.Equal(t, N, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, count, 0, "no work done")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNDuplicateNamesWorker(t *testing.T) {
 	var count int = 0
 	mgr := newManager(&count)
-	go mgr.Run(5)
+
+	pin := newPinData("name", 0)
+	go mgr.Add(&pin)
+	time.Sleep(100 * time.Millisecond)
+
 	for i := 0; i < N; i++ {
 		pin := newPinData("name", 0)
 		go mgr.Add(&pin)
 	}
+
+	go mgr.Run(8)
+
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Equal(t, N, count, "work should have N pins in it")
+	assert.Less(t, count, N, "work done should be less than N pins ")
+	//with the way the chnnels works it's sometimes finishes the work before it gets added to the queue
+	mgr.closeQueueDataStructures()
+
 }
 func TestNDuplicateNames(t *testing.T) {
 	var count int = 0
@@ -153,9 +192,10 @@ func TestNDuplicateNames(t *testing.T) {
 		pin := newPinData("name", 0)
 		go mgr.Add(&pin)
 	}
-	sleepWhileWork(mgr, N-1)
-	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N pins in it")
+	sleepWhileWork(mgr, 1)
+	assert.Equal(t, 1, mgr.PinQueueSize(), "queue should have only 1 pin in it")
 	assert.Equal(t, 0, count, "no work")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
@@ -172,7 +212,24 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Equal(t, N*N*N, count, "work should have N pins in it")
+	assert.Less(t, N*N, count, "work done should be greater than N*N")
+	assert.Greater(t, N*N*N, count, "work done should be less than N*N*N")
+	mgr.closeQueueDataStructures()
+}
+func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
+	var count int = 0
+	mgr := newManager(&count)
+	go mgr.Run(0)
+
+	for i := 0; i < N; i++ {
+		pin := newPinData("name"+fmt.Sprint(i), i)
+		go mgr.Add(&pin)
+	}
+
+	sleepWhileWork(mgr, N-1)
+	assert.Equal(t, N-1, mgr.PinQueueSize(), "queue should have N*N pins in it")
+	assert.Equal(t, 0, count, "no work done")
+	mgr.closeQueueDataStructures()
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
@@ -189,7 +246,9 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Equal(t, N*N*N, count, "work should have N pins in it")
+	assert.Less(t, N*N, count, "work should be greater than than N*N pins in it")
+	assert.Greater(t, N*N*N, count, "work should be less than N*N*N pins in it")
+	mgr.closeQueueDataStructures()
 }
 
 func sleepWhileWork(mgr *PinManager, SIZE int) {
@@ -217,9 +276,44 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 		}
 	}
 
-	sleepWhileWork(mgr, N*N*N-1)
-	assert.Equal(t, N*N*N-1, mgr.PinQueueSize(), "queue should have N pins in it")
+	sleepWhileWork(mgr, N)
+	assert.Equal(t, N, mgr.PinQueueSize(), "queue should have N pins in it")
 	assert.Equal(t, 0, count, "no work")
+	mgr.closeQueueDataStructures()
+}
+func TestResumeQueue(t *testing.T) {
+
+	var count int = 0
+	mgr := newManager(&count)
+	go mgr.Run(0)
+	for k := 0; k < N; k++ {
+		for j := 0; j < N; j++ {
+			for i := 0; i < N; i++ {
+				pin := newPinData("name"+fmt.Sprint(i), j*N+i)
+				go mgr.Add(&pin)
+			}
+		}
+	}
+	sleepWhileWork(mgr, N*N)
+	assert.Equal(t, N*N, mgr.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+	mgr.closeQueueDataStructures()
+	time.Sleep(time.Second)
+
+	mgr2 := newManagerNoDelete(&count)
+	assert.Equal(t, N*N, mgr2.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+	mgr2.closeQueueDataStructures()
+
+	workermgr := newManagerNoDelete(&count)
+	assert.Equal(t, N*N, workermgr.PinQueueSize(), "queue should have N pins in it")
+	assert.Equal(t, 0, count, "no work")
+
+	go workermgr.Run(N)
+	sleepWhileWork(workermgr, 0)
+	assert.Equal(t, 0, workermgr.PinQueueSize(), "queue should have no pins in it")
+	assert.Equal(t, N*N, count, "all work should be done")
+
 }
 
 /*
