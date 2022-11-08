@@ -2200,6 +2200,39 @@ const docTemplate = `{
                         "name": "pinid",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "description": "CID of new pin",
+                        "name": "cid",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Name (filename) of new pin",
+                        "name": "name",
+                        "in": "body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Origins of new pin",
+                        "name": "origins",
+                        "in": "body",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "description": "Meta information of new pin",
+                        "name": "meta",
+                        "in": "body",
+                        "schema": {
+                            "type": "string"
+                        }
                     }
                 ],
                 "responses": {
