@@ -746,7 +746,11 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        pinid  path      string  true  "Pin ID"
+// @Param        pinid		path      string  true  "Pin ID"
+// @Param        cid		body      string  true  "CID of new pin"
+// @Param        name		body      string  false  "Name (filename) of new pin"
+// @Param        origins	body      string  false  "Origins of new pin"
+// @Param        meta		body      string  false  "Meta information of new pin"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 
