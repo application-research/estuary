@@ -3626,7 +3626,7 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        coluuid     path      string  true  "coluuid"
+// @Param        coluuid     path      string  true  "Collection UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -3638,6 +3638,15 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 	var contentIDs []uint
 	if err := c.Bind(&contentIDs); err != nil {
 		return err
+	}
+
+	// no contents
+	if len(contentIDs) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("no contents specified, need at least one"),
+		}
 	}
 
 	if len(contentIDs) > 128 {
