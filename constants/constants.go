@@ -38,3 +38,8 @@ var MaxStagingZoneSizeLimit = int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9)
 
 // 13.29 GiB
 var MinStagingZoneSizeLimit = int64(MaxStagingZoneSizeLimit - (1 << 30))
+
+// how many contents to include per advertisement for autoretrieve
+const AutoretrieveProviderBatchSize = uint(25000)
+
+const DefaultIndexerURL = "https://cid.contact"

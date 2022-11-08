@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/util"
 	provider "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/engine"
@@ -179,7 +180,7 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 		engine:                eng,
 		db:                    db,
 		advertisementInterval: advertisementInterval,
-		batchSize:             25000,
+		batchSize:             constants.AutoretrieveProviderBatchSize,
 	}, nil
 }
 
