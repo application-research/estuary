@@ -1615,6 +1615,27 @@ paths:
           name: pinid
           required: true
           type: string
+        - description: CID of new pin
+          in: body
+          name: cid
+          required: true
+          schema:
+            type: string
+        - description: Name (filename) of new pin
+          in: body
+          name: name
+          schema:
+            type: string
+        - description: Origins of new pin
+          in: body
+          name: origins
+          schema:
+            type: string
+        - description: Meta information of new pin
+          in: body
+          name: meta
+          schema:
+            type: string
       produces:
         - application/json
       responses:
