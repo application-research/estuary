@@ -111,7 +111,7 @@ func ExtractAuth(c echo.Context) (string, error) {
 		return "", &HttpError{
 			Code:    http.StatusUnauthorized,
 			Reason:  ERR_INVALID_AUTH,
-			Details: "invalid api key was specified",
+			Details: "Unsupported authorization scheme: Bearer is a required prefix, also make sure you have a valid and unexpired API key. An API key is required to use this endpoint.",
 		}
 	}
 
@@ -119,7 +119,7 @@ func ExtractAuth(c echo.Context) (string, error) {
 		return "", &HttpError{
 			Code:    http.StatusUnauthorized,
 			Reason:  ERR_AUTH_MISSING_BEARER,
-			Details: "invalid api key was specified",
+			Details: "Unsupported authorization scheme: Bearer is a required prefix, also make sure you have a valid and unexpired API key. An API key is required to use this endpoint.",
 		}
 	}
 	return parts[1], nil
