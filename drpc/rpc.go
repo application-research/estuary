@@ -128,6 +128,7 @@ type StorageDeal struct {
 }
 
 type RetrieveContent struct {
+	UserID  uint
 	Content uint
 	Cid     cid.Cid
 	Deals   []StorageDeal
@@ -214,6 +215,7 @@ const OP_TransferFinished = "TransferFinished"
 type TransferStartedOrFinished struct {
 	DealDBID uint
 	Chanid   string
+	State    *filclient.ChannelState
 }
 
 const OP_TransferStatus = "TransferStatus"

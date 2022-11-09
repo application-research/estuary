@@ -208,6 +208,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 	return cfg.SetRequiredOptions()
 }
 
+const TOKEN_LABEL_ADMIN = "admin"
+
 func main() {
 	//set global time to UTC
 	utc, _ := time.LoadLocation("UTC")
@@ -508,10 +510,13 @@ func main() {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
+				token := "EST" + uuid.New().String() + "ARY"
 				authToken := &util.AuthToken{
-					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   newUser.ID,
-					Expiry: time.Now().Add(time.Hour * 24 * 365),
+					Token:     token,
+					TokenHash: util.GetTokenHash(token),
+					Label:     TOKEN_LABEL_ADMIN,
+					User:      newUser.ID,
+					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
 				}
 				if err := db.Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)
@@ -614,6 +619,7 @@ func main() {
 		// TODO: this is an ugly self referential hack... should fix
 		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
+			QueueDataDir:     cfg.DataDir,
 		})
 		go pinmgr.Run(50)
 
@@ -671,11 +677,11 @@ func main() {
 
 				switch fst.Status {
 				case datatransfer.Requested:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, true); err != nil {
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, true); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				case datatransfer.TransferFinished, datatransfer.Completed:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, false); err != nil {
+					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, false); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				default:
@@ -921,7 +927,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	if loc == constants.ContentLocationLocal {
 		// get the deal data transfer state pull deals
 		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil {
+		if err != nil && err != filclient.ErrNoTransferFound {
 			return err
 		}
 

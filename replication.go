@@ -951,7 +951,7 @@ func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, 
 
 		proto, err := cm.FilClient.DealProtocolForMiner(ctx, m)
 		if err != nil {
-			log.Errorf("getting deal protocol for %s failed: %s", m, err)
+			log.Warnf("getting deal protocol for %s failed: %s", m, err)
 			continue
 		}
 
@@ -1007,7 +1007,7 @@ func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pie
 
 		proto, err := cm.FilClient.DealProtocolForMiner(ctx, dbm.Address.Addr)
 		if err != nil {
-			log.Errorf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
+			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
 			continue
 		}
 
@@ -1169,24 +1169,19 @@ func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
 	return *chid, nil
 }
 
-func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, isStarted bool) error {
+func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
+	if st == nil {
+		return nil
+	}
+
 	var deal contentDeal
-	if err := cm.DB.First(&deal, "dt_chan = ?", chanIDOrTransferID).Error; err != nil {
+	if err := cm.DB.First(&deal, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
 
 	var cont util.Content
 	if err := cm.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
 		return err
-	}
-
-	chanst, err := cm.GetTransferStatus(ctx, &deal, cont.Cid.CID, cont.Location)
-	if err != nil {
-		return err
-	}
-
-	if chanst == nil {
-		return nil
 	}
 
 	updates := map[string]interface{}{
@@ -1196,12 +1191,12 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	switch isStarted {
 	case true:
 		updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := chanst.Stages.GetStage("Requested"); s != nil {
+		if s := st.Stages.GetStage("Requested"); s != nil {
 			updates["transfer_started"] = s.CreatedTime.Time()
 		}
 	default:
 		updates["transfer_finished"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := chanst.Stages.GetStage("TransferFinished"); s != nil {
+		if s := st.Stages.GetStage("TransferFinished"); s != nil {
 			updates["transfer_finished"] = s.CreatedTime.Time()
 		}
 	}
@@ -1511,6 +1506,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			return errors.Wrap(err, "could not retrieve dataCap from client balance")
 		}
 
+		if bl == nil || bl.VerifiedClientBalance == nil {
+			return errors.New("verifed deals requires datacap, please see https://verify.glif.io or use the --verified-deal=false for non-verified deals")
+		}
+
 		if bl.VerifiedClientBalance.LessThan(big.NewIntUnsigned(uint64(abi.UnpaddedPieceSize(content.Size).Padded()))) {
 			// how do we notify admin to top up datacap?
 			return errors.Wrapf(err, "will not make deal, client address dataCap:%d GiB is lower than content size:%d GiB", big.Div(*bl.VerifiedClientBalance, big.NewIntUnsigned(uint64(1073741824))), abi.UnpaddedPieceSize(content.Size).Padded()/1073741824)
@@ -1789,7 +1788,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	}
 
 	if provds.State == storagemarket.StorageDealError {
-		log.Errorf("deal state for deal %d from miner %s is error: %s", d.ID, maddr.String(), provds.Message)
+		log.Warnf("deal state for deal %d from miner %s is error: %s", d.ID, maddr.String(), provds.Message)
 	}
 
 	if provds.DealID != 0 {
@@ -1804,7 +1803,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		}
 
 		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
-			log.Errorf("proposal in deal ID miner sent back did not match our expectations")
+			log.Warnf("proposal in deal ID miner sent back did not match our expectations")
 			return DEAL_CHECK_UNKNOWN, nil
 		}
 
@@ -1935,8 +1934,16 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal,
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
+	if d.DTChan == "" {
+		return nil, nil
+	}
+
 	if contLoc == constants.ContentLocationLocal {
-		return cm.getLocalTransferStatus(ctx, d, contCID)
+		chanst, err := cm.transferStatusByID(ctx, d.DTChan)
+		if err != nil {
+			return nil, err
+		}
+		return chanst, nil
 	}
 
 	val, ok := cm.remoteTransferStatus.Get(d.ID)
@@ -1960,22 +1967,6 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 		Shuttle:  loc,
 		Received: time.Now(),
 	})
-}
-
-func (cm *ContentManager) getLocalTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid) (*filclient.ChannelState, error) {
-	chanst, err := cm.transferStatusByID(ctx, d.DTChan)
-	if err != nil {
-		return nil, err
-	}
-
-	if chanst != nil && d.DTChan == "" {
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-			"dt_chan": chanst.TransferID,
-		}).Error; err != nil {
-			return nil, err
-		}
-	}
-	return chanst, nil
 }
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")

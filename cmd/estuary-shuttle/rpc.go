@@ -452,7 +452,6 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 	if err != nil {
 		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 			DealDBID: cmd.DealDBID,
-			Chanid:   chanid.String(),
 			Failed:   true,
 			Message:  fmt.Sprintf("failed to start data transfer: %s", err),
 		})
@@ -494,6 +493,10 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 		return err
 	}
 
+	if st == nil {
+		return nil
+	}
+
 	trsFailed, msg := util.TransferFailed(st)
 	s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
 		Chanid:   req.ChanID,
@@ -506,7 +509,7 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 }
 
 func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
-	return s.retrieveContent(ctx, req.Content, req.Cid, req.Deals)
+	return s.retrieveContent(ctx, req)
 }
 
 func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinContent) error {
@@ -648,9 +651,11 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := s.addDatabaseTrackingToContent(ctx, cpin.Content, dserv, s.Node.Blockstore, c, func(int64) {}); err != nil {
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		if err != nil {
 			return err
 		}
+		s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 	}
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
@@ -673,8 +678,12 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
 	log.Debugf("restarting data transfer: %s", req.ChanID)
 	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
-	if err != nil {
+	if err != nil && err != filclient.ErrNoTransferFound {
 		return err
+	}
+
+	if st == nil {
+		return fmt.Errorf("no transfer state was found for chanID: %s", req.ChanID)
 	}
 
 	cannotRestart := !util.CanRestartTransfer(st)
