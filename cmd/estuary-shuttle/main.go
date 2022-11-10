@@ -44,7 +44,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/drpc"
-	node "github.com/application-research/estuary/node"
+	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
@@ -732,7 +732,7 @@ func main() {
 
 		go func() {
 			var beginSent, beginRec float64
-			var firstrun bool = true
+			var firstrun = true
 
 			for range time.Tick(time.Second * 10) {
 				txs, err := s.Filc.TransfersInProgress(context.TODO())

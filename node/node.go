@@ -9,13 +9,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	peering "github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/node/modules/peering"
 
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
-	migratebs "github.com/application-research/estuary/util/migratebs"
+	"github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
@@ -39,7 +39,7 @@ import (
 	connmgr "github.com/libp2p/go-libp2p-connmgr"
 	"github.com/libp2p/go-libp2p-core/crypto"
 	"github.com/libp2p/go-libp2p-core/host"
-	metrics "github.com/libp2p/go-libp2p-core/metrics"
+	"github.com/libp2p/go-libp2p-core/metrics"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
@@ -236,7 +236,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	var blkst blockstore.Blockstore = mbs
+	var blkst = mbs
 	wrapper, err := init.BlockstoreWrap(blkst)
 	if err != nil {
 		return nil, err

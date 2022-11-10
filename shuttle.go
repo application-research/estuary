@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/application-research/estuary/constants"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
@@ -418,7 +418,7 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
 	}
 
-	d.spaceLow = (param.BlockstoreFree < (param.BlockstoreSize / 10))
+	d.spaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
 	d.blockstoreFree = param.BlockstoreFree
 	d.blockstoreSize = param.BlockstoreSize
 	d.pinCount = param.NumPins

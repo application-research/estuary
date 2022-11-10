@@ -12,7 +12,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
@@ -23,7 +23,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
-	trace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
