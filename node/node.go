@@ -4,15 +4,11 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
-<<<<<<< HEAD
-	cid "github.com/ipfs/go-cid/_rsrch/cidiface"
-=======
 	"github.com/ipfs/go-bitswap"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
->>>>>>> 0003d3b (Compile. required migrating to rcmgr.LimitConfig which needs review)
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -41,17 +37,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	metri "github.com/ipfs/go-metrics-interface"
 	mprome "github.com/ipfs/go-metrics-prometheus"
-<<<<<<< HEAD
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/metrics"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
-	record "github.com/libp2p/go-libp2p-record"
-=======
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	record "github.com/libp2p/go-libp2p-record"
@@ -61,7 +46,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
->>>>>>> 0003d3b (Compile. required migrating to rcmgr.LimitConfig which needs review)
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
 )
