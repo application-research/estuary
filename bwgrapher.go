@@ -4,7 +4,7 @@ import (
 	"time"
 
 	influxdb2 "github.com/influxdata/influxdb-client-go/v2"
-	"github.com/libp2p/go-libp2p-core/metrics"
+	"github.com/libp2p/go-libp2p/core/metrics"
 )
 
 func StartBandwidthGrapher(client influxdb2.Client, bwc *metrics.BandwidthCounter) {
