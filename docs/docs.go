@@ -2107,7 +2107,6 @@ const docTemplate = `{
                 "summary": "Add and pin object",
                 "parameters": [
                     {
-
                         "description": "Pin Body {cid:cid, name:name}",
                         "name": "pin",
                         "in": "body",
