@@ -23,12 +23,11 @@ type Node struct {
 	WalletDir                 string                `json:"wallet_dir"`
 	ApiURL                    string                `json:"api_url"`
 	Bitswap                   Bitswap               `json:"bitswap"`
-	Limits                    Limits                `json:"limits"`
+	LimitConfig               rcmgr.LimitConfig     `json:"limit_config"`
 	ConnectionManager         ConnectionManager     `json:"connection_manager"`
 }
 
-func (cfg *Node) GetLimiter() *rcmgr.BasicLimiter {
-	lim := rcmgr.NewDefaultLimiter()
-	cfg.Limits.apply(lim)
+func (cfg *Node) GetLimiter() rcmgr.Limiter {
+	lim := rcmgr.NewFixedLimiter(cfg.LimitConfig)
 	return lim
 }
