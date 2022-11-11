@@ -60,7 +60,7 @@ func newPinData(name string, userid int) PinningOperation {
 }
 
 var N = 20
-var sleeptime time.Duration = 100
+var sleeptime time.Duration = 200
 
 func TestSend1Pin1worker(t *testing.T) {
 	//run 1 worker
@@ -139,7 +139,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
-	assert.LessOrEqual(t, N+1, count, "Should do  at least N work + 1 for the first item")
+	assert.LessOrEqual(t, N+1, count, "Should do at least N work + 1 for the first item")
 	assert.Greater(t, N*N+1, count, "Should less than N*N work + 1 for the first item")
 	mgr.closeQueueDataStructures()
 }
@@ -179,7 +179,7 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
 	assert.Less(t, count, N, "work done should be less than N pins ")
-	//with the way the chnnels works it's sometimes finishes the work before it gets added to the queue
+	//with the way the channels works it's sometimes finishes the work before it gets added to the queue
 	mgr.closeQueueDataStructures()
 
 }
@@ -235,7 +235,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
-	go mgr.Run(1)
+	go mgr.Run(3)
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
@@ -246,7 +246,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Less(t, N*N, count, "work should be greater than than N*N pins in it")
+	assert.Less(t, N*N, count, "work should be greater than N*N pins in it")
 	assert.Greater(t, N*N*N, count, "work should be less than N*N*N pins in it")
 	mgr.closeQueueDataStructures()
 }
@@ -327,7 +327,7 @@ func test_run(worker_count int, repeat_count int, user_id_count int, name_count 
 	var queue_end_count int = repeat_count*user_id_count*name_count - 1 // total work done minus 1 because first entry is stored as "next" and doesnot enter queue
 	if worker_count > 0 {
 		work_completed_count = repeat_count * user_id_count * name_count
-		queue_end_count = 0 // queue shoud be empty at end
+		queue_end_count = 0 // queue should be empty at end
 		mgr := newManager(&count)
 		go mgr.Run(worker_count)
 
