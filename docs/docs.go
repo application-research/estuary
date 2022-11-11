@@ -111,9 +111,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "List all Peering peers",
                 "responses": {
@@ -143,9 +141,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "Add peers on Peering Service",
                 "responses": {
@@ -175,9 +171,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "Remove peers on Peering Service",
                 "parameters": [
@@ -223,9 +217,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "Start Peering",
                 "responses": {
@@ -257,9 +249,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "Check Peering Status",
                 "responses": {
@@ -291,9 +281,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
+                    "admin"
                 ],
                 "summary": "Stop Peering",
                 "responses": {
@@ -762,13 +750,6 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Collection ID",
                         "name": "coluuid",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Content ID",
-                        "name": "contentid",
                         "in": "path",
                         "required": true
                     },
@@ -2184,42 +2165,18 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Pin ID",
+                        "description": "Pin ID to be replaced",
                         "name": "pinid",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "CID of new pin",
-                        "name": "cid",
+                        "description": "New pin",
+                        "name": "pin",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "description": "Name (filename) of new pin",
-                        "name": "name",
-                        "in": "body",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "description": "Origins of new pin",
-                        "name": "origins",
-                        "in": "body",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "description": "Meta information of new pin",
-                        "name": "meta",
-                        "in": "body",
-                        "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/types.IpfsPin"
                         }
                     }
                 ],
@@ -2510,7 +2467,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -2551,7 +2509,8 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by miner",
                         "name": "miner",
-                        "in": "path"
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
