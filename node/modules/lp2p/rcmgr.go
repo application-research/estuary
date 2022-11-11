@@ -19,15 +19,11 @@ import (
 
 var log = logging.Logger("rcmgr")
 
-func NewDefaultLimiter() (rcmgr.Limiter, error) {
-	return rcmgr.NewDefaultLimiterFromJSON(nil)
-}
-
-func NewResourceManager(limiter rcmgr.Limiter) (network.ResourceManager, error) {
+func NewResourceManager(limiter *rcmgr.Limiter) (network.ResourceManager, error) {
 	var opts []rcmgr.Option
 	libp2p.SetDefaultServiceLimits(&rcmgr.DefaultLimits)
 	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
-	mgr, err := rcmgr.NewResourceManager(limiter, opts...)
+	mgr, err := rcmgr.NewResourceManager(*limiter, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource manager: %w", err)
 	}

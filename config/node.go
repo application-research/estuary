@@ -27,7 +27,7 @@ type Node struct {
 	ConnectionManager         ConnectionManager     `json:"connection_manager"`
 }
 
-func (cfg *Node) GetLimiter() rcmgr.Limiter {
+func (cfg *Node) GetLimiter() *rcmgr.Limiter {
 	lim := rcmgr.NewFixedLimiter(cfg.LimitConfig)
-	return lim
+	return &lim
 }
