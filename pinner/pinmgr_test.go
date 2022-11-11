@@ -60,7 +60,7 @@ func newPinData(name string, userid int) PinningOperation {
 }
 
 var N = 20
-var sleeptime time.Duration = 200
+var sleeptime time.Duration = 400
 
 func TestSend1Pin1worker(t *testing.T) {
 	//run 1 worker
