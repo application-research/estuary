@@ -726,7 +726,17 @@ func main() {
 				return err
 			}
 
-			go s.Node.AutoretrieveProvider.Run(context.Background())
+			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Errorf("Autoretrieve provide loop panicked, cancelling until the executable is restarted: %v", err)
+					}
+				}()
+
+				if err := s.Node.AutoretrieveProvider.Run(context.Background()); err != nil {
+					log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
+				}
+			}()
 			defer s.Node.AutoretrieveProvider.Stop()
 		}
 
