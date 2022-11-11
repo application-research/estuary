@@ -316,9 +316,11 @@ func (q *UsersQuery) ExpectDelete() error {
 type AuthTokensQuery struct{ DB *gorm.DB }
 type AuthToken struct {
 	gorm.Model
-	Token  string `gorm:"unique"`
-	User   UserID
-	Expiry time.Time
+	Token     string `gorm:"unique"`
+	TokenHash string
+	Label     string
+	User      UserID
+	Expiry    time.Time
 }
 
 func NewAuthTokensQuery(db *gorm.DB) *AuthTokensQuery {

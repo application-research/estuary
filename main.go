@@ -204,6 +204,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 	return cfg.SetRequiredOptions()
 }
 
+const TOKEN_LABEL_ADMIN = "admin"
+
 func main() {
 	//set global time to UTC
 	utc, _ := time.LoadLocation("UTC")
@@ -504,10 +506,13 @@ func main() {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
 
+				token := "EST" + uuid.New().String() + "ARY"
 				authToken := &util.AuthToken{
-					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   newUser.ID,
-					Expiry: time.Now().Add(time.Hour * 24 * 365),
+					Token:     token,
+					TokenHash: util.GetTokenHash(token),
+					Label:     TOKEN_LABEL_ADMIN,
+					User:      newUser.ID,
+					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
 				}
 				if err := db.Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)
@@ -610,6 +615,7 @@ func main() {
 		// TODO: this is an ugly self referential hack... should fix
 		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
+			QueueDataDir:     cfg.DataDir,
 		})
 		go pinmgr.Run(50)
 

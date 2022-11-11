@@ -91,12 +91,14 @@ require (
 )
 
 require (
+	github.com/application-research/goque v1.0.3-0.20221024210042-22e2e2c1a730
 	github.com/filecoin-project/go-legs v0.4.6
 	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/ipfs/go-ipfs v0.13.1
 	github.com/libp2p/go-libp2p-pubsub v0.7.1
 	github.com/pkg/errors v0.9.1
+	github.com/syndtr/goleveldb v1.0.0
 )
 
 require (
@@ -116,6 +118,7 @@ require (
 	github.com/akavel/rsrc v0.8.0 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a // indirect
 	github.com/alexbrainman/goissue34681 v0.0.0-20191006012335-3fc7a47baff5 // indirect
+	github.com/beeker1121/goque v2.1.0+incompatible // indirect
 	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bep/debounce v1.2.0 // indirect
@@ -323,7 +326,6 @@ require (
 	github.com/spacemonkeygo/spacelog v0.0.0-20180420211403-2296661a0572 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/swaggo/files v0.0.0-20210815190702-a29dd2bc99b2 // indirect
-	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/twmb/murmur3 v1.1.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.1 // indirect
