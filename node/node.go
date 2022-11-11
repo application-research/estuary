@@ -4,28 +4,30 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
+	"github.com/ipfs/go-bitswap"
+	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p"
+	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
-	peering "github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/node/modules/peering"
 
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
-	migratebs "github.com/application-research/estuary/util/migratebs"
+	"github.com/application-research/estuary/util/migratebs"
 	"github.com/application-research/filclient/keystore"
 	autobatch "github.com/application-research/go-bs-autobatch"
 	lmdb "github.com/filecoin-project/go-bs-lmdb"
 	badgerbs "github.com/filecoin-project/lotus/blockstore/badger"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/chain/wallet"
-	"github.com/ipfs/go-bitswap"
 	bsnet "github.com/ipfs/go-bitswap/network"
-	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
 	nsds "github.com/ipfs/go-datastore/namespace"
 	flatfs "github.com/ipfs/go-ds-flatfs"
 	levelds "github.com/ipfs/go-ds-leveldb"
@@ -35,17 +37,15 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	metri "github.com/ipfs/go-metrics-interface"
 	mprome "github.com/ipfs/go-metrics-prometheus"
-	"github.com/libp2p/go-libp2p"
-	connmgr "github.com/libp2p/go-libp2p-connmgr"
-	"github.com/libp2p/go-libp2p-core/crypto"
-	"github.com/libp2p/go-libp2p-core/host"
-	metrics "github.com/libp2p/go-libp2p-core/metrics"
-	"github.com/libp2p/go-libp2p-core/network"
-	"github.com/libp2p/go-libp2p-core/peer"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p-kad-dht/fullrt"
 	record "github.com/libp2p/go-libp2p-record"
-	"github.com/multiformats/go-multiaddr"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/metrics"
+	"github.com/libp2p/go-libp2p/core/network"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/p2p/net/connmgr"
 	bsm "github.com/whyrusleeping/go-bs-measure"
 	"golang.org/x/xerrors"
 )
@@ -236,7 +236,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		return nil, err
 	}
 
-	var blkst blockstore.Blockstore = mbs
+	var blkst = mbs
 	wrapper, err := init.BlockstoreWrap(blkst)
 	if err != nil {
 		return nil, err
@@ -292,7 +292,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		Blockstore: mbs,
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
-		Bitswap:    bswap.(*bitswap.Bitswap),
+		Bitswap:    bswap,
 		Wallet:     wallet,
 		Bwc:        bwc,
 		Config:     cfg,

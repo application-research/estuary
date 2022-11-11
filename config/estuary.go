@@ -1,6 +1,7 @@
 package config
 
 import (
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"path/filepath"
 	"time"
 
@@ -8,7 +9,7 @@ import (
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 type Estuary struct {
@@ -133,32 +134,26 @@ func NewEstuary(appVersion string) *Estuary {
 			},
 
 			NoLimiter: true,
-			Limits: Limits{
-				SystemLimit: SystemLimit{
-					MinMemory:      1 << 30,
-					MaxMemory:      10 << 30,
-					MemoryFraction: .2,
-
+			LimitConfig: rcmgr.LimitConfig{
+				System: rcmgr.BaseLimit{
+					Memory:          10 << 30,
 					StreamsInbound:  64 << 10,
 					StreamsOutbound: 128 << 10,
 					Streams:         256 << 10,
-
-					ConnsInbound:  256,
-					ConnsOutbound: 256,
-					Conns:         1024,
-
-					FD: 8192,
+					ConnsInbound:    256,
+					ConnsOutbound:   256,
+					Conns:           1024,
+					FD:              8192,
 				},
-				TransientLimit: TransientLimit{
+				Transient: rcmgr.BaseLimit{
+					Memory:          4096,
 					StreamsInbound:  2 << 10,
 					StreamsOutbound: 4 << 10,
 					Streams:         4 << 10,
-
-					ConnsInbound:  256,
-					ConnsOutbound: 256,
-					Conns:         512,
-
-					FD: 1024,
+					ConnsInbound:    256,
+					ConnsOutbound:   256,
+					Conns:           512,
+					FD:              1024,
 				},
 			},
 			ConnectionManager: ConnectionManager{
