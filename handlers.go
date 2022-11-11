@@ -445,7 +445,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
@@ -508,7 +508,7 @@ type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
@@ -534,7 +534,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // handlePeeringPeersList godoc
 // @Summary      List all Peering peers
 // @Description  This endpoint can be used to list all peers on Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
@@ -560,7 +560,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -580,7 +580,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -600,7 +600,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // handlePeeringStatus godoc
 // @Summary      Check Peering Status
 // @Description  This endpoint can be used to check the Peering status
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400            {object}  util.HttpError
