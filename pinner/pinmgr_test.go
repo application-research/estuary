@@ -59,14 +59,14 @@ func newPinData(name string, userid int) PinningOperation {
 	}
 }
 
-var N int = 20
+var N = 20
 var sleeptime time.Duration = 100
 
 func TestSend1Pin1worker(t *testing.T) {
 	//run 1 worker
 
 	i := 1
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(1)
 	pin := newPinData("name"+fmt.Sprint(i), i)
@@ -82,7 +82,7 @@ func TestSend1Pin0workers(t *testing.T) {
 
 	//run 0 workers
 	i := 1
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 	pin := newPinData("name"+fmt.Sprint(i), i)
@@ -95,7 +95,7 @@ func TestSend1Pin0workers(t *testing.T) {
 }
 
 func TestNUniqueNames(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 
 	go mgr.Run(0)
@@ -109,7 +109,7 @@ func TestNUniqueNames(t *testing.T) {
 }
 
 func TestNUniqueNamesWorker(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(5)
 	for i := 0; i < N; i++ {
@@ -124,7 +124,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 
 func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 
 	for j := 0; j < N; j++ {
@@ -145,7 +145,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 }
 
 func TestNUniqueNamesSameUser(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 	for j := 0; j < N; j++ {
@@ -162,7 +162,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 }
 
 func TestNDuplicateNamesWorker(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 
 	pin := newPinData("name", 0)
@@ -184,7 +184,7 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 
 }
 func TestNDuplicateNames(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 
@@ -199,7 +199,7 @@ func TestNDuplicateNames(t *testing.T) {
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(5)
 	for k := 0; k < N; k++ {
@@ -217,7 +217,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 	mgr.closeQueueDataStructures()
 }
 func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 
@@ -233,7 +233,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(1)
 	for k := 0; k < N; k++ {
@@ -264,7 +264,7 @@ func sleepWhileWork(mgr *PinManager, SIZE int) {
 
 func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 	for k := 0; k < N; k++ {
@@ -283,7 +283,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 }
 func TestResumeQueue(t *testing.T) {
 
-	var count int = 0
+	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 	for k := 0; k < N; k++ {

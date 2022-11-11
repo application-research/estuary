@@ -1,10 +1,9 @@
 package config
 
-
 import (
 	"github.com/application-research/filclient"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/libp2p/go-libp2p-core/protocol"
-  "github.com/filecoin-project/go-state-types/abi"
 )
 
 const (
@@ -19,8 +18,8 @@ var DealProtocolsVersionsMap = map[string]protocol.ID{
 
 type Deal struct {
 	FailOnTransferFailure        bool                 `json:"fail_on_transfer_failure"`
-	IsDisabled                   bool           `json:"disabled"`
-	IsVerified                   bool           `json:"verified"`
-  Duration                     abi.ChainEpoch `json:"duration"`
+	IsDisabled                   bool                 `json:"disabled"`
+	IsVerified                   bool                 `json:"verified"`
+	Duration                     abi.ChainEpoch       `json:"duration"`
 	EnabledDealProtocolsVersions map[protocol.ID]bool `json:"enabled_deal_protocol_versions"`
 }

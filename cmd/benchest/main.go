@@ -15,7 +15,7 @@ import (
 
 	"github.com/application-research/estuary/util"
 	pgd "github.com/jinzhu/gorm/dialects/postgres"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

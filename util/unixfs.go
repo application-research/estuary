@@ -9,7 +9,7 @@ import (
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
-	unixfs "github.com/ipfs/go-unixfs"
+	"github.com/ipfs/go-unixfs"
 	"github.com/ipfs/go-unixfs/importer/balanced"
 	ihelper "github.com/ipfs/go-unixfs/importer/helpers"
 	mh "github.com/multiformats/go-multihash"

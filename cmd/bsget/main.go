@@ -19,7 +19,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/cheggaaa/pb/v3"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {

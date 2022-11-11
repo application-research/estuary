@@ -10,7 +10,7 @@ const DefaultContentSizeLimit = 34_000_000_000
 const ContentLocationLocal = "local"
 const TopMinerSel = 15
 const BucketingEnabled = true
-const MinSafeDealLifetime = (2880 * 21) // three weeks
+const MinSafeDealLifetime = 2880 * 21 // three weeks
 
 // amount of time a staging zone will remain open before we aggregate it into a piece of content
 const MaxStagingZoneLifetime = time.Hour * 8

@@ -210,7 +210,7 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		return nil // no content in queue
 	}
 
-	var minCount int = 10000
+	var minCount = 10000
 	var user uint
 	success := false
 	//if user id = 0 has any pins to work on, use that

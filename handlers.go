@@ -29,7 +29,7 @@ import (
 	"github.com/libp2p/go-libp2p-core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -552,7 +552,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 		connectionCheck = append(connectionCheck, peering.PeeringPeer{
 			ID:        peerAddrInfo.ID.Pretty(),
 			Addrs:     peerAddrInfoAddrsStr,
-			Connected: (s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected),
+			Connected: s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected,
 		})
 	}
 	return c.JSON(http.StatusOK, connectionCheck)
@@ -1253,7 +1253,7 @@ type expandedContent struct {
 // @Router       /content/deals [get]
 func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error {
 
-	var limit int = 20
+	var limit = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		l, err := strconv.Atoi(limstr)
 		if err != nil {
@@ -4481,7 +4481,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 		duration = dur
 	}
 
-	all := (c.QueryParam("all") != "")
+	all := c.QueryParam("all") != ""
 
 	var deals []dealQuery
 	if err := s.DB.Model(contentDeal{}).
