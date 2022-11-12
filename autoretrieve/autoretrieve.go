@@ -167,7 +167,7 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 	}
 
 	if emptyCount != 0 {
-		log.Warnf("Skipped %d empty CIDs")
+		log.Warnf("Skipped %d empty CIDs", emptyCount)
 	}
 
 	return &Iterator{
