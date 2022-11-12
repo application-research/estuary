@@ -71,10 +71,6 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 		Addrs: addrs,
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	return &addrInfo, nil
 }
 
@@ -151,7 +147,16 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 
 	// Parse CID strings and extract multihashes
 	var mhs []multihash.Multihash
+	// NOTE(@elijaharita 2022-12-11): CIDs are often empty in the database for
+	// some reason, so I just count the amount that are empty and put one print
+	// statement for them at the end to avoid thousands of lines of log spam.
+	emptyCount := 0
 	for _, cidString := range cidStrings {
+		if cidString == "" {
+			emptyCount++
+			continue
+		}
+
 		_, cid, err := cid.CidFromBytes([]byte(cidString))
 		if err != nil {
 			log.Warnf("Failed to parse CID string '%s': %v", cidString, err)
@@ -159,6 +164,10 @@ func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error
 		}
 
 		mhs = append(mhs, cid.Hash())
+	}
+
+	if emptyCount != 0 {
+		log.Warnf("Skipped %d empty CIDs")
 	}
 
 	return &Iterator{
@@ -191,10 +200,18 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 		peer peer.ID,
 		contextID []byte,
 	) (provider.MultihashIterator, error) {
+		log := log.Named("lister")
+
 		params, err := readContextID(contextID)
 		if err != nil {
 			return nil, err
 		}
+
+		log = log.With(
+			"first_content_id", params.firstContentID,
+			"count", params.count,
+			"indexer_peer_id", params.provider,
+		)
 
 		log.Infof(
 			"Received pull request (peer ID: %s, first content ID: %d, count: %d)",
@@ -219,6 +236,8 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 }
 
 func (provider *Provider) Run(ctx context.Context) error {
+	log := log.Named("loop")
+
 	if err := provider.engine.Start(ctx); err != nil {
 		return err
 	}

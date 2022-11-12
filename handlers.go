@@ -1754,8 +1754,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
@@ -4933,12 +4933,14 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 			return err
 		}
 
+		log.Infof("Added autoretrieve with addr info %s", addrInfo)
+
 		return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
 			Handle:            ar.Handle,
 			Token:             ar.Token,
 			LastConnection:    ar.LastConnection,
 			AddrInfo:          addrInfo,
-			AdvertiseInterval: (time.Minute * time.Duration(s.Node.Config.IndexerAdvertisementInterval)).String(),
+			AdvertiseInterval: s.Node.Config.IndexerAdvertisementInterval.String(),
 		})
 	}()
 
@@ -4967,10 +4969,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 	var out []autoretrieve.AutoretrieveListResponse
 
 	for _, ar := range autoretrieves {
-		// any of the multiaddresses of the peer should work to get addrInfo
-		// we get the first one
-		addresses := strings.Split(ar.Addresses, ",")
-		addrInfo, err := peer.AddrInfoFromString(addresses[0])
+		addrInfo, err := ar.AddrInfo()
 		if err != nil {
 			return err
 		}
@@ -5012,10 +5011,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	// any of the multiaddresses of the peer should work to get addrInfo
-	// we get the first one
-	addresses := strings.Split(ar.Addresses, ",")
-	addrInfo, err := peer.AddrInfoFromString(addresses[0])
+	addrInfo, err := ar.AddrInfo()
 	if err != nil {
 		return err
 	}
