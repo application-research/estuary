@@ -32,6 +32,7 @@ type Estuary struct {
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
 	RPCMessage             RPCMessage    `json:"rpc_message"`
+	Pinning                Pinning       `json:"pinning"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -99,6 +100,13 @@ func NewEstuary(appVersion string) *Estuary {
 			MinDealSize:             256 << 20,                                               //0.25 Gib
 			IndividualDealThreshold: int64((abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10), // 90% of the unpadded data size for a 4GB piece, the 10% gap is to accommodate car file packing overhead, can probably do this better
 			AggregateInterval:       time.Minute * 5,                                         // aggregate staging buckets every 5 minutes
+		},
+
+		Pinning: Pinning{
+			RetryWorker: RetryWorker{
+				Interval:   1,
+				BatchLimit: 1000,
+			},
 		},
 
 		Jaeger: Jaeger{
