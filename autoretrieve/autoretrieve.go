@@ -11,7 +11,7 @@ import (
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/util"
-	provider "github.com/filecoin-project/index-provider"
+	providerpkg "github.com/filecoin-project/index-provider"
 	"github.com/filecoin-project/index-provider/engine"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
@@ -199,7 +199,7 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 		ctx context.Context,
 		peer peer.ID,
 		contextID []byte,
-	) (provider.MultihashIterator, error) {
+	) (providerpkg.MultihashIterator, error) {
 		log := log.Named("lister")
 
 		params, err := readContextID(contextID)
@@ -342,8 +342,32 @@ func (provider *Provider) Run(ctx context.Context) error {
 						metadata.New(metadata.Bitswap{}),
 					)
 					if err != nil {
-						log.Errorf("Failed to publish batch: %v", err)
-						continue
+						// If there was an error, check whether already
+						// advertised
+						if errors.Is(err, providerpkg.ErrAlreadyAdvertised) {
+							// If so, try deleting it first...
+							if _, err := provider.engine.NotifyRemove(ctx, addrInfo.ID, contextID); err != nil {
+								log.Errorf("Failed to remove unexpected existing advertisement: %v", err)
+							}
+
+							// ...and then re-advertise
+							_adCid, err := provider.engine.NotifyPut(
+								ctx,
+								addrInfo,
+								contextID,
+								metadata.New(metadata.Bitswap{}),
+							)
+							if err != nil {
+								log.Errorf("Failed to publish batch after deleting unexpected existing advertisement: %v", err)
+								continue
+							}
+
+							adCid = _adCid
+						} else {
+							// Otherwise, fail out
+							log.Errorf("Failed to publish batch: %v", err)
+							continue
+						}
 					}
 
 					log.Infof("Published new batch with advertisement CID %s", adCid)
