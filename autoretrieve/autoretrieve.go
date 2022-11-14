@@ -346,6 +346,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 						// advertised
 						if errors.Is(err, providerpkg.ErrAlreadyAdvertised) {
 							// If so, try deleting it first...
+							log.Warnf("Batch was unexpectedly already advertised, removing old batch")
 							if _, err := provider.engine.NotifyRemove(ctx, addrInfo.ID, contextID); err != nil {
 								log.Errorf("Failed to remove unexpected existing advertisement: %v", err)
 							}
