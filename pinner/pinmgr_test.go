@@ -60,7 +60,7 @@ func newPinData(name string, userid int) PinningOperation {
 }
 
 var N = 20
-var sleeptime time.Duration = 400
+var sleeptime time.Duration = 100
 
 func TestSend1Pin1worker(t *testing.T) {
 	//run 1 worker
@@ -235,7 +235,8 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
-	go mgr.Run(3)
+	go mgr.Run(2)
+
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
