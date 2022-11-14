@@ -112,7 +112,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should be empty")
-	assert.Equal(t, N, count, "work should be done N times")
+	assert.Equal(t, N, count, "work done should be N")
 	mgr.closeQueueDataStructures()
 }
 
@@ -206,8 +206,8 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Greater(t, count, N*N, "work should be greater than N*N")
-	assert.Less(t, count, N*N*N, "work should be less than N*N*N")
+	assert.Greater(t, count, N*N, "work done should be greater than N*N")
+	assert.Less(t, count, N*N*N, "work done should be less than N*N*N")
 	mgr.closeQueueDataStructures()
 }
 
@@ -241,8 +241,8 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Greater(t, count, N*N, "work should be greater than N*N")
-	assert.Less(t, count, N*N*N, "work should be less than N*N*N")
+	assert.Greater(t, count, N*N, "work done should be greater than N*N")
+	assert.Less(t, count, N*N*N, "work done should be less than N*N*N")
 	mgr.closeQueueDataStructures()
 }
 
