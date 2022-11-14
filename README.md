@@ -22,13 +22,11 @@ Requirements:
 To run locally in a 'dev' environment, first run:
 
 ```sh
-./estuary setup --username=<uname> --password=<pword>
+./estuary setup --username=<uname> --password=<pword> --database="<postgres database connection string>"
 ```
 
 Save the auth token that this outputs, you will need it for interacting with
 and controlling the node. This username and password won't work to log in using the front end (estuary-www), but the auth token will.
-
-NOTE: if you want to use a different database than a sqlite instance stored in your local directory, you will need to configure that with the `--database` flag, like so: `./estuary setup --username=<uname> --password=<pword> --database=XXXXX`
 
 Once you have the setup complete, choose an appropriate directory for estuary to keep its data, and use it as your datadir flag when running estuary.
 You will also need to tell estuary where it can access a lotus gateway api, we recommend using:
@@ -40,13 +38,13 @@ export FULLNODE_API_INFO=wss://api.chain.love
 Then run:
 
 ```sh
-./estuary --datadir=/path/to/storage --database=IF-YOU-NEED-THIS --logging
+./estuary --datadir=/path/to/storage --database="<postgres database connection string>"
 ```
 
 NOTE: Estuary makes only verified deals by default and this requires the wallet address to have datacap(see https://verify.glif.io/). To make deals without datacap, it will require the wallet to have FIL, and the run command will need the `--verified-deal` option set to `false`.
 
 ```sh
-./estuary --datadir=/path/to/storage --database=IF-YOU-NEED-THIS --logging --verified-deal=false
+./estuary --datadir=/path/to/storage --database="<postgres database connection string>" --logging --verified-deal=false
 ```
 
 ## Running as daemon with Systemd

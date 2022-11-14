@@ -73,7 +73,7 @@ func NewShuttle(appVersion string) *Shuttle {
 	return &Shuttle{
 		AppVersion:         appVersion,
 		DataDir:            ".",
-		DatabaseConnString: "sqlite=estuary-shuttle.db",
+		DatabaseConnString: "",
 		ApiListen:          ":3005",
 		Hostname:           "",
 		Private:            false,

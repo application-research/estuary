@@ -20,9 +20,3 @@ func SetDefaultMiners(minerStrs []string) {
 		DefaultMiners = append(DefaultMiners, a)
 	}
 }
-
-var DefaultDatabaseValue string
-
-func SetDefaultDatabaseValue(dbStr string) {
-	DefaultDatabaseValue = dbStr
-}

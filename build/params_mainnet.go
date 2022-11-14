@@ -1,3 +1,4 @@
+//go:build !calibnet
 // +build !calibnet
 
 package build
@@ -47,10 +48,7 @@ var mainnetMinerStrs = []string{
 	"f015927",
 }
 
-var defaultMainnetDatabaseValue = "sqlite=estuary.db"
-
 func init() {
 	SetAddressNetwork(address.Mainnet)
 	SetDefaultMiners(mainnetMinerStrs)
-	SetDefaultDatabaseValue(defaultMainnetDatabaseValue)
 }

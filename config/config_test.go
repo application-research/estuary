@@ -50,7 +50,6 @@ func TestEstuaryDefaultSanity(t *testing.T) {
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)
-	assert.NotEmpty(config.DatabaseConnString)
 	assert.NotEmpty(config.ApiListen)
 	assert.NotEmpty(config.Hostname)
 
@@ -65,7 +64,6 @@ func TestShuttleDefaultSanity(t *testing.T) {
 
 	assert.NotEmpty(config.DataDir)
 	assert.NotEmpty(config.StagingDataDir)
-	assert.NotEmpty(config.DatabaseConnString)
 	assert.NotEmpty(config.ApiListen)
 	assert.NotEmpty(config.EstuaryRemote.Api)
 

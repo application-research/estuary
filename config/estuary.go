@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -63,7 +62,7 @@ func NewEstuary(appVersion string) *Estuary {
 	return &Estuary{
 		AppVersion:             appVersion,
 		DataDir:                ".",
-		DatabaseConnString:     build.DefaultDatabaseValue,
+		DatabaseConnString:     "",
 		ApiListen:              ":3004",
 		LightstepToken:         "",
 		Hostname:               "http://localhost:3004",

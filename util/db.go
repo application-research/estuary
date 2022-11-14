@@ -6,11 +6,14 @@ import (
 	"time"
 
 	"gorm.io/driver/postgres"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func SetupDatabase(dbval string) (*gorm.DB, error) {
+	if dbval == "" {
+		return nil, fmt.Errorf("database connection string cannot be empty")
+	}
+
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
 		return nil, fmt.Errorf("format for database string is 'DBTYPE=PARAMS'")
@@ -18,8 +21,6 @@ func SetupDatabase(dbval string) (*gorm.DB, error) {
 
 	var dial gorm.Dialector
 	switch parts[0] {
-	case "sqlite":
-		dial = sqlite.Open(parts[1])
 	case "postgres":
 		dial = postgres.Open(parts[1])
 	default:

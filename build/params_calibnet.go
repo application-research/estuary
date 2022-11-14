@@ -1,3 +1,4 @@
+//go:build calibnet
 // +build calibnet
 
 package build
@@ -13,10 +14,7 @@ var calibnetMinerStrs = []string{
 	"t01247",
 }
 
-var defaultCalibnetDatabaseValue = "sqlite=estuary_calibnet.db"
-
 func init() {
 	SetAddressNetwork(address.Testnet)
 	SetDefaultMiners(calibnetMinerStrs)
-	SetDefaultDatabaseValue(defaultCalibnetDatabaseValue)
 }
