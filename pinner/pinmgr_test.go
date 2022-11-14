@@ -12,8 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var count_lock sync.Mutex
-
 func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
 	//fmt.Println("onPinStatusUpdate", status, cont)
 	return nil
@@ -26,9 +24,7 @@ func newManager(count *int) *PinManager {
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
 			go cb(1)
-			count_lock.Lock()
 			*count += 1
-			count_lock.Unlock()
 			return nil
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -40,9 +36,7 @@ func newManagerNoDelete(count *int) *PinManager {
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
 			go cb(1)
-			count_lock.Lock()
 			*count += 1
-			count_lock.Unlock()
 			return nil
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
@@ -50,12 +44,12 @@ func newManagerNoDelete(count *int) *PinManager {
 		})
 }
 
-func newPinData(name string, userid int) PinningOperation {
+func newPinData(name string, userid int, contid int) PinningOperation {
 	return PinningOperation{
 		Name:   name,
 		UserId: uint(userid),
 		lk:     sync.Mutex{},
-		ContId: uint(userid),
+		ContId: uint(contid),
 	}
 }
 
@@ -69,7 +63,7 @@ func TestSend1Pin1worker(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(1)
-	pin := newPinData("name"+fmt.Sprint(i), i)
+	pin := newPinData("name"+fmt.Sprint(i), i, i)
 	go mgr.Add(&pin)
 
 	sleepWhileWork(mgr, 0)
@@ -85,7 +79,7 @@ func TestSend1Pin0workers(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
-	pin := newPinData("name"+fmt.Sprint(i), i)
+	pin := newPinData("name"+fmt.Sprint(i), i, i)
 	go mgr.Add(&pin)
 
 	sleepWhileWork(mgr, 0)
@@ -100,7 +94,7 @@ func TestNUniqueNames(t *testing.T) {
 
 	go mgr.Run(0)
 	for i := 0; i < N; i++ {
-		pin := newPinData("name"+fmt.Sprint(i), i)
+		pin := newPinData("name"+fmt.Sprint(i), i, i)
 		go mgr.Add(&pin)
 	}
 	sleepWhileWork(mgr, N-1)
@@ -113,7 +107,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 	mgr := newManager(&count)
 	go mgr.Run(5)
 	for i := 0; i < N; i++ {
-		pin := newPinData("name"+fmt.Sprint(i), i)
+		pin := newPinData("name"+fmt.Sprint(i), i, i)
 		go mgr.Add(&pin)
 	}
 	sleepWhileWork(mgr, 0)
@@ -130,7 +124,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 	for j := 0; j < N; j++ {
 
 		for i := 0; i < N; i++ {
-			pin := newPinData("name"+fmt.Sprint(i), i)
+			pin := newPinData("name"+fmt.Sprint(i), i, i*N+j)
 			go mgr.Add(&pin)
 		}
 	}
@@ -151,7 +145,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 	for j := 0; j < N; j++ {
 
 		for i := 0; i < N; i++ {
-			pin := newPinData("name"+fmt.Sprint(i), i)
+			pin := newPinData("name"+fmt.Sprint(i), i, i)
 			go mgr.Add(&pin)
 		}
 	}
@@ -165,12 +159,12 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
 
-	pin := newPinData("name", 0)
+	pin := newPinData("name", 0, 0)
 	go mgr.Add(&pin)
 	time.Sleep(100 * time.Millisecond)
 
 	for i := 0; i < N; i++ {
-		pin := newPinData("name", 0)
+		pin := newPinData("name", 0, 0)
 		go mgr.Add(&pin)
 	}
 
@@ -189,7 +183,7 @@ func TestNDuplicateNames(t *testing.T) {
 	go mgr.Run(0)
 
 	for i := 0; i < N; i++ {
-		pin := newPinData("name", 0)
+		pin := newPinData("name", 0, 0)
 		go mgr.Add(&pin)
 	}
 	sleepWhileWork(mgr, 1)
@@ -205,24 +199,25 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), j)
+				pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
 				go mgr.Add(&pin)
 			}
 		}
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Less(t, N*N, count, "work done should be greater than N*N")
-	assert.Greater(t, N*N*N, count, "work done should be less than N*N*N")
+	assert.Greater(t, count, N*N, "work should be greater than N*N")
+	assert.Less(t, count, N*N*N, "work should be less than N*N*N")
 	mgr.closeQueueDataStructures()
 }
+
 func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
 
 	for i := 0; i < N; i++ {
-		pin := newPinData("name"+fmt.Sprint(i), i)
+		pin := newPinData("name"+fmt.Sprint(i), i, i)
 		go mgr.Add(&pin)
 	}
 
@@ -239,15 +234,15 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), j)
+				pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
 				go mgr.Add(&pin)
 			}
 		}
 	}
 	sleepWhileWork(mgr, 0)
 	assert.Equal(t, 0, mgr.PinQueueSize(), "queue should have 0 pins in it")
-	assert.Less(t, N*N, count, "work should be greater than than N*N pins in it")
-	assert.Greater(t, N*N*N, count, "work should be less than N*N*N pins in it")
+	assert.Greater(t, count, N*N, "work should be greater than N*N")
+	assert.Less(t, count, N*N*N, "work should be less than N*N*N")
 	mgr.closeQueueDataStructures()
 }
 
@@ -267,10 +262,11 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	var count = 0
 	mgr := newManager(&count)
 	go mgr.Run(0)
+
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), j)
+				pin := newPinData("name"+fmt.Sprint(i), j, i)
 				go mgr.Add(&pin)
 			}
 		}
@@ -289,7 +285,7 @@ func TestResumeQueue(t *testing.T) {
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 0; i < N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), j*N+i)
+				pin := newPinData("name"+fmt.Sprint(i), j, j*N+i)
 				go mgr.Add(&pin)
 			}
 		}

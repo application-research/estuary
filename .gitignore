@@ -22,6 +22,8 @@ estuary_calibnet.db
 leveldb/
 peer.key
 wallet/
+duplicateGuard/
+pinQueue/
 
 cidlistsdir/*
 
