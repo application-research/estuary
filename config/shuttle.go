@@ -117,8 +117,8 @@ func NewShuttle(appVersion string) *Shuttle {
 			},
 
 			NoLimiter: true,
-			LimitConfig: rcmgr.LimitConfig{
-				System: rcmgr.BaseLimit{
+			Limits: rcmgr.ScalingLimitConfig{
+				SystemBaseLimit: rcmgr.BaseLimit{
 					Memory:          10 << 30,
 					StreamsInbound:  64 << 10,
 					StreamsOutbound: 128 << 10,
@@ -128,7 +128,7 @@ func NewShuttle(appVersion string) *Shuttle {
 					Conns:           1024,
 					FD:              8192,
 				},
-				Transient: rcmgr.BaseLimit{
+				TransientBaseLimit: rcmgr.BaseLimit{
 					Memory:          4096,
 					StreamsInbound:  2 << 10,
 					StreamsOutbound: 4 << 10,
@@ -137,6 +137,19 @@ func NewShuttle(appVersion string) *Shuttle {
 					ConnsOutbound:   256,
 					Conns:           512,
 					FD:              1024,
+				},
+				// can be removed after https://github.com/libp2p/go-libp2p/pull/1878 is released
+				ServicePeerBaseLimit: rcmgr.BaseLimit{
+					StreamsInbound:  128,
+					StreamsOutbound: 256,
+					Streams:         256,
+					Memory:          16 << 20,
+				},
+				ServicePeerLimitIncrease: rcmgr.BaseLimitIncrease{
+					StreamsInbound:  4,
+					StreamsOutbound: 8,
+					Streams:         8,
+					Memory:          4 << 20,
 				},
 			},
 			ConnectionManager: ConnectionManager{

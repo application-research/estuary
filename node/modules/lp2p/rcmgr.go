@@ -3,8 +3,8 @@ package lp2p
 import (
 	"context"
 	"fmt"
-
 	"github.com/libp2p/go-libp2p"
+
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
@@ -19,15 +19,14 @@ import (
 
 var log = logging.Logger("rcmgr")
 
-func NewDefaultLimiter() (rcmgr.Limiter, error) {
-	return rcmgr.NewDefaultLimiterFromJSON(nil)
-}
-
-func NewResourceManager(limiter rcmgr.Limiter) (network.ResourceManager, error) {
+func NewResourceManager(limits *rcmgr.ScalingLimitConfig) (network.ResourceManager, error) {
 	var opts []rcmgr.Option
-	libp2p.SetDefaultServiceLimits(&rcmgr.DefaultLimits)
 	opts = append(opts, rcmgr.WithMetrics(rcmgrMetrics{}))
-	mgr, err := rcmgr.NewResourceManager(limiter, opts...)
+	libp2p.SetDefaultServiceLimits(limits)
+	limitConfig := limits.AutoScale()
+	limitConfig.Apply(rcmgr.DefaultLimits.AutoScale())
+	log.Infof("establishing limits: %v", limitConfig)
+	mgr, err := rcmgr.NewResourceManager(rcmgr.NewFixedLimiter(limitConfig), opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error creating resource manager: %w", err)
 	}
