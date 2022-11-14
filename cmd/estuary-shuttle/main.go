@@ -101,6 +101,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("bs-wal", level)
 	_ = logging.SetLogLevel("bs-migrate", level)
 	_ = logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("est-node", level)
 
 	return nil
 }
