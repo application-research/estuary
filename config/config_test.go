@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/libp2p/go-libp2p"
 	"os"
 	"path/filepath"
 	"testing"
@@ -75,7 +76,11 @@ func TestApplyLimits(t *testing.T) {
 	assert := assert.New(t)
 	config := NewShuttle("test-version").Node.Limits
 
-	limiter := rcmgr.NewFixedLimiter(config.AutoScale())
+	libp2p.SetDefaultServiceLimits(&config)
+	limitConfig := config.AutoScale()
+	limitConfig.Apply(rcmgr.DefaultLimits.AutoScale())
+	limiter := rcmgr.NewFixedLimiter(limitConfig)
+
 	systemLimits := limiter.GetSystemLimits()
 	transientLimits := limiter.GetTransientLimits()
 
