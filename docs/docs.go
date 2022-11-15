@@ -630,7 +630,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "coluuid",
+                        "description": "Collection UUID",
                         "name": "coluuid",
                         "in": "path",
                         "required": true

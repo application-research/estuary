@@ -3620,13 +3620,17 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, cols)
 }
 
+type addContentsToCollectionBody struct {
+	ContentIDs []uint `json:"contentids"`
+}
+
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
 // @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        coluuid     path      string  true  "coluuid"
+// @Param        coluuid     path      string  true  "Collection UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -3635,9 +3639,33 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var contentIDs []uint
-	if err := c.Bind(&contentIDs); err != nil {
+	// we accept both {"contentids": [1, 2]} and [1, 2] as json payloads
+	var body addContentsToCollectionBody // {"contentids": [1, 2]}
+	var contentIDs []uint                // [1, 2]
+
+	// Save the body of the request so that we can try to unmarshal it twice (if first bind fails)
+	// We can't simply c.Bind() because that reads directly from the socket
+	// And so if we try c.Bind()ing twice, the second call will just return EOF
+	bodyBytes, err := ioutil.ReadAll(c.Request().Body)
+	if err != nil {
 		return err
+	}
+
+	if err = json.Unmarshal([]byte(bodyBytes), &contentIDs); err != nil {
+		// Failed to bind to [1, 10] payload, try {"contentids": [1, 10]}
+		if err = json.Unmarshal([]byte(bodyBytes), &body); err != nil {
+			return err
+		}
+		contentIDs = body.ContentIDs
+	}
+
+	// no contents
+	if len(contentIDs) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("no contents specified, need at least one"),
+		}
 	}
 
 	if len(contentIDs) > 128 {
