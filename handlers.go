@@ -250,7 +250,7 @@ func (s *Server) ServeAPI() error {
 	admin.GET("/system/config", withUser(s.handleGetSystemConfig))
 
 	// miners
-	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
+	admin.POST("/miners/add/:miner", withUser(s.handleAdminAddMiner))
 	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
 	admin.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
 	admin.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
@@ -2382,17 +2382,23 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleAdminAddMiner(c echo.Context) error {
+func (s *Server) handleAdminAddMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	name := c.QueryParam("name")
+	// verify estuary can connect to this miner before adding it
+	_, err = s.FilClient.GetAsk(c.Request().Context(), m)
+	if err != nil {
+		return err
+	}
 
+	name := c.QueryParam("name")
 	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
+		Owner:   u.ID,
 	}).Error; err != nil {
 		return err
 	}

@@ -57,17 +57,6 @@ import (
 var appVersion string
 var log = logging.Logger("estuary").With("app_version", appVersion)
 
-type storageMiner struct {
-	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
-}
-
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 

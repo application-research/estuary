@@ -44,17 +44,15 @@ func (cm *ContentManager) minerIsSuspended(m address.Address) (bool, error) {
 	if err := cm.DB.Find(&miner, "address = ?", m.String()).Error; err != nil {
 		return false, err
 	}
-
 	return miner.Suspended, nil
 }
 
 type minerDealStats struct {
-	Miner address.Address `json:"miner"`
-
-	TotalDeals     int `json:"totalDeals"`
-	ConfirmedDeals int `json:"confirmedDeals"`
-	FailedDeals    int `json:"failedDeals"`
-	DealFaults     int `json:"dealFaults"`
+	Miner          address.Address `json:"miner"`
+	TotalDeals     int             `json:"totalDeals"`
+	ConfirmedDeals int             `json:"confirmedDeals"`
+	FailedDeals    int             `json:"failedDeals"`
+	DealFaults     int             `json:"dealFaults"`
 }
 
 func (mds *minerDealStats) SuccessRatio() float64 {
@@ -107,6 +105,5 @@ func (cm *ContentManager) computeSortedMinerList() ([]*minerDealStats, error) {
 	sort.Slice(minerStatsArr, func(i, j int) bool {
 		return minerStatsArr[i].Better(minerStatsArr[j])
 	})
-
 	return minerStatsArr, nil
 }
