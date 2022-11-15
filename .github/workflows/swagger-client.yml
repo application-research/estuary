@@ -11,7 +11,7 @@ on:
 jobs:
   BuildSwaggerClients:
     runs-on: ubuntu-latest
-    container: swaggerapi/swagger-codegen-cli
+    container: swaggerapi/swagger-codegen-cli-v3
 
     steps:
       - name: Build clients and push
