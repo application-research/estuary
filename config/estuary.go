@@ -155,7 +155,7 @@ func NewEstuary(appVersion string) *Estuary {
 					Conns:           512,
 					FD:              1024,
 				},
-				// can be removed after https://github.com/libp2p/go-libp2p/pull/1878 is released
+				// TODO: remove after https://github.com/libp2p/go-libp2p/pull/1878 is released
 				ServicePeerBaseLimit: rcmgr.BaseLimit{
 					StreamsInbound:  128,
 					StreamsOutbound: 256,
