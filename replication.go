@@ -1934,7 +1934,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
-	proto, err := cm.minerManager.GetDealProtocol(ctx, miner)
+	proto, err := cm.minerManager.GetDealProtocolForMiner(ctx, miner)
 	if err != nil {
 		return 0, cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,

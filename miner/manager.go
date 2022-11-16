@@ -24,7 +24,7 @@ import (
 type IMinerManager interface {
 	EstimatePrice(ctx context.Context, repl int, pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error)
 	PickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error)
-	GetDealProtocol(ctx context.Context, miner address.Address) (protocol.ID, error)
+	GetDealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error)
 	ComputeSortedMinerList() ([]*minerDealStats, error)
 	SortedMinerList() ([]address.Address, []*minerDealStats, error)
 	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*MinerStorageAsk, error)
@@ -157,20 +157,15 @@ func (mgr *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n
 			continue
 		}
 
-		proto, err := mgr.FilClient.DealProtocolForMiner(ctx, m)
+		proto, err := mgr.GetDealProtocolForMiner(ctx, m)
 		if err != nil {
 			log.Warnf("getting deal protocol for %s failed: %s", m, err)
 			continue
 		}
 
-		_, ok := mgr.cfg.Deal.EnabledDealProtocolsVersions[proto]
-		if !ok {
-			continue
-		}
-
 		ask, err := mgr.GetAsk(ctx, m, time.Minute*30)
 		if err != nil {
-			log.Errorf("getting ask from %s failed: %s", m, err)
+			log.Warnf("getting ask from %s failed: %s", m, err)
 			continue
 		}
 

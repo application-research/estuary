@@ -55,14 +55,9 @@ func (mgr *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piec
 			continue
 		}
 
-		proto, err := mgr.FilClient.DealProtocolForMiner(ctx, dbm.Address.Addr)
+		proto, err := mgr.GetDealProtocolForMiner(ctx, dbm.Address.Addr)
 		if err != nil {
 			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
-			continue
-		}
-
-		_, ok := mgr.cfg.Deal.EnabledDealProtocolsVersions[proto]
-		if !ok {
 			continue
 		}
 
@@ -100,7 +95,7 @@ func (mgr *MinerManager) updateMinerVersion(ctx context.Context, m address.Addre
 	return vers, nil
 }
 
-func (mgr *MinerManager) GetDealProtocol(ctx context.Context, miner address.Address) (protocol.ID, error) {
+func (mgr *MinerManager) GetDealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
 	proto, err := mgr.FilClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
 		return "", err

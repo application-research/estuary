@@ -102,7 +102,7 @@ func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCache
 		return nil, err
 	}
 
-	nmsa := ToDBAsk(netask)
+	nmsa := toDBAsk(netask)
 	nmsa.UpdatedAt = time.Now()
 	nmsa.MinerVersion = minerVersion
 
@@ -118,7 +118,7 @@ func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCache
 	return nmsa, nil
 }
 
-func ToDBAsk(netask *network.AskResponse) *MinerStorageAsk {
+func toDBAsk(netask *network.AskResponse) *MinerStorageAsk {
 	return &MinerStorageAsk{
 		Miner:               netask.Ask.Ask.Miner.String(),
 		Price:               netask.Ask.Ask.Price.String(),
