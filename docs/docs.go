@@ -2098,6 +2098,9 @@ const docTemplate = `{
             },
             "post": {
                 "description": "This endpoint adds a pin to the IPFS daemon.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -2174,6 +2177,9 @@ const docTemplate = `{
             },
             "post": {
                 "description": "This endpoint replaces a pinned object.",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
