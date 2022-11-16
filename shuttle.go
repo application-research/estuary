@@ -362,6 +362,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			UserID:              cd.UserID,
 			MinerVersion:        cd.MinerVersion,
 			DealProtocolVersion: cd.DealProtocolVersion,
+			DealUUID:            cd.DealUUID,
 		}); oerr != nil {
 			return oerr
 		}
