@@ -6,11 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
@@ -448,59 +449,7 @@ func main() {
 				if password == "" {
 					return errors.New("setup password cannot be empty")
 				}
-
-				db, err := setupDatabase(cfg.DatabaseConnString)
-				if err != nil {
-					return err
-				}
-
-				quietdb := db.Session(&gorm.Session{
-					Logger: logger.Discard,
-				})
-
-				username = strings.ToLower(username)
-
-				var exist *util.User
-				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
-					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-						return err
-					}
-					exist = nil
-				}
-
-				if exist != nil {
-					return fmt.Errorf("a user already exist for that username:%s", username)
-				}
-
-				salt := uuid.New().String()
-
-				//	work with bcrypt on cli defined password.
-				var passwordBytes = []byte(password)
-				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
-
-				newUser := &util.User{
-					UUID:     uuid.New().String(),
-					Username: username,
-					Salt:     salt, // default salt.
-					PassHash: string(hashedPasswordBytes),
-					Perm:     100,
-				}
-
-				if err := db.Create(newUser).Error; err != nil {
-					return fmt.Errorf("admin user creation failed: %w", err)
-				}
-
-				authToken := &util.AuthToken{
-					Token:  "EST" + uuid.New().String() + "ARY",
-					User:   newUser.ID,
-					Expiry: time.Now().Add(time.Hour * 24 * 365),
-				}
-				if err := db.Create(authToken).Error; err != nil {
-					return fmt.Errorf("admin token creation failed: %w", err)
-				}
-
-				fmt.Printf("Auth Token: %v\n", authToken.Token)
-				return nil
+				return Setup(username, password, cfg)
 			},
 		}, {
 			Name:  "configure",
@@ -519,8 +468,6 @@ func main() {
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
-		log.Infof("estuary version: %s", appVersion)
-
 		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
 			return err
 		}
@@ -528,148 +475,7 @@ func main() {
 		if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
 			return err
 		}
-
-		db, err := setupDatabase(cfg.DatabaseConnString)
-		if err != nil {
-			return err
-		}
-
-		init := Initializer{&cfg.Node, db, nil}
-		nd, err := node.Setup(cctx.Context, &init)
-		if err != nil {
-			return err
-		}
-
-		if err = view.Register(metrics.DefaultViews...); err != nil {
-			log.Fatalf("Cannot register the OpenCensus view: %v", err)
-			return err
-		}
-
-		addr, err := nd.Wallet.GetDefault()
-		if err != nil {
-			return err
-		}
-
-		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
-		if err != nil {
-			return err
-		}
-
-		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
-		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
-		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
-		flset.String("api-url", "", "node api url")
-		err = flset.Set("api-url", cfg.Node.ApiURL)
-		if err != nil {
-			return err
-		}
-
-		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
-		api, closer, err := lcli.GetGatewayAPI(ncctx)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		// setup tracing to jaeger if enabled
-		if cfg.Jaeger.EnableTracing {
-			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
-			if err != nil {
-				return err
-			}
-			otel.SetTracerProvider(tp)
-		}
-
-		s = &Server{
-			DB:          db,
-			Node:        nd,
-			Api:         api,
-			StagingMgr:  sbmgr,
-			tracer:      otel.Tracer("api"),
-			cacher:      memo.NewCacher(),
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
-			cfg:         cfg,
-		}
-
-		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
-			MaxActivePerUser: 20,
-		})
-		go pinmgr.Run(50)
-
-		rhost := routed.Wrap(nd.Host, nd.FilDht)
-
-		var opts []func(*filclient.Config)
-		if cfg.LowMem {
-			opts = append(opts, func(cfg *filclient.Config) {
-				cfg.GraphsyncOpts = []gsimpl.Option{
-					gsimpl.MaxInProgressIncomingRequests(100),
-					gsimpl.MaxInProgressOutgoingRequests(100),
-					gsimpl.MaxMemoryResponder(4 << 30),
-					gsimpl.MaxMemoryPerPeerResponder(16 << 20),
-					gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
-					gsimpl.MessageSendRetries(2),
-					gsimpl.SendMessageTimeout(2 * time.Minute),
-				}
-			})
-		}
-
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
-		if err != nil {
-			return err
-		}
-
-		for _, a := range nd.Host.Addrs() {
-			fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
-		}
-
-		go func() {
-			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
-					fmt.Println("failed to connect to bootstrapper: ", err)
-					continue
-				}
-			}
-
-			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
-				fmt.Println("dht bootstrapping failed: ", err)
-			}
-		}()
-
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
-		if err != nil {
-			return err
-		}
-		s.CM = cm
-
-		fc.SetPieceCommFunc(cm.getPieceCommitment)
-		s.FilClient = fc
-
-		if cfg.EnableAutoRetrieve {
-			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
-		}
-
-		go cm.Run(cctx.Context)                                               // deal making and deal reconciliation
-		go cm.handleShuttleMessages(cctx.Context, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-
-		s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
-		if err != nil {
-			return err
-		}
-
-		go s.Node.ArEngine.Run()
-		defer s.Node.ArEngine.Shutdown()
-
-		go func() {
-			time.Sleep(time.Second * 10)
-
-			if err := s.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
-				log.Errorf("failed to restart transfers: %s", err)
-			}
-		}()
-
-		return s.ServeAPI()
+		return Run(cctx.Context, cfg)
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -873,4 +679,205 @@ func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string
 			},
 		},
 	})
+}
+
+func Setup(username, password string, cfg *config.Estuary) error {
+	db, err := setupDatabase(cfg.DatabaseConnString)
+	if err != nil {
+		return err
+	}
+
+	quietdb := db.Session(&gorm.Session{
+		Logger: logger.Discard,
+	})
+
+	username = strings.ToLower(username)
+
+	var exist *util.User
+	if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		exist = nil
+	}
+
+	if exist != nil {
+		return fmt.Errorf("a user already exist for that username:%s", username)
+	}
+
+	salt := uuid.New().String()
+
+	//	work with bcrypt on cli defined password.
+	var passwordBytes = []byte(password)
+	hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+
+	newUser := &util.User{
+		UUID:     uuid.New().String(),
+		Username: username,
+		Salt:     salt, // default salt.
+		PassHash: string(hashedPasswordBytes),
+		Perm:     100,
+	}
+
+	if err := db.Create(newUser).Error; err != nil {
+		return fmt.Errorf("admin user creation failed: %w", err)
+	}
+
+	authToken := &util.AuthToken{
+		Token:  "EST" + uuid.New().String() + "ARY",
+		User:   newUser.ID,
+		Expiry: time.Now().Add(time.Hour * 24 * 365),
+	}
+	if err := db.Create(authToken).Error; err != nil {
+		return fmt.Errorf("admin token creation failed: %w", err)
+	}
+
+	fmt.Printf("Auth Token: %v\n", authToken.Token)
+	return nil
+}
+
+func Run(ctx context.Context, cfg *config.Estuary) error {
+	log.Infof("estuary version: %s", appVersion)
+
+	db, err := setupDatabase(cfg.DatabaseConnString)
+	if err != nil {
+		return err
+	}
+
+	init := Initializer{&cfg.Node, db, nil}
+	nd, err := node.Setup(ctx, &init)
+	if err != nil {
+		return err
+	}
+
+	if err = view.Register(metrics.DefaultViews...); err != nil {
+		log.Fatalf("Cannot register the OpenCensus view: %v", err)
+		return err
+	}
+
+	addr, err := nd.Wallet.GetDefault()
+	if err != nil {
+		return err
+	}
+
+	sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
+	if err != nil {
+		return err
+	}
+
+	// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
+	// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+	flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+	flset.String("api-url", "", "node api url")
+	err = flset.Set("api-url", cfg.Node.ApiURL)
+	if err != nil {
+		return err
+	}
+
+	ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+	api, closer, err := lcli.GetGatewayAPI(ncctx)
+	if err != nil {
+		return err
+	}
+	defer closer()
+
+	// setup tracing to jaeger if enabled
+	if cfg.Jaeger.EnableTracing {
+		tp, err := metrics.NewJaegerTraceProvider("estuary",
+			cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
+		if err != nil {
+			return err
+		}
+		otel.SetTracerProvider(tp)
+	}
+
+	s = &Server{
+		DB:          db,
+		Node:        nd,
+		Api:         api,
+		StagingMgr:  sbmgr,
+		tracer:      otel.Tracer("api"),
+		cacher:      memo.NewCacher(),
+		gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+		cfg:         cfg,
+	}
+
+	// TODO: this is an ugly self referential hack... should fix
+	pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
+		MaxActivePerUser: 20,
+	})
+	go pinmgr.Run(50)
+
+	rhost := routed.Wrap(nd.Host, nd.FilDht)
+
+	var opts []func(*filclient.Config)
+	if cfg.LowMem {
+		opts = append(opts, func(cfg *filclient.Config) {
+			cfg.GraphsyncOpts = []gsimpl.Option{
+				gsimpl.MaxInProgressIncomingRequests(100),
+				gsimpl.MaxInProgressOutgoingRequests(100),
+				gsimpl.MaxMemoryResponder(4 << 30),
+				gsimpl.MaxMemoryPerPeerResponder(16 << 20),
+				gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
+				gsimpl.MessageSendRetries(2),
+				gsimpl.SendMessageTimeout(2 * time.Minute),
+			}
+		})
+	}
+
+	fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+	if err != nil {
+		return err
+	}
+
+	for _, a := range nd.Host.Addrs() {
+		fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
+	}
+
+	go func() {
+		for _, ai := range node.BootstrapPeers {
+			if err := nd.Host.Connect(ctx, ai); err != nil {
+				fmt.Println("failed to connect to bootstrapper: ", err)
+				continue
+			}
+		}
+
+		if err := nd.Dht.Bootstrap(ctx); err != nil {
+			fmt.Println("dht bootstrapping failed: ", err)
+		}
+	}()
+
+	cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
+	if err != nil {
+		return err
+	}
+	s.CM = cm
+
+	fc.SetPieceCommFunc(cm.getPieceCommitment)
+	s.FilClient = fc
+
+	if cfg.EnableAutoRetrieve {
+		init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
+	}
+
+	go cm.Run(ctx)                                               // deal making and deal reconciliation
+	go cm.handleShuttleMessages(ctx, cfg.ShuttleMessageHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+
+	s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore)
+	if err != nil {
+		return err
+	}
+
+	go s.Node.ArEngine.Run()
+	defer s.Node.ArEngine.Shutdown()
+
+	go func() {
+		time.Sleep(time.Second * 10)
+
+		if err := s.RestartAllTransfersForLocation(ctx, constants.ContentLocationLocal); err != nil {
+			log.Errorf("failed to restart transfers: %s", err)
+		}
+	}()
+
+	return s.ServeAPI()
 }
