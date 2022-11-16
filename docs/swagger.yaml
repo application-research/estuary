@@ -1551,6 +1551,8 @@ paths:
       tags:
         - pinning
     post:
+      consumes:
+        - application/json
       description: This endpoint adds a pin to the IPFS daemon.
       parameters:
         - description: Pin Body {cid:cid, name:name}
@@ -1621,6 +1623,8 @@ paths:
       tags:
         - pinning
     post:
+      consumes:
+        - application/json
       description: This endpoint replaces a pinned object.
       parameters:
         - description: Pin ID
