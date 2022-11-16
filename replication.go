@@ -16,6 +16,7 @@ import (
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/util"
@@ -58,16 +59,10 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type miner struct {
-	address             address.Address
-	dealProtocolVersion protocol.ID
-	ask                 *minerStorageAsk
-}
-
 type deal struct {
 	minerAddr      address.Address
 	isPushTransfer bool
-	contentDeal    *contentDeal
+	contentDeal    *util.ContentDeal
 }
 
 type ContentManager struct {
@@ -95,12 +90,6 @@ type ContentManager struct {
 	contentLk sync.RWMutex
 
 	contentSizeLimit int64
-
-	// Some fields for miner reputation management
-	minerLk      sync.Mutex
-	sortedMiners []address.Address
-	rawData      []*minerDealStats
-	lastComputed time.Time
 
 	// deal bucketing stuff
 	bucketLk sync.Mutex
@@ -132,8 +121,7 @@ type ContentManager struct {
 	DisableFilecoinStorage bool
 
 	IncomingRPCMessages chan *drpc.Message
-
-	EnabledDealProtocolsVersions map[protocol.ID]bool
+	minerManager        miner.IMinerManager
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -335,41 +323,41 @@ func (cb *contentStagingZone) hasContent(c util.Content) bool {
 	return false
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary) (*ContentManager, error) {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *TrackingBlockstore, nbs *node.NotifyBlockstore, prov *batched.BatchProvidingSystem, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
 	}
 
 	cm := &ContentManager{
-		cfg:                          cfg,
-		Provider:                     prov,
-		DB:                           db,
-		Api:                          api,
-		FilClient:                    fc,
-		Blockstore:                   tbs.Under().(node.EstuaryBlockstore),
-		Host:                         nd.Host,
-		Node:                         nd,
-		NotifyBlockstore:             nbs,
-		Tracker:                      tbs,
-		ToCheck:                      make(chan uint, 100000),
-		retrievalsInProgress:         make(map[uint]*util.RetrievalProgress),
-		buckets:                      make(map[uint][]*contentStagingZone),
-		pinMgr:                       pinmgr,
-		remoteTransferStatus:         cache,
-		shuttles:                     make(map[string]*ShuttleConnection),
-		contentSizeLimit:             constants.DefaultContentSizeLimit,
-		hostname:                     cfg.Hostname,
-		inflightCids:                 make(map[cid.Cid]uint),
-		FailDealOnTransferFailure:    cfg.Deal.FailOnTransferFailure,
-		isDealMakingDisabled:         cfg.Deal.IsDisabled,
-		globalContentAddingDisabled:  cfg.Content.DisableGlobalAdding,
-		localContentAddingDisabled:   cfg.Content.DisableLocalAdding,
-		Replication:                  cfg.Replication,
-		tracer:                       otel.Tracer("replicator"),
-		DisableFilecoinStorage:       cfg.DisableFilecoinStorage,
-		IncomingRPCMessages:          make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
-		EnabledDealProtocolsVersions: cfg.Deal.EnabledDealProtocolsVersions,
+		cfg:                         cfg,
+		Provider:                    prov,
+		DB:                          db,
+		Api:                         api,
+		FilClient:                   fc,
+		Blockstore:                  tbs.Under().(node.EstuaryBlockstore),
+		Host:                        nd.Host,
+		Node:                        nd,
+		NotifyBlockstore:            nbs,
+		Tracker:                     tbs,
+		ToCheck:                     make(chan uint, 100000),
+		retrievalsInProgress:        make(map[uint]*util.RetrievalProgress),
+		buckets:                     make(map[uint][]*contentStagingZone),
+		pinMgr:                      pinmgr,
+		remoteTransferStatus:        cache,
+		shuttles:                    make(map[string]*ShuttleConnection),
+		contentSizeLimit:            constants.DefaultContentSizeLimit,
+		hostname:                    cfg.Hostname,
+		inflightCids:                make(map[cid.Cid]uint),
+		FailDealOnTransferFailure:   cfg.Deal.FailOnTransferFailure,
+		isDealMakingDisabled:        cfg.Deal.IsDisabled,
+		globalContentAddingDisabled: cfg.Content.DisableGlobalAdding,
+		localContentAddingDisabled:  cfg.Content.DisableLocalAdding,
+		Replication:                 cfg.Replication,
+		tracer:                      otel.Tracer("replicator"),
+		DisableFilecoinStorage:      cfg.DisableFilecoinStorage,
+		IncomingRPCMessages:         make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
+		minerManager:                minerManager,
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
@@ -825,356 +813,12 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	return nil
 }
 
-type estimateResponse struct {
-	Total *abi.TokenAmount
-	Asks  []*minerStorageAsk
-}
-
-func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
-	ctx, span := cm.tracer.Start(ctx, "estimatePrice", trace.WithAttributes(
-		attribute.Int("replication", repl),
-	))
-	defer span.End()
-
-	miners, err := cm.pickMiners(ctx, repl, pieceSize, nil, false)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(miners) == 0 {
-		return nil, fmt.Errorf("failed to find any miners for estimating deal price")
-	}
-
-	asks := make([]*minerStorageAsk, 0)
-	total := abi.NewTokenAmount(0)
-	for _, m := range miners {
-		dealSize := pieceSize
-		if dealSize < m.ask.MinPieceSize {
-			dealSize = m.ask.MinPieceSize
-		}
-
-		price := m.ask.GetPrice(verified)
-		cost, err := filclient.ComputePrice(price, dealSize, duration)
-		if err != nil {
-			return nil, err
-		}
-
-		asks = append(asks, m.ask)
-		total = types.BigAdd(total, *cost)
-	}
-
-	return &estimateResponse{
-		Total: &total,
-		Asks:  asks,
-	}, nil
-}
-
-type minerStorageAsk struct {
-	gorm.Model          `json:"-"`
-	Miner               string              `gorm:"unique" json:"miner"`
-	Price               string              `json:"price"`
-	VerifiedPrice       string              `json:"verifiedPrice"`
-	PriceBigInt         big.Int             `gorm:"-" json:"-"`
-	VerifiedPriceBigInt big.Int             `gorm:"-" json:"-"`
-	MinPieceSize        abi.PaddedPieceSize `json:"minPieceSize"`
-	MaxPieceSize        abi.PaddedPieceSize `json:"maxPieceSize"`
-	MinerVersion        string              `json:"miner_version"`
-}
-
-func (msa *minerStorageAsk) GetPrice(verified bool) types.BigInt {
-	if verified {
-		return msa.VerifiedPriceBigInt
-	}
-	return msa.PriceBigInt
-}
-
-func (cm *ContentManager) pickMinerDist(n int) (int, int) {
-	if n < 3 {
-		return n, 0
-	}
-
-	if n < 7 {
-		return 2, n - 2
-	}
-	return n - (n / 2), n / 2
-}
-
-func (cm *ContentManager) pickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	ctx, span := cm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
-		attribute.Int("count", n),
-	))
-	defer span.End()
-	if exclude == nil {
-		exclude = make(map[address.Address]bool)
-	}
-
-	// some portion of the miners will be 'first N of our best miners' and the rest will be randomly chosen from our list
-	// over time, our miner list will be all fairly high quality so this should just serve to shake things up a bit and
-	// give miners more of a chance to prove themselves
-	_, nrand := cm.pickMinerDist(n)
-
-	out, err := cm.randomMinerListForDeal(ctx, nrand, pieceSize, exclude, filterByPrice)
-	if err != nil {
-		return nil, err
-	}
-	return cm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
-}
-
-// TODO - this is currently not used, if we choose to use it,
-// add a check to make sure miners selected is still active in db
-func (cm *ContentManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	sortedMiners, _, err := cm.sortedMinerList()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(sortedMiners) == 0 {
-		return out, nil
-	}
-
-	if len(sortedMiners) > constants.TopMinerSel {
-		sortedMiners = sortedMiners[:constants.TopMinerSel]
-	}
-
-	rand.Shuffle(len(sortedMiners), func(i, j int) {
-		sortedMiners[i], sortedMiners[j] = sortedMiners[j], sortedMiners[i]
-	})
-
-	for _, m := range sortedMiners {
-		if len(out) >= n {
-			break
-		}
-
-		if exclude[m] {
-			continue
-		}
-
-		proto, err := cm.FilClient.DealProtocolForMiner(ctx, m)
-		if err != nil {
-			log.Warnf("getting deal protocol for %s failed: %s", m, err)
-			continue
-		}
-
-		_, ok := cm.EnabledDealProtocolsVersions[proto]
-		if !ok {
-			continue
-		}
-
-		ask, err := cm.getAsk(ctx, m, time.Minute*30)
-		if err != nil {
-			log.Errorf("getting ask from %s failed: %s", m, err)
-			continue
-		}
-
-		if filterByPrice {
-			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
-			if cm.priceIsTooHigh(price) {
-				continue
-			}
-		}
-
-		if cm.sizeIsCloseEnough(pieceSize, ask.MinPieceSize, ask.MaxPieceSize) {
-			out = append(out, miner{address: m, dealProtocolVersion: proto, ask: ask})
-			exclude[m] = true
-		}
-	}
-	return out, nil
-}
-
-func (cm *ContentManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	var dbminers []storageMiner
-	if err := cm.DB.Find(&dbminers, "not suspended").Error; err != nil {
-		return nil, err
-	}
-
-	out := make([]miner, 0)
-	if len(dbminers) == 0 {
-		return out, nil
-	}
-
-	rand.Shuffle(len(dbminers), func(i, j int) {
-		dbminers[i], dbminers[j] = dbminers[j], dbminers[i]
-	})
-
-	for _, dbm := range dbminers {
-		if len(out) >= n {
-			break
-		}
-
-		if exclude[dbm.Address.Addr] {
-			continue
-		}
-
-		proto, err := cm.FilClient.DealProtocolForMiner(ctx, dbm.Address.Addr)
-		if err != nil {
-			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
-			continue
-		}
-
-		_, ok := cm.EnabledDealProtocolsVersions[proto]
-		if !ok {
-			continue
-		}
-
-		ask, err := cm.getAsk(ctx, dbm.Address.Addr, time.Minute*30)
-		if err != nil {
-			log.Errorf("getting ask from %s failed: %s", dbm.Address.Addr, err)
-			continue
-		}
-
-		if filterByPrice {
-			price := ask.GetPrice(cm.cfg.Deal.IsVerified)
-			if cm.priceIsTooHigh(price) {
-				continue
-			}
-		}
-
-		if cm.sizeIsCloseEnough(pieceSize, ask.MinPieceSize, ask.MaxPieceSize) {
-			out = append(out, miner{address: dbm.Address.Addr, dealProtocolVersion: proto, ask: ask})
-			exclude[dbm.Address.Addr] = true
-		}
-	}
-	return out, nil
-}
-
-func (cm *ContentManager) getAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*minerStorageAsk, error) {
-	ctx, span := cm.tracer.Start(ctx, "getAsk", trace.WithAttributes(
-		attribute.Stringer("miner", m),
-	))
-	defer span.End()
-
-	var asks []minerStorageAsk
-	if err := cm.DB.Find(&asks, "miner = ?", m.String()).Error; err != nil {
-		return nil, err
-	}
-
-	minerVersion, err := cm.updateMinerVersion(ctx, m)
-	if err != nil {
-		log.Warnf("failed to update miner version: %s", err)
-	}
-
-	if len(asks) > 0 && time.Since(asks[0].UpdatedAt) < maxCacheAge {
-		ask := asks[0]
-		priceBigInt, err := types.BigFromString(ask.Price)
-		if err != nil {
-			return nil, err
-		}
-		ask.PriceBigInt = priceBigInt
-
-		verifiedPriceBigInt, err := types.BigFromString(ask.VerifiedPrice)
-		if err != nil {
-			return nil, err
-		}
-		ask.VerifiedPriceBigInt = verifiedPriceBigInt
-
-		if ask.MinerVersion == "" {
-			ask.MinerVersion = minerVersion
-		}
-		return &ask, nil
-	}
-
-	netask, err := cm.FilClient.GetAsk(ctx, m)
-	if err != nil {
-		span.RecordError(err)
-		return nil, err
-	}
-
-	nmsa := toDBAsk(netask)
-	nmsa.UpdatedAt = time.Now()
-	nmsa.MinerVersion = minerVersion
-
-	if err := cm.DB.Clauses(clause.OnConflict{
-		Columns: []clause.Column{
-			{Name: "miner"},
-		},
-		DoUpdates: clause.AssignmentColumns([]string{"price", "verified_price", "min_piece_size", "updated_at", "miner_version"}),
-	}).Create(nmsa).Error; err != nil {
-		span.RecordError(err)
-		return nil, err
-	}
-	return nmsa, nil
-}
-
-func (cm *ContentManager) updateMinerVersion(ctx context.Context, m address.Address) (string, error) {
-	vers, err := cm.FilClient.GetMinerVersion(ctx, m)
-	if err != nil {
-		return "", err
-	}
-
-	if vers != "" {
-		if err := cm.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
-			return "", err
-		}
-	}
-	return vers, nil
-}
-
-func (cm *ContentManager) sizeIsCloseEnough(pieceSize, askMinPieceSize, askMaxPieceSize abi.PaddedPieceSize) bool {
-	if pieceSize > askMinPieceSize && pieceSize < askMaxPieceSize {
-		return true
-	}
-	return false
-}
-
-func toDBAsk(netask *network.AskResponse) *minerStorageAsk {
-	return &minerStorageAsk{
-		Miner:               netask.Ask.Ask.Miner.String(),
-		Price:               netask.Ask.Ask.Price.String(),
-		VerifiedPrice:       netask.Ask.Ask.VerifiedPrice.String(),
-		MinPieceSize:        netask.Ask.Ask.MinPieceSize,
-		MaxPieceSize:        netask.Ask.Ask.MaxPieceSize,
-		PriceBigInt:         netask.Ask.Ask.Price,
-		VerifiedPriceBigInt: netask.Ask.Ask.VerifiedPrice,
-	}
-}
-
-type contentDeal struct {
-	gorm.Model
-	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
-	UserID           uint       `json:"user_id" gorm:"index:,option:CONCURRENTLY"`
-	PropCid          util.DbCID `json:"propCid"`
-	DealUUID         string     `json:"dealUuid"`
-	Miner            string     `json:"miner"`
-	DealID           int64      `json:"dealId"`
-	Failed           bool       `json:"failed"`
-	Verified         bool       `json:"verified"`
-	Slashed          bool       `json:"slashed"`
-	FailedAt         time.Time  `json:"failedAt,omitempty"`
-	DTChan           string     `json:"dtChan" gorm:"index"`
-	TransferStarted  time.Time  `json:"transferStarted"`
-	TransferFinished time.Time  `json:"transferFinished"`
-
-	OnChainAt           time.Time   `json:"onChainAt"`
-	SealedAt            time.Time   `json:"sealedAt"`
-	DealProtocolVersion protocol.ID `json:"deal_protocol_version"`
-	MinerVersion        string      `json:"miner_version"`
-}
-
-func (cd contentDeal) MinerAddr() (address.Address, error) {
-	return address.NewFromString(cd.Miner)
-}
-
-var ErrNoChannelID = fmt.Errorf("no data transfer channel id in deal")
-
-func (cd contentDeal) ChannelID() (datatransfer.ChannelID, error) {
-	if cd.DTChan == "" {
-		return datatransfer.ChannelID{}, ErrNoChannelID
-	}
-
-	chid, err := filclient.ChannelIDFromString(cd.DTChan)
-	if err != nil {
-		err = fmt.Errorf("incorrectly formatted data transfer channel ID in contentDeal record: %w", err)
-		return datatransfer.ChannelID{}, err
-	}
-	return *chid, nil
-}
-
 func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
 	if st == nil {
 		return nil
 	}
 
-	var deal contentDeal
+	var deal util.ContentDeal
 	if err := cm.DB.First(&deal, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
@@ -1201,7 +845,7 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 		}
 	}
 
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
+	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 	return nil
@@ -1364,7 +1008,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	// if not enough deals, go make more
 	// check all existing deals, ensure they are still active
 	// if not active, repair!
-	var deals []contentDeal
+	var deals []util.ContentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -1592,7 +1236,7 @@ const (
 )
 
 // first check deal protocol version 2, then check version 1
-func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *contentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *util.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -1611,7 +1255,7 @@ func (cm *ContentManager) transferStatusByID(ctx context.Context, id string) (*f
 	return chanst, nil
 }
 
-func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content util.Content) (int, error) {
+func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, content util.Content) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
 	defer cancel()
 
@@ -1664,7 +1308,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		}
 
 		if len(updates) > 0 {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(updates).Error; err != nil {
+			if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(updates).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
@@ -1688,7 +1332,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 
 		// check slashed health
 		if deal.State.SlashEpoch > 0 {
-			if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
+			if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 
@@ -1714,7 +1358,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 		// checked sealed/active health - TODO set actual sealed time
 		if deal.State.SectorStartEpoch > 0 {
 			if d.SealedAt.IsZero() {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
+				if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
 					return DEAL_CHECK_UNKNOWN, err
 				}
 			}
@@ -1897,8 +1541,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *contentDeal, content
 	return DEAL_CHECK_PROGRESS, nil
 }
 
-func (cm *ContentManager) updateDealID(d *contentDeal, id int64) error {
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+func (cm *ContentManager) updateDealID(d *util.ContentDeal, id int64) error {
+	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
 		"deal_id":     id,
 		"on_chain_at": time.Now(),
 	}).Error; err != nil {
@@ -1907,7 +1551,7 @@ func (cm *ContentManager) updateDealID(d *contentDeal, id int64) error {
 	return nil
 }
 
-func (cm *ContentManager) dealHasExpired(ctx context.Context, d *contentDeal, head *types.TipSet) (bool, error) {
+func (cm *ContentManager) dealHasExpired(ctx context.Context, d *util.ContentDeal, head *types.TipSet) (bool, error) {
 	prop, err := cm.getProposalRecord(d.PropCid.CID)
 	if err != nil {
 		log.Warnf("failed to get proposal record for deal %d: %s", d.ID, err)
@@ -1930,7 +1574,7 @@ type transferStatusRecord struct {
 	Received time.Time
 }
 
-func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *contentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *util.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
@@ -1971,7 +1615,7 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
 
-func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *contentDeal) (abi.DealID, error) {
+func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *util.ContentDeal) (abi.DealID, error) {
 	mlookup, err := cm.Api.StateSearchMsg(ctx, types.EmptyTSK, pubcid, 1000, false)
 	if err != nil {
 		return 0, xerrors.Errorf("could not find published deal on chain: %w", err)
@@ -2029,7 +1673,7 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *cont
 	return retval.IDs[dealix], nil
 }
 
-func (cm *ContentManager) repairDeal(d *contentDeal) error {
+func (cm *ContentManager) repairDeal(d *util.ContentDeal) error {
 	if d.DealID != 0 {
 		log.Debugw("miner faulted on deal", "deal", d.DealID, "content", d.Content, "miner", d.Miner)
 		maddr, err := d.MinerAddr()
@@ -2051,30 +1695,13 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 	}
 
 	log.Debugw("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 		"failed":    true,
 		"failed_at": time.Now(),
 	}).Error; err != nil {
 		return err
 	}
 	return nil
-}
-
-var priceMax abi.TokenAmount
-
-func init() {
-	max, err := types.ParseFIL("0.00000003")
-	if err != nil {
-		panic(err)
-	}
-	priceMax = abi.TokenAmount(max)
-}
-
-func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
-	if cm.cfg.Deal.IsVerified {
-		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
-	}
-	return types.BigCmp(price, priceMax) > 0
 }
 
 type proposalRecord struct {
@@ -2102,15 +1729,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
-	miners, err := cm.pickMiners(ctx, count*2, pieceSize.Padded(), exclude, true)
+	miners, err := cm.minerManager.PickMiners(ctx, count*2, pieceSize.Padded(), exclude, true)
 	if err != nil {
 		return err
 	}
 
 	var readyDeals []deal
 	for _, m := range miners {
-		price := m.ask.GetPrice(cm.cfg.Deal.IsVerified)
-		prop, err := cm.FilClient.MakeDeal(ctx, m.address, content.Cid.CID, price, m.ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
+		price := m.Ask.GetPrice(cm.cfg.Deal.IsVerified)
+		prop, err := cm.FilClient.MakeDeal(ctx, m.Address, content.Cid.CID, price, m.Ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 		if err != nil {
 			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
 		}
@@ -2126,15 +1753,15 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		}
 
 		dealUUID := uuid.New()
-		cd := &contentDeal{
+		cd := &util.ContentDeal{
 			Content:             content.ID,
 			PropCid:             util.DbCID{CID: propnd.Cid()},
 			DealUUID:            dealUUID.String(),
-			Miner:               m.address.String(),
+			Miner:               m.Address.String(),
 			Verified:            cm.cfg.Deal.IsVerified,
 			UserID:              content.UserID,
-			DealProtocolVersion: m.dealProtocolVersion,
-			MinerVersion:        m.ask.MinerVersion,
+			DealProtocolVersion: m.DealProtocolVersion,
+			MinerVersion:        m.Ask.MinerVersion,
 		}
 
 		if err := cm.DB.Create(cd).Error; err != nil {
@@ -2144,20 +1771,20 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		// Send the deal proposal to the storage provider
 		var cleanupDealPrep func() error
 		var propPhase bool
-		isPushTransfer := m.dealProtocolVersion == filclient.DealProtocolv110
+		isPushTransfer := m.DealProtocolVersion == filclient.DealProtocolv110
 
-		switch m.dealProtocolVersion {
+		switch m.DealProtocolVersion {
 		case filclient.DealProtocolv110:
 			propPhase, err = cm.FilClient.SendProposalV110(ctx, *prop, propnd.Cid())
 		case filclient.DealProtocolv120:
 			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), dealUUID, cd.ID)
 		default:
-			err = fmt.Errorf("unrecognized deal protocol %s", m.dealProtocolVersion)
+			err = fmt.Errorf("unrecognized deal protocol %s", m.DealProtocolVersion)
 		}
 
 		if err != nil {
 			// Clean up the contentDeal database entry
-			if err := cm.DB.Delete(&contentDeal{}, cd).Error; err != nil {
+			if err := cm.DB.Delete(&util.ContentDeal{}, cd).Error; err != nil {
 				return fmt.Errorf("failed to delete content deal from db: %w", err)
 			}
 
@@ -2180,20 +1807,20 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 			}
 
 			if err = cm.recordDealFailure(&DealFailureError{
-				Miner:               m.address,
+				Miner:               m.Address,
 				Phase:               phase,
 				Message:             err.Error(),
 				Content:             content.ID,
 				UserID:              content.UserID,
-				DealProtocolVersion: m.dealProtocolVersion,
-				MinerVersion:        m.ask.MinerVersion,
+				DealProtocolVersion: m.DealProtocolVersion,
+				MinerVersion:        m.Ask.MinerVersion,
 			}); err != nil {
 				log.Errorw("failed to record deail failure", "error", err)
 			}
 			continue
 		}
 
-		readyDeals = append(readyDeals, deal{minerAddr: m.address, isPushTransfer: isPushTransfer, contentDeal: cd})
+		readyDeals = append(readyDeals, deal{minerAddr: m.Address, isPushTransfer: isPushTransfer, contentDeal: cd})
 		if len(readyDeals) >= count {
 			break
 		}
@@ -2307,7 +1934,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
-	proto, err := cm.FilClient.DealProtocolForMiner(ctx, miner)
+	proto, err := cm.minerManager.GetDealProtocol(ctx, miner)
 	if err != nil {
 		return 0, cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
@@ -2318,19 +1945,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 		})
 	}
 
-	_, ok := cm.EnabledDealProtocolsVersions[proto]
-	if !ok {
-		err = fmt.Errorf("miner deal protocol:%s is not currently enabeld", proto)
-		return 0, cm.recordDealFailure(&DealFailureError{
-			Miner:   miner,
-			Phase:   "deal-protocol-version",
-			Message: err.Error(),
-			Content: content.ID,
-			UserID:  content.UserID,
-		})
-	}
-
-	ask, err := cm.getAsk(ctx, miner, 0)
+	ask, err := cm.minerManager.GetAsk(ctx, miner, 0)
 	if err != nil {
 		var clientErr *filclient.Error
 		if !(xerrors.As(err, &clientErr) && clientErr.Code == filclient.ErrLotusError) {
@@ -2353,7 +1968,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 		price = ask.VerifiedPriceBigInt
 	}
 
-	if cm.priceIsTooHigh(price) {
+	if ask.PriceIsTooHigh(cm.cfg.Deal.IsVerified) {
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
@@ -2373,7 +1988,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	dealUUID := uuid.New()
-	deal := &contentDeal{
+	deal := &util.ContentDeal{
 		Content:             content.ID,
 		PropCid:             util.DbCID{CID: propnd.Cid()},
 		DealUUID:            dealUUID.String(),
@@ -2404,7 +2019,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 
 	if err != nil {
 		// Clean up the database entry
-		if err := cm.DB.Delete(&contentDeal{}, deal).Error; err != nil {
+		if err := cm.DB.Delete(&util.ContentDeal{}, deal).Error; err != nil {
 			return 0, fmt.Errorf("failed to delete content deal from db: %w", err)
 		}
 
@@ -2453,7 +2068,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	return deal.ID, nil
 }
 
-func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal) error {
+func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *util.ContentDeal) error {
 	var cont util.Content
 	if err := cm.DB.First(&cont, "id = ?", cd.Content).Error; err != nil {
 		return err
@@ -2486,7 +2101,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *contentDeal
 
 	cd.DTChan = chanid.String()
 
-	if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 		"dt_chan": chanid.String(),
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
@@ -2897,7 +2512,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	}
 	_ = index
 
-	var deals []contentDeal
+	var deals []util.ContentDeal
 	if err := cm.DB.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
 		return err
 	}
@@ -2961,7 +2576,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 func (s *Server) handleFixupDeals(c echo.Context) error {
 	ctx := context.Background()
-	var deals []contentDeal
+	var deals []util.ContentDeal
 	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
 		return err
 	}
@@ -2979,7 +2594,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	sem := make(chan struct{}, 50)
 	for _, dll := range deals {
 		sem <- struct{}{}
-		go func(d contentDeal) {
+		go func(d util.ContentDeal) {
 			defer func() {
 				<-sem
 			}()
@@ -3037,7 +2652,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 
 			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
 			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
-			if err := s.DB.Model(contentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+			if err := s.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
 				log.Error(err)
 				return
 			}
@@ -3199,7 +2814,7 @@ func (cm *ContentManager) sendCleanupPreparedRequestCommand(ctx context.Context,
 	})
 }
 
-func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *contentDeal, datacid cid.Cid) error {
+func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *util.ContentDeal, datacid cid.Cid) error {
 	miner, err := cd.MinerAddr()
 	if err != nil {
 		return err

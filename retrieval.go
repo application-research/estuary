@@ -26,7 +26,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 		return nil, err
 	}
 
-	var deals []contentDeal
+	var deals []util.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and deal_id > 0", contid).Error; err != nil {
 		return nil, err
 	}

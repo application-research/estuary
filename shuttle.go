@@ -354,13 +354,13 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 		return fmt.Errorf("received transfer status update with no identifier")
 	}
 
-	var cd contentDeal
+	var cd util.ContentDeal
 	if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
 		return err
 	}
 
 	if cd.DTChan == "" {
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
 			"dt_chan": param.Chanid,
 		}).Error; err != nil {
 			return err
@@ -385,7 +385,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 			"failed":    true,
 			"failed_at": time.Now(),
 		}).Error; err != nil {
