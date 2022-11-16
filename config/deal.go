@@ -3,7 +3,7 @@ package config
 import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 const (
