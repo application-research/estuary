@@ -1,11 +1,13 @@
 package config
 
 import (
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"path/filepath"
 	"time"
 
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+
 	"github.com/application-research/estuary/build"
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -82,6 +84,8 @@ func NewEstuary(appVersion string) *Estuary {
 				filclient.DealProtocolv110: true,
 				filclient.DealProtocolv120: true,
 			},
+			MaxVerifiedPrice: constants.VerifiedDealMaxPrice,
+			MaxPrice:         constants.DealMaxPrice,
 		},
 
 		Content: Content{

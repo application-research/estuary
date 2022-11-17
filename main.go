@@ -46,7 +46,9 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/urfave/cli/v2"
 
@@ -201,6 +203,21 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if len(dprs) > 0 {
 				cfg.Deal.EnabledDealProtocolsVersions = dprs
 			}
+
+		case "max-price":
+			maxPrice, err := types.ParseFIL(cctx.String("max-price"))
+			if err != nil {
+				return fmt.Errorf("failed to parse max-price %s: %w", cctx.String("max-price"), err)
+			}
+			cfg.Deal.MaxPrice = abi.TokenAmount(maxPrice)
+
+		case "max-verified-price":
+			maxVerifiedPrice, err := types.ParseFIL(cctx.String("max-verified-price"))
+			if err != nil {
+				return fmt.Errorf("failed to parse max-price %s: %w", cctx.String("max-price"), err)
+			}
+			cfg.Deal.MaxVerifiedPrice = abi.TokenAmount(maxVerifiedPrice)
+
 		default:
 		}
 	}
@@ -422,6 +439,16 @@ func main() {
 			Name:  "indexer-tick-interval",
 			Usage: "sets the indexer advertisement interval in minutes",
 			Value: cfg.Node.IndexerTickInterval,
+		},
+		&cli.StringFlag{
+			Name:  "max-price",
+			Usage: "sets the max price for non-verified deals",
+			Value: cfg.Deal.MaxPrice.String(),
+		},
+		&cli.StringFlag{
+			Name:  "max-verified-price",
+			Usage: "sets the max price for verified deals",
+			Value: cfg.Deal.MaxVerifiedPrice.String(),
 		},
 	}
 	app.Commands = []*cli.Command{
