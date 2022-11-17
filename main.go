@@ -544,7 +544,7 @@ func main() {
 					User:      newUser.ID,
 					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
 				}
-				if err := db.Create(authToken).Error; err != nil {
+				if err := db.Omit("token").Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)
 				}
 

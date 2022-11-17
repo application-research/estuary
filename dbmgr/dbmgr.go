@@ -328,7 +328,7 @@ func NewAuthTokensQuery(db *gorm.DB) *AuthTokensQuery {
 }
 
 func (q *AuthTokensQuery) Create(authToken AuthToken) error {
-	return q.DB.Create(&authToken).Error
+	return q.DB.Omit("token").Create(&authToken).Error
 }
 
 // CONTENTS
