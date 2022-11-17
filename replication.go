@@ -152,9 +152,6 @@ type stagingZoneReadiness struct {
 type contentStagingZone struct {
 	ZoneOpened time.Time `json:"zoneOpened"`
 
-	EarliestContent time.Time `json:"earliestContent"`
-	CloseTime       time.Time `json:"closeTime"`
-
 	Contents []util.Content `json:"contents"`
 
 	MinSize int64 `json:"minSize"`
@@ -169,9 +166,6 @@ type contentStagingZone struct {
 	ContID   uint   `json:"contentID"`
 	Location string `json:"location"`
 
-	MaxContentAge time.Duration `json:"max_content_age"`
-	MinDealSize   int64         `json:"min_deal_size"`
-
 	IsConsolidating bool `json:"is_consolidating"`
 
 	Readiness stagingZoneReadiness `json:"readiness"`
@@ -183,20 +177,16 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 	cb2 := &contentStagingZone{
-		ZoneOpened:      cb.ZoneOpened,
-		EarliestContent: cb.EarliestContent,
-		CloseTime:       cb.CloseTime,
-		Contents:        make([]util.Content, len(cb.Contents)),
-		MinSize:         cb.MinSize,
-		MaxSize:         cb.MaxSize,
-		MaxItems:        cb.MaxItems,
-		CurSize:         cb.CurSize,
-		User:            cb.User,
-		ContID:          cb.ContID,
-		Location:        cb.Location,
-		MaxContentAge:   cb.MaxContentAge,
-		MinDealSize:     cb.MinSize,
-		Readiness:       cb.Readiness,
+		ZoneOpened: cb.ZoneOpened,
+		Contents:   make([]util.Content, len(cb.Contents)),
+		MinSize:    cb.MinSize,
+		MaxSize:    cb.MaxSize,
+		MaxItems:   cb.MaxItems,
+		CurSize:    cb.CurSize,
+		User:       cb.User,
+		ContID:     cb.ContID,
+		Location:   cb.Location,
+		Readiness:  cb.Readiness,
 	}
 	copy(cb2.Contents, cb.Contents)
 	return cb2
@@ -219,71 +209,33 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 	}
 
 	return &contentStagingZone{
-		MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
-		MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
-		ZoneOpened:    time.Now(),
-		CloseTime:     time.Now().Add(cm.cfg.StagingBucket.MaxLifeTime),
-		MinSize:       cm.cfg.StagingBucket.MinSize,
-		MaxSize:       cm.cfg.StagingBucket.MaxSize,
-		MaxItems:      cm.cfg.StagingBucket.MaxItems,
-		User:          user,
-		ContID:        content.ID,
-		Location:      content.Location,
-		Readiness:     stagingZoneReadiness{false, "Readiness not yet evaluated"},
+		ZoneOpened: time.Now(),
+		MinSize:    cm.cfg.StagingBucket.MinSize,
+		MaxSize:    cm.cfg.StagingBucket.MaxSize,
+		MaxItems:   cm.cfg.StagingBucket.MaxItems,
+		User:       user,
+		ContID:     content.ID,
+		Location:   content.Location,
+		Readiness:  stagingZoneReadiness{false, "Readiness not yet evaluated"},
 	}, nil
 }
 
 func (cb *contentStagingZone) updateReadiness() {
-	if cb.CurSize < cb.MinDealSize {
-		cb.Readiness.IsReady = false
-		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"Current deal size of %d bytes is below minimum deal size of %d bytes",
-			cb.CurSize,
-			cb.MinDealSize)
-		return
-	}
-
-	// if its above the size requirement, go right ahead
+	// if it's above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {
 		cb.Readiness.IsReady = true
 		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"Current deal size of %d bytes is above minimum size of %d bytes",
+			"Current deal size of %d bytes is above minimum size requirement of %d bytes",
 			cb.CurSize,
 			cb.MinSize)
 		return
 	}
 
-	if time.Now().After(cb.CloseTime) {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = "Staging zone's closing time has passed"
-		return
-	}
-
-	if time.Since(cb.EarliestContent) > cb.MaxContentAge {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = "The earliest content in the staging zone has reached the max content age"
-		return
-	}
-
-	// if its above the items count requirement, go right ahead
-	if len(cb.Contents) >= cb.MaxItems {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"The item count is %d, which is above the threshold of %d to trigger dealmaking",
-			len(cb.Contents),
-			cb.MaxItems)
-		return
-	}
 	cb.Readiness.IsReady = false
 	cb.Readiness.ReadinessReason = fmt.Sprintf(
-		"At least one of the following conditions must be met:\n"+
-			" - Minimum size requirement (current: %d bytes, minimum: %d bytes)\n"+
-			" - Pass staging zone's closing time\n"+
-			" - Item count (current: %d, minimum: %d)",
+		"Minimum size requirement not met (current: %d bytes, minimum: %d bytes)\n",
 		cb.CurSize,
-		cb.MinSize,
-		len(cb.Contents),
-		cb.MaxItems)
+		cb.MinSize)
 }
 
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
@@ -292,15 +244,15 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 
 	// if this bucket is being consolidated, do not add anymore content
 	if cb.IsConsolidating {
-		return false, nil
+		return false, errors.New("cannot add content while bucket is consolidating")
 	}
 
 	if cb.CurSize+c.Size > cb.MaxSize {
-		return false, nil
+		return false, errors.Errorf("cannot add content because resulting size would exceed max bucket size of %d bytes", cb.MaxSize)
 	}
 
 	if len(cb.Contents) >= cb.MaxItems {
-		return false, nil
+		return false, errors.Errorf("cannot add content because resulting number of items would exceed max bucket limit of %d items", cb.MaxItems)
 	}
 
 	if err := cm.DB.Model(util.Content{}).
@@ -309,17 +261,9 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 		return false, err
 	}
 
-	if len(cb.Contents) == 0 || c.CreatedAt.Before(cb.EarliestContent) {
-		cb.EarliestContent = c.CreatedAt
-	}
-
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
 
-	nowPlus := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
-	if cb.CloseTime.Before(nowPlus) {
-		cb.CloseTime = nowPlus
-	}
 	return true, nil
 }
 
@@ -775,21 +719,13 @@ func (cm *ContentManager) rebuildStagingBuckets() error {
 	zones := make(map[uint][]*contentStagingZone)
 	for _, c := range stages {
 		z := &contentStagingZone{
-			MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
-			MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
-			ZoneOpened:    c.CreatedAt,
-			CloseTime:     c.CreatedAt.Add(cm.cfg.StagingBucket.MaxLifeTime),
-			MinSize:       cm.cfg.StagingBucket.MinSize,
-			MaxSize:       cm.cfg.StagingBucket.MaxSize,
-			MaxItems:      cm.cfg.StagingBucket.MaxItems,
-			User:          c.UserID,
-			ContID:        c.ID,
-			Location:      c.Location,
-		}
-
-		minClose := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
-		if z.CloseTime.Before(minClose) {
-			z.CloseTime = minClose
+			ZoneOpened: c.CreatedAt,
+			MinSize:    cm.cfg.StagingBucket.MinSize,
+			MaxSize:    cm.cfg.StagingBucket.MaxSize,
+			MaxItems:   cm.cfg.StagingBucket.MaxItems,
+			User:       c.UserID,
+			ContID:     c.ID,
+			Location:   c.Location,
 		}
 
 		var inZones []util.Content
@@ -1229,6 +1165,7 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
+	// TODO: persist staging zones
 	blist, ok := cm.buckets[user]
 	if !ok {
 		return []*contentStagingZone{}
@@ -2080,7 +2017,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	))
 	defer span.End()
 
-	if content.Size < (256 << 10) {
+	if content.Size < constants.MinStagingZoneSizeLimit {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
 	}
 
@@ -2180,7 +2117,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 				DealProtocolVersion: m.dealProtocolVersion,
 				MinerVersion:        m.ask.MinerVersion,
 			}); err != nil {
-				log.Errorw("failed to record deail failure", "error", err)
+				log.Errorw("failed to record deal failure", "error", err)
 			}
 			continue
 		}

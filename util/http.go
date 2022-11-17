@@ -36,6 +36,7 @@ const (
 	ERR_CONTENT_ADDING_DISABLED    = "ERR_CONTENT_ADDING_DISABLED"
 	ERR_INVALID_INPUT              = "ERR_INVALID_INPUT"
 	ERR_CONTENT_SIZE_OVER_LIMIT    = "ERR_CONTENT_SIZE_OVER_LIMIT"
+	ERR_CONTENT_SIZE_UNDER_MINIMUM = "ERR_CONTENT_SIZE_UNDER_MINIMUM"
 	ERR_PEERING_PEERS_ADD_ERROR    = "ERR_PEERING_PEERS_ADD_ERROR"
 	ERR_PEERING_PEERS_REMOVE_ERROR = "ERR_PEERING_PEERS_REMOVE_ERROR"
 	ERR_PEERING_PEERS_START_ERROR  = "ERR_PEERING_PEERS_START_ERROR"
@@ -136,7 +137,6 @@ type UserSettings struct {
 	Replication           int            `json:"replication"`
 	Verified              bool           `json:"verified"`
 	DealDuration          abi.ChainEpoch `json:"dealDuration"`
-	MaxStagingWait        time.Duration  `json:"maxStagingWait"`
 	FileStagingThreshold  int64          `json:"fileStagingThreshold"`
 	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
 	DealMakingDisabled    bool           `json:"dealMakingDisabled"`
