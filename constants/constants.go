@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/lotus/chain/types"
 )
 
 const DefaultContentSizeLimit = 34_000_000_000
@@ -44,3 +45,14 @@ const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
 const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days
 const TokenExpiryDurationDefault = time.Hour * 24 * 30          // 30 days
 const TokenExpiryDurationPermanent = time.Hour * 24 * 365 * 100 // 100 years
+
+var DealMaxPrice abi.TokenAmount
+var VerifiedDealMaxPrice = abi.NewTokenAmount(0)
+
+func init() {
+	max, err := types.ParseFIL("0.00000003")
+	if err != nil {
+		panic(err)
+	}
+	DealMaxPrice = abi.TokenAmount(max)
+}

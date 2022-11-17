@@ -836,7 +836,8 @@ func (cm *ContentManager) estimatePrice(ctx context.Context, repl int, pieceSize
 	))
 	defer span.End()
 
-	miners, err := cm.pickMiners(ctx, repl, pieceSize, nil, false)
+	filterByPrice := false //we do not want to filter out miners with high proce, we want to see only the cost, not make a deal
+	miners, err := cm.pickMiners(ctx, repl, pieceSize, nil, filterByPrice)
 	if err != nil {
 		return nil, err
 	}
@@ -2060,21 +2061,11 @@ func (cm *ContentManager) repairDeal(d *contentDeal) error {
 	return nil
 }
 
-var priceMax abi.TokenAmount
-
-func init() {
-	max, err := types.ParseFIL("0.00000003")
-	if err != nil {
-		panic(err)
-	}
-	priceMax = abi.TokenAmount(max)
-}
-
 func (cm *ContentManager) priceIsTooHigh(price abi.TokenAmount) bool {
 	if cm.cfg.Deal.IsVerified {
-		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
+		return types.BigCmp(price, cm.cfg.Deal.MaxVerifiedPrice) > 0
 	}
-	return types.BigCmp(price, priceMax) > 0
+	return types.BigCmp(price, cm.cfg.Deal.MaxPrice) > 0
 }
 
 type proposalRecord struct {
@@ -2102,7 +2093,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
-	miners, err := cm.pickMiners(ctx, count*2, pieceSize.Padded(), exclude, true)
+	filterByPrice := true // only select miners that falls within accepted price range
+	miners, err := cm.pickMiners(ctx, count*2, pieceSize.Padded(), exclude, filterByPrice)
 	if err != nil {
 		return err
 	}
