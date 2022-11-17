@@ -2017,7 +2017,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	))
 	defer span.End()
 
-	if content.Size < constants.MinStagingZoneSizeLimit {
+	if content.Size < constants.IndividualDealThreshold {
 		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
 	}
 

@@ -22,11 +22,11 @@ const DealDuration = 1555200 - (2880 * 21)
 // the 10% gap is to accommodate car file packing overhead, can probably do this better
 var IndividualDealThreshold = int64(abi.PaddedPieceSize(4<<30).Unpadded() * 9 / 10)
 
-// MaxStagingZoneSizeLimit 14.29 Gib
+// MaxStagingZoneSizeLimit 14.29 GB
 var MaxStagingZoneSizeLimit = int64(abi.PaddedPieceSize(16<<30).Unpadded() * 9 / 10)
 
-// MinStagingZoneSizeLimit 13.29 GiB
-var MinStagingZoneSizeLimit = MaxStagingZoneSizeLimit - 1<<30
+// MinStagingZoneSizeLimit 1.81 GB
+var MinStagingZoneSizeLimit = int64(abi.PaddedPieceSize(2<<30).Unpadded() * 9 / 10)
 
 const TokenExpiryDurationAdmin = time.Hour * 24 * 365           // 1 year
 const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
