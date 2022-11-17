@@ -18,15 +18,16 @@ const MaxBucketItems = 10000
 // miners who start their deals early don't run into issues
 const DealDuration = 1555200 - (2880 * 21)
 
-// IndividualDealThreshold 90% of the un-padded data size for a 4GB piece
+// IndividualDealThreshold 3.6 GB
+// 90% of the un-padded data size for a 4GB piece
 // the 10% gap is to accommodate car file packing overhead, can probably do this better
-var IndividualDealThreshold = int64(abi.PaddedPieceSize(4<<30).Unpadded() * 9 / 10)
+var IndividualDealThreshold = int64((4 << 30) * 9 / 10)
 
-// MaxStagingZoneSizeLimit 14.29 GB
-var MaxStagingZoneSizeLimit = int64(abi.PaddedPieceSize(16<<30).Unpadded() * 9 / 10)
+// MaxStagingZoneSizeLimit 14.4 GB
+var MaxStagingZoneSizeLimit = int64((16 << 30) * 9 / 10)
 
-// MinStagingZoneSizeLimit 1.81 GB
-var MinStagingZoneSizeLimit = int64(abi.PaddedPieceSize(2<<30).Unpadded() * 9 / 10)
+// MinStagingZoneSizeLimit 3.6 GB
+var MinStagingZoneSizeLimit = int64((4 << 30) * 9 / 10)
 
 const TokenExpiryDurationAdmin = time.Hour * 24 * 365           // 1 year
 const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
