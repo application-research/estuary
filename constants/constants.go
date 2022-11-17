@@ -40,6 +40,8 @@ var MaxStagingZoneSizeLimit = int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9)
 // 13.29 GiB
 var MinStagingZoneSizeLimit = int64(MaxStagingZoneSizeLimit - (1 << 30))
 
+const TokenColumnName = "token"
+
 const TokenExpiryDurationAdmin = time.Hour * 24 * 365           // 1 year
 const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
 const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days
