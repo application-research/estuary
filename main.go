@@ -214,7 +214,7 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "max-verified-price":
 			maxVerifiedPrice, err := types.ParseFIL(cctx.String("max-verified-price"))
 			if err != nil {
-				return fmt.Errorf("failed to parse max-price %s: %w", cctx.String("max-price"), err)
+				return fmt.Errorf("failed to parse max-verified-price %s: %w", cctx.String("max-verified-price"), err)
 			}
 			cfg.Deal.MaxVerifiedPrice = abi.TokenAmount(maxVerifiedPrice)
 
