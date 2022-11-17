@@ -732,6 +732,7 @@ type DFERecord struct {
 	gorm.Model
 
 	Miner        string
+	DealUUID     string
 	Phase        string
 	Message      string
 	Content      uint `gorm:"index"`

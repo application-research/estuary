@@ -2536,13 +2536,14 @@ func (cm *ContentManager) getProposalRecord(propCid cid.Cid) (*market.ClientDeal
 }
 
 func (cm *ContentManager) recordDealFailure(dfe *DealFailureError) error {
-	log.Debugw("deal failure error", "miner", dfe.Miner, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
+	log.Debugw("deal failure error", "miner", dfe.Miner, "uuid", dfe.DealUUID, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
 	rec := dfe.Record()
 	return cm.DB.Create(rec).Error
 }
 
 type DealFailureError struct {
 	Miner               address.Address
+	DealUUID            string
 	Phase               string
 	Message             string
 	Content             uint
@@ -2555,6 +2556,7 @@ type DealFailureError struct {
 type dfeRecord struct {
 	gorm.Model
 	Miner               string      `json:"miner"`
+	DealUUID            string      `json:"deal_uuid"`
 	Phase               string      `json:"phase"`
 	Message             string      `json:"message"`
 	Content             uint        `json:"content" gorm:"index"`
@@ -2566,6 +2568,7 @@ type dfeRecord struct {
 func (dfe *DealFailureError) Record() *dfeRecord {
 	return &dfeRecord{
 		Miner:               dfe.Miner.String(),
+		DealUUID:            dfe.DealUUID,
 		Phase:               dfe.Phase,
 		Message:             dfe.Message,
 		Content:             dfe.Content,
@@ -2576,7 +2579,7 @@ func (dfe *DealFailureError) Record() *dfeRecord {
 }
 
 func (dfe *DealFailureError) Error() string {
-	return fmt.Sprintf("deal with miner %s failed in phase %s: %s", dfe.Message, dfe.Phase, dfe.Message)
+	return fmt.Sprintf("deal %s with miner %s failed in phase %s: %s", dfe.DealUUID, dfe.Message, dfe.Phase, dfe.Message)
 }
 
 type PieceCommRecord struct {
