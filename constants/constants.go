@@ -7,7 +7,7 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
-const DefaultContentSizeLimit = 34_000_000_000
+const DefaultContentSizeLimit = int64(34_000_000_000)
 const ContentLocationLocal = "local"
 const TopMinerSel = 15
 const MinSafeDealLifetime = 2880 * 21 // three weeks
@@ -24,10 +24,10 @@ const DealDuration = 1555200 - (2880 * 21)
 var IndividualDealThreshold = int64((4 << 30) * 9 / 10)
 
 // MaxStagingZoneSizeLimit 14.4 GB
-var MaxStagingZoneSizeLimit = int64((16 << 30) * 9 / 10)
+var MaxStagingZoneSizeLimit = DefaultContentSizeLimit
 
 // MinStagingZoneSizeLimit 3.6 GB
-var MinStagingZoneSizeLimit = int64((4 << 30) * 9 / 10)
+var MinStagingZoneSizeLimit = IndividualDealThreshold
 
 const TokenExpiryDurationAdmin = time.Hour * 24 * 365           // 1 year
 const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week

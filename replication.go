@@ -242,17 +242,19 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
+	// TODO: propagate reason for failing to add content to bucket to end user
+
 	// if this bucket is being consolidated, do not add anymore content
 	if cb.IsConsolidating {
-		return false, errors.New("cannot add content while bucket is consolidating")
+		return false, nil
 	}
 
 	if cb.CurSize+c.Size > cb.MaxSize {
-		return false, errors.Errorf("cannot add content because resulting size would exceed max bucket size of %d bytes", cb.MaxSize)
+		return false, nil
 	}
 
 	if len(cb.Contents) >= cb.MaxItems {
-		return false, errors.Errorf("cannot add content because resulting number of items would exceed max bucket limit of %d items", cb.MaxItems)
+		return false, nil
 	}
 
 	if err := cm.DB.Model(util.Content{}).
@@ -2018,7 +2020,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	defer span.End()
 
 	if content.Size < constants.IndividualDealThreshold {
-		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
+		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, constants.IndividualDealThreshold)
 	}
 
 	if content.Offloaded {
