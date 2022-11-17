@@ -23,7 +23,7 @@ const DealDuration = 1555200 - (2880 * 21)
 // the 10% gap is to accommodate car file packing overhead, can probably do this better
 var IndividualDealThreshold = int64((4 << 30) * 9 / 10)
 
-// MaxStagingZoneSizeLimit 14.4 GB
+// MaxStagingZoneSizeLimit 34 GB
 var MaxStagingZoneSizeLimit = DefaultContentSizeLimit
 
 // MinStagingZoneSizeLimit 3.6 GB
