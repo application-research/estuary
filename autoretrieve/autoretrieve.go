@@ -112,6 +112,7 @@ type Provider struct {
 	engine                *engine.Engine
 	db                    *gorm.DB
 	advertisementInterval time.Duration
+	advertiseOffline      bool
 	batchSize             uint
 }
 
@@ -189,7 +190,7 @@ func (iter *Iterator) Next() (multihash.Multihash, error) {
 	return mh, nil
 }
 
-func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL string) (*Provider, error) {
+func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL string, advertiseOffline bool) (*Provider, error) {
 	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce(indexerURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to init engine: %v", err)
@@ -231,6 +232,7 @@ func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL st
 		engine:                eng,
 		db:                    db,
 		advertisementInterval: advertisementInterval,
+		advertiseOffline:      advertiseOffline,
 		batchSize:             constants.AutoretrieveProviderBatchSize,
 	}, nil
 }
@@ -275,10 +277,12 @@ func (provider *Provider) Run(ctx context.Context) error {
 		for _, autoretrieve := range autoretrieves {
 			log := log.With("autoretrieve_handle", autoretrieve.Handle)
 
-			// Make sure it is online
-			if time.Since(autoretrieve.LastConnection) > provider.advertisementInterval {
-				log.Debugf("Skipping offline autoretrieve")
-				continue
+			// Make sure it is online (if offline checking isn't disabled)
+			if !provider.advertiseOffline {
+				if time.Since(autoretrieve.LastConnection) > provider.advertisementInterval {
+					log.Debugf("Skipping offline autoretrieve")
+					continue
+				}
 			}
 
 			// Get address info for later

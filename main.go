@@ -189,6 +189,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 				return fmt.Errorf("failed to parse indexer advertisement interval: %v", err)
 			}
 			cfg.Node.IndexerAdvertisementInterval = value
+		case "advertise-offline-autoretrieves":
+			cfg.Node.AdvertiseOfflineAutoretrieves = cctx.Bool("advertise-offline-autoretrieves")
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -423,6 +425,10 @@ func main() {
 			Name:  "indexer-advertisement-interval",
 			Usage: "sets the indexer advertisement interval using a Go time string (e.g. '1m30s')",
 			Value: cfg.Node.IndexerAdvertisementInterval.String(),
+		},
+		&cli.BoolFlag{
+			Name:  "advertise-offline-autoretrieves",
+			Usage: "if set, registered autoretrieves will be advertised even if they are not currently online",
 		},
 	}
 	app.Commands = []*cli.Command{
@@ -721,7 +727,12 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(db, cfg.Node.IndexerAdvertisementInterval, cfg.Node.IndexerURL)
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(
+				db,
+				cfg.Node.IndexerAdvertisementInterval,
+				cfg.Node.IndexerURL,
+				cfg.Node.AdvertiseOfflineAutoretrieves,
+			)
 			if err != nil {
 				return err
 			}
