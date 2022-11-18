@@ -1027,15 +1027,21 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	c.Response().WriteHeader(resp.StatusCode)
-
-	_, err = io.Copy(c.Response().Writer, resp.Body)
-	if err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return err
+		}
+		return &out.Error
 	}
 
-	return nil
+	var addResp util.ContentAddResponse
+	if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+		return errors.Wrap(err, "failed to decode contentAddResponse body")
+	}
+	return c.JSON(resp.StatusCode, addResp)
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
