@@ -7,6 +7,7 @@ type Pinning struct {
 }
 
 type RetryWorker struct {
-	Interval   time.Duration `json:"interval"`
-	BatchLimit int           `json:"batch_limit"`
+	Interval               time.Duration `json:"interval"`
+	BatchSelectionLimit    int           `json:"batch_limit"`
+	BatchSelectionDuration time.Duration `json:"batch_duration"`
 }

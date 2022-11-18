@@ -104,8 +104,9 @@ func NewEstuary(appVersion string) *Estuary {
 
 		Pinning: Pinning{
 			RetryWorker: RetryWorker{
-				Interval:   1,
-				BatchLimit: 1000,
+				Interval:               1 * time.Hour, // check every 1hr
+				BatchSelectionLimit:    1000,
+				BatchSelectionDuration: time.Hour * 24 * 30 * 2, // select pins from 60 days ago only
 			},
 		},
 
