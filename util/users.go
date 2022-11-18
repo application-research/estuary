@@ -30,8 +30,8 @@ func (u *User) FlagSplitContent() bool {
 
 type AuthToken struct {
 	gorm.Model
-	Token      string `gorm:"unique"`
-	TokenHash  string
+	Token      string `gorm:"unique;->"` // read only to prevent storing new tokens but not break existing tokens
+	TokenHash  string `gorm:"unique"`
 	Label      string
 	User       uint
 	UploadOnly bool

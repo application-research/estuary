@@ -3489,7 +3489,9 @@ type getApiKeysResp struct {
 // @Router       /user/api-keys/{key_or_hash} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key_or_hash")
-	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
+	// need to check the kvalHash in case someone is revoking their token by the token itself, but only its hash is stored
+	kvalHash := util.GetTokenHash(kval)
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ? OR token_hash = ?)", u.ID, kval, kval, kvalHash).Error; err != nil {
 		return err
 	}
 
