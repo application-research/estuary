@@ -296,7 +296,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		pinMgr:                       pinmgr,
 		remoteTransferStatus:         cache,
 		shuttles:                     make(map[string]*ShuttleConnection),
-		contentSizeLimit:             constants.DefaultContentSizeLimit,
+		contentSizeLimit:             constants.MaxDealContentSize,
 		hostname:                     cfg.Hostname,
 		inflightCids:                 make(map[cid.Cid]uint),
 		FailDealOnTransferFailure:    cfg.Deal.FailOnTransferFailure,
@@ -1486,7 +1486,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 }
 
 func (cm *ContentManager) canStageContent(cont util.Content) bool {
-	return cont.Size < cm.cfg.StagingBucket.IndividualDealThreshold && cm.cfg.StagingBucket.Enabled
+	return cont.Size < cm.cfg.StagingBucket.MinSize && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
@@ -2021,8 +2021,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	))
 	defer span.End()
 
-	if content.Size < constants.IndividualDealThreshold {
-		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, constants.IndividualDealThreshold)
+	if content.Size < constants.MinDealContentSize {
+		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, constants.MinDealContentSize)
 	}
 
 	if content.Offloaded {

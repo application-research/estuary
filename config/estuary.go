@@ -95,11 +95,10 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:                 true,
-			MaxSize:                 constants.MaxStagingZoneSizeLimit,
-			MinSize:                 constants.MinStagingZoneSizeLimit,
-			IndividualDealThreshold: constants.IndividualDealThreshold,
-			AggregateInterval:       time.Minute * 5, // aggregate staging buckets every 5 minutes
+			Enabled:           true,
+			MaxSize:           constants.MaxDealContentSize,
+			MinSize:           constants.MinDealContentSize,
+			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
 		},
 
 		Jaeger: Jaeger{

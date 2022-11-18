@@ -742,11 +742,11 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	// 		return err
 	// 	}
 
-	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 	if bdSize > util.MaxDealContentSize {
 	// 		return &util.HttpError{
 	// 			Code:    http.StatusBadRequest,
 	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.MaxDealContentSize),
 	// 		}
 	// 	}
 
@@ -3383,7 +3383,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 			Replication:           s.CM.Replication,
 			Verified:              s.cfg.Deal.IsVerified,
 			DealDuration:          s.cfg.Deal.Duration,
-			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,
+			FileStagingThreshold:  s.cfg.StagingBucket.MinSize,
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
