@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/application-research/estuary/util"
+	"github.com/application-research/estuary/model"
 	"github.com/filecoin-project/go-address"
 )
 
@@ -49,7 +49,7 @@ func (mgr *MinerManager) minerIsSuspended(m address.Address) (bool, error) {
 }
 
 func (mgr *MinerManager) ComputeSortedMinerList() ([]*minerDealStats, error) {
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := mgr.DB.Find(&deals).Error; err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/util"
@@ -62,7 +63,7 @@ import (
 type deal struct {
 	minerAddr      address.Address
 	isPushTransfer bool
-	contentDeal    *util.ContentDeal
+	contentDeal    *model.ContentDeal
 }
 
 type ContentManager struct {
@@ -818,7 +819,7 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 		return nil
 	}
 
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := cm.DB.First(&deal, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
@@ -845,7 +846,7 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 		}
 	}
 
-	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
+	if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 	return nil
@@ -1008,7 +1009,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	// if not enough deals, go make more
 	// check all existing deals, ensure they are still active
 	// if not active, repair!
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
@@ -1236,7 +1237,7 @@ const (
 )
 
 // first check deal protocol version 2, then check version 1
-func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *util.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (cm *ContentManager) getProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := cm.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -1255,7 +1256,7 @@ func (cm *ContentManager) transferStatusByID(ctx context.Context, id string) (*f
 	return chanst, nil
 }
 
-func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, content util.Content) (int, error) {
+func (cm *ContentManager) checkDeal(ctx context.Context, d *model.ContentDeal, content util.Content) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, time.Minute*5) // NB: if we ever hit this, its bad. but we at least need *some* timeout there
 	defer cancel()
 
@@ -1308,7 +1309,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, co
 		}
 
 		if len(updates) > 0 {
-			if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(updates).Error; err != nil {
+			if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(updates).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 		}
@@ -1332,7 +1333,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, co
 
 		// check slashed health
 		if deal.State.SlashEpoch > 0 {
-			if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
+			if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("slashed", true).Error; err != nil {
 				return DEAL_CHECK_UNKNOWN, err
 			}
 
@@ -1358,7 +1359,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, co
 		// checked sealed/active health - TODO set actual sealed time
 		if deal.State.SectorStartEpoch > 0 {
 			if d.SealedAt.IsZero() {
-				if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
+				if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumn("sealed_at", time.Now()).Error; err != nil {
 					return DEAL_CHECK_UNKNOWN, err
 				}
 			}
@@ -1541,8 +1542,8 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *util.ContentDeal, co
 	return DEAL_CHECK_PROGRESS, nil
 }
 
-func (cm *ContentManager) updateDealID(d *util.ContentDeal, id int64) error {
-	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
+func (cm *ContentManager) updateDealID(d *model.ContentDeal, id int64) error {
+	if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).Updates(map[string]interface{}{
 		"deal_id":     id,
 		"on_chain_at": time.Now(),
 	}).Error; err != nil {
@@ -1551,7 +1552,7 @@ func (cm *ContentManager) updateDealID(d *util.ContentDeal, id int64) error {
 	return nil
 }
 
-func (cm *ContentManager) dealHasExpired(ctx context.Context, d *util.ContentDeal, head *types.TipSet) (bool, error) {
+func (cm *ContentManager) dealHasExpired(ctx context.Context, d *model.ContentDeal, head *types.TipSet) (bool, error) {
 	prop, err := cm.getProposalRecord(d.PropCid.CID)
 	if err != nil {
 		log.Warnf("failed to get proposal record for deal %d: %s", d.ID, err)
@@ -1574,7 +1575,7 @@ type transferStatusRecord struct {
 	Received time.Time
 }
 
-func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *util.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
 	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
@@ -1615,7 +1616,7 @@ func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, 
 
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
 
-func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *util.ContentDeal) (abi.DealID, error) {
+func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *model.ContentDeal) (abi.DealID, error) {
 	mlookup, err := cm.Api.StateSearchMsg(ctx, types.EmptyTSK, pubcid, 1000, false)
 	if err != nil {
 		return 0, xerrors.Errorf("could not find published deal on chain: %w", err)
@@ -1673,7 +1674,7 @@ func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *util
 	return retval.IDs[dealix], nil
 }
 
-func (cm *ContentManager) repairDeal(d *util.ContentDeal) error {
+func (cm *ContentManager) repairDeal(d *model.ContentDeal) error {
 	if d.DealID != 0 {
 		log.Debugw("miner faulted on deal", "deal", d.DealID, "content", d.Content, "miner", d.Miner)
 		maddr, err := d.MinerAddr()
@@ -1695,7 +1696,7 @@ func (cm *ContentManager) repairDeal(d *util.ContentDeal) error {
 	}
 
 	log.Debugw("repair deal", "propcid", d.PropCid.CID, "miner", d.Miner, "content", d.Content)
-	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 		"failed":    true,
 		"failed_at": time.Now(),
 	}).Error; err != nil {
@@ -1753,7 +1754,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		}
 
 		dealUUID := uuid.New()
-		cd := &util.ContentDeal{
+		cd := &model.ContentDeal{
 			Content:             content.ID,
 			PropCid:             util.DbCID{CID: propnd.Cid()},
 			DealUUID:            dealUUID.String(),
@@ -1784,7 +1785,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 		if err != nil {
 			// Clean up the contentDeal database entry
-			if err := cm.DB.Delete(&util.ContentDeal{}, cd).Error; err != nil {
+			if err := cm.DB.Delete(&model.ContentDeal{}, cd).Error; err != nil {
 				return fmt.Errorf("failed to delete content deal from db: %w", err)
 			}
 
@@ -1988,7 +1989,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	dealUUID := uuid.New()
-	deal := &util.ContentDeal{
+	deal := &model.ContentDeal{
 		Content:             content.ID,
 		PropCid:             util.DbCID{CID: propnd.Cid()},
 		DealUUID:            dealUUID.String(),
@@ -2019,7 +2020,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 
 	if err != nil {
 		// Clean up the database entry
-		if err := cm.DB.Delete(&util.ContentDeal{}, deal).Error; err != nil {
+		if err := cm.DB.Delete(&model.ContentDeal{}, deal).Error; err != nil {
 			return 0, fmt.Errorf("failed to delete content deal from db: %w", err)
 		}
 
@@ -2068,7 +2069,7 @@ func (cm *ContentManager) makeDealWithMiner(ctx context.Context, content util.Co
 	return deal.ID, nil
 }
 
-func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *util.ContentDeal) error {
+func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error {
 	var cont util.Content
 	if err := cm.DB.First(&cont, "id = ?", cd.Content).Error; err != nil {
 		return err
@@ -2101,7 +2102,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *util.Conten
 
 	cd.DTChan = chanid.String()
 
-	if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 		"dt_chan": chanid.String(),
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
@@ -2512,7 +2513,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	}
 	_ = index
 
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := cm.DB.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
 		return err
 	}
@@ -2576,7 +2577,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 
 func (s *Server) handleFixupDeals(c echo.Context) error {
 	ctx := context.Background()
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
 		return err
 	}
@@ -2594,7 +2595,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 	sem := make(chan struct{}, 50)
 	for _, dll := range deals {
 		sem <- struct{}{}
-		go func(d util.ContentDeal) {
+		go func(d model.ContentDeal) {
 			defer func() {
 				<-sem
 			}()
@@ -2652,7 +2653,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 
 			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
 			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
-			if err := s.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+			if err := s.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
 				log.Error(err)
 				return
 			}
@@ -2814,7 +2815,7 @@ func (cm *ContentManager) sendCleanupPreparedRequestCommand(ctx context.Context,
 	})
 }
 
-func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *util.ContentDeal, datacid cid.Cid) error {
+func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *model.ContentDeal, datacid cid.Cid) error {
 	miner, err := cd.MinerAddr()
 	if err != nil {
 		return err

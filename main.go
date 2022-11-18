@@ -17,6 +17,7 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
 
@@ -771,7 +772,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.ObjRef{},
 		&collections.Collection{},
 		&collections.CollectionRef{},
-		&util.ContentDeal{},
+		&model.ContentDeal{},
 		&dfeRecord{},
 		&PieceCommRecord{},
 		&proposalRecord{},
@@ -848,8 +849,8 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []util.ContentDeal
-	if err := s.DB.Model(util.ContentDeal{}).
+	var deals []model.ContentDeal
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
 		Scan(&deals).Error; err != nil {
@@ -887,7 +888,7 @@ func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
 // It supports only legacy deals (PushTransfer)
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d util.ContentDeal) error {
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
 	maddr, err := d.MinerAddr()
 	if err != nil {
 		return err
@@ -926,7 +927,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		if cannotRestart {
 			trsFailed, msg := util.TransferFailed(st)
 			if trsFailed {
-				if err := cm.DB.Model(util.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 					"failed":    true,
 					"failed_at": time.Now(),
 				}).Error; err != nil {
@@ -942,7 +943,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
 
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d util.ContentDeal) error {
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{

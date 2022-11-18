@@ -128,7 +128,6 @@ func (mgr *MinerManager) PickMiners(ctx context.Context, n int, pieceSize abi.Pa
 	return mgr.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
 }
 
-// TODO - this is currently not used, if we choose to use it,
 // add a check to make sure miners selected is still active in db
 func (mgr *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	sortedMiners, _, err := mgr.SortedMinerList()

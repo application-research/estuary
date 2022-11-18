@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 )
 
@@ -15,7 +16,7 @@ type DataExport struct {
 
 type ExportVersion1 struct {
 	Contents []util.Content
-	Deals    []util.ContentDeal
+	Deals    []model.ContentDeal
 }
 
 func (s *Server) exportUserData(uid uint) (*DataExport, error) {
@@ -29,7 +30,7 @@ func (s *Server) exportUserData(uid uint) (*DataExport, error) {
 		conts = append(conts, c.ID)
 	}
 
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
 		return nil, err
 	}

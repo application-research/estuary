@@ -26,6 +26,7 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p-core/network"
 
@@ -1310,7 +1311,7 @@ type onChainDealState struct {
 }
 
 type dealStatus struct {
-	Deal           util.ContentDeal        `json:"deal"`
+	Deal           model.ContentDeal       `json:"deal"`
 	TransferStatus *filclient.ChannelState `json:"transfer"`
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
@@ -1383,7 +1384,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ?", content.ID).Error; err != nil {
 		return err
 	}
@@ -1496,7 +1497,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 		return err
 	}
 
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1517,7 +1518,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 }
 
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -1571,10 +1572,10 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 }
 
 type getContentResponse struct {
-	Content      *util.Content       `json:"content"`
-	AggregatedIn *util.Content       `json:"aggregatedIn,omitempty"`
-	Selector     string              `json:"selector,omitempty"`
-	Deals        []*util.ContentDeal `json:"deals"`
+	Content      *util.Content        `json:"content"`
+	AggregatedIn *util.Content        `json:"aggregatedIn,omitempty"`
+	Selector     string               `json:"selector,omitempty"`
+	Deals        []*model.ContentDeal `json:"deals"`
 }
 
 func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
@@ -1652,7 +1653,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 			id = cont.AggregatedIn
 		}
 
-		var deals []*util.ContentDeal
+		var deals []*model.ContentDeal
 		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
 			return err
 		}
@@ -1779,7 +1780,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", chanid.ID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1807,7 +1808,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
 	transferID := c.Param("id")
 
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", transferID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1873,7 +1874,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	var deal util.ContentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1937,7 +1938,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return err
 	}
 
-	var d util.ContentDeal
+	var d model.ContentDeal
 	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2108,17 +2109,17 @@ type adminStatsResponse struct {
 func (s *Server) handleAdminStats(c echo.Context) error {
 
 	var dealsTotal int64
-	if err := s.DB.Model(&util.ContentDeal{}).Count(&dealsTotal).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Count(&dealsTotal).Error; err != nil {
 		return err
 	}
 
 	var dealsSuccessful int64
-	if err := s.DB.Model(&util.ContentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
 		return err
 	}
 
 	var dealsFailed int64
-	if err := s.DB.Model(&util.ContentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
 		return err
 	}
 
@@ -2412,7 +2413,7 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleDealStats")
 	defer span.End()
 
-	var alldeals []util.ContentDeal
+	var alldeals []model.ContentDeal
 	if err := s.DB.Find(&alldeals).Error; err != nil {
 		return err
 	}
@@ -2694,7 +2695,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	}
 
 	var dealscount int64
-	if err := s.DB.Model(&util.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
 		return err
 	}
 
@@ -2752,7 +2753,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 		return err
 	}
 
-	q := s.DB.Model(util.ContentDeal{}).Order("created_at desc").
+	q := s.DB.Model(model.ContentDeal{}).Order("created_at desc").
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("miner = ?", maddr.String())
 
@@ -4215,7 +4216,7 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	if err := s.DB.Model(util.ContentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
+	if err := s.DB.Model(model.ContentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -4361,7 +4362,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 
 func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
 	var deals []*metricsDealJoin
-	if err := s.DB.Model(util.ContentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("content_deals.failed as failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
 		Scan(&deals).Error; err != nil {
@@ -4511,7 +4512,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 	all := c.QueryParam("all") != ""
 
 	var deals []dealQuery
-	if err := s.DB.Model(util.ContentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND user_id = ?", all, begin, begin.Add(duration), u.ID).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("deal_id, contents.id as contentid, cid, aggregate").
@@ -4587,7 +4588,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var deals []util.ContentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and not failed", cont.ID).Error; err != nil {
 		return err
 	}
@@ -5052,7 +5053,7 @@ type allDealsQuery struct {
 
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
-	if err := s.DB.Model(util.ContentDeal{}).Where("deal_id > 0 and not content_deals.failed").
+	if err := s.DB.Model(model.ContentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("miner, contents.cid as cid, deal_id").
 		Scan(&out).
@@ -5379,7 +5380,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	var conts []contCheck
 	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 and active").
 		Select("id, (?) as num_deals",
-			s.DB.Model(util.ContentDeal{}).
+			s.DB.Model(model.ContentDeal{}).
 				Where("content = contents.id and deal_id > 0 and not failed").
 				Select("count(1)"),
 		).Scan(&conts).Error; err != nil {

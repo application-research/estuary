@@ -1,9 +1,10 @@
-package util
+package model
 
 import (
 	"fmt"
 	"time"
 
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -15,19 +16,19 @@ var ErrNoChannelID = fmt.Errorf("no data transfer channel id in deal")
 
 type ContentDeal struct {
 	gorm.Model
-	Content          uint      `json:"content" gorm:"index:,option:CONCURRENTLY"`
-	UserID           uint      `json:"user_id" gorm:"index:,option:CONCURRENTLY"`
-	PropCid          DbCID     `json:"propCid"`
-	DealUUID         string    `json:"dealUuid"`
-	Miner            string    `json:"miner"`
-	DealID           int64     `json:"dealId"`
-	Failed           bool      `json:"failed"`
-	Verified         bool      `json:"verified"`
-	Slashed          bool      `json:"slashed"`
-	FailedAt         time.Time `json:"failedAt,omitempty"`
-	DTChan           string    `json:"dtChan" gorm:"index"`
-	TransferStarted  time.Time `json:"transferStarted"`
-	TransferFinished time.Time `json:"transferFinished"`
+	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
+	UserID           uint       `json:"user_id" gorm:"index:,option:CONCURRENTLY"`
+	PropCid          util.DbCID `json:"propCid"`
+	DealUUID         string     `json:"dealUuid"`
+	Miner            string     `json:"miner"`
+	DealID           int64      `json:"dealId"`
+	Failed           bool       `json:"failed"`
+	Verified         bool       `json:"verified"`
+	Slashed          bool       `json:"slashed"`
+	FailedAt         time.Time  `json:"failedAt,omitempty"`
+	DTChan           string     `json:"dtChan" gorm:"index"`
+	TransferStarted  time.Time  `json:"transferStarted"`
+	TransferFinished time.Time  `json:"transferFinished"`
 
 	OnChainAt           time.Time   `json:"onChainAt"`
 	SealedAt            time.Time   `json:"sealedAt"`
