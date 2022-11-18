@@ -26,7 +26,7 @@ import (
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -38,7 +38,7 @@ import (
 	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
 	"github.com/whyrusleeping/memo"
@@ -48,9 +48,11 @@ import (
 	"golang.org/x/xerrors"
 
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
+	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
-	cli "github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v2"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -75,6 +77,9 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("bs-wal", level)
 	_ = logging.SetLogLevel("provider.batched", level)
 	_ = logging.SetLogLevel("bs-migrate", level)
+	_ = logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("est-node", level)
+
 	return nil
 }
 
@@ -189,6 +194,21 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			if len(dprs) > 0 {
 				cfg.Deal.EnabledDealProtocolsVersions = dprs
 			}
+
+		case "max-price":
+			maxPrice, err := types.ParseFIL(cctx.String("max-price"))
+			if err != nil {
+				return fmt.Errorf("failed to parse max-price %s: %w", cctx.String("max-price"), err)
+			}
+			cfg.Deal.MaxPrice = abi.TokenAmount(maxPrice)
+
+		case "max-verified-price":
+			maxVerifiedPrice, err := types.ParseFIL(cctx.String("max-verified-price"))
+			if err != nil {
+				return fmt.Errorf("failed to parse max-verified-price %s: %w", cctx.String("max-verified-price"), err)
+			}
+			cfg.Deal.MaxVerifiedPrice = abi.TokenAmount(maxVerifiedPrice)
+
 		default:
 		}
 	}
@@ -410,6 +430,16 @@ func main() {
 			Name:  "indexer-tick-interval",
 			Usage: "sets the indexer advertisement interval in minutes",
 			Value: cfg.Node.IndexerTickInterval,
+		},
+		&cli.StringFlag{
+			Name:  "max-price",
+			Usage: "sets the max price for non-verified deals",
+			Value: cfg.Deal.MaxPrice.String(),
+		},
+		&cli.StringFlag{
+			Name:  "max-verified-price",
+			Usage: "sets the max price for verified deals",
+			Value: cfg.Deal.MaxVerifiedPrice.String(),
 		},
 	}
 	app.Commands = []*cli.Command{

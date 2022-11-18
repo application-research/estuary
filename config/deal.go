@@ -3,7 +3,8 @@ package config
 import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/filecoin-project/go-state-types/big"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 const (
@@ -22,4 +23,6 @@ type Deal struct {
 	IsVerified                   bool                 `json:"verified"`
 	Duration                     abi.ChainEpoch       `json:"duration"`
 	EnabledDealProtocolsVersions map[protocol.ID]bool `json:"enabled_deal_protocol_versions"`
+	MaxVerifiedPrice             big.Int              `json:"max_verified_price"`
+	MaxPrice                     big.Int              `json:"max_price"`
 }

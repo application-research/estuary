@@ -34,7 +34,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -70,7 +70,7 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
 )
@@ -101,6 +101,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("bs-wal", level)
 	_ = logging.SetLogLevel("bs-migrate", level)
 	_ = logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("est-node", level)
 
 	return nil
 }

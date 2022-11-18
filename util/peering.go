@@ -2,7 +2,7 @@ package util
 
 import (
 	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 type PeeringPeerAddMessage struct {

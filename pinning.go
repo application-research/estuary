@@ -20,7 +20,7 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -630,6 +630,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Summary      Add and pin object
 // @Description  This endpoint adds a pin to the IPFS daemon.
 // @Tags         pinning
+// @Accept		 json
 // @Produce      json
 // @Success      202	{object}  types.IpfsPinStatusResponse
 // @Failure      500    {object}  util.HttpError
@@ -740,6 +741,7 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Summary      Replace a pinned object
 // @Description  This endpoint replaces a pinned object.
 // @Tags         pinning
+// @Accept		 json
 // @Produce      json
 // @Success      202	{object}	types.IpfsPinStatusResponse
 // @Failure      404	{object}	util.HttpError

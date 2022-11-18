@@ -28,7 +28,7 @@ import (
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/drpc"
@@ -60,7 +60,7 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -716,7 +716,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
-// @Success      200           {object}  string
+// @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Param        body          body      string  true   "Car"
@@ -2032,12 +2032,13 @@ type getInvitesResp struct {
 	Code      string `json:"code"`
 	Username  string `json:"createdBy"`
 	ClaimedBy string `json:"claimedBy"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
-		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
+		Select("code, username, invite_codes.created_at, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Order("invite_codes.created_at ASC").
