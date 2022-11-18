@@ -3360,7 +3360,7 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 		Expiry:     expiry,
 		UploadOnly: uploadOnly,
 	}
-	if err := s.DB.Omit(constants.TokenColumnName).Create(authToken).Error; err != nil {
+	if err := s.DB.Create(authToken).Error; err != nil {
 		return nil, err
 	}
 

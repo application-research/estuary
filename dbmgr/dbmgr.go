@@ -3,7 +3,6 @@ package dbmgr
 import (
 	"errors"
 	"fmt"
-	"github.com/application-research/estuary/constants"
 	"strings"
 	"time"
 
@@ -317,8 +316,8 @@ func (q *UsersQuery) ExpectDelete() error {
 type AuthTokensQuery struct{ DB *gorm.DB }
 type AuthToken struct {
 	gorm.Model
-	Token     string `gorm:"unique"`
-	TokenHash string
+	Token     string `gorm:"unique;->"` // read only to prevent storing new tokens but not break existing tokens
+	TokenHash string `gorm:"unique"`
 	Label     string
 	User      UserID
 	Expiry    time.Time
@@ -329,7 +328,7 @@ func NewAuthTokensQuery(db *gorm.DB) *AuthTokensQuery {
 }
 
 func (q *AuthTokensQuery) Create(authToken AuthToken) error {
-	return q.DB.Omit(constants.TokenColumnName).Create(&authToken).Error
+	return q.DB.Create(&authToken).Error
 }
 
 // CONTENTS
