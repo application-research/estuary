@@ -12,8 +12,6 @@ const ContentLocationLocal = "local"
 const TopMinerSel = 15
 const MinSafeDealLifetime = 2880 * 21 // three weeks
 
-const MaxBucketItems = 10000
-
 // DealDuration Making default deal duration be three weeks less than the maximum to ensure
 // miners who start their deals early don't run into issues
 const DealDuration = 1555200 - (2880 * 21)

@@ -5,6 +5,7 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	"math/rand"
 	"sort"
 	"strings"
@@ -43,7 +44,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
-	"github.com/ipfs/go-unixfs"
+	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -157,8 +158,6 @@ type contentStagingZone struct {
 	MinSize int64 `json:"minSize"`
 	MaxSize int64 `json:"maxSize"`
 
-	MaxItems int `json:"maxItems"`
-
 	CurSize int64 `json:"curSize"`
 
 	User uint `json:"user"`
@@ -181,7 +180,6 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 		Contents:   make([]util.Content, len(cb.Contents)),
 		MinSize:    cb.MinSize,
 		MaxSize:    cb.MaxSize,
-		MaxItems:   cb.MaxItems,
 		CurSize:    cb.CurSize,
 		User:       cb.User,
 		ContID:     cb.ContID,
@@ -212,7 +210,6 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		ZoneOpened: time.Now(),
 		MinSize:    cm.cfg.StagingBucket.MinSize,
 		MaxSize:    cm.cfg.StagingBucket.MaxSize,
-		MaxItems:   cm.cfg.StagingBucket.MaxItems,
 		User:       user,
 		ContID:     content.ID,
 		Location:   content.Location,
@@ -250,10 +247,6 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	}
 
 	if cb.CurSize+c.Size > cb.MaxSize {
-		return false, nil
-	}
-
-	if len(cb.Contents) >= cb.MaxItems {
 		return false, nil
 	}
 
@@ -392,6 +385,7 @@ func (cm *ContentManager) Run(ctx context.Context) {
 
 		// run the staging bucket aggregator worker
 		go cm.runStagingBucketWorker(ctx)
+		log.Infof("rebuilt staging buckets and spun up staging bucket worker")
 	}
 
 	// if FilecoinStorage is enabled, check content deals or make content deals
@@ -547,6 +541,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	dataByLoc := make(map[string]int64)
 	contentByLoc := make(map[string][]util.Content)
 
+	// TODO: make this one batch DB query instead of querying per content
 	for _, c := range b.Contents {
 		loc, err := cm.currentLocationForContent(c.ID)
 		if err != nil {
@@ -615,7 +610,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	// if all contents are already in one location, proceed to aggregate them
-	dir, err := cm.createAggregate(ctx, b.Contents)
+	dir, err := cm.createAggregate(ctx, cm.Blockstore, cm.Node.Bitswap, b.Contents)
 	if err != nil {
 		return xerrors.Errorf("failed to create aggregate: %w", err)
 	}
@@ -690,24 +685,34 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
+func (cm *ContentManager) createAggregate(ctx context.Context, blockstore blockstore.Blockstore, exch exchange.Interface, conts []util.Content) (ipld.Node, error) {
 	log.Debug("aggregating contents in staging zone into new content")
+
+	bserv := blockservice.New(blockstore, exch)
+	dserv := merkledag.NewDAGService(bserv)
 
 	sort.Slice(conts, func(i, j int) bool {
 		return conts[i].ID < conts[j].ID
 	})
 
-	dir := unixfs.EmptyDirNode()
+	dir := uio.NewDirectory(dserv)
 	for _, c := range conts {
-		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
-			Size: uint64(c.Size),
-			Cid:  c.Cid.CID,
-		})
+		nd, err := dserv.Get(ctx, c.Cid.CID)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO: consider removing the "<cid>-" prefix on the content name
+		err = dir.AddChild(ctx, fmt.Sprintf("%d-%s", c.ID, c.Name), nd)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return dir, nil
+	dirNd, err := dir.GetNode()
+	if err != nil {
+		return nil, err
+	}
+	return dirNd, nil
 }
 
 func (cm *ContentManager) rebuildStagingBuckets() error {
@@ -724,7 +729,6 @@ func (cm *ContentManager) rebuildStagingBuckets() error {
 			ZoneOpened: c.CreatedAt,
 			MinSize:    cm.cfg.StagingBucket.MinSize,
 			MaxSize:    cm.cfg.StagingBucket.MaxSize,
-			MaxItems:   cm.cfg.StagingBucket.MaxItems,
 			User:       c.UserID,
 			ContID:     c.ID,
 			Location:   c.Location,

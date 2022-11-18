@@ -869,17 +869,6 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	// if upload size is smaller than (min deal size / staging bucket file count limit)
-	// reject the upload, to guarantee that all staging buckets will reach a viable dealmaking size
-	contentSizeMinimum := s.cfg.StagingBucket.MinSize / int64(s.cfg.StagingBucket.MaxItems)
-	if mpf.Size < contentSizeMinimum {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_SIZE_UNDER_MINIMUM,
-			Details: fmt.Sprintf("content size %d bytes, is under upload size minimum of %d bytes", mpf.Size, contentSizeMinimum),
-		}
-	}
-
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
@@ -4594,6 +4583,11 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
+	var exch exchange.Interface
+	if c.QueryParam("fetch") != "" {
+		exch = s.Node.Bitswap
+	}
+
 	var u util.User
 	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return err
@@ -4613,7 +4607,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, children)
+		nd, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4659,7 +4653,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, children)
+		nd, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4700,7 +4694,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 					ids = append(ids, c.ID)
 				}
 
-				dir, err := s.CM.createAggregate(ctx, aggr)
+				dir, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, aggr)
 				if err != nil {
 					return err
 				}
@@ -4715,11 +4709,6 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			// well that sucks
 			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
-	}
-
-	var exch exchange.Interface
-	if c.QueryParam("fetch") != "" {
-		exch = s.Node.Bitswap
 	}
 
 	bserv := blockservice.New(s.Node.Blockstore, exch)

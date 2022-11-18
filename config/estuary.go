@@ -96,7 +96,6 @@ func NewEstuary(appVersion string) *Estuary {
 
 		StagingBucket: StagingBucket{
 			Enabled:                 true,
-			MaxItems:                constants.MaxBucketItems,
 			MaxSize:                 constants.MaxStagingZoneSizeLimit,
 			MinSize:                 constants.MinStagingZoneSizeLimit,
 			IndividualDealThreshold: constants.IndividualDealThreshold,

@@ -4,13 +4,11 @@ import "time"
 
 // MinSize - minimum staging bucket size before it can be aggregated
 // MaxSize - maximum staging bucket size before it can be aggregated
-// MaxItems - max number of items a bucket can hold before it is aggregated
 // AggregateInterval - interval to aggregate staging contents
 type StagingBucket struct {
 	Enabled                 bool          `json:"enabled"`
 	MinSize                 int64         `json:"min_size"`
 	MaxSize                 int64         `json:"max_size"`
 	IndividualDealThreshold int64         `json:"individual_deal_threshold"`
-	MaxItems                int           `json:"max_items"`
 	AggregateInterval       time.Duration `json:"aggregate_interval"`
 }
