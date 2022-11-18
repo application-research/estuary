@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
@@ -26,7 +27,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 		return nil, err
 	}
 
-	var deals []contentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and deal_id > 0", contid).Error; err != nil {
 		return nil, err
 	}

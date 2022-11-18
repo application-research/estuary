@@ -25,6 +25,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p/core/network"
 
@@ -1315,7 +1316,7 @@ type onChainDealState struct {
 }
 
 type dealStatus struct {
-	Deal           contentDeal             `json:"deal"`
+	Deal           model.ContentDeal       `json:"deal"`
 	TransferStatus *filclient.ChannelState `json:"transfer"`
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
@@ -1388,7 +1389,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var deals []contentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ?", content.ID).Error; err != nil {
 		return err
 	}
@@ -1501,7 +1502,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1522,7 +1523,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 }
 
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -1576,10 +1577,10 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 }
 
 type getContentResponse struct {
-	Content      *util.Content  `json:"content"`
-	AggregatedIn *util.Content  `json:"aggregatedIn,omitempty"`
-	Selector     string         `json:"selector,omitempty"`
-	Deals        []*contentDeal `json:"deals"`
+	Content      *util.Content        `json:"content"`
+	AggregatedIn *util.Content        `json:"aggregatedIn,omitempty"`
+	Selector     string               `json:"selector,omitempty"`
+	Deals        []*model.ContentDeal `json:"deals"`
 }
 
 func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
@@ -1657,7 +1658,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 			id = cont.AggregatedIn
 		}
 
-		var deals []*contentDeal
+		var deals []*model.ContentDeal
 		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
 			return err
 		}
@@ -1687,7 +1688,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	ask, err := s.CM.getAsk(c.Request().Context(), addr, 0)
+	ask, err := s.minerManager.GetAsk(c.Request().Context(), addr, 0)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -1784,7 +1785,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", chanid.ID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1812,7 +1813,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
 	transferID := c.Param("id")
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", transferID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1878,7 +1879,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1942,7 +1943,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return err
 	}
 
-	var d contentDeal
+	var d model.ContentDeal
 	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2114,22 +2115,22 @@ type adminStatsResponse struct {
 func (s *Server) handleAdminStats(c echo.Context) error {
 
 	var dealsTotal int64
-	if err := s.DB.Model(&contentDeal{}).Count(&dealsTotal).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Count(&dealsTotal).Error; err != nil {
 		return err
 	}
 
 	var dealsSuccessful int64
-	if err := s.DB.Model(&contentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
 		return err
 	}
 
 	var dealsFailed int64
-	if err := s.DB.Model(&contentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
 		return err
 	}
 
 	var numMiners int64
-	if err := s.DB.Model(&storageMiner{}).Count(&numMiners).Error; err != nil {
+	if err := s.DB.Model(&model.StorageMiner{}).Count(&numMiners).Error; err != nil {
 		return err
 	}
 
@@ -2224,7 +2225,7 @@ type minerResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /public/miners [get]
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
-	var miners []storageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
@@ -2242,7 +2243,7 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 }
 
 func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
-	_, stats, err := s.CM.sortedMinerList()
+	_, stats, err := s.minerManager.SortedMinerList()
 	if err != nil {
 		return err
 	}
@@ -2251,11 +2252,10 @@ func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
 }
 
 func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
-	sml, err := s.CM.computeSortedMinerList()
+	sml, err := s.minerManager.ComputeSortedMinerList()
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, sml)
 }
 
@@ -2269,7 +2269,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm storageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2293,10 +2293,9 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+	if err := s.DB.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -2306,7 +2305,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
 
@@ -2323,7 +2322,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm storageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2347,7 +2346,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
+	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
 		"suspended":        true,
 		"suspended_reason": body.Reason,
 	}).Error; err != nil {
@@ -2363,7 +2362,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm storageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2382,7 +2381,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
+	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
 		return err
 	}
 
@@ -2397,7 +2396,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 
 	name := c.QueryParam("name")
 
-	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
+	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
@@ -2420,7 +2419,7 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleDealStats")
 	defer span.End()
 
-	var alldeals []contentDeal
+	var alldeals []model.ContentDeal
 	if err := s.DB.Find(&alldeals).Error; err != nil {
 		return err
 	}
@@ -2570,7 +2569,7 @@ type estimateDealBody struct {
 type priceEstimateResponse struct {
 	TotalStr string `json:"totalFil"`
 	Total    string `json:"totalAttoFil"`
-	Asks     []*minerStorageAsk
+	Asks     []*model.MinerStorageAsk
 }
 
 // handleEstimateDealCost godoc
@@ -2593,7 +2592,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 
 	pieceSize := padreader.PaddedSize(body.Size)
 
-	estimate, err := s.CM.estimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	estimate, err := s.minerManager.EstimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
 	if err != nil {
 		return err
 	}
@@ -2690,7 +2689,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
-	var m storageMiner
+	var m model.StorageMiner
 	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return c.JSON(http.StatusOK, &minerStatsResp{
@@ -2702,7 +2701,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	}
 
 	var dealscount int64
-	if err := s.DB.Model(&contentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
 		return err
 	}
 
@@ -2760,7 +2759,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 		return err
 	}
 
-	q := s.DB.Model(contentDeal{}).Order("created_at desc").
+	q := s.DB.Model(model.ContentDeal{}).Order("created_at desc").
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("miner = ?", maddr.String())
 
@@ -3400,7 +3399,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) getMinersOwnedByUser(u *util.User) []string {
-	var miners []storageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
 		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
 		return nil
@@ -4224,7 +4223,7 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
+	if err := s.DB.Model(model.ContentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -4370,7 +4369,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 
 func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
 	var deals []*metricsDealJoin
-	if err := s.DB.Model(contentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("content_deals.failed as failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
 		Scan(&deals).Error; err != nil {
@@ -4520,7 +4519,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 	all := c.QueryParam("all") != ""
 
 	var deals []dealQuery
-	if err := s.DB.Model(contentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND user_id = ?", all, begin, begin.Add(duration), u.ID).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("deal_id, contents.id as contentid, cid, aggregate").
@@ -4596,7 +4595,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var deals []contentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and not failed", cont.ID).Error; err != nil {
 		return err
 	}
@@ -5061,7 +5060,7 @@ type allDealsQuery struct {
 
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
-	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not content_deals.failed").
+	if err := s.DB.Model(model.ContentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("miner, contents.cid as cid, deal_id").
 		Scan(&out).
@@ -5245,7 +5244,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm []storageMiner
+	var sm []model.StorageMiner
 	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
 		return err
 	}
@@ -5292,7 +5291,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 			})
 		}
 
-		if err := s.DB.Create(&storageMiner{
+		if err := s.DB.Create(&model.StorageMiner{
 			Address: util.DbAddr{Addr: cmb.Miner},
 			Name:    cmb.Name,
 			Owner:   u.ID,
@@ -5301,7 +5300,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 		}
 
 	} else {
-		if err := s.DB.Model(storageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
+		if err := s.DB.Model(model.StorageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
 			return err
 		}
 	}
@@ -5388,7 +5387,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	var conts []contCheck
 	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 and active").
 		Select("id, (?) as num_deals",
-			s.DB.Model(contentDeal{}).
+			s.DB.Model(model.ContentDeal{}).
 				Where("content = contents.id and deal_id > 0 and not failed").
 				Select("count(1)"),
 		).Scan(&conts).Error; err != nil {

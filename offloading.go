@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"golang.org/x/xerrors"
 )
@@ -258,7 +259,7 @@ func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, lo
 }
 
 func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint) (int, int, int, error) {
-	var contentDeals []contentDeal
+	var contentDeals []model.ContentDeal
 	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return 0, 0, 0, err
 	}

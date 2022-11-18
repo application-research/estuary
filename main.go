@@ -16,6 +16,8 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
 
@@ -58,17 +60,6 @@ import (
 
 var appVersion string
 var log = logging.Logger("estuary").With("app_version", appVersion)
-
-type storageMiner struct {
-	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
-}
 
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
@@ -729,11 +720,14 @@ func main() {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
+		minerMgr := miner.NewMinerManager(db, fc, cfg)
+
+		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg, minerMgr)
 		if err != nil {
 			return err
 		}
 		s.CM = cm
+		s.minerManager = minerMgr
 
 		fc.SetPieceCommFunc(cm.getPieceCommitment)
 		s.FilClient = fc
@@ -789,16 +783,15 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 	}
 
 	var count int64
-	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
+	if err := db.Model(&model.StorageMiner{}).Count(&count).Error; err != nil {
 		return nil, err
 	}
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range build.DefaultMiners {
-			db.Create(&storageMiner{Address: util.DbAddr{Addr: m}})
+			db.Create(&model.StorageMiner{Address: util.DbAddr{Addr: m}})
 		}
-
 	}
 	return db, nil
 }
@@ -810,14 +803,14 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.ObjRef{},
 		&collections.Collection{},
 		&collections.CollectionRef{},
-		&contentDeal{},
+		&model.ContentDeal{},
 		&dfeRecord{},
 		&PieceCommRecord{},
 		&proposalRecord{},
 		&util.RetrievalFailureRecord{},
 		&retrievalSuccessRecord{},
-		&minerStorageAsk{},
-		&storageMiner{},
+		&model.MinerStorageAsk{},
+		&model.StorageMiner{},
 		&util.User{},
 		&util.AuthToken{},
 		&util.InviteCode{},
@@ -844,6 +837,7 @@ type Server struct {
 
 	tcLk             sync.Mutex
 	trackingChannels map[string]*util.ChanTrack
+	minerManager     miner.IMinerManager
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
@@ -886,8 +880,8 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []contentDeal
-	if err := s.DB.Model(contentDeal{}).
+	var deals []model.ContentDeal
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
 		Scan(&deals).Error; err != nil {
@@ -925,7 +919,7 @@ func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
 // It supports only legacy deals (PushTransfer)
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
+func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
 	maddr, err := d.MinerAddr()
 	if err != nil {
 		return err
@@ -964,7 +958,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		if cannotRestart {
 			trsFailed, msg := util.TransferFailed(st)
 			if trsFailed {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 					"failed":    true,
 					"failed_at": time.Now(),
 				}).Error; err != nil {
@@ -980,7 +974,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
 
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
+func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
 	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_RestartTransfer,
 		Params: drpc.CmdParams{
