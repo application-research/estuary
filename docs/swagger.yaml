@@ -803,7 +803,7 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/util.ContentAddResponse'
         "400":
           description: Bad Request
           schema:

@@ -714,7 +714,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
-// @Success      200           {object}  string
+// @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Param        body          body      string  true   "Car"
