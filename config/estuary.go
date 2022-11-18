@@ -1,13 +1,14 @@
 package config
 
 import (
+	"github.com/application-research/estuary/constants"
+
 	"path/filepath"
 	"time"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
 	"github.com/application-research/estuary/build"
-	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -80,7 +81,7 @@ func NewEstuary(appVersion string) *Estuary {
 			IsDisabled:            false,
 			FailOnTransferFailure: false,
 			IsVerified:            true,
-			Duration:              abi.ChainEpoch(1555200 - (2880 * 21)), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
+			Duration:              abi.ChainEpoch(constants.DealDuration), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
 			EnabledDealProtocolsVersions: map[protocol.ID]bool{
 				filclient.DealProtocolv110: true,
 				filclient.DealProtocolv120: true,
@@ -95,16 +96,10 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:                 true,
-			MaxLifeTime:             time.Hour * 8,
-			MaxContentAge:           time.Hour * 24 * 7,
-			MaxItems:                10000,
-			MaxSize:                 int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10),                // 14.29 Gib
-			MinSize:                 int64(int64((abi.PaddedPieceSize(16<<30).Unpadded()*9)/10) - (1 << 30)), // 13.29 GiB
-			KeepAlive:               time.Minute * 40,
-			MinDealSize:             256 << 20,                                               //0.25 Gib
-			IndividualDealThreshold: int64((abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10), // 90% of the unpadded data size for a 4GB piece, the 10% gap is to accommodate car file packing overhead, can probably do this better
-			AggregateInterval:       time.Minute * 5,                                         // aggregate staging buckets every 5 minutes
+			Enabled:           true,
+			MaxSize:           constants.MaxDealContentSize,
+			MinSize:           constants.MinDealContentSize,
+			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
 		},
 
 		Pinning: Pinning{
