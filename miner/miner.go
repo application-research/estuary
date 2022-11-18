@@ -6,33 +6,21 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/application-research/estuary/util"
+	"github.com/application-research/estuary/model"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p-core/protocol"
-	"gorm.io/gorm"
 )
 
 type miner struct {
 	Address             address.Address
 	DealProtocolVersion protocol.ID
-	Ask                 *MinerStorageAsk
-}
-
-type StorageMiner struct {
-	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
+	Ask                 *model.MinerStorageAsk
 }
 
 func (mgr *MinerManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	var dbminers []StorageMiner
+	var dbminers []model.StorageMiner
 	if err := mgr.DB.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
 	}
@@ -88,7 +76,7 @@ func (mgr *MinerManager) updateMinerVersion(ctx context.Context, m address.Addre
 	}
 
 	if vers != "" {
-		if err := mgr.DB.Model(StorageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
+		if err := mgr.DB.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
 			return "", err
 		}
 	}

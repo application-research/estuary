@@ -4,69 +4,23 @@ import (
 	"context"
 	"time"
 
+	"github.com/application-research/estuary/model"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
-	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/labstack/gommon/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
-	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
-var priceMax abi.TokenAmount
-
-func init() {
-	max, err := types.ParseFIL("0.00000003")
-	if err != nil {
-		panic(err)
-	}
-	priceMax = abi.TokenAmount(max)
-}
-
-type MinerStorageAsk struct {
-	gorm.Model          `json:"-"`
-	Miner               string              `gorm:"unique" json:"miner"`
-	Price               string              `json:"price"`
-	VerifiedPrice       string              `json:"verifiedPrice"`
-	PriceBigInt         big.Int             `gorm:"-" json:"-"`
-	VerifiedPriceBigInt big.Int             `gorm:"-" json:"-"`
-	MinPieceSize        abi.PaddedPieceSize `json:"minPieceSize"`
-	MaxPieceSize        abi.PaddedPieceSize `json:"maxPieceSize"`
-	MinerVersion        string              `json:"miner_version"`
-}
-
-func (msa *MinerStorageAsk) PriceIsTooHigh(isVerifiedDeal bool) bool {
-	price := msa.GetPrice(isVerifiedDeal)
-	if isVerifiedDeal {
-		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
-	}
-	return types.BigCmp(price, priceMax) > 0
-}
-
-func (msa *MinerStorageAsk) GetPrice(isVerifiedDeal bool) types.BigInt {
-	if isVerifiedDeal {
-		return msa.VerifiedPriceBigInt
-	}
-	return msa.PriceBigInt
-}
-
-func (msa *MinerStorageAsk) SizeIsCloseEnough(pieceSize abi.PaddedPieceSize) bool {
-	if pieceSize > msa.MinPieceSize && pieceSize < msa.MaxPieceSize {
-		return true
-	}
-	return false
-}
-
-func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*MinerStorageAsk, error) {
+func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error) {
 	ctx, span := mgr.tracer.Start(ctx, "getAsk", trace.WithAttributes(
 		attribute.Stringer("miner", m),
 	))
 	defer span.End()
 
-	var asks []MinerStorageAsk
+	var asks []model.MinerStorageAsk
 	if err := mgr.DB.Find(&asks, "miner = ?", m.String()).Error; err != nil {
 		return nil, err
 	}
@@ -118,8 +72,8 @@ func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCache
 	return nmsa, nil
 }
 
-func toDBAsk(netask *network.AskResponse) *MinerStorageAsk {
-	return &MinerStorageAsk{
+func toDBAsk(netask *network.AskResponse) *model.MinerStorageAsk {
+	return &model.MinerStorageAsk{
 		Miner:               netask.Ask.Ask.Miner.String(),
 		Price:               netask.Ask.Ask.Price.String(),
 		VerifiedPrice:       netask.Ask.Ask.VerifiedPrice.String(),

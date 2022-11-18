@@ -25,7 +25,6 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -2125,7 +2124,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numMiners int64
-	if err := s.DB.Model(&miner.StorageMiner{}).Count(&numMiners).Error; err != nil {
+	if err := s.DB.Model(&model.StorageMiner{}).Count(&numMiners).Error; err != nil {
 		return err
 	}
 
@@ -2220,7 +2219,7 @@ type minerResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /public/miners [get]
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
-	var miners []miner.StorageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
@@ -2264,7 +2263,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm miner.StorageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2288,7 +2287,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := s.DB.Model(miner.StorageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+	if err := s.DB.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -2300,7 +2299,7 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&miner.StorageMiner{}).Error; err != nil {
+	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
 
@@ -2317,7 +2316,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm miner.StorageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2341,7 +2340,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := s.DB.Model(&miner.StorageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
+	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
 		"suspended":        true,
 		"suspended_reason": body.Reason,
 	}).Error; err != nil {
@@ -2357,7 +2356,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm miner.StorageMiner
+	var sm model.StorageMiner
 	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2376,7 +2375,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := s.DB.Model(&miner.StorageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
+	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
 		return err
 	}
 
@@ -2391,7 +2390,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 
 	name := c.QueryParam("name")
 
-	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&miner.StorageMiner{
+	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
@@ -2564,7 +2563,7 @@ type estimateDealBody struct {
 type priceEstimateResponse struct {
 	TotalStr string `json:"totalFil"`
 	Total    string `json:"totalAttoFil"`
-	Asks     []*miner.MinerStorageAsk
+	Asks     []*model.MinerStorageAsk
 }
 
 // handleEstimateDealCost godoc
@@ -2684,7 +2683,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
-	var m miner.StorageMiner
+	var m model.StorageMiner
 	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return c.JSON(http.StatusOK, &minerStatsResp{
@@ -3395,7 +3394,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) getMinersOwnedByUser(u *util.User) []string {
-	var miners []miner.StorageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
 		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
 		return nil
@@ -5238,7 +5237,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm []miner.StorageMiner
+	var sm []model.StorageMiner
 	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
 		return err
 	}
@@ -5285,7 +5284,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 			})
 		}
 
-		if err := s.DB.Create(&miner.StorageMiner{
+		if err := s.DB.Create(&model.StorageMiner{
 			Address: util.DbAddr{Addr: cmb.Miner},
 			Name:    cmb.Name,
 			Owner:   u.ID,
@@ -5294,7 +5293,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 		}
 
 	} else {
-		if err := s.DB.Model(miner.StorageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
+		if err := s.DB.Model(model.StorageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
 			return err
 		}
 	}

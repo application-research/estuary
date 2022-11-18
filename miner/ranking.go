@@ -41,7 +41,7 @@ func (mgr *MinerManager) SortedMinerList() ([]address.Address, []*minerDealStats
 }
 
 func (mgr *MinerManager) minerIsSuspended(m address.Address) (bool, error) {
-	var miner StorageMiner
+	var miner model.StorageMiner
 	if err := mgr.DB.Find(&miner, "address = ?", m.String()).Error; err != nil {
 		return false, err
 	}

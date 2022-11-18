@@ -782,14 +782,14 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 	}
 
 	var count int64
-	if err := db.Model(&miner.StorageMiner{}).Count(&count).Error; err != nil {
+	if err := db.Model(&model.StorageMiner{}).Count(&count).Error; err != nil {
 		return nil, err
 	}
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range build.DefaultMiners {
-			db.Create(&miner.StorageMiner{Address: util.DbAddr{Addr: m}})
+			db.Create(&model.StorageMiner{Address: util.DbAddr{Addr: m}})
 		}
 	}
 	return db, nil
@@ -808,8 +808,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&proposalRecord{},
 		&util.RetrievalFailureRecord{},
 		&retrievalSuccessRecord{},
-		&miner.MinerStorageAsk{},
-		&miner.StorageMiner{},
+		&model.MinerStorageAsk{},
+		&model.StorageMiner{},
 		&util.User{},
 		&util.AuthToken{},
 		&util.InviteCode{},

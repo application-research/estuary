@@ -9,6 +9,7 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -27,7 +28,7 @@ type IMinerManager interface {
 	GetDealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error)
 	ComputeSortedMinerList() ([]*minerDealStats, error)
 	SortedMinerList() ([]address.Address, []*minerDealStats, error)
-	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*MinerStorageAsk, error)
+	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error)
 }
 
 type MinerManager struct {
@@ -54,7 +55,7 @@ func NewMinerManager(db *gorm.DB, fc *filclient.FilClient, cfg *config.Estuary) 
 
 type estimateResponse struct {
 	Total *abi.TokenAmount
-	Asks  []*MinerStorageAsk
+	Asks  []*model.MinerStorageAsk
 }
 
 func (mgr *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
@@ -72,7 +73,7 @@ func (mgr *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize 
 		return nil, fmt.Errorf("failed to find any miners for estimating deal price")
 	}
 
-	asks := make([]*MinerStorageAsk, 0)
+	asks := make([]*model.MinerStorageAsk, 0)
 	total := abi.NewTokenAmount(0)
 	for _, m := range miners {
 		dealSize := pieceSize
