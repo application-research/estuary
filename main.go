@@ -744,6 +744,7 @@ func main() {
 
 		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
 		go cm.handleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+		go cm.RunPinningRetryWorker(cctx.Context)                               // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {

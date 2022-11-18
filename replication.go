@@ -428,15 +428,6 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 }
 
 func (cm *ContentManager) Run(ctx context.Context) {
-	// if content adding is enabled, refresh pin queue for local contents
-	if !cm.localContentAddingDisabled {
-		go func() {
-			if err := cm.refreshPinQueue(ctx, constants.ContentLocationLocal); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
-		}()
-	}
-
 	// if staging buckets are enabled, rebuild the buckets, and run the bucket aggregate worker
 	if cm.cfg.StagingBucket.Enabled {
 		// rebuild the staging buckets
