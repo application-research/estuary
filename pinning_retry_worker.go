@@ -9,6 +9,8 @@ import (
 
 // RunPinningRetryWorker re-attempt pinning contents that have not yet been pinned after a period of time
 func (cm *ContentManager) RunPinningRetryWorker(ctx context.Context) {
+	log.Info("running pinning retry worker .......")
+
 	timer := time.NewTicker(cm.cfg.Pinning.RetryWorker.Interval)
 	for {
 		select {
