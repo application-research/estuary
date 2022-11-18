@@ -743,11 +743,11 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	// 		return err
 	// 	}
 
-	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 	if bdSize > util.MaxDealContentSize {
 	// 		return &util.HttpError{
 	// 			Code:    http.StatusBadRequest,
 	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.MaxDealContentSize),
 	// 		}
 	// 	}
 
@@ -1028,15 +1028,21 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	c.Response().WriteHeader(resp.StatusCode)
-
-	_, err = io.Copy(c.Response().Writer, resp.Body)
-	if err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return err
+		}
+		return &out.Error
 	}
 
-	return nil
+	var addResp util.ContentAddResponse
+	if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
+		return errors.Wrap(err, "failed to decode contentAddResponse body")
+	}
+	return c.JSON(resp.StatusCode, addResp)
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
@@ -3382,8 +3388,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 			Replication:           s.CM.Replication,
 			Verified:              s.cfg.Deal.IsVerified,
 			DealDuration:          s.cfg.Deal.Duration,
-			MaxStagingWait:        s.cfg.StagingBucket.MaxLifeTime,
-			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,
+			FileStagingThreshold:  s.cfg.StagingBucket.MinSize,
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.dealMakingDisabled(),
 			UploadEndpoints:       uep,
@@ -3483,7 +3488,9 @@ type getApiKeysResp struct {
 // @Router       /user/api-keys/{key_or_hash} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key_or_hash")
-	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
+	// need to check the kvalHash in case someone is revoking their token by the token itself, but only its hash is stored
+	kvalHash := util.GetTokenHash(kval)
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ? OR token_hash = ?)", u.ID, kval, kval, kvalHash).Error; err != nil {
 		return err
 	}
 

@@ -51,7 +51,7 @@ const (
 
 const (
 	ERR_AUTH_MISSING_DETAILS        = "no api key was specified"
-	ERR_AUTH_MISSING_BEARER_DETAILS = "Unsupported authorization scheme: Bearer is a required prefix. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\"."  //#nosec G101 -- This is a false positive and example API KEY
+	ERR_AUTH_MISSING_BEARER_DETAILS = "Unsupported authorization scheme: Bearer is a required prefix. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\"."                                                   //#nosec G101 -- This is a false positive and example API KEY
 	ERR_INVALID_AUTH_DETAILS        = "Invalid Auth: An Invalid API Key was specified. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\". You have the Bearer prefix but your API Key is empty or missing." //#nosec G101 -- This is a false positive and example API KEY
 )
 
@@ -136,7 +136,6 @@ type UserSettings struct {
 	Replication           int            `json:"replication"`
 	Verified              bool           `json:"verified"`
 	DealDuration          abi.ChainEpoch `json:"dealDuration"`
-	MaxStagingWait        time.Duration  `json:"maxStagingWait"`
 	FileStagingThreshold  int64          `json:"fileStagingThreshold"`
 	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
 	DealMakingDisabled    bool           `json:"dealMakingDisabled"`

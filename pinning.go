@@ -154,20 +154,12 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 	return s.CM.UpdatePinStatus(location, contID, status)
 }
 
-func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string) error {
-	log.Infof("trying to refresh pin queue for %s contents", contentLoc)
-
-	var contents []util.Content
-	if err := cm.DB.Find(&contents, "pinning and not active and not failed and not aggregate and location=?", contentLoc).Error; err != nil {
-		return err
-	}
-
+func (cm *ContentManager) pinContents(ctx context.Context, contents []util.Content) {
 	makeDeal := true
 	for _, c := range contents {
 		select {
 		case <-ctx.Done():
-			log.Debugf("refresh pin queue canceled for %s contents", contentLoc)
-			return nil
+			return
 		default:
 			var origins []*peer.AddrInfo
 			// when refreshing pinning queue, use content origins if available
@@ -176,7 +168,10 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 			}
 
 			if c.Location == constants.ContentLocationLocal {
-				cm.addPinToQueue(c, origins, 0, makeDeal)
+				// if local content adding is enabled, retry local pin
+				if !cm.localContentAddingDisabled {
+					cm.addPinToQueue(c, origins, 0, makeDeal)
+				}
 			} else {
 				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
 					log.Errorf("failed to send pin message to shuttle: %s", err)
@@ -185,7 +180,6 @@ func (cm *ContentManager) refreshPinQueue(ctx context.Context, contentLoc string
 			}
 		}
 	}
-	return nil
 }
 
 func (cm *ContentManager) pinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {

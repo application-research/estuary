@@ -45,7 +45,7 @@ import (
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
-	"github.com/ipfs/go-unixfs"
+	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -141,15 +141,10 @@ type stagingZoneReadiness struct {
 type contentStagingZone struct {
 	ZoneOpened time.Time `json:"zoneOpened"`
 
-	EarliestContent time.Time `json:"earliestContent"`
-	CloseTime       time.Time `json:"closeTime"`
-
 	Contents []util.Content `json:"contents"`
 
 	MinSize int64 `json:"minSize"`
 	MaxSize int64 `json:"maxSize"`
-
-	MaxItems int `json:"maxItems"`
 
 	CurSize int64 `json:"curSize"`
 
@@ -157,9 +152,6 @@ type contentStagingZone struct {
 
 	ContID   uint   `json:"contentID"`
 	Location string `json:"location"`
-
-	MaxContentAge time.Duration `json:"max_content_age"`
-	MinDealSize   int64         `json:"min_deal_size"`
 
 	IsConsolidating bool `json:"is_consolidating"`
 
@@ -172,20 +164,15 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 	cb2 := &contentStagingZone{
-		ZoneOpened:      cb.ZoneOpened,
-		EarliestContent: cb.EarliestContent,
-		CloseTime:       cb.CloseTime,
-		Contents:        make([]util.Content, len(cb.Contents)),
-		MinSize:         cb.MinSize,
-		MaxSize:         cb.MaxSize,
-		MaxItems:        cb.MaxItems,
-		CurSize:         cb.CurSize,
-		User:            cb.User,
-		ContID:          cb.ContID,
-		Location:        cb.Location,
-		MaxContentAge:   cb.MaxContentAge,
-		MinDealSize:     cb.MinSize,
-		Readiness:       cb.Readiness,
+		ZoneOpened: cb.ZoneOpened,
+		Contents:   make([]util.Content, len(cb.Contents)),
+		MinSize:    cb.MinSize,
+		MaxSize:    cb.MaxSize,
+		CurSize:    cb.CurSize,
+		User:       cb.User,
+		ContID:     cb.ContID,
+		Location:   cb.Location,
+		Readiness:  cb.Readiness,
 	}
 	copy(cb2.Contents, cb.Contents)
 	return cb2
@@ -208,76 +195,39 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 	}
 
 	return &contentStagingZone{
-		MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
-		MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
-		ZoneOpened:    time.Now(),
-		CloseTime:     time.Now().Add(cm.cfg.StagingBucket.MaxLifeTime),
-		MinSize:       cm.cfg.StagingBucket.MinSize,
-		MaxSize:       cm.cfg.StagingBucket.MaxSize,
-		MaxItems:      cm.cfg.StagingBucket.MaxItems,
-		User:          user,
-		ContID:        content.ID,
-		Location:      content.Location,
-		Readiness:     stagingZoneReadiness{false, "Readiness not yet evaluated"},
+		ZoneOpened: time.Now(),
+		MinSize:    cm.cfg.StagingBucket.MinSize,
+		MaxSize:    cm.cfg.StagingBucket.MaxSize,
+		User:       user,
+		ContID:     content.ID,
+		Location:   content.Location,
+		Readiness:  stagingZoneReadiness{false, "Readiness not yet evaluated"},
 	}, nil
 }
 
 func (cb *contentStagingZone) updateReadiness() {
-	if cb.CurSize < cb.MinDealSize {
-		cb.Readiness.IsReady = false
-		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"Current deal size of %d bytes is below minimum deal size of %d bytes",
-			cb.CurSize,
-			cb.MinDealSize)
-		return
-	}
-
-	// if its above the size requirement, go right ahead
+	// if it's above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {
 		cb.Readiness.IsReady = true
 		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"Current deal size of %d bytes is above minimum size of %d bytes",
+			"Current deal size of %d bytes is above minimum size requirement of %d bytes",
 			cb.CurSize,
 			cb.MinSize)
 		return
 	}
 
-	if time.Now().After(cb.CloseTime) {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = "Staging zone's closing time has passed"
-		return
-	}
-
-	if time.Since(cb.EarliestContent) > cb.MaxContentAge {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = "The earliest content in the staging zone has reached the max content age"
-		return
-	}
-
-	// if its above the items count requirement, go right ahead
-	if len(cb.Contents) >= cb.MaxItems {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"The item count is %d, which is above the threshold of %d to trigger dealmaking",
-			len(cb.Contents),
-			cb.MaxItems)
-		return
-	}
 	cb.Readiness.IsReady = false
 	cb.Readiness.ReadinessReason = fmt.Sprintf(
-		"At least one of the following conditions must be met:\n"+
-			" - Minimum size requirement (current: %d bytes, minimum: %d bytes)\n"+
-			" - Pass staging zone's closing time\n"+
-			" - Item count (current: %d, minimum: %d)",
+		"Minimum size requirement not met (current: %d bytes, minimum: %d bytes)\n",
 		cb.CurSize,
-		cb.MinSize,
-		len(cb.Contents),
-		cb.MaxItems)
+		cb.MinSize)
 }
 
 func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
+
+	// TODO: propagate reason for failing to add content to bucket to end user
 
 	// if this bucket is being consolidated, do not add anymore content
 	if cb.IsConsolidating {
@@ -288,27 +238,15 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 		return false, nil
 	}
 
-	if len(cb.Contents) >= cb.MaxItems {
-		return false, nil
-	}
-
 	if err := cm.DB.Model(util.Content{}).
 		Where("id = ?", c.ID).
 		UpdateColumn("aggregated_in", cb.ContID).Error; err != nil {
 		return false, err
 	}
 
-	if len(cb.Contents) == 0 || c.CreatedAt.Before(cb.EarliestContent) {
-		cb.EarliestContent = c.CreatedAt
-	}
-
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
 
-	nowPlus := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
-	if cb.CloseTime.Before(nowPlus) {
-		cb.CloseTime = nowPlus
-	}
 	return true, nil
 }
 
@@ -347,7 +285,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		pinMgr:                      pinmgr,
 		remoteTransferStatus:        cache,
 		shuttles:                    make(map[string]*ShuttleConnection),
-		contentSizeLimit:            constants.DefaultContentSizeLimit,
+		contentSizeLimit:            constants.MaxDealContentSize,
 		hostname:                    cfg.Hostname,
 		inflightCids:                make(map[cid.Cid]uint),
 		FailDealOnTransferFailure:   cfg.Deal.FailOnTransferFailure,
@@ -417,15 +355,6 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 }
 
 func (cm *ContentManager) Run(ctx context.Context) {
-	// if content adding is enabled, refresh pin queue for local contents
-	if !cm.localContentAddingDisabled {
-		go func() {
-			if err := cm.refreshPinQueue(ctx, constants.ContentLocationLocal); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
-		}()
-	}
-
 	// if staging buckets are enabled, rebuild the buckets, and run the bucket aggregate worker
 	if cm.cfg.StagingBucket.Enabled {
 		// rebuild the staging buckets
@@ -435,6 +364,7 @@ func (cm *ContentManager) Run(ctx context.Context) {
 
 		// run the staging bucket aggregator worker
 		go cm.runStagingBucketWorker(ctx)
+		log.Infof("rebuilt staging buckets and spun up staging bucket worker")
 	}
 
 	// if FilecoinStorage is enabled, check content deals or make content deals
@@ -590,6 +520,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	dataByLoc := make(map[string]int64)
 	contentByLoc := make(map[string][]util.Content)
 
+	// TODO: make this one batch DB query instead of querying per content
 	for _, c := range b.Contents {
 		loc, err := cm.currentLocationForContent(c.ID)
 		if err != nil {
@@ -733,24 +664,34 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (*merkledag.ProtoNode, error) {
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {
 	log.Debug("aggregating contents in staging zone into new content")
+
+	bserv := blockservice.New(cm.Blockstore, cm.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
 
 	sort.Slice(conts, func(i, j int) bool {
 		return conts[i].ID < conts[j].ID
 	})
 
-	dir := unixfs.EmptyDirNode()
+	dir := uio.NewDirectory(dserv)
 	for _, c := range conts {
-		err := dir.AddRawLink(fmt.Sprintf("%d-%s", c.ID, c.Name), &ipld.Link{
-			Size: uint64(c.Size),
-			Cid:  c.Cid.CID,
-		})
+		nd, err := dserv.Get(ctx, c.Cid.CID)
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO: consider removing the "<cid>-" prefix on the content name
+		err = dir.AddChild(ctx, fmt.Sprintf("%d-%s", c.ID, c.Name), nd)
 		if err != nil {
 			return nil, err
 		}
 	}
-	return dir, nil
+	dirNd, err := dir.GetNode()
+	if err != nil {
+		return nil, err
+	}
+	return dirNd, nil
 }
 
 func (cm *ContentManager) rebuildStagingBuckets() error {
@@ -764,21 +705,12 @@ func (cm *ContentManager) rebuildStagingBuckets() error {
 	zones := make(map[uint][]*contentStagingZone)
 	for _, c := range stages {
 		z := &contentStagingZone{
-			MinDealSize:   cm.cfg.StagingBucket.MinDealSize,
-			MaxContentAge: cm.cfg.StagingBucket.MaxContentAge,
-			ZoneOpened:    c.CreatedAt,
-			CloseTime:     c.CreatedAt.Add(cm.cfg.StagingBucket.MaxLifeTime),
-			MinSize:       cm.cfg.StagingBucket.MinSize,
-			MaxSize:       cm.cfg.StagingBucket.MaxSize,
-			MaxItems:      cm.cfg.StagingBucket.MaxItems,
-			User:          c.UserID,
-			ContID:        c.ID,
-			Location:      c.Location,
-		}
-
-		minClose := time.Now().Add(cm.cfg.StagingBucket.KeepAlive)
-		if z.CloseTime.Before(minClose) {
-			z.CloseTime = minClose
+			ZoneOpened: c.CreatedAt,
+			MinSize:    cm.cfg.StagingBucket.MinSize,
+			MaxSize:    cm.cfg.StagingBucket.MaxSize,
+			User:       c.UserID,
+			ContID:     c.ID,
+			Location:   c.Location,
 		}
 
 		var inZones []util.Content
@@ -1189,7 +1121,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 }
 
 func (cm *ContentManager) canStageContent(cont util.Content) bool {
-	return cont.Size < cm.cfg.StagingBucket.IndividualDealThreshold && cm.cfg.StagingBucket.Enabled
+	return cont.Size < cm.cfg.StagingBucket.MinSize && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
@@ -1717,8 +1649,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	))
 	defer span.End()
 
-	if content.Size < (256 << 10) {
-		return fmt.Errorf("content %d too small to make deals for. (size: %d)", content.ID, content.Size)
+	if content.Size < constants.MinDealContentSize {
+		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, constants.MinDealContentSize)
 	}
 
 	if content.Offloaded {
@@ -1816,7 +1748,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 				DealProtocolVersion: m.DealProtocolVersion,
 				MinerVersion:        m.Ask.MinerVersion,
 			}); err != nil {
-				log.Errorw("failed to record deail failure", "error", err)
+				log.Errorw("failed to record deal failure", "error", err)
 			}
 			continue
 		}
