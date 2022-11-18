@@ -26,19 +26,19 @@ type retrievalProgress struct {
 	endErr error
 }
 
-func (s *Shuttle) retrieveContent(ctx context.Context, contentToFetch uint, root cid.Cid, deals []drpc.StorageDeal) error {
+func (s *Shuttle) retrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
 	ctx, span := s.Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
-		attribute.Int("content", int(contentToFetch)),
+		attribute.Int("content", int(req.Content)),
 	))
 	defer span.End()
 
 	s.retrLk.Lock()
-	prog, ok := s.retrievalsInProgress[contentToFetch]
+	prog, ok := s.retrievalsInProgress[req.Content]
 	if !ok {
 		prog = &retrievalProgress{
 			wait: make(chan struct{}),
 		}
-		s.retrievalsInProgress[contentToFetch] = prog
+		s.retrievalsInProgress[req.Content] = prog
 	}
 	s.retrLk.Unlock()
 
@@ -53,13 +53,13 @@ func (s *Shuttle) retrieveContent(ctx context.Context, contentToFetch uint, root
 
 	defer func() {
 		s.retrLk.Lock()
-		delete(s.retrievalsInProgress, contentToFetch)
+		delete(s.retrievalsInProgress, req.Content)
 		s.retrLk.Unlock()
 
 		close(prog.wait)
 	}()
 
-	if err := s.runRetrieval(ctx, contentToFetch, deals, root, nil); err != nil {
+	if err := s.runRetrieval(ctx, req, nil); err != nil {
 		prog.endErr = err
 		return err
 	}
@@ -67,12 +67,12 @@ func (s *Shuttle) retrieveContent(ctx context.Context, contentToFetch uint, root
 	return nil
 }
 
-func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals []drpc.StorageDeal, root cid.Cid, sel ipld.Node) error {
+func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, sel ipld.Node) error {
 	ctx, span := s.Tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
 	var pin Pin
-	if err := s.DB.Find(&pin, "content = ?", contentToFetch).Error; err != nil {
+	if err := s.DB.Find(&pin, "content = ?", req.Content).Error; err != nil {
 		return err
 	}
 
@@ -88,48 +88,66 @@ func (s *Shuttle) runRetrieval(ctx context.Context, contentToFetch uint, deals [
 		return nil
 	}
 
-	for _, deal := range deals {
-		log.Infow("attempting retrieval deal", "content", contentToFetch, "miner", deal.Miner, "selector", sel != nil)
+	var retrievedContent bool
+	for _, deal := range req.Deals {
+		log.Debugw("attempting retrieval deal", "content", req.Content, "miner", deal.Miner, "selector", sel != nil)
 
-		ask, err := s.Filc.RetrievalQuery(ctx, deal.Miner, root)
+		ask, err := s.Filc.RetrievalQuery(ctx, deal.Miner, req.Cid)
 		if err != nil {
 			span.RecordError(err)
 
-			log.Errorw("failed to query retrieval", "miner", deal.Miner, "content", root, "err", err)
+			log.Errorw("failed to query retrieval", "miner", deal.Miner, "content", req.Cid, "err", err)
 			s.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   deal.Miner.String(),
 				Phase:   "query",
 				Message: err.Error(),
-				Content: contentToFetch,
-				Cid:     util.DbCID{CID: root},
+				Content: req.Content,
+				Cid:     util.DbCID{CID: req.Cid},
 			})
 			continue
 		}
-		log.Infow("got retrieval ask", "content", contentToFetch, "miner", deal.Miner, "ask", ask)
+		log.Debugw("got retrieval ask", "content", req.Content, "miner", deal.Miner, "ask", ask)
 
-		if err := s.tryRetrieve(ctx, deal.Miner, root, ask, sel); err != nil {
+		if err := s.tryRetrieve(ctx, deal.Miner, req.Cid, ask, sel); err != nil {
 			span.RecordError(err)
-			log.Errorw("failed to retrieve content", "miner", deal.Miner, "content", root, "err", err)
+			log.Errorw("failed to retrieve content", "miner", deal.Miner, "content", req.Cid, "err", err)
 			s.recordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   deal.Miner.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
-				Content: contentToFetch,
-				Cid:     util.DbCID{CID: root},
+				Content: req.Content,
+				Cid:     util.DbCID{CID: req.Cid},
 			})
 			continue
 		}
 
-		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-		if err := s.addDatabaseTrackingToContent(ctx, contentToFetch, dserv, s.Node.Blockstore, root, func(int64) {}); err != nil {
-			log.Errorw("failed adding content to database after successful retrieval", "cont", contentToFetch, "err", err.Error())
+		retrievedContent = true
+		break
+	}
+
+	if retrievedContent {
+		newPin := &Pin{
+			Content: req.Content,
+			Cid:     util.DbCID{CID: req.Cid},
+			UserID:  req.UserID,
+			Active:  false,
+			Pinning: true,
+		}
+
+		if err := s.DB.Create(newPin).Error; err != nil {
 			return err
 		}
 
-		// success
+		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, s.Node.Blockstore, req.Cid, func(int64) {})
+		if err != nil {
+			log.Errorw("failed adding content to database after successful retrieval", "cont", req.Content, "err", err.Error())
+			return err
+		}
+
+		s.sendPinCompleteMessage(ctx, req.Content, totalSize, objects)
 		return nil
 	}
-
 	return fmt.Errorf("failed to retrieve with any miner we have deals with")
 }
 

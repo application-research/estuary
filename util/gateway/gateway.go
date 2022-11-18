@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	gopath "path"
 	"strings"
 	"time"
 
@@ -18,8 +20,8 @@ import (
 	mdagipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-path"
-	resolver "github.com/ipfs/go-path/resolver"
-	unixfs "github.com/ipfs/go-unixfs"
+	"github.com/ipfs/go-path/resolver"
+	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/ipfs/go-unixfsnode"
 	dagpb "github.com/ipld/go-codec-dagpb"
@@ -179,8 +181,11 @@ func (gw *GatewayHandler) serveUnixfsDir(ctx context.Context, n mdagipld.Node, w
 
 	fmt.Fprintf(w, "<html><body><ul>")
 
+	requestURI, err := url.ParseRequestURI(req.RequestURI)
+
 	if err := dir.ForEachLink(ctx, func(lnk *mdagipld.Link) error {
-		fmt.Fprintf(w, "<li><a href=\"./%s\">%s</a></li>", lnk.Name, lnk.Name)
+		href := gopath.Join(requestURI.Path, lnk.Name)
+		fmt.Fprintf(w, "<li><a href=\"%s\">%s</a></li>", href, lnk.Name)
 		return nil
 	}); err != nil {
 		return err

@@ -31,6 +31,8 @@ func (u *User) FlagSplitContent() bool {
 type AuthToken struct {
 	gorm.Model
 	Token      string `gorm:"unique"`
+	TokenHash  string
+	Label      string
 	User       uint
 	UploadOnly bool
 	Expiry     time.Time

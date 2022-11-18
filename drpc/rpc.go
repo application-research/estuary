@@ -7,7 +7,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 type Hello struct {
@@ -128,6 +128,7 @@ type StorageDeal struct {
 }
 
 type RetrieveContent struct {
+	UserID  uint
 	Content uint
 	Cid     cid.Cid
 	Deals   []StorageDeal
@@ -214,6 +215,7 @@ const OP_TransferFinished = "TransferFinished"
 type TransferStartedOrFinished struct {
 	DealDBID uint
 	Chanid   string
+	State    *filclient.ChannelState
 }
 
 const OP_TransferStatus = "TransferStatus"

@@ -56,7 +56,7 @@ func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlock
 	return tbs
 }
 
-var _ (blockstore.Blockstore) = (*TrackingBlockstore)(nil)
+var _ blockstore.Blockstore = (*TrackingBlockstore)(nil)
 
 func (tbs *TrackingBlockstore) SetCidReqFunc(f func(context.Context, cid.Cid) (blocks.Block, error)) {
 	tbs.cidReq = f

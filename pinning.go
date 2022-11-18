@@ -12,7 +12,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
@@ -20,10 +20,10 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
-	trace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -423,8 +423,8 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 // @Description  This endpoint lists all pin status objects
 // @Tags         pinning
 // @Produce      json
+// @Success      200  {object}  types.IpfsListPinStatusResponse
 // @Failure      400  {object}  util.HttpError
-// @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
 func (s *Server) handleListPins(e echo.Context, u *util.User) error {
@@ -630,10 +630,12 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Summary      Add and pin object
 // @Description  This endpoint adds a pin to the IPFS daemon.
 // @Tags         pinning
+// @Accept		 json
 // @Produce      json
-// @in           200,400,default  string  Token "token"
-// @Param        cid   path  string  true  "cid"
-// @Param        name  path  string  true  "name"
+// @Success      202	{object}  types.IpfsPinStatusResponse
+// @Failure      500    {object}  util.HttpError
+// @in           202,default  string  Token "token"
+// @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Router       /pinning/pins [post]
 func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
@@ -701,7 +703,10 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json
-// @Param        pinid  path  string  true  "cid"
+// @Success      200	{object}  types.IpfsPinStatusResponse
+// @Failure      404	{object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
+// @Param        pinid  path      string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
 func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
@@ -736,8 +741,16 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Summary      Replace a pinned object
 // @Description  This endpoint replaces a pinned object.
 // @Tags         pinning
+// @Accept		 json
 // @Produce      json
-// @Param        pinid  path  string  true  "Pin ID"
+// @Success      202	{object}	types.IpfsPinStatusResponse
+// @Failure      404	{object}	util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        pinid		path      string  true  "Pin ID"
+// @Param        cid		body      string  true  "CID of new pin"
+// @Param        name		body      string  false  "Name (filename) of new pin"
+// @Param        origins	body      string  false  "Origins of new pin"
+// @Param        meta		body      string  false  "Meta information of new pin"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 
@@ -798,7 +811,9 @@ func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 // @Description  This endpoint deletes a pinned object.
 // @Tags         pinning
 // @Produce      json
-// @Param        pinid  path  string  true  "Pin ID"
+// @Success		 202
+// @Failure      500  {object}  util.HttpError
+// @Param        pinid  path      string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
 func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))

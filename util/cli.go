@@ -1,6 +1,6 @@
 package util
 
-import cli "github.com/urfave/cli/v2"
+import "github.com/urfave/cli/v2"
 
 var LogLevel string
 

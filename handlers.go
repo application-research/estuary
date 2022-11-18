@@ -26,10 +26,10 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/libp2p/go-libp2p-core/network"
+	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	esmetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -58,7 +58,7 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -136,7 +136,7 @@ func (s *Server) ServeAPI() error {
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
-	user.DELETE("/api-keys/:key", withUser(s.handleUserRevokeApiKey))
+	user.DELETE("/api-keys/:key_or_hash", withUser(s.handleUserRevokeApiKey))
 	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
@@ -369,9 +369,12 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
 // @Tags         content
-// @Param        limit query string true "limit"
-// @Param        offset query string true "offset"
+// @Param        limit   query  string  true  "limit"
+// @Param        offset  query  string  true  "offset"
 // @Produce      json
+// @Success      200          {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
 func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	limit := 500
@@ -445,6 +448,9 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // @Description  This endpoint can be used to add a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Success      200     {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
 // @Router       /admin/peering/peers [post]
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
@@ -498,12 +504,17 @@ func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{Message: "Added the following Peers on Peering", PeersAdd: params})
 }
 
+type peerID bool      // used for swagger
+type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
-// @Param        body body []string true "Peer ids"
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        peerIds  body      peerIDs  true  "Peer ids"
 // @Router       /admin/peering/peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
@@ -526,6 +537,9 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // @Description  This endpoint can be used to list all peers on Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Success      200      {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /admin/peering/peers [get]
 func (s *Server) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
@@ -538,7 +552,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 		connectionCheck = append(connectionCheck, peering.PeeringPeer{
 			ID:        peerAddrInfo.ID.Pretty(),
 			Addrs:     peerAddrInfoAddrsStr,
-			Connected: (s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected),
+			Connected: s.Node.Host.Network().Connectedness(peerAddrInfo.ID) == network.Connected,
 		})
 	}
 	return c.JSON(http.StatusOK, connectionCheck)
@@ -549,6 +563,9 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // @Description  This endpoint can be used to start the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Success      200     {object}  string
+// @Failure      400    {object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
 // @Router       /admin/peering/start [post]
 func (s *Server) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
@@ -566,6 +583,9 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // @Description  This endpoint can be used to stop the Peering Service
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Success      200   {object}  string
+// @Failure      400    {object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
 // @Router       /admin/peering/stop [post]
 func (s *Server) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
@@ -583,6 +603,9 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // @Description  This endpoint can be used to check the Peering status
 // @Tags         admin,peering,peers
 // @Produce      json
+// @Success      200    {object}  string
+// @Failure      400            {object}  util.HttpError
+// @Failure      500            {object}  util.HttpError
 // @Router       /admin/peering/status [get]
 func (s *Server) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
@@ -596,8 +619,11 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Description  This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
-// @Param        body body util.ContentAddIpfsBody true "IPFS Body"
-// @Param 		 ignore-dupes query string false "Ignore Dupes"
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
+// @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
 func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -688,9 +714,12 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
-// @Param        body body string true "Car"
-// @Param 		 ignore-dupes query string false "Ignore Dupes"
-// @Param 		 filename query string false "Filename"
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Param        body          body      string  true   "Car"
+// @Param        ignore-dupes  query     string  false  "Ignore Dupes"
+// @Param        filename      query     string  false  "Filename"
 // @Router       /content/add-car [post]
 func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -806,14 +835,16 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        data formData file true "File to upload"
-// @Param        filename formData string false "Filenam to use for upload"
-// @Param        coluuid query string false "Collection UUID"
-// @Param        replication query int false "Replication value"
-// @Param        ignore-dupes query string false "Ignore Dupes true/false"
-// @Param        lazy-provide query string false "Lazy Provide true/false"
-// @Param        dir query string false "Directory"
-// @Success      200  {object}  util.ContentAddResponse
+// @Param        data          formData  file    true   "File to upload"
+// @Param        filename      formData  string  false  "Filenam to use for upload"
+// @Param        coluuid       query     string  false  "Collection UUID"
+// @Param        replication   query     int     false  "Replication value"
+// @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
+// @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
+// @Param        dir           query     string  false  "Directory"
+// @Success      200           {object}  util.ContentAddResponse
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
 // @Router       /content/add [post]
 func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
@@ -1164,7 +1195,10 @@ func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Block
 // @Description  This endpoint ensures that the content is replicated to the specified number of providers
 // @Tags         content
 // @Produce      json
-// @Param        datacid path string true "Data CID"
+// @Success      200   {object}  string
+// @Failure      400    {object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
+// @Param        datacid  path      string  true  "Data CID"
 // @Router       /content/ensure-replication/{datacid} [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
 	data, err := cid.Decode(c.Param("datacid"))
@@ -1188,7 +1222,9 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Description  This endpoint lists all content
 // @Tags         content
 // @Produce      json
-// @Success 	200 {array} string
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /content/list [get]
 func (s *Server) handleListContent(c echo.Context, u *util.User) error {
 	var contents []util.Content
@@ -1209,12 +1245,15 @@ type expandedContent struct {
 // @Description  This endpoint lists all content with deals
 // @Tags         content
 // @Produce      json
-// @Param limit query int false "Limit"
-// @Param offset query int false "Offset"
+// @Success      200     {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        limit   query     int  false  "Limit"
+// @Param        offset  query     int  false  "Offset"
 // @Router       /content/deals [get]
 func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error {
 
-	var limit int = 20
+	var limit = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		l, err := strconv.Atoi(limstr)
 		if err != nil {
@@ -1280,7 +1319,10 @@ type dealStatus struct {
 // @Description  This endpoint returns a content by its ID
 // @Tags         content
 // @Produce      json
-// @Param id path int true "Content ID"
+// @Success      200    {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        id   path      int  true  "Content ID"
 // @Router       /content/{id} [get]
 func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("cont_id"))
@@ -1312,7 +1354,10 @@ func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
 // @Description  This endpoint returns the status of a content
 // @Tags         content
 // @Produce      json
-// @Param id path int true "Content ID"
+// @Success      200            {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        id   path      int  true  "Content ID"
 // @Router       /content/status/{id} [get]
 func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -1411,7 +1456,10 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 // @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
-// @Param deal path int true "Deal ID"
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        deal  path      int  true  "Deal ID"
 // @Router       /deals/status/{deal} [get]
 func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -1434,7 +1482,10 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
 // @Description  Get Deal Status by PropCid
 // @Tags         deals
 // @Produce      json
-// @Param 		propcid path string true "PropCid"
+// @Success      200      {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        propcid  path      string  true  "PropCid"
 // @Router       /deal/status-by-proposal/{propcid} [get]
 func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -1551,7 +1602,10 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 // @Description  This endpoint returns the content associated with a CID
 // @Tags         public
 // @Produce      json
-// @Param 		cid path string true "Cid"
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        cid  path      string  true  "Cid"
 // @Router       /public/by-cid/{cid} [get]
 func (s *Server) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
@@ -1615,7 +1669,10 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 // @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
 // @Produce      json
-// @Param 		 miner path string true "CID"
+// @Success      200    {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
+// @Param        miner  path      string  true  "CID"
 // @Router       /deal/query/{miner} [get]
 // @router       /public/miners/storage/query/{miner} [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
@@ -1640,8 +1697,11 @@ type dealRequest struct {
 // @Description  This endpoint makes a deal for a given content and miner
 // @Tags         deals
 // @Produce      json
-// @Param miner path string true "Miner"
-// @Param dealRequest body string true "Deal Request"
+// @Success      200      {object}  string
+// @Failure      400          {object}  util.HttpError
+// @Failure      500          {object}  util.HttpError
+// @Param        miner        path      string  true  "Miner"
+// @Param        dealRequest  body      string  true  "Deal Request"
 // @Router       /deals/make/{miner} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -1694,13 +1754,23 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
+//from datatransfer.ChannelID and used for swagger docs
+//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+type ChannelIDParam struct {
+	Initiator string
+	Responder string
+	ID        uint64
+}
+
 // handleTransferStatus godoc
 // @Summary      Transfer Status
 // @Description  This endpoint returns the status of a transfer
 // @Tags         deals
 // @Produce      json
-// @Param chanid body datatransfer.ChannelID true "Channel ID"
-
+// @Success      200      {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        chanid  body      ChannelIDParam  true  "Channel ID"
 // @Router       /deal/transfer/status [post]
 func (s *Server) handleTransferStatus(c echo.Context) error {
 	var chanid datatransfer.ChannelID
@@ -1765,6 +1835,9 @@ func (s *Server) handleTransferStatusByID(c echo.Context) error {
 // @Description  This endpoint returns the in-progress transfers
 // @Tags         deals
 // @Produce      json
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
 // @Router       /deal/transfer/in-progress [get]
 func (s *Server) handleTransferInProgress(c echo.Context) error {
 	ctx := context.TODO()
@@ -1844,8 +1917,11 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 // @Description  This endpoint returns the status of a deal
 // @Tags         deals
 // @Produce      json
-// @Param miner path string true "Miner"
-// @Param propcid path string true "Proposal CID"
+// @Success      200       {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
+// @Param        miner    path      string  true  "Miner"
+// @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/status/{miner}/{propcid} [get]
 func (s *Server) handleDealStatus(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -1895,7 +1971,10 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 // @Description  This endpoint returns the proposal for a deal
 // @Tags         deals
 // @Produce      json
-// @Param propcid path string true "Proposal CID"
+// @Success      200           {object}  string
+// @Failure      400         {object}  util.HttpError
+// @Failure      500         {object}  util.HttpError
+// @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/proposal/{propcid} [get]
 func (s *Server) handleGetProposal(c echo.Context) error {
 	propCid, err := cid.Decode(c.Param("propcid"))
@@ -1928,7 +2007,10 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 // @Description  This endpoint returns the deal info for a deal
 // @Tags         deals
 // @Produce      json
-// @Param 	  	 dealid path int true "Deal ID"
+// @Success      200  {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        dealid  path      int  true  "Deal ID"
 // @Router       /deal/info/{dealid} [get]
 func (s *Server) handleGetDealInfo(c echo.Context) error {
 	dealid, err := strconv.ParseInt(c.Param("dealid"), 10, 64)
@@ -1948,12 +2030,13 @@ type getInvitesResp struct {
 	Code      string `json:"code"`
 	Username  string `json:"createdBy"`
 	ClaimedBy string `json:"claimedBy"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
-		Select("code, username, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
+		Select("code, username, invite_codes.created_at, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
 		//Where("claimed_by IS NULL").
 		Joins("left join users on users.id = invite_codes.created_by").
 		Order("invite_codes.created_at ASC").
@@ -2086,8 +2169,11 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // handleGetSystemConfig godoc
 // @Summary      Get systems(estuary/shuttle) config
 // @Description  This endpoint is used to get system configs.
-// @Tags       	 admin
+// @Tags         admin
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400       {object}  util.HttpError
+// @Failure      500       {object}  util.HttpError
 // @Router       /admin/system/config [get]
 func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
@@ -2127,6 +2213,9 @@ type minerResp struct {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
 // @Router       /public/miners [get]
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	var miners []storageMiner
@@ -2483,7 +2572,10 @@ type priceEstimateResponse struct {
 // @Description  This endpoint estimates the cost of a deal
 // @Tags         deals
 // @Produce      json
-// @Param body body main.estimateDealBody true "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        body  body      main.estimateDealBody  true  "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
 // @Router       /deal/estimate [post]
 func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -2512,7 +2604,10 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Description  This endpoint returns all miners
 // @Tags         public,net
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner  path      string  false  "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2554,7 +2649,10 @@ type minerChainInfo struct {
 // @Description  This endpoint returns miner stats
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner  path      string  false  "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
@@ -2644,8 +2742,11 @@ type minerDealsResp struct {
 // @Description  This endpoint returns all miners deals
 // @Tags         public,miner
 // @Produce      json
-// @Param miner path string false "Filter by miner"
-// @Param 		 ignore-failed query string false "Ignore Failed"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner          path      string  true   "Filter by miner"
+// @Param        ignore-failed  query     string  false  "Ignore Failed"
 // @Router       /public/miners/deals/{miner} [get]
 func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2678,7 +2779,10 @@ type bandwidthResponse struct {
 // @Description  This endpoint returns content bandwidth
 // @Tags         content
 // @Produce      json
-// @Param 		 content path string true "Content ID"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        content  path      string  true  "Content ID"
 // @Router       /content/bw-usage/{content} [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
@@ -2722,8 +2826,10 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 // @Description  This endpoint returns aggregated content stats
 // @Tags         content
 // @Produce      json
-// @Param content path string true "Content ID"
-// @Success 	200 {object} string
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        content  path      string  true  "Content ID"
 // @Router       /content/aggregated/{content} [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
@@ -2759,8 +2865,10 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) err
 // @Description  This endpoint returns all failures for a content
 // @Tags         content
 // @Produce      json
-// @Param content path string true "Content ID"
-// @Success 	200 {object} string
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        content  path      string  true  "Content ID"
 // @Router       /content/failures/{content} [get]
 func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
@@ -2918,7 +3026,8 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 
 func (s *Server) checkTokenAuth(token string) (*util.User, error) {
 	var authToken util.AuthToken
-	if err := s.DB.First(&authToken, "token = ?", token).Error; err != nil {
+	tokenHash := util.GetTokenHash(token)
+	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
 				Code:    http.StatusUnauthorized,
@@ -3007,6 +3116,8 @@ type registerBody struct {
 	InviteCode string `json:"inviteCode"`
 }
 
+const TOKEN_LABEL_ON_REGISTER = "on-register"
+
 func (s *Server) handleRegisterUser(c echo.Context) error {
 	var reg registerBody
 	if err := c.Bind(&reg); err != nil {
@@ -3068,13 +3179,8 @@ func (s *Server) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	authToken := &util.AuthToken{
-		Token:  "EST" + uuid.New().String() + "ARY",
-		User:   newUser.ID,
-		Expiry: time.Now().Add(time.Hour * 24 * 7),
-	}
-
-	if err := s.DB.Create(authToken).Error; err != nil {
+	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER)
+	if err != nil {
 		return err
 	}
 
@@ -3098,6 +3204,8 @@ type loginResponse struct {
 	Token  string    `json:"token"`
 	Expiry time.Time `json:"expiry"`
 }
+
+const TOKEN_LABEL_ON_LOGIN = "on-login"
 
 func (s *Server) handleLoginUser(c echo.Context) error {
 	var body loginBody
@@ -3138,7 +3246,7 @@ func (s *Server) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(time.Hour*24*30), nil)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN)
 	if err != nil {
 		return err
 	}
@@ -3210,7 +3318,9 @@ type userStatsResponse struct {
 // @Description  This endpoint is used to create API keys for a user.
 // @Tags         User
 // @Produce      json
-// @Success      200  {object}  userStatsResponse
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /user/stats [get]
 func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
@@ -3224,7 +3334,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string) (*util.AuthToken, error) {
+func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -3241,13 +3351,15 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 		}
 	}
 
+	token := "EST" + uuid.New().String() + "ARY"
 	authToken := &util.AuthToken{
-		Token:      "EST" + uuid.New().String() + "ARY",
+		Token:      token,
+		TokenHash:  util.GetTokenHash(token),
+		Label:      label,
 		User:       user.ID,
 		Expiry:     expiry,
 		UploadOnly: uploadOnly,
 	}
-
 	if err := s.DB.Create(authToken).Error; err != nil {
 		return nil, err
 	}
@@ -3354,21 +3466,25 @@ func (s *Server) handleHealth(c echo.Context) error {
 }
 
 type getApiKeysResp struct {
-	Token  string    `json:"token"`
-	Expiry time.Time `json:"expiry"`
+	Token     string    `json:"token"`
+	TokenHash string    `json:"tokenHash"`
+	Label     string    `json:"label"`
+	Expiry    time.Time `json:"expiry"`
 }
 
 // handleUserRevokeApiKey godoc
 // @Summary      Revoke a User API Key.
-// @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily use to access all estuary features. This endpoint can be used to revoke the API key thats assigned to the user.
+// @Description  This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.
 // @Tags         User
 // @Produce      json
-// @Param        key path string true "Key"
-// @Router       /user/api-keys/{key} [delete]
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        key_or_hash path string true "Key or Hash"
+// @Router       /user/api-keys/{key_or_hash} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
-	kval := c.Param("key")
-
-	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND token = ?", u.ID, kval).Error; err != nil {
+	kval := c.Param("key_or_hash")
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
 		return err
 	}
 
@@ -3380,18 +3496,18 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.
 // @Tags         User
 // @Produce      json
-// @Param        expiry query string false "Expiration - Expiration - Valid time units are ns, us (or µs), ms, s, m, h. for example 300h"
-// @Param        perms query string false "Permissions -- currently unused"
-// @Success      200  {object}  getApiKeysResp
+// @Param        expiry  query     string  false  "Expiration - Expiration - Valid time units are ns, us (or µs),  ms,  s,  m,  h.  for  example  300h"
+// @Param        perms   query     string  false  "Permissions -- currently unused"
+// @Success      200     {object}  getApiKeysResp
 // @Failure      400  {object}  util.HttpError
-// @Failure      404  {object}  util.HttpError
+// @Failure      404     {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
-	expiry := time.Now().Add(time.Hour * 24 * 30)
+	expiry := time.Now().Add(constants.TokenExpiryDurationDefault)
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
-			expiry = time.Now().Add(time.Hour * 24 * 365 * 100) // 100 years is forever enough
+			expiry = time.Now().Add(constants.TokenExpiryDurationPermanent)
 		} else {
 			dur, err := time.ParseDuration(exp)
 			if err != nil {
@@ -3406,14 +3522,18 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 		perms = strings.Split(p, ",")
 	}
 
-	authToken, err := s.newAuthTokenForUser(u, expiry, perms)
+	label := c.QueryParam("label")
+
+	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, &getApiKeysResp{
-		Token:  authToken.Token,
-		Expiry: authToken.Expiry,
+		Token:     authToken.Token,
+		TokenHash: authToken.TokenHash,
+		Label:     authToken.Label,
+		Expiry:    authToken.Expiry,
 	})
 }
 
@@ -3422,9 +3542,9 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.
 // @Tags         User
 // @Produce      json
-// @Success      200  {object}  []getApiKeysResp
+// @Success      200  {array}   []getApiKeysResp
 // @Failure      400  {object}  util.HttpError
-// @Failure      404  {object}  util.HttpError
+// @Failure      404   {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [get]
 func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
@@ -3436,8 +3556,10 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 	out := []getApiKeysResp{}
 	for _, k := range keys {
 		out = append(out, getApiKeysResp{
-			Token:  k.Token,
-			Expiry: k.Expiry,
+			Token:     k.Token,
+			TokenHash: k.TokenHash,
+			Label:     k.Label,
+			Expiry:    k.Expiry,
 		})
 	}
 
@@ -3454,8 +3576,8 @@ type createCollectionBody struct {
 // @Description  This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
 // @Tags         collections
 // @Produce      json
-// @Param        body     body     createCollectionBody  true        "Collection name and description"
-// @Success      200  {object}  collections.Collection
+// @Param        body  body      createCollectionBody  true  "Collection name and description"
+// @Success      200   {object}  collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3485,7 +3607,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  []collections.Collection
+// @Success      200  {array}   []collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3499,22 +3621,52 @@ func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, cols)
 }
 
+type addContentsToCollectionBody struct {
+	ContentIDs []uint `json:"contentids"`
+}
+
 // handleAddContentsToCollection godoc
 // @Summary      Add contents to a collection
 // @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
 // @Tags         collections
 // @Accept       json
 // @Produce      json
-// @Param        coluuid path string true "coluuid"
-// @Param        contentIDs     body     []uint  true     "Content IDs to add to collection"
-// @Success      200  {object}  map[string]string
+// @Param        coluuid     path      string  true  "Collection UUID"
+// @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
+// @Success      200         {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid} [post]
 func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var contentIDs []uint
-	if err := c.Bind(&contentIDs); err != nil {
+	// we accept both {"contentids": [1, 2]} and [1, 2] as json payloads
+	var body addContentsToCollectionBody // {"contentids": [1, 2]}
+	var contentIDs []uint                // [1, 2]
+
+	// Save the body of the request so that we can try to unmarshal it twice (if first bind fails)
+	// We can't simply c.Bind() because that reads directly from the socket
+	// And so if we try c.Bind()ing twice, the second call will just return EOF
+	bodyBytes, err := ioutil.ReadAll(c.Request().Body)
+	if err != nil {
 		return err
+	}
+
+	if err = json.Unmarshal([]byte(bodyBytes), &contentIDs); err != nil {
+		// Failed to bind to [1, 10] payload, try {"contentids": [1, 10]}
+		if err = json.Unmarshal([]byte(bodyBytes), &body); err != nil {
+			return err
+		}
+		contentIDs = body.ContentIDs
+	}
+
+	// no contents
+	if len(contentIDs) == 0 {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_INPUT,
+			Details: fmt.Sprintf("no contents specified, need at least one"),
+		}
 	}
 
 	if len(contentIDs) > 128 {
@@ -3570,10 +3722,12 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 // handleCommitCollection godoc
 // @Summary      Produce a CID of the collection contents
 // @Description  This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
-// @Param        coluuid     path     string  true     "coluuid"
+// @Param        coluuid  path  string  true  "coluuid"
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid}/commit [post]
 func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
@@ -3675,8 +3829,10 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Tags         collections
 // @Produce      json
 // @Success      200  {object}  string
-// @Param        coluuid     path     string  true     "coluuid"
-// @Param        dir query string false "Directory"
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        coluuid  path      string  true   "coluuid"
+// @Param        dir      query     string  false  "Directory"
 // @Router       /collections/{coluuid} [get]
 func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
@@ -3815,8 +3971,11 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 // @Summary      Deletes a collection
 // @Description  This endpoint is used to delete an existing collection.
 // @Tags         collections
-// @Param        coluuid path string true "Collection ID"
+// @Param        coluuid  path  string  true  "Collection ID"
 // @Router       /collections/{coluuid} [delete]
+// @Success      200  {string}  string  ""
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
@@ -3851,12 +4010,13 @@ type deleteContentFromCollectionBody struct {
 // @Summary      Deletes a content from a collection
 // @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
 // @Tags         collections
-// @Param        coluuid path string true "Collection ID"
-// @Param        contentid path string true "Content ID"
-// @Param        body body deleteContentFromCollectionBody true "Variable to use when filtering for files (must be either 'path' or 'content_id')"
+// @Param        coluuid    path  string                           true  "Collection ID"
+// @Param        contentid  path  string                           true  "Content ID"
+// @Param        body       body  deleteContentFromCollectionBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid}/contents [delete]
 func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
 	var body deleteContentFromCollectionBody
@@ -3971,8 +4131,11 @@ type adminUserResponse struct {
 // handleAdminGetUsers godoc
 // @Summary      Get all users
 // @Description  This endpoint is used to get all users.
-// @Tags       	 admin
+// @Tags         admin
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /admin/users [get]
 func (s *Server) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
@@ -4004,6 +4167,9 @@ type publicStatsResponse struct {
 // @Description  This endpoint is used to get public stats.
 // @Tags         public
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
 func (s *Server) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
@@ -4090,6 +4256,9 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Description  This endpoint is used to get staging zone for user.
 // @Tags         content
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
@@ -4101,6 +4270,8 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /user/export [get]
 func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
@@ -4116,7 +4287,9 @@ func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get net peers
 // @Tags         public,net
 // @Produce      json
-// @Success      200  {array}  string
+// @Success      200  {array}   string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /public/net/peers [get]
 func (s *Server) handleNetPeers(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.Node.Host.Network().Peers())
@@ -4166,6 +4339,9 @@ type metricsDealJoin struct {
 // @Description  This endpoint is used to get deal metrics
 // @Tags         public,metrics
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
@@ -4305,9 +4481,12 @@ type dealPairs struct {
 // @Description  This endpoint is used to get all deals for a user
 // @Tags         content
 // @Produce      json
-// @Param        begin query string true "Begin"
-// @Param        duration query string true "Duration"
-// @Param        all query string true "All"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        begin     query     string  true  "Begin"
+// @Param        duration  query     string  true  "Duration"
+// @Param        all       query     string  true  "All"
 // @Router       /content/all-deals [get]
 func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
@@ -4331,7 +4510,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 		duration = dur
 	}
 
-	all := (c.QueryParam("all") != "")
+	all := c.QueryParam("all") != ""
 
 	var deals []dealQuery
 	if err := s.DB.Model(contentDeal{}).
@@ -4749,9 +4928,12 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Summary      Register autoretrieve server
 // @Description  This endpoint registers a new autoretrieve server
 // @Tags         autoretrieve
-// @Param        addresses body string true "Autoretrieve's comma-separated list of addresses"
-// @Param        pubKey body string true "Autoretrieve's public key"
+// @Param        addresses  formData  string  true  "Autoretrieve's comma-separated list of addresses"
+// @Param        pubKey     formData  string  true  "Autoretrieve's public key"
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	// validate peerid and peer multi addresses
@@ -4787,6 +4969,9 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 // @Description  This endpoint lists all registered autoretrieve servers
 // @Tags         autoretrieve
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/list [get]
 func (s *Server) handleAutoretrieveList(c echo.Context) error {
 	var autoretrieves []autoretrieve.Autoretrieve
@@ -4820,8 +5005,11 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 // @Summary      Marks autoretrieve server as up
 // @Description  This endpoint updates the lastConnection field for autoretrieve
 // @Tags         autoretrieve
-// @Param        token header string true "Autoretrieve's auth token"
+// @Param        token  header  string  true  "Autoretrieve's auth token"
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /autoretrieve/heartbeat [post]
 func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
@@ -4898,6 +5086,9 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint returns a list of storage failures
 // @Tags         deals
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /public/deals/failures [get]
 func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 	recs, err := s.getStorageFailure(c, nil)
@@ -4912,6 +5103,9 @@ func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 // @Description  This endpoint returns a list of storage failures for user
 // @Tags         deals
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /deals/failures [get]
 func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	recs, err := s.getStorageFailure(c, u)
@@ -4956,8 +5150,11 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 // @Description  This endpoint adds a new content
 // @Tags         content
 // @Produce      json
-// @Param        req body util.ContentCreateBody true "Content"
-// @Param 		 ignore-dupes query string false "Ignore Dupes"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      util.ContentCreateBody  true   "Content"
+// @Param        ignore-dupes  query     string                  false  "Ignore Dupes"
 // @Router       /content/create [post]
 func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
@@ -5291,6 +5488,9 @@ type publicNodeInfo struct {
 // @Description  This endpoint returns information about the node
 // @Tags         public
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /public/info [get]
 func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
 	return c.JSON(http.StatusOK, &publicNodeInfo{
@@ -5562,10 +5762,13 @@ func sanitizePath(p string) (string, error) {
 // @Summary      Add a file to a collection
 // @Description  This endpoint adds a file to a collection
 // @Tags         collections
-// @Param        coluuid query string true "Collection ID"
-// @Param        content query string true "Content"
-// @Param        path query string true "Path to file"
+// @Param        coluuid  query  string  true  "Collection ID"
+// @Param        content  query  string  true  "Content"
+// @Param        path     query  string  true  "Path to file"
 // @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /collections/fs/add [post]
 func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")

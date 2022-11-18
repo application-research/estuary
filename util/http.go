@@ -49,6 +49,12 @@ const (
 	ERR_VALUE_REQUIRED             = "ERR_VALUE_REQUIRED"
 )
 
+const (
+	ERR_AUTH_MISSING_DETAILS        = "no api key was specified"
+	ERR_AUTH_MISSING_BEARER_DETAILS = "Unsupported authorization scheme: Bearer is a required prefix. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\"."  //#nosec G101 -- This is a false positive and example API KEY
+	ERR_INVALID_AUTH_DETAILS        = "Invalid Auth: An Invalid API Key was specified. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\". You have the Bearer prefix but your API Key is empty or missing." //#nosec G101 -- This is a false positive and example API KEY
+)
+
 type HttpError struct {
 	Code    int    `json:"code,omitempty"`
 	Reason  string `json:"reason"`
@@ -102,24 +108,25 @@ func ExtractAuth(c echo.Context) (string, error) {
 		return "", &HttpError{
 			Code:    http.StatusUnauthorized,
 			Reason:  ERR_AUTH_MISSING,
-			Details: "no api key was specified",
+			Details: ERR_AUTH_MISSING_DETAILS,
 		}
 	}
 
 	parts := strings.Split(auth, " ")
-	if len(parts) != 2 {
-		return "", &HttpError{
-			Code:    http.StatusUnauthorized,
-			Reason:  ERR_INVALID_AUTH,
-			Details: "invalid api key was specified",
-		}
-	}
 
 	if parts[0] != "Bearer" {
 		return "", &HttpError{
 			Code:    http.StatusUnauthorized,
 			Reason:  ERR_AUTH_MISSING_BEARER,
-			Details: "invalid api key was specified",
+			Details: ERR_AUTH_MISSING_BEARER_DETAILS,
+		}
+	}
+
+	if len(parts) != 2 {
+		return "", &HttpError{
+			Code:    http.StatusUnauthorized,
+			Reason:  ERR_INVALID_AUTH,
+			Details: ERR_INVALID_AUTH_DETAILS,
 		}
 	}
 	return parts[1], nil

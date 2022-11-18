@@ -2,8 +2,8 @@ package peering
 
 import (
 	"github.com/ipfs/go-ipfs/peering"
-	"github.com/libp2p/go-libp2p-core/host"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/host"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 // A struct that is used to store the information of a peer.

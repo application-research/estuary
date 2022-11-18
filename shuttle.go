@@ -12,12 +12,12 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/application-research/estuary/constants"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
 type Shuttle struct {
@@ -332,7 +332,7 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 }
 
 func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
-	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, true); err != nil {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, true); err != nil {
 		return err
 	}
 	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
@@ -340,7 +340,7 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 }
 
 func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
-	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, false); err != nil {
+	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, false); err != nil {
 		return err
 	}
 	log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
@@ -393,13 +393,18 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return err
 		}
 
+		sts := datatransfer.Failed
+		if param.State != nil {
+			sts = param.State.Status
+		}
+
 		param.State = &filclient.ChannelState{
-			Status:  datatransfer.Failed,
+			Status:  sts,
 			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		}
 	}
 
-	// update remote transfer for only shuttles
+	// update transfer state for only shuttles
 	if handle != constants.ContentLocationLocal {
 		cm.updateTransferStatus(ctx, handle, cd.ID, param.State)
 	}
@@ -414,7 +419,7 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
 	}
 
-	d.spaceLow = (param.BlockstoreFree < (param.BlockstoreSize / 10))
+	d.spaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
 	d.blockstoreFree = param.BlockstoreFree
 	d.blockstoreSize = param.BlockstoreSize
 	d.pinCount = param.NumPins

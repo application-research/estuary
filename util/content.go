@@ -12,7 +12,7 @@ import (
 	format "github.com/ipfs/go-ipld-format"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
-	unixfs "github.com/ipfs/go-unixfs"
+	"github.com/ipfs/go-unixfs"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )

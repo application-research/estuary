@@ -34,7 +34,7 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/urfave/cli/v2"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -44,7 +44,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/drpc"
-	node "github.com/application-research/estuary/node"
+	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
@@ -70,7 +70,7 @@ import (
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	rcmgr "github.com/libp2p/go-libp2p-resource-manager"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
 )
@@ -101,6 +101,7 @@ func before(cctx *cli.Context) error {
 	_ = logging.SetLogLevel("bs-wal", level)
 	_ = logging.SetLogLevel("bs-migrate", level)
 	_ = logging.SetLogLevel("rcmgr", level)
+	_ = logging.SetLogLevel("est-node", level)
 
 	return nil
 }
@@ -549,6 +550,7 @@ func main() {
 						TransferStarted: &drpc.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
+							State:    fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -563,6 +565,7 @@ func main() {
 						TransferFinished: &drpc.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
+							State:    fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -605,6 +608,7 @@ func main() {
 						TransferStarted: &drpc.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
+							State:    &fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -620,6 +624,7 @@ func main() {
 						TransferFinished: &drpc.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
+							State:    &fst,
 						},
 					}
 					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
@@ -647,6 +652,7 @@ func main() {
 
 		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
+			QueueDataDir:     cfg.DataDir,
 		})
 		go s.PinMgr.Run(100)
 
@@ -727,7 +733,7 @@ func main() {
 
 		go func() {
 			var beginSent, beginRec float64
-			var firstrun bool = true
+			var firstrun = true
 
 			for range time.Tick(time.Second * 10) {
 				txs, err := s.Filc.TransfersInProgress(context.TODO())
@@ -1233,6 +1239,9 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1312,13 +1321,16 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {}); err != nil {
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {})
+	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
 		log.Warnf("failed to provide: %+v", err)
@@ -1363,6 +1375,9 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 // @Description  This endpoint uploads content via a car file
 // @Tags         content
 // @Produce      json
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
 // @Router       /content/add-car [post]
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1448,13 +1463,16 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {}); err != nil {
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {})
+	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
 	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	if err := s.Provide(ctx, root); err != nil {
 		log.Warn(err)
@@ -1599,9 +1617,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb); err != nil {
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	if err != nil {
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
+
+	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -1612,13 +1633,13 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) error {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
 	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
 	var dbpin Pin
 	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
-		return errors.Wrap(err, "failed to retrieve content")
+		return 0, nil, errors.Wrap(err, "failed to retrieve content")
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1696,7 +1717,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return errors.Wrap(err, "failed to walk DAG")
+		return 0, nil, errors.Wrap(err, "failed to walk DAG")
 	}
 
 	span.SetAttributes(
@@ -1705,7 +1726,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	)
 
 	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return errors.Wrap(err, "failed to create objects in db")
+		return 0, nil, errors.Wrap(err, "failed to create objects in db")
 	}
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
@@ -1713,7 +1734,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		"size":    totalSize,
 		"pinning": false,
 	}).Error; err != nil {
-		return errors.Wrap(err, "failed to update content in database")
+		return 0, nil, errors.Wrap(err, "failed to update content in database")
 	}
 
 	refs := make([]ObjRef, len(objects))
@@ -1723,12 +1744,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	}
 
 	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return errors.Wrap(err, "failed to create refs")
+		return 0, nil, errors.Wrap(err, "failed to create refs")
 	}
-
-	d.sendPinCompleteMessage(ctx, dbpin.Content, totalSize, objects)
-
-	return nil
+	return totalSize, objects, nil
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
@@ -1820,6 +1838,7 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		return err
 	}
 
+	var batches [][]blocks.Block
 	var batch []blocks.Block
 
 	for k := range keys {
@@ -1827,23 +1846,31 @@ func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Bloc
 		if err != nil {
 			return err
 		}
-
 		batch = append(batch, blk)
 
 		if len(batch) > 500 {
-			if err := to.PutMany(ctx, batch); err != nil {
-				return err
-			}
+			batches = append(batches, batch)
 			batch = batch[:0]
 		}
 	}
 
 	if len(batch) > 0 {
+		batches = append(batches, batch)
+	}
+
+	for _, batch := range batches {
+		var retryCount int
+	retry:
+
 		if err := to.PutMany(ctx, batch); err != nil {
+			if retryCount <= 2 {
+				retryCount = retryCount + 1
+				time.Sleep(2 * time.Second)
+				goto retry
+			}
 			return err
 		}
 	}
-
 	return nil
 }
 
@@ -1878,7 +1905,9 @@ func (s *Shuttle) handleHealth(c echo.Context) error {
 // @Description  This endpoint is used to get net addrs
 // @Tags         net
 // @Produce      json
-// @Success      200  {array}  string
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
 // @Router       /net/addrs [get]
 func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 	id := s.Node.Host.ID()
@@ -2026,7 +2055,10 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 // @Description  This endpoint reads content from the blockstore
 // @Tags         content
 // @Produce      json
-// @Param        cont path string true "CID"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        cont  path      string  true  "CID"
 // @Router       /content/read/{cont} [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	cont, err := strconv.Atoi(c.Param("cont"))
@@ -2288,7 +2320,10 @@ type importDealBody struct {
 // @Description  This endpoint imports a deal into the shuttle.
 // @Tags         content
 // @Produce      json
-// @Param        body body main.importDealBody true "Import a deal"
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        body  body      main.importDealBody  true  "Import a deal"
 // @Router       /content/importdeal [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
@@ -2356,10 +2391,25 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	if err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil); err != nil {
+	pin := &Pin{
+		Content: contid,
+		Cid:     util.DbCID{CID: cc},
+		UserID:  u.ID,
+		Active:  false,
+		Pinning: true,
+	}
+
+	if err := s.DB.Create(pin).Error; err != nil {
 		return err
 	}
+
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	if err != nil {
+		return err
+	}
+
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:          cc.String(),
