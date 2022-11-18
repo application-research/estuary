@@ -4583,11 +4583,6 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var exch exchange.Interface
-	if c.QueryParam("fetch") != "" {
-		exch = s.Node.Bitswap
-	}
-
 	var u util.User
 	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return err
@@ -4607,7 +4602,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, children)
+		nd, err := s.CM.createAggregate(ctx, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4653,7 +4648,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, children)
+		nd, err := s.CM.createAggregate(ctx, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4694,7 +4689,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 					ids = append(ids, c.ID)
 				}
 
-				dir, err := s.CM.createAggregate(ctx, s.Node.Blockstore, exch, aggr)
+				dir, err := s.CM.createAggregate(ctx, aggr)
 				if err != nil {
 					return err
 				}
@@ -4709,6 +4704,11 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			// well that sucks
 			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
+	}
+
+	var exch exchange.Interface
+	if c.QueryParam("fetch") != "" {
+		exch = s.Node.Bitswap
 	}
 
 	bserv := blockservice.New(s.Node.Blockstore, exch)

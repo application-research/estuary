@@ -5,7 +5,6 @@ import (
 	"container/heap"
 	"context"
 	"fmt"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	"math/rand"
 	"sort"
 	"strings"
@@ -610,7 +609,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 
 	// if all contents are already in one location, proceed to aggregate them
-	dir, err := cm.createAggregate(ctx, cm.Blockstore, cm.Node.Bitswap, b.Contents)
+	dir, err := cm.createAggregate(ctx, b.Contents)
 	if err != nil {
 		return xerrors.Errorf("failed to create aggregate: %w", err)
 	}
@@ -685,10 +684,10 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 	}
 }
 
-func (cm *ContentManager) createAggregate(ctx context.Context, blockstore blockstore.Blockstore, exch exchange.Interface, conts []util.Content) (ipld.Node, error) {
+func (cm *ContentManager) createAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {
 	log.Debug("aggregating contents in staging zone into new content")
 
-	bserv := blockservice.New(blockstore, exch)
+	bserv := blockservice.New(cm.Blockstore, cm.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 
 	sort.Slice(conts, func(i, j int) bool {
@@ -1171,7 +1170,6 @@ func (cm *ContentManager) getStagingZonesForUser(ctx context.Context, user uint)
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
 
-	// TODO: persist staging zones
 	blist, ok := cm.buckets[user]
 	if !ok {
 		return []*contentStagingZone{}
