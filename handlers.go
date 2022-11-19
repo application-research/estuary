@@ -133,6 +133,10 @@ func (s *Server) ServeAPI() error {
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 	e.GET("/gw/:path", s.handleGateway)
 
+	e.POST("/put", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
+	e.GET("/get/:cid", s.handleGetFullContentbyCid)
+	// e.HEAD("/get/:cid", s.handleGetContentByCid)
+
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
@@ -1606,7 +1610,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 
 // handleGetContentByCid godoc
 // @Summary      Get Content by Cid
-// @Description  This endpoint returns the content associated with a CID
+// @Description  This endpoint returns the content record associated with a CID
 // @Tags         public
 // @Produce      json
 // @Success      200      {object}  string
@@ -1669,6 +1673,25 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, out)
+}
+
+// handleGetFullContentbyCid godoc
+// @Summary      Get Full Content by Cid
+// @Description  This endpoint returns the content associated with a CID
+// @Tags         public
+// @Produce      json
+// @Success      307      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        cid  path      string  true  "Cid"
+// @Router       /get/{cid} [get]
+func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
+	obj, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return errors.Wrapf(err, "invalid cid")
+	}
+	cidStr := cid.NewCidV1(obj.Prefix().Codec, obj.Hash()).String()
+	return c.Redirect(http.StatusTemporaryRedirect, "/gw/ipfs/"+cidStr)
 }
 
 // handleQueryAsk godoc
