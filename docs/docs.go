@@ -2033,6 +2033,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/get/{cid}": {
+            "get": {
+                "description": "This endpoint returns the content associated with a CID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public"
+                ],
+                "summary": "Get Full Content by Cid",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cid",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Temporary Redirect",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/net/addrs": {
             "get": {
                 "description": "This endpoint is used to get net addrs",
@@ -2283,7 +2324,7 @@ const docTemplate = `{
         },
         "/public/by-cid/{cid}": {
             "get": {
-                "description": "This endpoint returns the content associated with a CID",
+                "description": "This endpoint returns the content record associated with a CID",
                 "produces": [
                     "application/json"
                 ],

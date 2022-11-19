@@ -1508,6 +1508,33 @@ paths:
       summary: Get Deal Status
       tags:
         - deals
+  /get/{cid}:
+    get:
+      description: This endpoint returns the content associated with a CID
+      parameters:
+        - description: Cid
+          in: path
+          name: cid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "307":
+          description: Temporary Redirect
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get Full Content by Cid
+      tags:
+        - public
   /net/addrs:
     get:
       description: This endpoint is used to get net addrs
@@ -1673,7 +1700,7 @@ paths:
         - pinning
   /public/by-cid/{cid}:
     get:
-      description: This endpoint returns the content associated with a CID
+      description: This endpoint returns the content record associated with a CID
       parameters:
         - description: Cid
           in: path
