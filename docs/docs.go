@@ -3161,17 +3161,20 @@ const docTemplate = `{
                 "cid": {
                     "type": "string"
                 },
+                "dweb_retrieval_url": {
+                    "type": "string"
+                },
                 "estuaryId": {
                     "type": "integer"
+                },
+                "estuary_retrieval_url": {
+                    "type": "string"
                 },
                 "providers": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
-                },
-                "retrieval_url": {
-                    "type": "string"
                 }
             }
         },
