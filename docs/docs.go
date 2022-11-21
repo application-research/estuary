@@ -104,6 +104,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/invites": {
+            "get": {
+                "description": "This endpoint is used to list all estuary invites.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get Estuary invites",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "This endpoint is used to create an estuary invite.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Create an Estuary invite",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invite code to be created",
+                        "name": "code",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/peering/peers": {
             "get": {
                 "description": "This endpoint can be used to list all peers on Peering Service",
@@ -2925,14 +2995,14 @@ const docTemplate = `{
         },
         "/user/stats": {
             "get": {
-                "description": "This endpoint is used to create API keys for a user.",
+                "description": "This endpoint is used to geet stats for the current user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "User"
                 ],
-                "summary": "Create API keys for a user",
+                "summary": "Get stats for the current user",
                 "responses": {
                     "200": {
                         "description": "OK",

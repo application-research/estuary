@@ -707,7 +707,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -732,7 +732,8 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
-	if s.CM.localContentAddingDisabled {
+
+	if s.cfg.Content.DisableLocalAdding {
 		return s.redirectContentAdding(c, u)
 	}
 
@@ -799,7 +800,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.AddDatabaseTracking(ctx, u, dserv, rootCID, filename, s.cfg.Replication)
 	if err != nil {
 		return err
 	}
@@ -810,7 +811,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 
 	go func() {
 		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.toCheck(cont.ID)
+		s.CM.ToCheck(cont.ID)
 	}()
 
 	go func() {
@@ -824,7 +825,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
 		EstuaryId:           cont.ID,
-		Providers:           s.CM.pinDelegatesForContent(*cont),
+		Providers:           s.CM.PinDelegatesForContent(*cont),
 	})
 }
 
@@ -860,7 +861,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if s.CM.localContentAddingDisabled {
+	if s.cfg.Content.DisableLocalAdding {
 		return s.redirectContentAdding(c, u)
 	}
 
@@ -877,11 +878,11 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
+	if !u.FlagSplitContent() && mpf.Size > s.cfg.Content.MaxSize {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.cfg.Content.MaxSize),
 		}
 	}
 
@@ -897,7 +898,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 
 	defer fi.Close()
 
-	replication := s.CM.Replication
+	replication := s.cfg.Replication
 	replVal := c.FormValue("replication")
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
@@ -958,7 +959,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	content, err := s.CM.AddDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -980,7 +981,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	}
 
 	go func() {
-		s.CM.toCheck(content.ID)
+		s.CM.ToCheck(content.ID)
 	}()
 
 	if c.QueryParam("lazy-provide") != "true" {
@@ -1003,7 +1004,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
 		EstuaryId:           content.ID,
-		Providers:           s.CM.pinDelegatesForContent(*content),
+		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
 }
 
@@ -1056,115 +1057,6 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
-}
-
-var noDataTimeout = time.Minute * 10
-
-func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
-	defer span.End()
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	gotData := make(chan struct{}, 1)
-	go func() {
-		nodata := time.NewTimer(noDataTimeout)
-		defer nodata.Stop()
-
-		for {
-			select {
-			case <-nodata.C:
-				cancel()
-			case <-gotData:
-				nodata.Reset(noDataTimeout)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	var objlk sync.Mutex
-	var objects []*util.Object
-	cset := cid.NewSet()
-
-	defer func() {
-		cm.inflightCidsLk.Lock()
-		_ = cset.ForEach(func(c cid.Cid) error {
-			v, ok := cm.inflightCids[c]
-			if !ok || v <= 0 {
-				log.Errorf("cid should be inflight but isn't: %s", c)
-			}
-
-			cm.inflightCids[c]--
-			if cm.inflightCids[c] == 0 {
-				delete(cm.inflightCids, c)
-			}
-			return nil
-		})
-		cm.inflightCidsLk.Unlock()
-	}()
-
-	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		// cset.Visit gets called first, so if we reach here we should immediately track the CID
-		cm.inflightCidsLk.Lock()
-		cm.inflightCids[c]++
-		cm.inflightCidsLk.Unlock()
-
-		node, err := dserv.Get(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		cb(int64(len(node.RawData())))
-
-		select {
-		case gotData <- struct{}{}:
-		case <-ctx.Done():
-		}
-
-		objlk.Lock()
-		objects = append(objects, &util.Object{
-			Cid:  util.DbCID{CID: c},
-			Size: len(node.RawData()),
-		})
-		objlk.Unlock()
-
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
-		return util.FilterUnwalkableLinks(node.Links()), nil
-	}, root, cset.Visit, merkledag.Concurrent())
-
-	if err != nil {
-		return err
-	}
-	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
-}
-
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
-	defer span.End()
-
-	content := &util.Content{
-		Cid:         util.DbCID{CID: root},
-		Name:        filename,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: replication,
-		Location:    constants.ContentLocationLocal,
-	}
-
-	if err := cm.DB.Create(content).Error; err != nil {
-		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
-		return nil, err
-	}
-	return content, nil
 }
 
 func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
@@ -1226,7 +1118,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.toCheck(content.ID)
+	s.CM.ToCheck(content.ID)
 	return nil
 }
 
@@ -1453,7 +1345,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	})
 
 	var failCount int64
-	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
 		return err
 	}
 
@@ -1776,7 +1668,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
+	id, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
@@ -2014,7 +1906,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 		return err
 	}
 
-	var proprec proposalRecord
+	var proprec model.ProposalRecord
 	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2065,6 +1957,15 @@ type getInvitesResp struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// handleAdminGetInvites godoc
+// @Summary      Get Estuary invites
+// @Description  This endpoint is used to list all estuary invites.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Router       /admin/invites [get]
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
@@ -2079,6 +1980,16 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	return c.JSON(http.StatusOK, invites)
 }
 
+// handleAdminCreateInvite godoc
+// @Summary      Create an Estuary invite
+// @Description  This endpoint is used to create an estuary invite.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Param        code  path      string  false  "Invite code to be created"
+// @Router       /admin/invites [post]
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
 	invite := &util.InviteCode{
@@ -2170,7 +2081,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numRetrievals int64
-	if err := s.DB.Model(&retrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
+	if err := s.DB.Model(&model.RetrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
 		return err
 	}
 
@@ -2180,7 +2091,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numStorageFailures int64
-	if err := s.DB.Model(&dfeRecord{}).Count(&numStorageFailures).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Count(&numStorageFailures).Error; err != nil {
 		return err
 	}
 
@@ -2194,7 +2105,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		NumRetrievals:        numRetrievals,
 		NumRetrFailures:      numRetrievalFailures,
 		NumStorageFailures:   numStorageFailures,
-		PinQueueSize:         s.CM.pinMgr.PinQueueSize(),
+		PinQueueSize:         s.CM.PinMgr.PinQueueSize(),
 	})
 }
 
@@ -2209,13 +2120,13 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // @Router       /admin/system/config [get]
 func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
-	for _, sh := range s.CM.shuttles {
-		if sh.hostname == "" {
-			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.handle)
+	for _, sh := range s.CM.Shuttles {
+		if sh.Hostname == "" {
+			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
 			continue
 		}
 
-		out, err := s.getShuttleConfig(sh.hostname, u.AuthToken.Token)
+		out, err := s.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
 		if err != nil {
 			log.Warnf("failed to get shuttle config: %s", err)
 			continue
@@ -2554,7 +2465,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 }
 
 func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
-	var infos []retrievalSuccessRecord
+	var infos []model.RetrievalSuccessRecord
 	if err := s.DB.Find(&infos).Error; err != nil {
 		return err
 	}
@@ -2645,11 +2556,10 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 		return err
 	}
 
-	var merrs []dfeRecord
+	var merrs []model.DfeRecord
 	if err := s.DB.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, merrs)
 }
 
@@ -2731,7 +2641,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	}
 
 	var errorcount int64
-	if err := s.DB.Model(&dfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
 		return err
 	}
 
@@ -2906,7 +2816,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var errs []dfeRecord
+	var errs []model.DfeRecord
 	if err := s.DB.Find(&errs, "content = ?", cont).Error; err != nil {
 		return err
 	}
@@ -2915,18 +2825,17 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.bucketLk.Lock()
-	defer s.CM.bucketLk.Unlock()
+	s.CM.BucketLk.Lock()
+	defer s.CM.BucketLk.Unlock()
 
-	return c.JSON(http.StatusOK, s.CM.buckets)
+	return c.JSON(http.StatusOK, s.CM.Buckets)
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
+	conts, err := s.CM.GetRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, conts)
 }
 
@@ -2987,12 +2896,12 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 		log.Warnf("got back fewer contents than requested: %d != %d", len(contents), len(body.Contents))
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "handle = ?", body.Destination).Error; err != nil {
 		return err
 	}
 
-	if err := s.CM.sendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+	if err := s.CM.SendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
 		return err
 	}
 
@@ -3008,7 +2917,6 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 	if err := s.CM.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -3344,8 +3252,8 @@ type userStatsResponse struct {
 }
 
 // handleGetUserStats godoc
-// @Summary      Create API keys for a user
-// @Description  This endpoint is used to create API keys for a user.
+// @Summary      Get stats for the current user
+// @Description  This endpoint is used to geet stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
@@ -3410,12 +3318,12 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 		Address:  u.Address.Addr.String(),
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
-			Replication:           s.CM.Replication,
+			Replication:           s.cfg.Replication,
 			Verified:              s.cfg.Deal.IsVerified,
 			DealDuration:          s.cfg.Deal.Duration,
-			FileStagingThreshold:  s.cfg.StagingBucket.MinSize,
+			FileStagingThreshold:  s.cfg.Content.MinSize,
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
-			DealMakingDisabled:    s.CM.dealMakingDisabled(),
+			DealMakingDisabled:    s.CM.DealMakingDisabled(),
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
 		},
@@ -3439,23 +3347,22 @@ func (s *Server) getMinersOwnedByUser(u *util.User) []string {
 }
 
 func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
-
 	// TODO: this should be a lotttttt smarter
-	s.CM.shuttlesLk.Lock()
-	defer s.CM.shuttlesLk.Unlock()
-	var shuttles []Shuttle
-	for hnd, sh := range s.CM.shuttles {
+	s.CM.ShuttlesLk.Lock()
+	defer s.CM.ShuttlesLk.Unlock()
+	var shuttles []model.Shuttle
+	for hnd, sh := range s.CM.Shuttles {
 		if sh.ContentAddingDisabled {
 			log.Debugf("shuttle %+v content adding is disabled", sh)
 			continue
 		}
 
-		if sh.hostname == "" {
+		if sh.Hostname == "" {
 			log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
 		}
 
-		var shuttle Shuttle
+		var shuttle model.Shuttle
 		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
 			log.Errorf("failed to look up shuttle by handle: %s", err)
 			continue
@@ -3481,10 +3388,10 @@ func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 		}
 		out = append(out, host+"/content/add")
 	}
-	if !s.CM.localContentAddingDisabled {
-		out = append(out, s.CM.hostname+"/content/add")
-	}
 
+	if !s.cfg.Content.DisableLocalAdding {
+		out = append(out, s.cfg.Hostname+"/content/add")
+	}
 	return out, nil
 }
 
@@ -3847,7 +3754,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -4279,7 +4186,7 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 }
 
 func (s *Server) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.getStagingZoneSnapshot(c.Request().Context()))
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 // handleGetStagingZoneForUser godoc
@@ -4292,7 +4199,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
+	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
 // handleUserExportData godoc
@@ -4592,7 +4499,7 @@ func (s *Server) handleSetDealMaking(c echo.Context) error {
 		return err
 	}
 
-	s.CM.setDealMakingEnabled(body.Enabled)
+	s.CM.SetDealMakingEnabled(body.Enabled)
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -4634,7 +4541,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, children)
+		nd, err := s.CM.CreateAggregate(ctx, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4680,7 +4587,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			return err
 		}
 
-		nd, err := s.CM.createAggregate(ctx, children)
+		nd, err := s.CM.CreateAggregate(ctx, children)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4721,15 +4628,14 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 					ids = append(ids, c.ID)
 				}
 
-				dir, err := s.CM.createAggregate(ctx, aggr)
+				dir, err := s.CM.CreateAggregate(ctx, aggr)
 				if err != nil {
 					return err
 				}
 
-				if err := s.CM.sendAggregateCmd(ctx, loc, cont, ids, dir.RawData()); err != nil {
+				if err := s.CM.SendAggregateCmd(ctx, loc, cont, ids, dir.RawData()); err != nil {
 					return err
 				}
-
 				fixedAggregateLocation = true
 			}
 		default:
@@ -4854,7 +4760,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 }
 
 func (s *Server) handleShuttleInit(c echo.Context) error {
-	shuttle := &Shuttle{
+	shuttle := &model.Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
 		Open:   false,
@@ -4870,7 +4776,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
-	var shuttles []Shuttle
+	var shuttles []model.Shuttle
 	if err := s.DB.Find(&shuttles).Error; err != nil {
 		return err
 	}
@@ -4881,13 +4787,12 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.CM.shuttleIsOnline(d.Handle),
-			AddrInfo:       s.CM.shuttleAddrInfo(d.Handle),
-			Hostname:       s.CM.shuttleHostName(d.Handle),
-			StorageStats:   s.CM.shuttleStorageStats(d.Handle),
+			Online:         s.CM.ShuttleIsOnline(d.Handle),
+			AddrInfo:       s.CM.ShuttleAddrInfo(d.Handle),
+			Hostname:       s.CM.ShuttleHostName(d.Handle),
+			StorageStats:   s.CM.ShuttleStorageStats(d.Handle),
 		})
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -4897,7 +4802,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
 		return err
 	}
@@ -4914,7 +4819,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			return
 		}
 
-		outgoingRpcQueue, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
+		outgoingRpcQueue, unreg, err := s.CM.RegisterShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register shuttle: %s", err)
 			return
@@ -5028,7 +4933,6 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 			AddrInfo:          addrInfo,
 		})
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -5073,7 +4977,6 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		AddrInfo:          addrInfo,
 		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -5146,7 +5049,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, recs)
 }
 
-func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, error) {
+func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -5156,7 +5059,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 		limit = nlim
 	}
 
-	q := s.DB.Model(dfeRecord{}).Limit(limit).Order("created_at desc")
+	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
 		q = q.Where("user_id=?", u.ID)
 	}
@@ -5169,7 +5072,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 		q = q.Where("created_at <= ?", beftime)
 	}
 
-	var recs []dfeRecord
+	var recs []model.DfeRecord
 	if err := q.Scan(&recs).Error; err != nil {
 		return nil, err
 	}
@@ -5222,7 +5125,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
-		Replication: s.CM.Replication,
+		Replication: s.cfg.Replication,
 		Location:    req.Location,
 	}
 
@@ -5420,7 +5323,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	}
 
 	for _, c := range conts {
-		if c.NumDeals >= s.CM.Replication {
+		if c.NumDeals >= s.cfg.Replication {
 			out.GoodContents = append(out.GoodContents, c.ID)
 		} else if c.NumDeals > 0 {
 			out.InProgress = append(out.InProgress, c.ID)
@@ -5604,7 +5507,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Active:      false,
 		Pinning:     true,
 		UserID:      req.User,
-		Replication: s.CM.Replication,
+		Replication: s.cfg.Replication,
 		Location:    req.Location,
 	}
 
@@ -5655,7 +5558,7 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 				return err
 			}
 
-			var sh Shuttle
+			var sh model.Shuttle
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
 				if xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -5692,7 +5595,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
-		if err := s.CM.sendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
+		if err := s.CM.SendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
 			Op: drpc.CMD_AddPin,
 			Params: drpc.CmdParams{
 				AddPin: &drpc.AddPin{
@@ -5903,15 +5806,14 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", nil
 	}
 
-	if !s.CM.shuttleIsOnline(cont.Location) {
+	if !s.CM.ShuttleIsOnline(cont.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
 		return "", err
 	}
-
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
 
@@ -5961,5 +5863,92 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 }
 
 func (s *Server) isContentAddingDisabled(u *util.User) bool {
-	return (s.CM.globalContentAddingDisabled && s.CM.localContentAddingDisabled) || u.StorageDisabled
+	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
+}
+
+func (s *Server) handleFixupDeals(c echo.Context) error {
+	ctx := context.Background()
+	var deals []model.ContentDeal
+	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
+		return err
+	}
+
+	gentime, err := time.Parse("2006-01-02 15:04:05", "2020-08-24 15:00:00")
+	if err != nil {
+		return err
+	}
+
+	head, err := s.Api.ChainHead(ctx)
+	if err != nil {
+		return err
+	}
+
+	sem := make(chan struct{}, 50)
+	for _, dll := range deals {
+		sem <- struct{}{}
+		go func(d model.ContentDeal) {
+			defer func() {
+				<-sem
+			}()
+			miner, err := d.MinerAddr()
+			if err != nil {
+				log.Error(err)
+				return
+			}
+
+			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+
+			// Get deal UUID, if there is one for the deal.
+			// (There should be a UUID for deals made with deal protocol v1.2.0)
+			var dealUUID *uuid.UUID
+			if d.DealUUID != "" {
+				parsed, err := uuid.Parse(d.DealUUID)
+				if err != nil {
+					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+						d.DealUUID, d.ID, miner, err)
+					return
+				}
+				dealUUID = &parsed
+			}
+
+			provds, _, err := s.CM.GetProviderDealStatus(subctx, &d, miner, dealUUID)
+			if err != nil {
+				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+				return
+			}
+
+			// this should not happen, but be safe
+			if provds == nil {
+				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
+				return
+			}
+
+			if provds.PublishCid == nil {
+				log.Errorf("no publish cid for deal: %d", d.DealID)
+				return
+			}
+
+			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
+			defer cancel2()
+			wait, err := s.Api.StateSearchMsg(subctx2, head.Key(), *provds.PublishCid, 100000, true)
+			if err != nil {
+				log.Errorf("failed to search message: %s", err)
+				return
+			}
+
+			if wait == nil {
+				log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+				return
+			}
+
+			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
+			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			if err := s.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+				log.Error(err)
+				return
+			}
+		}(dll)
+	}
+	return nil
 }

@@ -234,6 +234,52 @@ paths:
       summary: List autoretrieve servers
       tags:
         - autoretrieve
+  /admin/invites:
+    get:
+      description: This endpoint is used to list all estuary invites.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get Estuary invites
+      tags:
+        - content
+    post:
+      description: This endpoint is used to create an estuary invite.
+      parameters:
+        - description: Invite code to be created
+          in: path
+          name: code
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create an Estuary invite
+      tags:
+        - content
   /admin/peering/peers:
     delete:
       description: This endpoint can be used to remove a Peer from the Peering Service
@@ -2099,7 +2145,7 @@ paths:
         - User
   /user/stats:
     get:
-      description: This endpoint is used to create API keys for a user.
+      description: This endpoint is used to geet stats for the current user.
       produces:
         - application/json
       responses:
@@ -2115,7 +2161,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Create API keys for a user
+      summary: Get stats for the current user
       tags:
         - User
 swagger: "2.0"
