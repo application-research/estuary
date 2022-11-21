@@ -39,7 +39,7 @@ type ContentAddIpfsBody struct {
 
 type ContentAddResponse struct {
 	Cid                 string   `json:"cid"`
-	DwebRetrievalURL    string   `json:"dweb_retrieval_url"`
+	RetrievalURL        string   `json:"retrieval_url"`
 	EstuaryRetrievalURL string   `json:"estuary_retrieval_url"`
 	EstuaryId           uint     `json:"estuaryId"`
 	Providers           []string `json:"providers"`
