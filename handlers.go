@@ -3231,8 +3231,8 @@ type userStatsResponse struct {
 }
 
 // handleGetUserStats godoc
-// @Summary      Create API keys for a user
-// @Description  This endpoint is used to create API keys for a user.
+// @Summary      Get stats for the current user
+// @Description  This endpoint is used to geet stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
