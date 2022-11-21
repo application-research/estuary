@@ -1955,6 +1955,15 @@ type getInvitesResp struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// handleAdminGetInvites godoc
+// @Summary      Get Estuary invites
+// @Description  This endpoint is used to list all estuary invites.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Router       /admin/invites [get]
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
@@ -1969,6 +1978,16 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	return c.JSON(http.StatusOK, invites)
 }
 
+// handleAdminCreateInvite godoc
+// @Summary      Create an Estuary invite
+// @Description  This endpoint is used to create an estuary invite.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Param        code  path      string  false  "Invite code to be created"
+// @Router       /admin/invites [post]
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
 	invite := &util.InviteCode{
