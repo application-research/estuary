@@ -93,12 +93,12 @@ func NewEstuary(appVersion string) *Estuary {
 		Content: Content{
 			DisableLocalAdding:  false,
 			DisableGlobalAdding: false,
+			MaxSize:             constants.MaxDealContentSize,
+			MinSize:             constants.MinDealContentSize,
 		},
 
 		StagingBucket: StagingBucket{
 			Enabled:           true,
-			MaxSize:           constants.MaxDealContentSize,
-			MinSize:           constants.MinDealContentSize,
 			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
 		},
 

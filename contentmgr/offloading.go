@@ -1,4 +1,4 @@
-package main
+package contentmgr
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx, false, loc, users)
+	candidates, err := cm.GetRemovalCandidates(ctx, false, loc, users)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
@@ -78,7 +78,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	rem, err := cm.OffloadContents(ctx, ids)
 	if err != nil {
 		result.OffloadError = err.Error()
-		log.Warnf("failed to offload contents: %s", err)
+		cm.log.Warnf("failed to offload contents: %s", err)
 	}
 
 	result.BlocksRemoved = rem
@@ -93,7 +93,7 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 	for _, c := range candidates {
 		la, err := cm.getLastAccessForContent(c.Content)
 		if err != nil {
-			log.Errorf("check last access for %d: %s", c.Content, err)
+			cm.log.Errorf("check last access for %d: %s", c.Content, err)
 			continue
 		}
 
@@ -187,7 +187,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 
 	for loc, conts := range remote {
 		if err := cm.sendUnpinCmd(ctx, loc, conts); err != nil {
-			log.Errorf("failed to send unpin command to shuttle: %s", err)
+			cm.log.Errorf("failed to send unpin command to shuttle: %s", err)
 		}
 	}
 
@@ -220,7 +220,7 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
+func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 

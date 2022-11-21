@@ -3,15 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
-	"github.com/application-research/filclient"
-	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
-	"github.com/ipfs/go-cid"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -42,7 +38,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 
 		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			if err := s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -54,15 +50,9 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 			log.Errorf("failed to query miner %s: %s", maddr, err)
 			continue
 		}
-
 		out[maddr] = resp
 	}
-
 	return out, nil
-}
-
-func (cm *ContentManager) recordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
-	return cm.DB.Create(rfr).Error
 }
 
 func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
@@ -71,7 +61,7 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	))
 	defer span.End()
 
-	content, err := s.CM.getContent(contid)
+	content, err := s.CM.GetContent(contid)
 	if err != nil {
 		return err
 	}
@@ -86,9 +76,9 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	for m, ask := range asks {
-		if err := s.CM.tryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
+		if err := s.CM.TryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			if err := s.CM.recordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
@@ -104,52 +94,4 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	return nil
-}
-
-func (cm *ContentManager) tryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
-
-	proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
-	if err != nil {
-		return err
-	}
-
-	stats, err := cm.FilClient.RetrieveContent(ctx, maddr, proposal)
-	if err != nil {
-		return err
-	}
-
-	cm.recordRetrievalSuccess(c, maddr, stats)
-	return nil
-}
-
-type retrievalSuccessRecord struct {
-	ID        uint      `gorm:"primarykey" json:"-"`
-	CreatedAt time.Time `json:"createdAt"`
-
-	Cid   util.DbCID `json:"cid"`
-	Miner string     `json:"miner"`
-
-	Peer         string `json:"peer"`
-	Size         uint64 `json:"size"`
-	DurationMs   int64  `json:"durationMs"`
-	AverageSpeed uint64 `json:"averageSpeed"`
-	TotalPayment string `json:"totalPayment"`
-	NumPayments  int    `json:"numPayments"`
-	AskPrice     string `json:"askPrice"`
-}
-
-func (cm *ContentManager) recordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
-	if err := cm.DB.Create(&retrievalSuccessRecord{
-		Cid:          util.DbCID{CID: cc},
-		Miner:        m.String(),
-		Peer:         rstats.Peer.String(),
-		Size:         rstats.Size,
-		DurationMs:   rstats.Duration.Milliseconds(),
-		AverageSpeed: rstats.AverageSpeed,
-		TotalPayment: rstats.TotalPayment.String(),
-		NumPayments:  rstats.NumPayments,
-		AskPrice:     rstats.AskPrice.String(),
-	}).Error; err != nil {
-		log.Errorf("failed to write retrieval success record: %s", err)
-	}
 }

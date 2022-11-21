@@ -13,7 +13,7 @@ import (
 type Initializer struct {
 	cfg            *config.Node
 	db             *gorm.DB
-	trackingBstore *TrackingBlockstore
+	trackingBstore *util.TrackingBlockstore
 }
 
 func (init *Initializer) Config() *config.Node {
@@ -21,7 +21,7 @@ func (init *Initializer) Config() *config.Node {
 }
 
 func (init *Initializer) BlockstoreWrap(bs blockstore.Blockstore) (blockstore.Blockstore, error) {
-	init.trackingBstore = NewTrackingBlockstore(bs, init.db)
+	init.trackingBstore = util.NewTrackingBlockstore(bs, init.db)
 	return init.trackingBstore, nil
 }
 
