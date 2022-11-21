@@ -3161,9 +3161,6 @@ const docTemplate = `{
                 "cid": {
                     "type": "string"
                 },
-                "dweb_retrieval_url": {
-                    "type": "string"
-                },
                 "estuaryId": {
                     "type": "integer"
                 },
@@ -3175,6 +3172,9 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "retrieval_url": {
+                    "type": "string"
                 }
             }
         },
