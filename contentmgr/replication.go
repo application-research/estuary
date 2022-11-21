@@ -241,18 +241,6 @@ func (cm *ContentManager) tryRemoveContent(cb *ContentStagingZone, c util.Conten
 	return true, nil
 }
 
-func (cb *ContentStagingZone) hasContent(c util.Content) bool {
-	cb.lk.Lock()
-	defer cb.lk.Unlock()
-
-	for _, cont := range cb.Contents {
-		if cont.ID == c.ID {
-			return true
-		}
-	}
-	return false
-}
-
 func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
@@ -780,21 +768,15 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	return nil
 }
 
-func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util.Content) bool {
-	cm.BucketLk.Lock()
-	defer cm.BucketLk.Unlock()
-
-	bucks, ok := cm.Buckets[content.UserID]
-	if !ok {
-		return false
+func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util.Content) (bool, error) {
+	var contents []util.Content
+	if err := cm.DB.Find(&contents, "id = ? AND aggregated_in > 0", content.ID).Error; err != nil {
+		return false, err
 	}
-
-	for _, b := range bucks {
-		if b.hasContent(content) {
-			return true
-		}
+	if len(contents) > 0 {
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
@@ -945,7 +927,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	// If this content is already scheduled to be aggregated and is waiting in a bucket
-	if cm.contentInStagingZone(ctx, content) {
+	in, err := cm.contentInStagingZone(ctx, content)
+	if err != nil {
+		return err
+	}
+	if in {
 		return nil
 	}
 

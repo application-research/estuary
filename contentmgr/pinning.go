@@ -336,10 +336,8 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 }
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	cm.BucketLk.Lock()
-	defer cm.BucketLk.Unlock()
-	zones, ok := cm.Buckets[uid]
-	if !ok {
+	var zones []util.Content
+	if err := cm.DB.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
 		return ""
 	}
 
