@@ -1,4 +1,4 @@
-package main
+package contentmgr
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
+	"github.com/labstack/gommon/log"
 	"golang.org/x/xerrors"
 )
 
@@ -35,7 +36,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	// that is any content we have made the correct number of deals for, that
 	// hasnt been fetched from us in X days
 
-	candidates, err := cm.getRemovalCandidates(ctx, false, loc, users)
+	candidates, err := cm.GetRemovalCandidates(ctx, false, loc, users)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get removal candidates: %w", err)
 	}
@@ -220,7 +221,7 @@ type removalCandidateInfo struct {
 	InProgressDeals int `json:"inProgressDeals"`
 }
 
-func (cm *ContentManager) getRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
+func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error) {
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 

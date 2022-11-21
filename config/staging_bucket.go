@@ -7,7 +7,5 @@ import "time"
 // AggregateInterval - interval to aggregate staging contents
 type StagingBucket struct {
 	Enabled           bool          `json:"enabled"`
-	MinSize           int64         `json:"min_size"`
-	MaxSize           int64         `json:"max_size"`
 	AggregateInterval time.Duration `json:"aggregate_interval"`
 }

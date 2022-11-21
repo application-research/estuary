@@ -1,10 +1,11 @@
-package main
+package contentmgr
 
 import (
 	"context"
 	"time"
 
 	"github.com/application-research/estuary/util"
+	"github.com/labstack/gommon/log"
 )
 
 // RunPinningRetryWorker re-attempt pinning contents that have not yet been pinned after a period of time
