@@ -5,12 +5,11 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/util"
-	"github.com/labstack/gommon/log"
 )
 
 // RunPinningRetryWorker re-attempt pinning contents that have not yet been pinned after a period of time
 func (cm *ContentManager) RunPinningRetryWorker(ctx context.Context) {
-	log.Info("running pinning retry worker .......")
+	cm.log.Info("running pinning retry worker .......")
 
 	timer := time.NewTicker(cm.cfg.Pinning.RetryWorker.Interval)
 	for {
@@ -23,7 +22,7 @@ func (cm *ContentManager) RunPinningRetryWorker(ctx context.Context) {
 			for {
 				var contents []util.Content
 				if err := cm.DB.Limit(cm.cfg.Pinning.RetryWorker.BatchSelectionLimit).Order("id ASC").Find(&contents, "pinning and not active and not failed and not aggregate and id > ? and created_at > ?", startContentID, batchDate).Error; err != nil {
-					log.Errorf("failed to get contents for pinning monitor: %s", err)
+					cm.log.Errorf("failed to get contents for pinning monitor: %s", err)
 					return
 				}
 

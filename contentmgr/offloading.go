@@ -9,7 +9,6 @@ import (
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
-	"github.com/labstack/gommon/log"
 	"golang.org/x/xerrors"
 )
 
@@ -79,7 +78,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	rem, err := cm.OffloadContents(ctx, ids)
 	if err != nil {
 		result.OffloadError = err.Error()
-		log.Warnf("failed to offload contents: %s", err)
+		cm.log.Warnf("failed to offload contents: %s", err)
 	}
 
 	result.BlocksRemoved = rem
@@ -94,7 +93,7 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 	for _, c := range candidates {
 		la, err := cm.getLastAccessForContent(c.Content)
 		if err != nil {
-			log.Errorf("check last access for %d: %s", c.Content, err)
+			cm.log.Errorf("check last access for %d: %s", c.Content, err)
 			continue
 		}
 
@@ -188,7 +187,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 
 	for loc, conts := range remote {
 		if err := cm.sendUnpinCmd(ctx, loc, conts); err != nil {
-			log.Errorf("failed to send unpin command to shuttle: %s", err)
+			cm.log.Errorf("failed to send unpin command to shuttle: %s", err)
 		}
 	}
 

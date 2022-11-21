@@ -15,7 +15,6 @@ import (
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
-	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
@@ -30,7 +29,7 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 	meta := make(map[string]interface{}, 0)
 	if cont.PinMeta != "" {
 		if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
-			log.Warnf("content %d has invalid pinmeta: %s", cont, err)
+			cm.log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 		}
 	}
 
@@ -79,12 +78,12 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	} else {
 		ai, err := cm.addrInfoForShuttle(cont.Location)
 		if err != nil {
-			log.Errorf("failed to get address info for shuttle %q: %s", cont.Location, err)
+			cm.log.Errorf("failed to get address info for shuttle %q: %s", cont.Location, err)
 			return nil
 		}
 
 		if ai == nil {
-			log.Warnf("no address info for shuttle: %s", cont.Location)
+			cm.log.Warnf("no address info for shuttle: %s", cont.Location)
 			return nil
 		}
 
@@ -116,7 +115,7 @@ func (cm *ContentManager) pinContents(ctx context.Context, contents []util.Conte
 				}
 			} else {
 				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
-					log.Errorf("failed to send pin message to shuttle: %s", err)
+					cm.log.Errorf("failed to send pin message to shuttle: %s", err)
 					time.Sleep(time.Millisecond * 100)
 				}
 			}
@@ -195,7 +194,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 
 func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
 	if cont.Location != constants.ContentLocationLocal {
-		log.Errorf("calling addPinToQueue on non-local content")
+		cm.log.Errorf("calling addPinToQueue on non-local content")
 	}
 
 	op := &pinner.PinningOperation{
@@ -280,7 +279,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	// locations while choosing
 	ploc := cm.primaryStagingLocation(ctx, uid)
 	if ploc == "" {
-		log.Warnf("empty staging zone set for user %d", uid)
+		cm.log.Warnf("empty staging zone set for user %d", uid)
 	}
 
 	if ploc != "" {
@@ -295,7 +294,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 		// TODO: maybe we should just assign the pin to the preferred shuttle
 		// anyways, this could be the case where theres a small amount of
 		// downtime from rebooting or something
-		log.Warnf("preferred shuttle %q not online", ploc)
+		cm.log.Warnf("preferred shuttle %q not online", ploc)
 	}
 	// since they are ordered by priority, just take the first
 	return shuttles[0].Handle, nil
@@ -372,7 +371,7 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			"pinning": false,
 			"failed":  true,
 		}).Error; err != nil {
-			log.Errorf("failed to mark content as failed in database: %s", err)
+			cm.log.Errorf("failed to mark content as failed in database: %s", err)
 		}
 	}
 	return nil

@@ -10,7 +10,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
 	"github.com/ipfs/go-cid"
-	"github.com/labstack/gommon/log"
 )
 
 func (cm *ContentManager) RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
@@ -44,6 +43,6 @@ func (cm *ContentManager) RecordRetrievalSuccess(cc cid.Cid, m address.Address, 
 		NumPayments:  rstats.NumPayments,
 		AskPrice:     rstats.AskPrice.String(),
 	}).Error; err != nil {
-		log.Errorf("failed to write retrieval success record: %s", err)
+		cm.log.Errorf("failed to write retrieval success record: %s", err)
 	}
 }
