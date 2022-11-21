@@ -133,14 +133,16 @@ definitions:
     properties:
       cid:
         type: string
+      dweb_retrieval_url:
+        type: string
+      estuary_retrieval_url:
+        type: string
       estuaryId:
         type: integer
       providers:
         items:
           type: string
         type: array
-      retrieval_url:
-        type: string
     type: object
   util.ContentCreateBody:
     properties:
