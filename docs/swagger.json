@@ -3224,9 +3224,6 @@
         "cid": {
           "type": "string"
         },
-        "dweb_retrieval_url": {
-          "type": "string"
-        },
         "estuaryId": {
           "type": "integer"
         },
@@ -3238,6 +3235,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "retrieval_url": {
+          "type": "string"
         }
       }
     },
