@@ -170,6 +170,13 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 			return err
 		}
 	}
+
+	buckets, _ := cm.Buckets[pin.UserID]
+	for _, bucket := range buckets {
+		if _, err := cm.tryRemoveContent(bucket, pin); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
