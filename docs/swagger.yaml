@@ -133,6 +133,8 @@ definitions:
     properties:
       cid:
         type: string
+      estuary_retrieval_url:
+        type: string
       estuaryId:
         type: integer
       providers:

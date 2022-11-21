@@ -821,10 +821,11 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          rootCID.String(),
-		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
-		EstuaryId:    cont.ID,
-		Providers:    s.CM.PinDelegatesForContent(*cont),
+		Cid:                 rootCID.String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
+		EstuaryId:           cont.ID,
+		Providers:           s.CM.PinDelegatesForContent(*cont),
 	})
 }
 
@@ -999,10 +1000,11 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          nd.Cid().String(),
-		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
-		EstuaryId:    content.ID,
-		Providers:    s.CM.PinDelegatesForContent(*content),
+		Cid:                 nd.Cid().String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
+		EstuaryId:           content.ID,
+		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
 }
 
