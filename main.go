@@ -528,6 +528,11 @@ func main() {
 					return errors.New("setup password cannot be empty")
 				}
 
+				matched := constants.PasswordRegex.MatchString(password)
+				if !matched {
+					return errors.New("password must be at least eight characters and contain at least one letter and one number")
+				}
+
 				db, err := setupDatabase(cfg.DatabaseConnString)
 				if err != nil {
 					return err
@@ -573,6 +578,7 @@ func main() {
 					Label:     TOKEN_LABEL_ADMIN,
 					User:      newUser.ID,
 					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
+					IsSession: false,
 				}
 				if err := db.Create(authToken).Error; err != nil {
 					return fmt.Errorf("admin token creation failed: %w", err)
