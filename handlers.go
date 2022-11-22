@@ -105,6 +105,7 @@ func (s *Server) ServeAPI() error {
 		e.Use(middleware.Logger())
 	}
 
+	e.Pre(middleware.RemoveTrailingSlash())
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
