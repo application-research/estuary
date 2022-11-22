@@ -1100,6 +1100,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
 	e.Binder = new(util.Binder)
+	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
