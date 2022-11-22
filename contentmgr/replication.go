@@ -223,19 +223,15 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	return true, nil
 }
 
+// tryRemoveContent Removes content from in-memory buckets
+// Assumes content is already removed from DB
 func (cm *ContentManager) tryRemoveContent(cb *contentStagingZone, c util.Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
-	// if this bucket is being consolidated, do not add anymore content
+	// if this bucket is being consolidated, do not remove content
 	if cb.IsConsolidating {
 		return false, nil
-	}
-
-	if err := cm.DB.Model(util.Content{}).
-		Where("id = ? AND aggregated_in = ?", c.ID, cb.ContID).
-		UpdateColumn("aggregated_in", 0).Error; err != nil {
-		return false, err
 	}
 
 	newContents := make([]util.Content, 0)
