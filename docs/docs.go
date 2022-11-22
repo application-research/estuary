@@ -509,10 +509,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "array",
-                                "items": {
-                                    "$ref": "#/definitions/collections.Collection"
-                                }
+                                "$ref": "#/definitions/collections.Collection"
                             }
                         }
                     },
@@ -2842,10 +2839,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "array",
-                                "items": {
-                                    "$ref": "#/definitions/main.getApiKeysResp"
-                                }
+                                "$ref": "#/definitions/main.getApiKeysResp"
                             }
                         }
                     },
