@@ -3542,7 +3542,7 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.
 // @Tags         User
 // @Produce      json
-// @Success      200  {array}   []getApiKeysResp
+// @Success      200  {array}   getApiKeysResp
 // @Failure      400  {object}  util.HttpError
 // @Failure      404   {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3607,7 +3607,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Success      200  {array}   []collections.Collection
+// @Success      200  {array}   collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError

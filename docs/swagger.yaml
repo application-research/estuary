@@ -456,9 +456,7 @@ paths:
           description: OK
           schema:
             items:
-              items:
-                $ref: '#/definitions/collections.Collection'
-              type: array
+              $ref: '#/definitions/collections.Collection'
             type: array
         "400":
           description: Bad Request
@@ -1968,9 +1966,7 @@ paths:
           description: OK
           schema:
             items:
-              items:
-                $ref: '#/definitions/main.getApiKeysResp'
-              type: array
+              $ref: '#/definitions/main.getApiKeysResp'
             type: array
         "400":
           description: Bad Request
