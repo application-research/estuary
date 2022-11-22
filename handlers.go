@@ -99,6 +99,7 @@ import (
 func (s *Server) ServeAPI() error {
 	e := echo.New()
 	e.Binder = new(util.Binder)
+	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -192,8 +193,8 @@ func (s *Server) ServeAPI() error {
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
 
-	cols.GET("/", withUser(s.handleListCollections))
-	cols.POST("/", withUser(s.handleCreateCollection))
+	cols.GET("", withUser(s.handleListCollections))
+	cols.POST("", withUser(s.handleCreateCollection))
 
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
