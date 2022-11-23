@@ -1047,7 +1047,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		go func() {
 			_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.Blockstore)
 			if err != nil {
-				cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
+				if err != ErrWaitForRemoteCompute {
+					cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
+				} else {
+					cm.log.Debugf("waiting for shuttle:%s to finish commp for cont:%d", content.Location, content.ID)
+				}
 				done(time.Minute * 5)
 			} else {
 				done(time.Second * 10)
@@ -2203,7 +2207,7 @@ func (cm *ContentManager) GetPieceCommitment(ctx context.Context, data cid.Cid, 
 	// The piece comm record isn't in the DB so calculate it
 	pc, carSize, size, err := cm.runPieceCommCompute(ctx, data, bs)
 	if err != nil {
-		return cid.Undef, 0, 0, xerrors.Errorf("failed to generate piece commitment: %w", err)
+		return cid.Undef, 0, 0, err
 	}
 
 	opcr := model.PieceCommRecord{
@@ -2216,7 +2220,6 @@ func (cm *ContentManager) GetPieceCommitment(ctx context.Context, data cid.Cid, 
 	if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
 		return cid.Undef, 0, 0, err
 	}
-
 	return pc, carSize, size, nil
 }
 

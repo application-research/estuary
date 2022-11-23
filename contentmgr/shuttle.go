@@ -336,8 +336,6 @@ func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle 
 }
 
 func (cm *ContentManager) HandleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
-	cm.log.Debugf("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
-
 	if param.DealDBID == 0 {
 		return fmt.Errorf("received transfer status update with no identifier")
 	}
