@@ -325,6 +325,8 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 		if p.Active {
 			return s.resendPinComplete(ctx, p)
 		}
+		log.Warnf("failed to aggregate staging zone:%d, aggregate exist but not active", aggregate.DBID)
+		// TODO, handle this case
 		return nil
 	case gorm.ErrRecordNotFound:
 		// normal case
