@@ -28,6 +28,7 @@ func ImportFile(dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 	dbp := ihelper.DagBuilderParams{
 		Dagserv:    dserv,
 		Maxlinks:   ihelper.DefaultLinksPerBlock,
+		RawLeaves:  true,
 		CidBuilder: &prefix,
 	}
 
