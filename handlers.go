@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"net/http/httputil"
 	httpprof "net/http/pprof"
 	"net/url"
 	"path/filepath"
@@ -1023,34 +1024,19 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
-	// propagate any query params
+
 	//#nosec G404: ignore weak random number generator
-	req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
+	shURL, err := url.Parse(uep[rand.Intn(len(uep))])
 	if err != nil {
 		return err
 	}
-	req.Header = c.Request().Header.Clone()
-	req.URL.RawQuery = c.Request().URL.Query().Encode()
+	shURL.Path = ""
+	shURL.RawQuery = ""
+	shURL.Fragment = ""
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var out util.HttpErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return err
-		}
-		return &out.Error
-	}
-
-	var addResp util.ContentAddResponse
-	if err := json.NewDecoder(resp.Body).Decode(&addResp); err != nil {
-		return errors.Wrap(err, "failed to decode contentAddResponse body")
-	}
-	return c.JSON(resp.StatusCode, addResp)
+	proxy := httputil.NewSingleHostReverseProxy(shURL)
+	proxy.ServeHTTP(c.Response(), c.Request())
+	return nil
 }
 
 func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
