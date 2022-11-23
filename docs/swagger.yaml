@@ -627,6 +627,10 @@ paths:
             items:
               type: integer
             type: array
+        - description: Directory
+          in: query
+          name: dir
+          type: string
       produces:
         - application/json
       responses:
@@ -785,7 +789,7 @@ paths:
           name: data
           required: true
           type: file
-        - description: Filenam to use for upload
+        - description: Filename to use for upload
           in: formData
           name: filename
           type: string

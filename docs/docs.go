@@ -716,6 +716,12 @@ const docTemplate = `{
                                 "type": "integer"
                             }
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -897,7 +903,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filenam to use for upload",
+                        "description": "Filename to use for upload",
                         "name": "filename",
                         "in": "formData"
                     },
