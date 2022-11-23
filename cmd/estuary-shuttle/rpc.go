@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+
+	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
@@ -13,7 +16,6 @@ import (
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -35,7 +37,8 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Debugf("handling rpc command: %s", cmd.Op)
+	log.Debugf("handling rpc message: %s", cmd.Op)
+
 	switch cmd.Op {
 	case drpc.CMD_AddPin:
 		return d.handleRpcAddPin(ctx, cmd.Params.AddPin)
@@ -44,7 +47,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	case drpc.CMD_TakeContent:
 		return d.handleRpcTakeContent(ctx, cmd.Params.TakeContent)
 	case drpc.CMD_AggregateContent:
-		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContent)
+		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContents)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_PrepareForDataRequest:
@@ -299,7 +302,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	return nil
 }
 
-func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContents) error {
 	// only progress if aggr is not allready in progress
 	if !s.markStartAggr(cmd.DBID) {
 		return nil
@@ -309,7 +312,6 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	ctx, span := s.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
 		attribute.Int64("dbID", int64(cmd.DBID)),
 		attribute.Int64("userId", int64(cmd.UserID)),
-		attribute.String("root", cmd.Root.String()),
 	))
 	defer span.End()
 
@@ -319,32 +321,68 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	default:
 		return err
 	case nil:
-		// exists already
+		// if it was aggregated successfully but estuary was not notified,, resend message
+		if p.Active {
+			return s.resendPinComplete(ctx, p)
+		}
 		return nil
 	case gorm.ErrRecordNotFound:
 		// normal case
 	}
 
-	totalSize := int64(len(cmd.ObjData))
 	for _, c := range cmd.Contents {
-		var aggr Pin
-		if err := s.DB.First(&aggr, "content = ?", c).Error; err != nil {
+		var cont Pin
+		if err := s.DB.First(&cont, "content = ?", c.ID).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
 		}
 
-		if !aggr.Active || aggr.Failed {
-			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c)
+		if !cont.Active || cont.Failed {
+			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c.ID)
 		}
-		totalSize += aggr.Size
+	}
+
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+
+	sort.Slice(cmd.Contents, func(i, j int) bool {
+		return cmd.Contents[i].ID < cmd.Contents[j].ID
+	})
+
+	dir := uio.NewDirectory(dserv)
+	for _, c := range cmd.Contents {
+		nd, err := dserv.Get(ctx, c.CID)
+		if err != nil {
+			return err
+		}
+
+		// TODO: consider removing the "<cid>-" prefix on the content name
+		err = dir.AddChild(ctx, fmt.Sprintf("%d-%s", c.ID, c.Name), nd)
+		if err != nil {
+			return err
+		}
+	}
+
+	dirNd, err := dir.GetNode()
+	if err != nil {
+		return err
+	}
+
+	size, err := dirNd.Size()
+	if err != nil {
+		return err
+	}
+
+	if err := s.Node.Blockstore.Put(ctx, dirNd); err != nil {
+		return err
 	}
 
 	pin := &Pin{
 		Content:   cmd.DBID,
-		Cid:       util.DbCID{CID: cmd.Root},
+		Cid:       util.DbCID{CID: dirNd.Cid()},
 		UserID:    cmd.UserID,
-		Size:      totalSize,
+		Size:      int64(size),
 		Active:    false,
 		Pinning:   true,
 		Aggregate: true,
@@ -353,27 +391,11 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 		return err
 	}
 
-	blk, err := blocks.NewBlockWithCid(cmd.ObjData, cmd.Root)
-	if err != nil {
-		return err
-	}
-
-	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
-		return err
-	}
-
 	// since aggregates only needs put the containing box in the blockstore (no need to pull blocks),
 	// mark it as active and change pinning status
-	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
-		"active":  true,
-		"pinning": false,
-	}).Error; err != nil {
-		return err
-	}
-
 	obj := &Object{
-		Cid:  util.DbCID{CID: blk.Cid()},
-		Size: len(blk.RawData()),
+		Cid:  util.DbCID{CID: dirNd.Cid()},
+		Size: len(dirNd.RawData()),
 	}
 	if err := s.DB.Create(obj).Error; err != nil {
 		return err
@@ -393,8 +415,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	}).Error; err != nil {
 		return err
 	}
-
-	s.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, []*Object{obj})
+	s.sendPinCompleteMessage(ctx, cmd.DBID, int64(size), []*Object{obj}, dirNd.Cid())
 	return nil
 }
 

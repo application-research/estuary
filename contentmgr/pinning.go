@@ -400,10 +400,31 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	if cont.Aggregate {
 		// this is used by staging content aggregate
+		if len(pincomp.Objects) != 1 {
+			return fmt.Errorf("aggregate has more than 1 objects")
+		}
+
+		obj := &util.Object{
+			Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
+			Size: pincomp.Objects[0].Size,
+		}
+		if err := cm.DB.Create(obj).Error; err != nil {
+			return err
+		}
+
+		if err := cm.DB.Create(&util.ObjRef{
+			Content: cont.ID,
+			Object:  obj.ID,
+		}).Error; err != nil {
+			return err
+		}
+
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"pinning":  false,
 			"location": handle,
+			"cid":      util.DbCID{CID: pincomp.CID},
+			"size":     pincomp.Size,
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}

@@ -81,7 +81,7 @@ type ContentManager struct {
 	contentLk            sync.RWMutex
 	// deal bucketing stuff
 	BucketLk sync.Mutex
-	Buckets  map[uint][]*contentStagingZone
+	Buckets  map[uint][]*ContentStagingZone
 	// some behavior flags
 	FailDealOnTransferFailure bool
 	dealDisabledLk            sync.Mutex
@@ -111,32 +111,25 @@ type stagingZoneReadiness struct {
 	ReadinessReason string `json:"readinessReason"`
 }
 
-type contentStagingZone struct {
-	ZoneOpened time.Time `json:"zoneOpened"`
-
-	Contents []util.Content `json:"contents"`
-
-	MinSize int64 `json:"minSize"`
-	MaxSize int64 `json:"maxSize"`
-
-	CurSize int64 `json:"curSize"`
-
-	User uint `json:"user"`
-
-	ContID   uint   `json:"contentID"`
-	Location string `json:"location"`
-
-	IsConsolidating bool `json:"is_consolidating"`
-
-	Readiness stagingZoneReadiness `json:"readiness"`
-
-	lk sync.Mutex
+type ContentStagingZone struct {
+	ZoneOpened      time.Time            `json:"zoneOpened"`
+	Contents        []util.Content       `json:"contents"`
+	MinSize         int64                `json:"minSize"`
+	MaxSize         int64                `json:"maxSize"`
+	CurSize         int64                `json:"curSize"`
+	User            uint                 `json:"user"`
+	ContID          uint                 `json:"contentID"`
+	Location        string               `json:"location"`
+	IsConsolidating bool                 `json:"is_consolidating"`
+	Readiness       stagingZoneReadiness `json:"readiness"`
+	lk              sync.Mutex
 }
 
-func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
+func (cb *ContentStagingZone) DeepCopy() *ContentStagingZone {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
-	cb2 := &contentStagingZone{
+
+	cb2 := &ContentStagingZone{
 		ZoneOpened: cb.ZoneOpened,
 		Contents:   make([]util.Content, len(cb.Contents)),
 		MinSize:    cb.MinSize,
@@ -151,7 +144,7 @@ func (cb *contentStagingZone) DeepCopy() *contentStagingZone {
 	return cb2
 }
 
-func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*contentStagingZone, error) {
+func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*ContentStagingZone, error) {
 	content := &util.Content{
 		Size:        0,
 		Name:        "aggregate",
@@ -167,8 +160,8 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 		return nil, err
 	}
 
-	return &contentStagingZone{
-		ZoneOpened: time.Now(),
+	return &ContentStagingZone{
+		ZoneOpened: content.CreatedAt,
 		MinSize:    cm.cfg.Content.MinSize,
 		MaxSize:    cm.cfg.Content.MaxSize,
 		User:       user,
@@ -178,7 +171,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*content
 	}, nil
 }
 
-func (cb *contentStagingZone) updateReadiness() {
+func (cb *ContentStagingZone) updateReadiness() {
 	// if it's above the size requirement, go right ahead
 	if cb.CurSize > cb.MinSize {
 		cb.Readiness.IsReady = true
@@ -196,9 +189,10 @@ func (cb *contentStagingZone) updateReadiness() {
 		cb.MinSize)
 }
 
-func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) (bool, error) {
+func (cm *ContentManager) tryAddContent(cb *ContentStagingZone, c util.Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
+	defer cb.updateReadiness()
 
 	// TODO: propagate reason for failing to add content to bucket to end user
 
@@ -219,13 +213,12 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 
 	cb.Contents = append(cb.Contents, c)
 	cb.CurSize += c.Size
-
 	return true, nil
 }
 
 // tryRemoveContent Removes content from in-memory buckets
 // Assumes content is already removed from DB
-func (cm *ContentManager) tryRemoveContent(cb *contentStagingZone, c util.Content) (bool, error) {
+func (cm *ContentManager) tryRemoveContent(cb *ContentStagingZone, c util.Content) (bool, error) {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
@@ -248,7 +241,7 @@ func (cm *ContentManager) tryRemoveContent(cb *contentStagingZone, c util.Conten
 	return true, nil
 }
 
-func (cb *contentStagingZone) hasContent(c util.Content) bool {
+func (cb *ContentStagingZone) hasContent(c util.Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
 
@@ -277,7 +270,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:                   tbs,
 		toCheck:                   make(chan uint, 100000),
 		retrievalsInProgress:      make(map[uint]*util.RetrievalProgress),
-		Buckets:                   make(map[uint][]*contentStagingZone),
+		Buckets:                   make(map[uint][]*ContentStagingZone),
 		PinMgr:                    pinmgr,
 		remoteTransferStatus:      cache,
 		Shuttles:                  make(map[string]*ShuttleConnection),
@@ -311,10 +304,10 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 		case <-timer.C:
 			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
 
-			buckets := cm.popReadyStagingZone()
-			for _, b := range buckets {
-				if err := cm.aggregateContent(ctx, b); err != nil {
-					cm.log.Errorf("content aggregation failed (bucket %d): %s", b.ContID, err)
+			zones := cm.popReadyStagingZone()
+			for _, z := range zones {
+				if err := cm.processStagingZone(ctx, z); err != nil {
+					cm.log.Errorf("content aggregation failed (zone %d): %s", z.ContID, err)
 					continue
 				}
 			}
@@ -492,7 +485,7 @@ func (cm *ContentManager) currentLocationForContent(cntId uint) (string, error) 
 	return cont.Location, nil
 }
 
-func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, b *contentStagingZone) (map[string]string, error) {
+func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, b *ContentStagingZone) (map[string]string, error) {
 	out := make(map[string]string)
 	for _, c := range b.Contents {
 		// need to get current location from db, incase this stage content was a part of a consolidated content - its location would have changed.
@@ -503,10 +496,13 @@ func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, 
 		}
 		out[c.Location] = loc
 	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("no location for staged contents")
+	}
 	return out, nil
 }
 
-func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *contentStagingZone) error {
+func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *ContentStagingZone) error {
 	var dstLocation string
 	var curMax int64
 	dataByLoc := make(map[string]int64)
@@ -550,7 +546,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *conte
 	}
 }
 
-func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagingZone) error {
+func (cm *ContentManager) processStagingZone(ctx context.Context, b *ContentStagingZone) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
@@ -561,6 +557,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 
 	// if the staged contents of this bucket are in different locations (more than 1 group)
 	// Need to migrate/consolidate the contents to the same location
+	// TODO - we should avoid doing this, best we have staging by location - this process is just to expensive
 	if len(grpLocs) > 1 {
 		cm.BucketLk.Lock()
 		// Need to migrate content all to the same shuttle
@@ -579,43 +576,39 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		cm.BucketLk.Unlock()
 		return nil
 	}
-
 	// if all contents are already in one location, proceed to aggregate them
-	dir, err := cm.CreateAggregate(ctx, b.Contents)
-	if err != nil {
-		return xerrors.Errorf("failed to create aggregate: %w", err)
-	}
+	return cm.AggregateStagingZone(ctx, b, grpLocs)
+}
 
-	ncid := dir.Cid()
-	size, err := dir.Size()
-	if err != nil {
-		return err
-	}
+func (cm *ContentManager) AggregateStagingZone(ctx context.Context, z *ContentStagingZone, grpLocs map[string]string) error {
+	ctx, span := cm.tracer.Start(ctx, "aggregateStagingZone")
+	defer span.End()
 
-	if size == 0 {
-		cm.log.Warnf("content %d aggregate dir apparent size is zero", b.ContID)
-	}
+	cm.log.Debugf("aggregating zone: %d", z.ContID)
 
 	// get the aggregate content location
-	var aggregateLoc string
-	for k := range grpLocs {
-		aggregateLoc = k
+	var loc string
+	for _, cl := range grpLocs {
+		loc = cl
+		break
 	}
 
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
-		"cid":      util.DbCID{CID: ncid},
-		"size":     size,
-		"location": aggregateLoc,
-	}).Error; err != nil {
-		return err
-	}
+	if loc == constants.ContentLocationLocal {
+		dir, err := cm.CreateAggregate(ctx, z.Contents)
+		if err != nil {
+			return xerrors.Errorf("failed to create aggregate: %w", err)
+		}
 
-	var content util.Content
-	if err := cm.DB.First(&content, "id = ?", b.ContID).Error; err != nil {
-		return err
-	}
+		ncid := dir.Cid()
+		size, err := dir.Size()
+		if err != nil {
+			return err
+		}
 
-	if aggregateLoc == constants.ContentLocationLocal {
+		if size == 0 {
+			cm.log.Warnf("content %d aggregate dir apparent size is zero", z.ContID)
+		}
+
 		obj := &util.Object{
 			Cid:  util.DbCID{CID: ncid},
 			Size: int(size),
@@ -625,7 +618,7 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 		}
 
 		if err := cm.DB.Create(&util.ObjRef{
-			Content: b.ContID,
+			Content: z.ContID,
 			Object:  obj.ID,
 		}).Error; err != nil {
 			return err
@@ -635,25 +628,33 @@ func (cm *ContentManager) aggregateContent(ctx context.Context, b *contentStagin
 			return err
 		}
 
-		if err := cm.DB.Model(util.Content{}).Where("id = ?", b.ContID).UpdateColumns(map[string]interface{}{
-			"active":  true,
-			"pinning": false,
+		if err := cm.DB.Model(util.Content{}).Where("id = ?", z.ContID).UpdateColumns(map[string]interface{}{
+			"active":   true,
+			"pinning":  false,
+			"cid":      util.DbCID{CID: ncid},
+			"size":     size,
+			"location": loc,
 		}).Error; err != nil {
 			return err
 		}
 
 		go func() {
-			cm.ToCheck(b.ContID)
+			cm.ToCheck(z.ContID)
 		}()
 		return nil
-
-	} else {
-		var ids []uint
-		for _, c := range b.Contents {
-			ids = append(ids, c.ID)
-		}
-		return cm.SendAggregateCmd(ctx, aggregateLoc, content, ids, dir.RawData())
 	}
+
+	// handle aggregate on shuttle
+	var aggrConts []drpc.AggregateContent
+	for _, c := range z.Contents {
+		aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
+	}
+
+	var bContent util.Content
+	if err := cm.DB.First(&bContent, "id = ?", z.ContID).Error; err != nil {
+		return err
+	}
+	return cm.SendAggregateCmd(ctx, loc, bContent, aggrConts)
 }
 
 func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {
@@ -694,28 +695,31 @@ func (cm *ContentManager) rebuildStagingBuckets() error {
 		return err
 	}
 
-	zones := make(map[uint][]*contentStagingZone)
+	zones := make(map[uint][]*ContentStagingZone)
 	for _, c := range stages {
-		z := &contentStagingZone{
-			ZoneOpened: c.CreatedAt,
-			MinSize:    cm.cfg.Content.MinSize,
-			MaxSize:    cm.cfg.Content.MaxSize,
-			User:       c.UserID,
-			ContID:     c.ID,
-			Location:   c.Location,
-		}
-
 		var inZones []util.Content
 		if err := cm.DB.Find(&inZones, "aggregated_in = ?", c.ID).Error; err != nil {
 			return err
 		}
-		z.Contents = inZones
 
+		var zSize int64
 		for _, zc := range inZones {
 			// TODO: do some sanity checking that we havent messed up and added
 			// too many items to this staging zone
-			z.CurSize += zc.Size
+			zSize += zc.Size
 		}
+
+		z := &ContentStagingZone{
+			ZoneOpened: c.CreatedAt,
+			Contents:   inZones,
+			MinSize:    cm.cfg.Content.MinSize,
+			MaxSize:    cm.cfg.Content.MaxSize,
+			CurSize:    zSize,
+			User:       c.UserID,
+			ContID:     c.ID,
+			Location:   c.Location,
+		}
+		z.updateReadiness()
 		zones[c.UserID] = append(zones[c.UserID], z)
 	}
 	cm.Buckets = zones
@@ -793,29 +797,29 @@ func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util
 	return false
 }
 
-func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*contentStagingZone {
+func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
 
 	blist, ok := cm.Buckets[user]
 	if !ok {
-		return []*contentStagingZone{}
+		return []*ContentStagingZone{}
 	}
 
-	var out []*contentStagingZone
+	var out []*ContentStagingZone
 	for _, b := range blist {
 		out = append(out, b.DeepCopy())
 	}
 	return out
 }
 
-func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*contentStagingZone {
+func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
 
-	out := make(map[uint][]*contentStagingZone)
+	out := make(map[uint][]*ContentStagingZone)
 	for u, blist := range cm.Buckets {
-		var copylist []*contentStagingZone
+		var copylist []*ContentStagingZone
 
 		for _, b := range blist {
 			copylist = append(copylist, b.DeepCopy())
@@ -849,7 +853,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 			return fmt.Errorf("failed to add content to staging zone: %w", err)
 		}
 
-		cm.Buckets[content.UserID] = []*contentStagingZone{b}
+		cm.Buckets[content.UserID] = []*ContentStagingZone{b}
 		return nil
 	}
 
@@ -878,13 +882,13 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	return nil
 }
 
-func (cm *ContentManager) popReadyStagingZone() []*contentStagingZone {
+func (cm *ContentManager) popReadyStagingZone() []*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
 
-	var out []*contentStagingZone
+	var out []*ContentStagingZone
 	for uid, blist := range cm.Buckets {
-		var keep []*contentStagingZone
+		var keep []*ContentStagingZone
 		for _, b := range blist {
 			b.updateReadiness()
 			if b.Readiness.IsReady {
@@ -2502,6 +2506,10 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 		attribute.Int("numObjects", len(objects)),
 	)
 
+	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
+		return xerrors.Errorf("failed to create refs: %w", err)
+	}
+
 	if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"active":   true,
 		"size":     totalSize,
@@ -2509,10 +2517,6 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 		"location": loc,
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update content in database: %w", err)
-	}
-
-	if err := cm.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
 	}
 	return nil
 }
@@ -2647,16 +2651,14 @@ func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc stri
 	})
 }
 
-func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []uint, blob []byte) error {
+func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []drpc.AggregateContent) error {
 	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_AggregateContent,
 		Params: drpc.CmdParams{
-			AggregateContent: &drpc.AggregateContent{
+			AggregateContents: &drpc.AggregateContents{
 				DBID:     cont.ID,
 				UserID:   cont.UserID,
 				Contents: aggr,
-				Root:     cont.Cid.CID,
-				ObjData:  blob,
 			},
 		},
 	})

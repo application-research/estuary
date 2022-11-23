@@ -131,7 +131,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
-	cm.log.Debugf("handling shuttle message: %s", msg.Op)
+	cm.log.Debugf("handling rpc message:%s from shuttle:%s", msg.Op, handle)
 
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
@@ -231,6 +231,8 @@ func (cm *ContentManager) SendShuttleCommand(ctx context.Context, handle string,
 	if handle == "" {
 		return fmt.Errorf("attempted to send command to empty shuttle handle")
 	}
+
+	cm.log.Debugf("sending rpc message:%s to shuttle:%s", cmd.Op, handle)
 
 	cm.ShuttlesLk.Lock()
 	d, ok := cm.Shuttles[handle]

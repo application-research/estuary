@@ -37,7 +37,7 @@ type CmdParams struct {
 	AddPin                 *AddPin                 `json:",omitempty"`
 	ComputeCommP           *ComputeCommP           `json:",omitempty"`
 	TakeContent            *TakeContent            `json:",omitempty"`
-	AggregateContent       *AggregateContent       `json:",omitempty"`
+	AggregateContents      *AggregateContents      `json:",omitempty"`
 	StartTransfer          *StartTransfer          `json:",omitempty"`
 	PrepareForDataRequest  *PrepareForDataRequest  `json:",omitempty"`
 	CleanupPreparedRequest *CleanupPreparedRequest `json:",omitempty"`
@@ -71,12 +71,16 @@ type TakeContent struct {
 
 const CMD_AggregateContent = "AggregateContent"
 
-type AggregateContent struct {
+type AggregateContents struct {
 	DBID     uint
 	UserID   uint
-	Contents []uint
-	Root     cid.Cid
-	ObjData  []byte
+	Contents []AggregateContent
+}
+
+type AggregateContent struct {
+	ID   uint
+	CID  cid.Cid
+	Name string
 }
 
 const CMD_StartTransfer = "StartTransfer"
