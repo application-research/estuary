@@ -194,9 +194,9 @@ type PinObj struct {
 const OP_PinComplete = "PinComplete"
 
 type PinComplete struct {
-	DBID uint
-	Size int64
-
+	DBID    uint
+	Size    int64
+	CID     cid.Cid
 	Objects []PinObj
 }
 

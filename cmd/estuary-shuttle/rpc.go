@@ -176,7 +176,7 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 		return fmt.Errorf("failed to get objects for pin: %s", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects)
+	s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects, pin.Cid.CID)
 	return nil
 }
 
@@ -243,7 +243,7 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
 	}
 }
 
-func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
+func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
 
@@ -259,13 +259,14 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 		Op: drpc.OP_PinComplete,
 		Params: drpc.MsgParams{
 			PinComplete: &drpc.PinComplete{
-				DBID:    cont,
+				DBID:    contID,
 				Size:    size,
 				Objects: objs,
+				CID:     contCID,
 			},
 		},
 	}); err != nil {
-		log.Errorf("failed to send pin complete message for content %d: %s", cont, err)
+		log.Errorf("failed to send pin complete message for content %d: %s", contID, err)
 	}
 }
 
@@ -655,7 +656,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		if err != nil {
 			return err
 		}
-		s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+		s.sendPinCompleteMessage(ctx, contid, totalSize, objects, c)
 	}
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
