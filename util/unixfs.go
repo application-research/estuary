@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ipfs/go-cidutil"
 	chunker "github.com/ipfs/go-ipfs-chunker"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
@@ -23,18 +22,13 @@ func ImportFile(dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 		return nil, err
 	}
 	prefix.MhType = DefaultHashFunction
+	prefix.MhLength = -1
 
 	spl := chunker.NewSizeSplitter(fi, 1024*1024)
 	dbp := ihelper.DagBuilderParams{
-		Maxlinks:  1024,
-		RawLeaves: true,
-
-		CidBuilder: cidutil.InlineBuilder{
-			Builder: prefix,
-			Limit:   32,
-		},
-
-		Dagserv: dserv,
+		Dagserv:    dserv,
+		Maxlinks:   ihelper.DefaultLinksPerBlock,
+		CidBuilder: &prefix,
 	}
 
 	db, err := dbp.New(spl)
