@@ -56,7 +56,6 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -1326,7 +1325,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1468,7 +1467,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1826,52 +1825,6 @@ func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.R
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
-}
-
-func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := s.Tracer.Start(ctx, "blockstoreCopy")
-	defer span.End()
-
-	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
-	keys, err := from.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	var batches [][]blocks.Block
-	var batch []blocks.Block
-
-	for k := range keys {
-		blk, err := from.Get(ctx, k)
-		if err != nil {
-			return err
-		}
-		batch = append(batch, blk)
-
-		if len(batch) > 500 {
-			batches = append(batches, batch)
-			batch = batch[:0]
-		}
-	}
-
-	if len(batch) > 0 {
-		batches = append(batches, batch)
-	}
-
-	for _, batch := range batches {
-		var retryCount int
-	retry:
-
-		if err := to.PutMany(ctx, batch); err != nil {
-			if retryCount <= 2 {
-				retryCount = retryCount + 1
-				time.Sleep(2 * time.Second)
-				goto retry
-			}
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
