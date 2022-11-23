@@ -302,21 +302,21 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	return nil
 }
 
-func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContents) error {
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate *drpc.AggregateContents) error {
 	// only progress if aggr is not allready in progress
-	if !s.markStartAggr(cmd.DBID) {
+	if !s.markStartAggr(aggregate.DBID) {
 		return nil
 	}
-	defer s.finishAggr(cmd.DBID)
+	defer s.finishAggr(aggregate.DBID)
 
 	ctx, span := s.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
-		attribute.Int64("dbID", int64(cmd.DBID)),
-		attribute.Int64("userId", int64(cmd.UserID)),
+		attribute.Int64("dbID", int64(aggregate.DBID)),
+		attribute.Int64("userId", int64(aggregate.UserID)),
 	))
 	defer span.End()
 
 	var p Pin
-	err := s.DB.First(&p, "content = ?", cmd.DBID).Error
+	err := s.DB.First(&p, "content = ?", aggregate.DBID).Error
 	switch err {
 	default:
 		return err
@@ -330,7 +330,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 		// normal case
 	}
 
-	for _, c := range cmd.Contents {
+	for _, c := range aggregate.Contents {
 		var cont Pin
 		if err := s.DB.First(&cont, "content = ?", c.ID).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
@@ -346,12 +346,12 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 
-	sort.Slice(cmd.Contents, func(i, j int) bool {
-		return cmd.Contents[i].ID < cmd.Contents[j].ID
+	sort.Slice(aggregate.Contents, func(i, j int) bool {
+		return aggregate.Contents[i].ID < aggregate.Contents[j].ID
 	})
 
 	dir := uio.NewDirectory(dserv)
-	for _, c := range cmd.Contents {
+	for _, c := range aggregate.Contents {
 		nd, err := dserv.Get(ctx, c.CID)
 		if err != nil {
 			return err
@@ -379,9 +379,9 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	}
 
 	pin := &Pin{
-		Content:   cmd.DBID,
+		Content:   aggregate.DBID,
 		Cid:       util.DbCID{CID: dirNd.Cid()},
-		UserID:    cmd.UserID,
+		UserID:    aggregate.UserID,
 		Size:      int64(size),
 		Active:    false,
 		Pinning:   true,
@@ -415,7 +415,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	}).Error; err != nil {
 		return err
 	}
-	s.sendPinCompleteMessage(ctx, cmd.DBID, int64(size), []*Object{obj}, dirNd.Cid())
+	s.sendPinCompleteMessage(ctx, aggregate.DBID, int64(size), []*Object{obj}, dirNd.Cid())
 	return nil
 }
 
