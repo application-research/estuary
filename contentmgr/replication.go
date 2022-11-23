@@ -223,6 +223,31 @@ func (cm *ContentManager) tryAddContent(cb *contentStagingZone, c util.Content) 
 	return true, nil
 }
 
+// tryRemoveContent Removes content from in-memory buckets
+// Assumes content is already removed from DB
+func (cm *ContentManager) tryRemoveContent(cb *contentStagingZone, c util.Content) (bool, error) {
+	cb.lk.Lock()
+	defer cb.lk.Unlock()
+
+	// if this bucket is being consolidated, do not remove content
+	if cb.IsConsolidating {
+		return false, nil
+	}
+
+	newContents := make([]util.Content, 0)
+	newSize := int64(0)
+	for _, cont := range cb.Contents {
+		if cont.ID != c.ID {
+			newContents = append(newContents, cont)
+			newSize += cont.Size
+		}
+	}
+	cb.Contents = newContents
+	cb.CurSize = newSize
+
+	return true, nil
+}
+
 func (cb *contentStagingZone) hasContent(c util.Content) bool {
 	cb.lk.Lock()
 	defer cb.lk.Unlock()
