@@ -843,7 +843,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param        data          formData  file    true   "File to upload"
-// @Param        filename      formData  string  false  "Filenam to use for upload"
+// @Param        filename      formData  string  false  "Filename to use for upload"
 // @Param        coluuid       query     string  false  "Collection UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
@@ -920,15 +920,9 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		col = &srchCol
 	}
 
-	defaultPath := "/"
-	path := defaultPath
-	if cp := c.QueryParam(ColDir); cp != "" {
-		sp, err := sanitizePath(cp)
-		if err != nil {
-			return err
-		}
-
-		path = sp
+	path, err := constructDirectoryPath(c.QueryParam(ColDir))
+	if err != nil {
+		return err
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1006,6 +1000,20 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		EstuaryId:           content.ID,
 		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
+}
+
+func constructDirectoryPath(dir string) (string, error) {
+	defaultPath := "/"
+	path := defaultPath
+	if cp := dir; cp != "" {
+		sp, err := sanitizePath(cp)
+		if err != nil {
+			return "", err
+		}
+
+		path = sp
+	}
+	return path, nil
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -3571,6 +3579,7 @@ type addContentsToCollectionBody struct {
 // @Produce      json
 // @Param        coluuid     path      string  true  "Collection UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
+// @Param		 dir		 query	   string  false  "Directory"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3640,13 +3649,14 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	defaultPath := "/"
+	path, err := constructDirectoryPath(c.QueryParam(ColDir))
 	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
+		fullPath := filepath.Join(path, cont.Name)
 		colrefs = append(colrefs, collections.CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
-			Path:       &defaultPath,
+			Path:       &fullPath,
 		})
 	}
 
@@ -5654,8 +5664,6 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Raw    CidType = "raw"
-	File   CidType = "file"
 	Dir    CidType = "directory"
 	ColDir string  = "dir"
 )
