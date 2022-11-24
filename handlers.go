@@ -46,7 +46,6 @@ import (
 	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -807,7 +806,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -972,7 +971,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1052,42 +1051,6 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
-}
-
-func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := s.tracer.Start(ctx, "blockstoreCopy")
-	defer span.End()
-
-	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
-	keys, err := from.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	var batch []blocks.Block
-
-	for k := range keys {
-		blk, err := from.Get(ctx, k)
-		if err != nil {
-			return err
-		}
-
-		batch = append(batch, blk)
-
-		if len(batch) > 500 {
-			if err := to.PutMany(ctx, batch); err != nil {
-				return err
-			}
-			batch = batch[:0]
-		}
-	}
-
-	if len(batch) > 0 {
-		if err := to.PutMany(ctx, batch); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // handleEnsureReplication godoc
