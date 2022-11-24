@@ -1,16 +1,20 @@
 package util
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/labstack/echo/v4"
 	"github.com/multiformats/go-multihash"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func CanRestartTransfer(st *filclient.ChannelState) bool {
@@ -114,4 +118,40 @@ func JSONPayloadMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		return next(c)
 	}
+}
+
+func DumpBlockstoreTo(ctx context.Context, tc trace.Tracer, from, to blockstore.Blockstore) error {
+	ctx, span := tc.Start(ctx, "blockstoreCopy")
+	defer span.End()
+
+	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
+	keys, err := from.AllKeysChan(ctx)
+	if err != nil {
+		return err
+	}
+
+	var batch []blocks.Block
+
+	for k := range keys {
+		blk, err := from.Get(ctx, k)
+		if err != nil {
+			return err
+		}
+
+		batch = append(batch, blk)
+
+		if len(batch) > 500 {
+			if err := to.PutMany(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+
+	if len(batch) > 0 {
+		if err := to.PutMany(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
