@@ -1109,6 +1109,7 @@ func (s *Shuttle) ServeAPI() error {
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
+	e.Use(middleware.Recover())
 
 	e.GET("/debug/metrics", func(e echo.Context) error {
 		estumetrics.Exporter().ServeHTTP(e.Response().Writer, e.Request())

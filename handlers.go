@@ -128,6 +128,7 @@ func (s *Server) ServeAPI() error {
 	})
 
 	e.Use(middleware.CORS())
+	e.Use(middleware.Recover())
 
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
