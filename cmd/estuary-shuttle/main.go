@@ -1330,7 +1330,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
 		log.Warnf("failed to provide: %+v", err)
@@ -1473,7 +1473,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
 
 	if err := s.Provide(ctx, root); err != nil {
 		log.Warn(err)
@@ -1624,7 +1624,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
 
-	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects)
+	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
 		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
@@ -2195,7 +2195,7 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 		return fmt.Errorf("failed to get objects for pin: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
+	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects, p.Cid.CID)
 
 	return c.JSON(http.StatusOK, map[string]string{})
 }
@@ -2411,7 +2411,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, cc)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:                 cc.String(),

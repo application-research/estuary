@@ -26,6 +26,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -4529,38 +4530,50 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
+	var aggr []util.Content
+	if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
+		return err
+	}
+
+	var aggrLocs map[string]string
+	for _, child := range aggr {
+		aggrLocs[child.Location] = child.Location
+	}
+
 	var fixedAggregateSize bool
-	if cont.Aggregate && cont.Size == 0 {
-		// if this is an aggregate and its size is zero, then that means we
+	if cont.Aggregate && cont.Size == 0 && cont.Active {
+		// if this is an active aggregate and its size is zero, then that means we
 		// failed at some point while updating the aggregate, we can fix that
-		var children []util.Content
-		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
 
-		nd, err := s.CM.CreateAggregate(ctx, children)
-		if err != nil {
-			return fmt.Errorf("failed to create aggregate: %w", err)
-		}
+		switch len(aggrLocs) {
+		case 0:
+			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+		case 1:
+			var zSize int64
+			for _, zc := range aggr {
+				zSize += zc.Size
+			}
 
-		// just to be safe, put it into the blockstore again
-		if err := s.Node.Blockstore.Put(ctx, nd); err != nil {
-			return err
-		}
+			z := &contentmgr.ContentStagingZone{
+				ZoneOpened: cont.CreatedAt,
+				Contents:   aggr,
+				MinSize:    s.cfg.Content.MinSize,
+				MaxSize:    s.cfg.Content.MaxSize,
+				CurSize:    zSize,
+				User:       cont.UserID,
+				ContID:     cont.ID,
+				Location:   cont.Location,
+			}
 
-		size, err := nd.Size()
-		if err != nil {
-			return err
-		}
+			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+				return err
+			}
+			fixedAggregateSize = true
 
-		// now, update size and cid
-		if err := s.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{CID: nd.Cid()},
-			"size": size,
-		}).Error; err != nil {
-			return err
+		default:
+			// well that sucks, this will need migration
+			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
-		fixedAggregateSize = true
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
@@ -4579,12 +4592,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	if cont.Aggregate && rootFetchErr != nil {
 		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
-		var children []util.Content
-		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
-
-		nd, err := s.CM.CreateAggregate(ctx, children)
+		nd, err := s.CM.CreateAggregate(ctx, aggr)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4598,45 +4606,28 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 	}
 
-	var aggrLocs map[string]int
 	var fixedAggregateLocation bool
 	if c.QueryParam("check-locations") != "" && cont.Aggregate {
 		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
-		var aggr []util.Content
-		if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
-
-		aggrLocs = make(map[string]int)
-		for _, child := range aggr {
-			aggrLocs[child.Location]++
-		}
-
 		switch len(aggrLocs) {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
 			loc := aggr[0].Location
-
 			if loc != cont.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
-				var ids []uint
+				var aggrConts []drpc.AggregateContent
 				for _, c := range aggr {
-					ids = append(ids, c.ID)
+					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
 				}
 
-				dir, err := s.CM.CreateAggregate(ctx, aggr)
-				if err != nil {
-					return err
-				}
-
-				if err := s.CM.SendAggregateCmd(ctx, loc, cont, ids, dir.RawData()); err != nil {
+				if err := s.CM.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true
 			}
 		default:
-			// well that sucks
+			// well that sucks, this will need migration
 			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
 	}
