@@ -120,7 +120,7 @@ type ContentStagingZone struct {
 	User            uint                 `json:"user"`
 	ContID          uint                 `json:"contentID"`
 	Location        string               `json:"location"`
-	IsConsolidating bool                 `json:"is_consolidating"`
+	IsConsolidating bool                 `json:"isConsolidating"`
 	Readiness       stagingZoneReadiness `json:"readiness"`
 	lk              sync.Mutex
 }
