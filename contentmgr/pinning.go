@@ -409,14 +409,14 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 			Size: pincomp.Objects[0].Size,
 		}
 		if err := cm.DB.Create(obj).Error; err != nil {
-			return err
+			return xerrors.Errorf("failed to create Object: %w", err)
 		}
 
 		if err := cm.DB.Create(&util.ObjRef{
 			Content: cont.ID,
 			Object:  obj.ID,
 		}).Error; err != nil {
-			return err
+			return xerrors.Errorf("failed to create Object reference: %w", err)
 		}
 
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
