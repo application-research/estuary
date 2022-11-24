@@ -933,10 +933,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return cm.splitContent(ctx, content, cm.cfg.Content.MaxSize)
 	}
 
-	// check if content has enough deals made for it
-	// if not enough deals, go make more
-	// check all existing deals, ensure they are still active
-	// if not active, repair!
+	// get content deals, if any
 	var deals []model.ContentDeal
 	if err := cm.DB.Find(&deals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -945,14 +942,11 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content) {
-		// Only contents that have no deals and that are not themselves buckets(aggregates) that can be placed in a bucket
-		if len(deals) == 0 && !content.Aggregate {
-			return cm.addContentToStagingZone(ctx, content)
-		}
+	if cm.canStageContent(content, deals) {
+		return cm.addContentToStagingZone(ctx, content)
 	}
 
-	// check on each of the existing deals, see if they need fixing
+	// check on each of the existing deals, see if they any needs fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
 	var wg sync.WaitGroup
@@ -1012,7 +1006,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	// after reconciling content deals,
-	// check If this is a shuttle content and the it's shuttle is online to start data transfer
+	// check If this is a shuttle content and that the shuttle is online and can start data transfer
 	if content.Location != constants.ContentLocationLocal && !cm.ShuttleIsOnline(content.Location) {
 		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
@@ -1024,6 +1018,8 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		replicationFactor = content.Replication
 	}
 
+	// check if content has enough good deals after reconcialiation,
+	// if not enough good deals, go make more
 	goodDeals := numSealed + numPublished + numProgress
 	dealsToBeMade := replicationFactor - goodDeals
 	if dealsToBeMade <= 0 {
@@ -1120,8 +1116,10 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 }
 
-func (cm *ContentManager) canStageContent(cont util.Content) bool {
-	return cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
+// if content has no deals, is not already staged, is below min content size,
+// and staging zone is enabled
+func (cm *ContentManager) canStageContent(cont util.Content, deals []model.ContentDeal) bool {
+	return len(deals) == 0 && !cont.Aggregate && cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
