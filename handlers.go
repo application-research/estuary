@@ -5218,6 +5218,10 @@ func (s *Server) checkNewMiner(ctx context.Context, minfo api.MinerInfo, addr ad
 		return fmt.Errorf("failed to get ask from miner: %w", err)
 	}
 
+	if ask == nil || ask.Ask == nil || ask.Ask.Ask == nil {
+		return fmt.Errorf("miner ask has not been properly set")
+	}
+
 	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
 		return fmt.Errorf("miners verified deal price is not zero")
 	}
