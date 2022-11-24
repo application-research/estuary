@@ -1089,6 +1089,13 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}
 	}
 
+	bserv := blockservice.New(cm.Blockstore, cm.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+	_, err = dserv.Get(ctx, content.Cid.CID)
+	if err != nil {
+		return errors.New("will not make deal as the content is unretrievable")
+	}
+
 	go func() {
 		// make some more deals!
 		cm.log.Debugw("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
