@@ -1089,31 +1089,15 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}
 	}
 
-	// to make sure replicas are distributed, make new deals with miners that currently don't store this content
-	excludedMiners := make(map[address.Address]bool)
-	for _, d := range deals {
-		if d.Failed {
-			// TODO: this is an interesting choice, because it gives miners more chances to try again if they fail.
-			// I think that as we get a more diverse set of stable miners, we can *not* do this.
-			continue
-		}
-		maddr, err := d.MinerAddr()
-		if err != nil {
-			return err
-		}
-		excludedMiners[maddr] = true
-	}
-
 	go func() {
 		// make some more deals!
 		cm.log.Debugw("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
-		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, excludedMiners); err != nil {
+		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, deals); err != nil {
 			cm.log.Errorf("failed to make more deals: %s", err)
 		}
 		done(time.Minute * 10)
 	}()
 	return nil
-
 }
 
 // if content has no deals, is not already staged, is below min content size,
@@ -1635,10 +1619,10 @@ func (cm *ContentManager) repairDeal(d *model.ContentDeal) error {
 	return nil
 }
 
-func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, count int, exclude map[address.Address]bool) error {
+func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, dealsToBeMade int, existingContDeals []model.ContentDeal) error {
 	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
-		attribute.Int("count", count),
+		attribute.Int("count", dealsToBeMade),
 	))
 	defer span.End()
 
@@ -1655,7 +1639,22 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
-	miners, err := cm.minerManager.PickMiners(ctx, count*2, pieceSize.Padded(), exclude, true)
+	// to make sure content replicas are distributed, make new deals with miners that currently don't store this content
+	excludedMiners := make(map[address.Address]bool)
+	for _, d := range existingContDeals {
+		if d.Failed {
+			// TODO: this is an interesting choice, because it gives miners more chances to try again if they fail.
+			// I think that as we get a more diverse set of stable miners, we can *not* do this.
+			continue
+		}
+		maddr, err := d.MinerAddr()
+		if err != nil {
+			return err
+		}
+		excludedMiners[maddr] = true
+	}
+
+	miners, err := cm.minerManager.PickMiners(ctx, dealsToBeMade*2, pieceSize.Padded(), excludedMiners, true)
 	if err != nil {
 		return err
 	}
@@ -1747,7 +1746,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 		}
 
 		readyDeals = append(readyDeals, deal{minerAddr: m.Address, isPushTransfer: isPushTransfer, contentDeal: cd})
-		if len(readyDeals) >= count {
+		if len(readyDeals) >= dealsToBeMade {
 			break
 		}
 	}
@@ -2656,7 +2655,7 @@ func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont
 	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_AggregateContent,
 		Params: drpc.CmdParams{
-			AggregateContents: &drpc.AggregateContents{
+			AggregateContent: &drpc.AggregateContents{
 				DBID:     cont.ID,
 				UserID:   cont.UserID,
 				Contents: aggr,

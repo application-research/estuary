@@ -37,7 +37,7 @@ type CmdParams struct {
 	AddPin                 *AddPin                 `json:",omitempty"`
 	ComputeCommP           *ComputeCommP           `json:",omitempty"`
 	TakeContent            *TakeContent            `json:",omitempty"`
-	AggregateContents      *AggregateContents      `json:",omitempty"`
+	AggregateContent       *AggregateContents      `json:",omitempty"`
 	StartTransfer          *StartTransfer          `json:",omitempty"`
 	PrepareForDataRequest  *PrepareForDataRequest  `json:",omitempty"`
 	CleanupPreparedRequest *CleanupPreparedRequest `json:",omitempty"`

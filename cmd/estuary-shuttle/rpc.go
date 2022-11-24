@@ -47,7 +47,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	case drpc.CMD_TakeContent:
 		return d.handleRpcTakeContent(ctx, cmd.Params.TakeContent)
 	case drpc.CMD_AggregateContent:
-		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContents)
+		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContent)
 	case drpc.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
 	case drpc.CMD_PrepareForDataRequest:
