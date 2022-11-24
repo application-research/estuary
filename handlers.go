@@ -43,6 +43,7 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/crypto"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
@@ -5164,7 +5165,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 
 	if len(sm) == 0 {
 		// This is a new miner, need to run some checks first
-		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
+		if err := s.checkNewMiner(ctx, minfo, cmb.Miner); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]interface{}{
 				"success": false,
 				"error":   err.Error(),
@@ -5190,12 +5191,7 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	})
 }
 
-func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error {
-	minfo, err := s.Api.StateMinerInfo(ctx, addr, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
+func (s *Server) checkNewMiner(ctx context.Context, minfo api.MinerInfo, addr address.Address) error {
 	if minfo.PeerId == nil {
 		return fmt.Errorf("miner has no peer ID set")
 	}
@@ -5207,6 +5203,10 @@ func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error 
 	pow, err := s.Api.StateMinerPower(ctx, addr, types.EmptyTSK)
 	if err != nil {
 		return fmt.Errorf("could not check miners power: %w", err)
+	}
+
+	if pow == nil {
+		return fmt.Errorf("no miner power details were found")
 	}
 
 	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
@@ -5221,7 +5221,6 @@ func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error 
 	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
 		return fmt.Errorf("miners verified deal price is not zero")
 	}
-
 	return nil
 }
 
