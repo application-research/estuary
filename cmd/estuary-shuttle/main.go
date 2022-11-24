@@ -433,7 +433,9 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
+			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
+		})
 		if err != nil {
 			return err
 		}

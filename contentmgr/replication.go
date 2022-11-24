@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	marketv8 "github.com/filecoin-project/go-state-types/builtin/v8/market"
+	marketv9 "github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"go.uber.org/zap"
 
 	"github.com/application-research/estuary/config"
@@ -2035,7 +2035,7 @@ func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *model.Conte
 	return nil
 }
 
-func (cm *ContentManager) putProposalRecord(dealprop *marketv8.ClientDealProposal) (*model.ProposalRecord, error) {
+func (cm *ContentManager) putProposalRecord(dealprop *marketv9.ClientDealProposal) (*model.ProposalRecord, error) {
 	nd, err := cborutil.AsIpld(dealprop)
 	if err != nil {
 		return nil, err
