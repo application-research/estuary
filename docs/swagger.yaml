@@ -552,13 +552,13 @@ paths:
       summary: Create a new bucket
       tags:
         - buckets
-  /buckets/{coluuid}:
+  /buckets/{uuid}:
     delete:
       description: This endpoint is used to delete an existing bucket.
       parameters:
         - description: Bucket ID
           in: path
-          name: coluuid
+          name: uuid
           required: true
           type: string
       responses:
@@ -578,11 +578,11 @@ paths:
       tags:
         - buckets
     get:
-      description: This endpoint is used to get contents in a bucket. If no colpath query param is passed
+      description: This endpoint is used to get contents in a bucket. If no path query param is passed
       parameters:
-        - description: coluuid
+        - description: uuid
           in: path
-          name: coluuid
+          name: uuid
           required: true
           type: string
         - description: Directory
@@ -614,7 +614,7 @@ paths:
       parameters:
         - description: Bucket UUID
           in: path
-          name: coluuid
+          name: uuid
           required: true
           type: string
         - description: Content IDs to add to bucket
@@ -647,13 +647,13 @@ paths:
       summary: Add contents to a bucket
       tags:
         - buckets
-  /buckets/{coluuid}/commit:
+  /buckets/{uuid}/commit:
     post:
       description: This endpoint is used to save the contents in a bucket, producing a top-level CID that references all the current CIDs in the bucket.
       parameters:
-        - description: coluuid
+        - description: uuid
           in: path
-          name: coluuid
+          name: uuid
           required: true
           type: string
       produces:
@@ -674,13 +674,13 @@ paths:
       summary: Produce a CID of the bucket contents
       tags:
         - buckets
-  /buckets/{coluuid}/contents:
+  /buckets/{uuid}/contents:
     delete:
       description: This endpoint is used to delete an existing content from an existing bucket. If two or more files with the same contentid exist in the bucket, delete the one in the specified path
       parameters:
         - description: Bucket ID
           in: path
-          name: coluuid
+          name: uuid
           required: true
           type: string
         - description: Content ID
@@ -710,43 +710,6 @@ paths:
           schema:
             $ref: '#/definitions/util.HttpError'
       summary: Deletes a content from a bucket
-      tags:
-        - buckets
-  /buckets/fs/add:
-    post:
-      description: This endpoint adds a file to a bucket
-      parameters:
-        - description: Bucket ID
-          in: query
-          name: coluuid
-          required: true
-          type: string
-        - description: Content
-          in: query
-          name: content
-          required: true
-          type: string
-        - description: Path to file
-          in: query
-          name: path
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Add a file to a bucket
       tags:
         - buckets
   /content/{id}:
@@ -793,7 +756,7 @@ paths:
           type: string
         - description: Bucket UUID
           in: query
-          name: coluuid
+          name: uuid
           type: string
         - description: Replication value
           in: query

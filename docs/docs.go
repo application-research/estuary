@@ -581,64 +581,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/buckets/fs/add": {
-            "post": {
-                "description": "This endpoint adds a file to a bucket",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "buckets"
-                ],
-                "summary": "Add a file to a bucket",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Bucket ID",
-                        "name": "coluuid",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Content",
-                        "name": "content",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Path to file",
-                        "name": "path",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/buckets/{coluuid}": {
+        "/buckets/{uuid}": {
             "get": {
-                "description": "This endpoint is used to get contents in a bucket. If no colpath query param is passed",
+                "description": "This endpoint is used to get contents in a bucket. If no path query param is passed",
                 "produces": [
                     "application/json"
                 ],
@@ -649,8 +594,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "coluuid",
-                        "name": "coluuid",
+                        "description": "uuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
@@ -698,7 +643,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Bucket UUID",
-                        "name": "coluuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
@@ -752,7 +697,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Bucket ID",
-                        "name": "coluuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     }
@@ -779,7 +724,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/buckets/{coluuid}/commit": {
+        "/buckets/{uuid}/commit": {
             "post": {
                 "description": "This endpoint is used to save the contents in a bucket, producing a top-level CID that references all the current CIDs in the bucket.",
                 "produces": [
@@ -792,8 +737,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "coluuid",
-                        "name": "coluuid",
+                        "description": "uuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     }
@@ -820,7 +765,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/buckets/{coluuid}/contents": {
+        "/buckets/{uuid}/contents": {
             "delete": {
                 "description": "This endpoint is used to delete an existing content from an existing bucket. If two or more files with the same contentid exist in the bucket, delete the one in the specified path",
                 "produces": [
@@ -834,7 +779,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Bucket ID",
-                        "name": "coluuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
@@ -907,7 +852,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Bucket UUID",
-                        "name": "coluuid",
+                        "name": "uuid",
                         "in": "query"
                     },
                     {
