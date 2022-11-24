@@ -37,7 +37,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Debugf("handling rpc message: %s", cmd.Op)
+	log.Debugf("handling rpc message:%s, for shuttle:%s", d.shuttleHandle)
 
 	switch cmd.Op {
 	case drpc.CMD_AddPin:
@@ -73,7 +73,8 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Debugf("sending rpc message: %s", msg.Op)
+	log.Debugf("sending rpc message: %s, from shuttle:%s", msg.Op, msg.Handle)
+
 	select {
 	case d.outgoing <- msg:
 		return nil
