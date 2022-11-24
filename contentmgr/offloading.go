@@ -17,7 +17,7 @@ type offloadCandidate struct {
 	LastAccess time.Time
 }
 
-type collectionResult struct {
+type bucketResult struct {
 	SpaceRequest int64 `json:"spaceRequest"`
 	SpaceFreed   int64 `json:"spaceFreed"`
 
@@ -28,7 +28,7 @@ type collectionResult struct {
 	OffloadError         string             `json:"offloadError,omitempty"`
 }
 
-func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error) {
+func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*bucketResult, error) {
 	ctx, span := cm.tracer.Start(ctx, "clearUnused")
 	defer span.End()
 	// first, gather candidates for removal
@@ -57,7 +57,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 		}
 	}
 
-	result := &collectionResult{
+	result := &bucketResult{
 		SpaceRequest:         spaceRequest,
 		SpaceFreed:           spaceRequest - bytesRemaining,
 		ContentsFreed:        toRemove,

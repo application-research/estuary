@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/application-research/estuary/collections"
+	"github.com/application-research/estuary/buckets"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/miner"
@@ -778,9 +778,9 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// 'manually' add unique composite index on collection fields because gorms syntax for it is tricky
-	if err := db.Exec("create unique index if not exists collection_refs_paths on collection_refs (path,collection)").Error; err != nil {
-		return nil, fmt.Errorf("failed to create collection paths index: %w", err)
+	// 'manually' add unique composite index on bucket fields because gorms syntax for it is tricky
+	if err := db.Exec("create unique index if not exists bucket_refs_paths on bucket_refs (path,bucket)").Error; err != nil {
+		return nil, fmt.Errorf("failed to create bucket paths index: %w", err)
 	}
 
 	var count int64
@@ -802,8 +802,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.Content{},
 		&util.Object{},
 		&util.ObjRef{},
-		&collections.Collection{},
-		&collections.CollectionRef{},
+		&buckets.Bucket{},
+		&buckets.BucketRef{},
 		&model.ContentDeal{},
 		&model.DfeRecord{},
 		&model.PieceCommRecord{},
@@ -839,7 +839,7 @@ type Server struct {
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
-	// since we're reference counting all the content, garbage collection becomes easy
+	// since we're reference counting all the content, garbage bucket becomes easy
 	// its even easier if we don't care that its 'perfect'
 
 	// We can probably even just remove stuff when its references are removed from the database

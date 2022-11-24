@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-func TestIsCollectionOwner(t *testing.T) {
-	require.Nil(t, IsCollectionOwner(290, 290))
-	assert.Equal(t, IsCollectionOwner(1, 2).Error(), "ERR_NOT_AUTHORIZED: User (1) is not authorized for collection (2)")
+func TestIsBucketOwner(t *testing.T) {
+	require.Nil(t, IsBucketOwner(290, 290))
+	assert.Equal(t, IsBucketOwner(1, 2).Error(), "ERR_NOT_AUTHORIZED: User (1) is not authorized for bucket (2)")
 }
 
 func TestIsContentOwner(t *testing.T) {

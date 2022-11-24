@@ -25,13 +25,13 @@ const (
 	Directory
 )
 
-type ContentInCollection struct {
-	CollectionID  string `json:"coluuid"`
-	CollectionDir string `json:"dir"`
+type ContentInBucket struct {
+	BucketID  string `json:"coluuid"`
+	BucketDir string `json:"dir"`
 }
 
 type ContentAddIpfsBody struct {
-	ContentInCollection
+	ContentInBucket
 	Root  string   `json:"root"`
 	Name  string   `json:"filename"`
 	Peers []string `json:"peers"`
@@ -46,7 +46,7 @@ type ContentAddResponse struct {
 }
 
 type ContentCreateBody struct {
-	ContentInCollection
+	ContentInBucket
 
 	Root     string      `json:"root"`
 	Name     string      `json:"name"`
@@ -159,12 +159,12 @@ func removeEmptyStrings(strList []string) []string {
 }
 
 // DirsFromPath splits a path into a list of directories
-func DirsFromPath(collectionPath string, filename string) ([]string, error) {
-	collectionPath = filepath.Clean(collectionPath)
-	if dir, file := filepath.Split(collectionPath); file == filename { // path ends in the filename
-		collectionPath = dir // only keep the part with dirs
+func DirsFromPath(bucketPath string, filename string) ([]string, error) {
+	bucketPath = filepath.Clean(bucketPath)
+	if dir, file := filepath.Split(bucketPath); file == filename { // path ends in the filename
+		bucketPath = dir // only keep the part with dirs
 	}
-	dirs := strings.Split(collectionPath, "/")
+	dirs := strings.Split(bucketPath, "/")
 	dirs = removeEmptyStrings(dirs)
 	return dirs, nil
 }

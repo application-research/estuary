@@ -1,6 +1,6 @@
 # Estuary Chaos Tests
 
-Collection of shell scripts to perform several estuary API chaos tests
+Bucket of shell scripts to perform several estuary API chaos tests
 
 Here are the available test scripts
 - Adding large content on a list of shuttles.

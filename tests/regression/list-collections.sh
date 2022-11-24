@@ -1,8 +1,8 @@
 #!/bin/bash
 
 ###################################################################
-#Script Name	  : list-collection.sh                                                                                             
-#Description	  : This is a script to list all collections.
+#Script Name	  : list-bucket.sh                                                                                             
+#Description	  : This is a script to list all buckets.
 #Author         : ARG
 #Email          : 
 ###################################################################
@@ -15,10 +15,10 @@ echo '#####################################'
 echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
-name="Sample Collection"
-description="This is a sample collection"
+name="Sample Bucket"
+description="This is a sample bucket"
 
 echo $data
 
 set -x
-curl --trace - --trace-time --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/collections/list
+curl --trace - --trace-time --progress-bar -X GET -H "Authorization: Bearer $ESTUARY_TOKEN" -H "Content-Type: application/json" -d "$data" $EST_API_HOST/buckets/list
