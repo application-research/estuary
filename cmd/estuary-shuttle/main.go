@@ -434,7 +434,7 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
+		filc, err := filclient.NewClientWithConfig(config.FilclientConfig(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir, cfg.Node.Libp2pThrottleLimit))
 		if err != nil {
 			return err
 		}

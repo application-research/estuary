@@ -160,6 +160,7 @@ func NewShuttle(appVersion string) *Shuttle {
 				LowWater:  2000,
 				HighWater: 3000,
 			},
+			Libp2pThrottleLimit: 10,
 		},
 
 		EstuaryRemote: EstuaryRemote{

@@ -181,6 +181,7 @@ func NewEstuary(appVersion string) *Estuary {
 				LowWater:  2000,
 				HighWater: 3000,
 			},
+			Libp2pThrottleLimit: 10,
 		},
 		RPCMessage: RPCMessage{
 			IncomingQueueSize: 100000,

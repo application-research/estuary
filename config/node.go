@@ -22,6 +22,7 @@ type Node struct {
 	DatastoreDir              string                   `json:"datastore_dir"`
 	WalletDir                 string                   `json:"wallet_dir"`
 	ApiURL                    string                   `json:"api_url"`
+	Libp2pThrottleLimit       uint                     `json:"libp2p_http_server_throttle_limit"`
 	Bitswap                   Bitswap                  `json:"bitswap"`
 	Limits                    rcmgr.ScalingLimitConfig `json:"limits"`
 	ConnectionManager         ConnectionManager        `json:"connection_manager"`

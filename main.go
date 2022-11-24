@@ -658,7 +658,7 @@ func main() {
 			})
 		}
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		fc, err := filclient.NewClientWithConfig(config.FilclientConfig(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, cfg.Node.Libp2pThrottleLimit))
 		if err != nil {
 			return err
 		}
