@@ -71,7 +71,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, err error) {
 	// send - tell estuary about a bad block on this shuttle
-	s.sendRpcMessage(context.TODO(), &drpc.Message{
+	if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
 		Op: drpc.OP_SanityCheck,
 		Params: drpc.MsgParams{
 			SanityCheck: &drpc.SanityCheck{
@@ -79,7 +79,10 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, err error) {
 				Err: err,
 			},
 		},
-	})
+	}); err != nil {
+		log.Errorf("failed to send sanity check: %s", err)
+	}
+
 	//mark shuttle content?
 }
 
