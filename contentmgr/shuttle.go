@@ -220,6 +220,13 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			cm.log.Errorf("handling split complete message from shuttle %s: %s", handle, err)
 		}
 		return nil
+	case drpc.OP_SanityCheck:
+		sc := msg.Params.SanityCheck
+		if sc == nil {
+			return ErrNilParams
+		}
+		cm.HandleSanityCheck(sc.CID, sc.Err)
+		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
 	}
