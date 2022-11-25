@@ -3729,7 +3729,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get contents in a collection. If no colpath query param is passed
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  []collectionListResponse
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        coluuid  path      string  true   "coluuid"
