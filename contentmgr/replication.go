@@ -923,6 +923,17 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	// if content is offloaded, do not proceed - since it needs the blocks for commp and data transfer
+	if content.Offloaded {
+		go func() {
+			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
+				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
+			}
+			done(time.Second * 30)
+		}()
+		return nil
+	}
+
 	// If this content is already scheduled to be aggregated and is waiting in a bucket
 	if cm.contentInStagingZone(ctx, content) {
 		return nil
@@ -1052,16 +1063,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			} else {
 				done(time.Second * 10)
 			}
-		}()
-		return nil
-	}
-
-	if content.Offloaded {
-		go func() {
-			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
-				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
-			}
-			done(time.Second * 30)
 		}()
 		return nil
 	}
