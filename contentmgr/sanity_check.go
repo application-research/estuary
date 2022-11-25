@@ -7,7 +7,6 @@ import (
 
 func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, err error) {
 	// get a contents affected by this missing block
-	// Todo - use group for query
 	var cnts []util.Content
 	where := "id in (select content from obj_refs where object = (select id from objects where cid = ?))"
 	if err := cm.DB.Find(&cnts, where, cc.Bytes()).Error; err != nil {
@@ -16,10 +15,14 @@ func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, err error) {
 	}
 
 	// mark all contents affected by this missing block
+	var marks map[uint]bool
 	for _, cnt := range cnts {
-		if err := cm.DB.Model(&util.Content{}).Where("id = ?", cnt.ID).Update("failed_sanity_check", true).Error; err != nil {
-			cm.log.Errorf("sanity check failed to mark content: %d, err: %w", cnt.ID, err)
-			return
+		if _, ok := marks[cnt.ID]; !ok {
+			if err := cm.DB.Model(&util.Content{}).Where("id = ?", cnt.ID).Update("failed_sanity_check", true).Error; err != nil {
+				cm.log.Errorf("sanity check failed to mark content: %d, err: %w", cnt.ID, err)
+				return
+			}
+			marks[cnt.ID] = true
 		}
 	}
 }
