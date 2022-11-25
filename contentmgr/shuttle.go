@@ -1,4 +1,4 @@
-package main
+package contentmgr
 
 import (
 	"context"
@@ -12,43 +12,29 @@ import (
 	"gorm.io/gorm/clause"
 
 	"github.com/application-research/estuary/constants"
-	drpc "github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/drpc"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-type Shuttle struct {
-	gorm.Model
-	Handle         string `gorm:"unique"`
-	Token          string
-	Host           string
-	PeerID         string
-	LastConnection time.Time
-	Private        bool
-	Open           bool
-	Priority       int
-}
-
 type ShuttleConnection struct {
-	handle string
-	cmds   chan *drpc.Command
-	ctx    context.Context
-
-	hostname string
-	addrInfo peer.AddrInfo
-	address  address.Address
-
+	Handle                string
+	cmds                  chan *drpc.Command
+	ctx                   context.Context
+	Hostname              string
+	addrInfo              peer.AddrInfo
+	address               address.Address
 	private               bool
 	ContentAddingDisabled bool
-
-	spaceLow       bool
-	blockstoreSize uint64
-	blockstoreFree uint64
-	pinCount       int64
-	pinQueueLength int64
+	spaceLow              bool
+	blockstoreSize        uint64
+	blockstoreFree        uint64
+	pinCount              int64
+	pinQueueLength        int64
 }
 
 func (sc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
@@ -62,22 +48,22 @@ func (sc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command)
 	}
 }
 
-func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	_, ok := cm.shuttles[handle]
+func (cm *ContentManager) RegisterShuttleConnection(handle string, hello *drpc.Hello) (chan *drpc.Command, func(), error) {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	_, ok := cm.Shuttles[handle]
 	if ok {
-		log.Warn("registering shuttle but found existing connection")
+		cm.log.Warn("registering shuttle but found existing connection")
 		return nil, nil, fmt.Errorf("shuttle already connected")
 	}
 
 	_, err := url.Parse(hello.Host)
 	if err != nil {
-		log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
+		cm.log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
 		hello.Host = ""
 	}
 
-	if err := cm.DB.Model(Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
+	if err := cm.DB.Model(model.Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
 		"host":            hello.Host,
 		"peer_id":         hello.AddrInfo.ID.String(),
 		"last_connection": time.Now(),
@@ -89,34 +75,34 @@ func (cm *ContentManager) registerShuttleConnection(handle string, hello *drpc.H
 	ctx, cancel := context.WithCancel(context.Background())
 
 	sc := &ShuttleConnection{
-		handle:                handle,
+		Handle:                handle,
 		address:               hello.Address,
 		addrInfo:              hello.AddrInfo,
-		hostname:              hello.Host,
+		Hostname:              hello.Host,
 		cmds:                  make(chan *drpc.Command, cm.cfg.RPCMessage.OutgoingQueueSize),
 		ctx:                   ctx,
 		private:               hello.Private,
 		ContentAddingDisabled: hello.ContentAddingDisabled,
 	}
 
-	cm.shuttles[handle] = sc
+	cm.Shuttles[handle] = sc
 
 	return sc.cmds, func() {
 		cancel()
-		cm.shuttlesLk.Lock()
-		outd, ok := cm.shuttles[handle]
+		cm.ShuttlesLk.Lock()
+		outd, ok := cm.Shuttles[handle]
 		if ok {
 			if outd == sc {
-				delete(cm.shuttles, handle)
+				delete(cm.Shuttles, handle)
 			}
 		}
-		cm.shuttlesLk.Unlock()
+		cm.ShuttlesLk.Unlock()
 	}, nil
 }
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
-func (cm *ContentManager) handleShuttleMessages(ctx context.Context, numHandlers int) {
+func (cm *ContentManager) HandleShuttleMessages(ctx context.Context, numHandlers int) {
 	for i := 1; i <= numHandlers; i++ {
 		go func() {
 			for {
@@ -125,7 +111,7 @@ func (cm *ContentManager) handleShuttleMessages(ctx context.Context, numHandlers
 					return
 				case msg := <-cm.IncomingRPCMessages:
 					if err := cm.processShuttleMessage(msg.Handle, msg); err != nil {
-						log.Errorf("failed to process message from shuttle: %s", err)
+						cm.log.Errorf("failed to process message from shuttle: %s", err)
 					}
 				}
 			}
@@ -145,7 +131,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
-	log.Debugf("handling shuttle message: %s", msg.Op)
+	cm.log.Debugf("handling rpc message:%s, from shuttle:%s", msg.Op, handle)
 
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
@@ -161,7 +147,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handlePinningComplete(ctx, handle, param); err != nil {
-			log.Errorw("handling pin complete message failed", "shuttle", handle, "err", err)
+			cm.log.Errorw("handling pin complete message failed", "shuttle", handle, "err", err)
 		}
 		return nil
 	case drpc.OP_CommPComplete:
@@ -171,7 +157,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcCommPComplete(ctx, handle, param); err != nil {
-			log.Errorf("handling commp complete message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling commp complete message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_TransferStarted:
@@ -181,7 +167,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcTransferStarted(ctx, handle, param); err != nil {
-			log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_TransferFinished:
@@ -191,7 +177,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcTransferFinished(ctx, handle, param); err != nil {
-			log.Errorf("handling transfer finished message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling transfer finished message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_TransferStatus:
@@ -200,8 +186,8 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcTransferStatus(ctx, handle, param); err != nil {
-			log.Errorf("handling transfer status message from shuttle %s: %s", handle, err)
+		if err := cm.HandleRpcTransferStatus(ctx, handle, param); err != nil {
+			cm.log.Errorf("handling transfer status message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_ShuttleUpdate:
@@ -211,7 +197,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcShuttleUpdate(ctx, handle, param); err != nil {
-			log.Errorf("handling shuttle update message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling shuttle update message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_GarbageCheck:
@@ -221,7 +207,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcGarbageCheck(ctx, handle, param); err != nil {
-			log.Errorf("handling garbage check message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling garbage check message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	case drpc.OP_SplitComplete:
@@ -231,7 +217,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		}
 
 		if err := cm.handleRpcSplitComplete(ctx, handle, param); err != nil {
-			log.Errorf("handling split complete message from shuttle %s: %s", handle, err)
+			cm.log.Errorf("handling split complete message from shuttle %s: %s", handle, err)
 		}
 		return nil
 	default:
@@ -241,24 +227,26 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 
 var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
-func (cm *ContentManager) sendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
+func (cm *ContentManager) SendShuttleCommand(ctx context.Context, handle string, cmd *drpc.Command) error {
 	if handle == "" {
 		return fmt.Errorf("attempted to send command to empty shuttle handle")
 	}
 
-	cm.shuttlesLk.Lock()
-	d, ok := cm.shuttles[handle]
-	cm.shuttlesLk.Unlock()
+	cm.log.Debugf("sending rpc message:%s, to shuttle:%s", cmd.Op, handle)
+
+	cm.ShuttlesLk.Lock()
+	d, ok := cm.Shuttles[handle]
+	cm.ShuttlesLk.Unlock()
 	if ok {
 		return d.sendMessage(ctx, cmd)
 	}
 	return ErrNoShuttleConnection
 }
 
-func (cm *ContentManager) shuttleIsOnline(handle string) bool {
-	cm.shuttlesLk.Lock()
-	sc, ok := cm.shuttles[handle]
-	cm.shuttlesLk.Unlock()
+func (cm *ContentManager) ShuttleIsOnline(handle string) bool {
+	cm.ShuttlesLk.Lock()
+	sc, ok := cm.Shuttles[handle]
+	cm.ShuttlesLk.Unlock()
 	if !ok {
 		return false
 	}
@@ -271,40 +259,40 @@ func (cm *ContentManager) shuttleIsOnline(handle string) bool {
 	}
 }
 
-func (cm *ContentManager) shuttleCanAddContent(handle string) bool {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleCanAddContent(handle string) bool {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if ok {
 		return d.ContentAddingDisabled
 	}
 	return true
 }
 
-func (cm *ContentManager) shuttleAddrInfo(handle string) *peer.AddrInfo {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleAddrInfo(handle string) *peer.AddrInfo {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if ok {
 		return &d.addrInfo
 	}
 	return nil
 }
 
-func (cm *ContentManager) shuttleHostName(handle string) string {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleHostName(handle string) string {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if ok {
-		return d.hostname
+		return d.Hostname
 	}
 	return ""
 }
 
-func (cm *ContentManager) shuttleStorageStats(handle string) *util.ShuttleStorageStats {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+func (cm *ContentManager) ShuttleStorageStats(handle string) *util.ShuttleStorageStats {
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if !ok {
 		return nil
 	}
@@ -321,7 +309,7 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 	_, span := cm.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()
 
-	opcr := PieceCommRecord{
+	opcr := model.PieceCommRecord{
 		Data:    util.DbCID{CID: resp.Data},
 		Piece:   util.DbCID{CID: resp.CommP},
 		Size:    resp.Size,
@@ -335,7 +323,7 @@ func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle s
 	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, true); err != nil {
 		return err
 	}
-	log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	cm.log.Debugw("Started data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
@@ -343,24 +331,22 @@ func (cm *ContentManager) handleRpcTransferFinished(ctx context.Context, handle 
 	if err := cm.SetDataTransferStartedOrFinished(ctx, param.DealDBID, param.Chanid, param.State, false); err != nil {
 		return err
 	}
-	log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
+	cm.log.Debugw("Finished data transfer on shuttle", "chanid", param.Chanid, "shuttle", handle)
 	return nil
 }
 
-func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
-	log.Debugf("handling transfer status rpc update: %d %v", param.DealDBID, param.State == nil)
-
+func (cm *ContentManager) HandleRpcTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
 	if param.DealDBID == 0 {
 		return fmt.Errorf("received transfer status update with no identifier")
 	}
 
-	var cd contentDeal
+	var cd model.ContentDeal
 	if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
 		return err
 	}
 
 	if cd.DTChan == "" {
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
 			"dt_chan": param.Chanid,
 		}).Error; err != nil {
 			return err
@@ -386,7 +372,7 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		if err := cm.DB.Model(contentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 			"failed":    true,
 			"failed_at": time.Now(),
 		}).Error; err != nil {
@@ -412,14 +398,14 @@ func (cm *ContentManager) handleRpcTransferStatus(ctx context.Context, handle st
 }
 
 func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *drpc.ShuttleUpdate) error {
-	cm.shuttlesLk.Lock()
-	defer cm.shuttlesLk.Unlock()
-	d, ok := cm.shuttles[handle]
+	cm.ShuttlesLk.Lock()
+	defer cm.ShuttlesLk.Unlock()
+	d, ok := cm.Shuttles[handle]
 	if !ok {
 		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
 	}
 
-	d.spaceLow = (param.BlockstoreFree < (param.BlockstoreSize / 10))
+	d.spaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
 	d.blockstoreFree = param.BlockstoreFree
 	d.blockstoreSize = param.BlockstoreSize
 	d.pinCount = param.NumPins
@@ -444,7 +430,6 @@ func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle stri
 			tounpin = append(tounpin, c)
 		}
 	}
-
 	return cm.sendUnpinCmd(ctx, handle, tounpin)
 }
 

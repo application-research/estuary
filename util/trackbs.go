@@ -1,13 +1,13 @@
-package main
+package util
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	ipld "github.com/ipfs/go-ipld-format"
 	"time"
 
-	"github.com/application-research/estuary/util"
+	ipld "github.com/ipfs/go-ipld-format"
+
 	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -16,12 +16,9 @@ import (
 )
 
 type TrackingBlockstore struct {
-	bs blockstore.Blockstore
-
-	db *gorm.DB
-
-	cidReq func(context.Context, cid.Cid) (blocks.Block, error)
-
+	bs        blockstore.Blockstore
+	db        *gorm.DB
+	cidReq    func(context.Context, cid.Cid) (blocks.Block, error)
 	buffer    map[cid.Cid]accesses
 	getCh     chan cid.Cid
 	hasCh     chan cid.Cid
@@ -56,7 +53,7 @@ func NewTrackingBlockstore(bs blockstore.Blockstore, db *gorm.DB) *TrackingBlock
 	return tbs
 }
 
-var _ (blockstore.Blockstore) = (*TrackingBlockstore)(nil)
+var _ blockstore.Blockstore = (*TrackingBlockstore)(nil)
 
 func (tbs *TrackingBlockstore) SetCidReqFunc(f func(context.Context, cid.Cid) (blocks.Block, error)) {
 	tbs.cidReq = f
@@ -67,11 +64,11 @@ func (tbs *TrackingBlockstore) Under() blockstore.Blockstore {
 }
 
 type getCountsReq struct {
-	req  []util.Object
+	req  []Object
 	resp chan []int
 }
 
-func (tbs *TrackingBlockstore) GetCounts(objects []util.Object) ([]int, error) {
+func (tbs *TrackingBlockstore) GetCounts(objects []Object) ([]int, error) {
 	req := getCountsReq{
 		req:  objects,
 		resp: make(chan []int),
@@ -118,7 +115,7 @@ func (tbs *TrackingBlockstore) coalescer() {
 func (tbs *TrackingBlockstore) persistAccessCounts(buf map[cid.Cid]accesses) {
 	for c, acc := range buf {
 		if acc.Get > 0 {
-			err := tbs.db.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
+			err := tbs.db.Model(&Object{}).Where("cid = ?", c.Bytes()).Updates(map[string]interface{}{
 				"reads":       gorm.Expr("reads + ?", acc.Get),
 				"last_access": acc.Last,
 			}).Error
@@ -166,7 +163,7 @@ func (tbs *TrackingBlockstore) Get(ctx context.Context, c cid.Cid) (blocks.Block
 	blk, err := tbs.bs.Get(ctx, c)
 	if err != nil {
 		if ipld.IsNotFound(err) {
-			var obj util.Object
+			var obj Object
 			if dberr := tbs.db.First(&obj, "where cid = ?", c.Bytes()).Error; dberr != nil {
 				if xerrors.Is(dberr, gorm.ErrRecordNotFound) {
 					// explicitly return original error

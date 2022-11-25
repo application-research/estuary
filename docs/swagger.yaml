@@ -133,6 +133,8 @@ definitions:
     properties:
       cid:
         type: string
+      estuary_retrieval_url:
+        type: string
       estuaryId:
         type: integer
       providers:
@@ -232,6 +234,52 @@ paths:
       summary: List autoretrieve servers
       tags:
         - autoretrieve
+  /admin/invites:
+    get:
+      description: This endpoint is used to list all estuary invites.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get Estuary invites
+      tags:
+        - content
+    post:
+      description: This endpoint is used to create an estuary invite.
+      parameters:
+        - description: Invite code to be created
+          in: path
+          name: code
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Create an Estuary invite
+      tags:
+        - content
   /admin/peering/peers:
     delete:
       description: This endpoint can be used to remove a Peer from the Peering Service
@@ -456,9 +504,7 @@ paths:
           description: OK
           schema:
             items:
-              items:
-                $ref: '#/definitions/collections.Collection'
-              type: array
+              $ref: '#/definitions/collections.Collection'
             type: array
         "400":
           description: Bad Request
@@ -566,7 +612,7 @@ paths:
         - application/json
       description: This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
       parameters:
-        - description: coluuid
+        - description: Collection UUID
           in: path
           name: coluuid
           required: true
@@ -579,6 +625,10 @@ paths:
             items:
               type: integer
             type: array
+        - description: Directory
+          in: query
+          name: dir
+          type: string
       produces:
         - application/json
       responses:
@@ -737,7 +787,7 @@ paths:
           name: data
           required: true
           type: file
-        - description: Filenam to use for upload
+        - description: Filename to use for upload
           in: formData
           name: filename
           type: string
@@ -803,7 +853,7 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/util.ContentAddResponse'
         "400":
           description: Bad Request
           schema:
@@ -1508,6 +1558,33 @@ paths:
       summary: Get Deal Status
       tags:
         - deals
+  /get/{cid}:
+    get:
+      description: This endpoint returns the content associated with a CID
+      parameters:
+        - description: Cid
+          in: path
+          name: cid
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "307":
+          description: Temporary Redirect
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get Full Content by Cid
+      tags:
+        - public
   /net/addrs:
     get:
       description: This endpoint is used to get net addrs
@@ -1551,6 +1628,8 @@ paths:
       tags:
         - pinning
     post:
+      consumes:
+        - application/json
       description: This endpoint adds a pin to the IPFS daemon.
       parameters:
         - description: Pin Body {cid:cid, name:name}
@@ -1621,6 +1700,8 @@ paths:
       tags:
         - pinning
     post:
+      consumes:
+        - application/json
       description: This endpoint replaces a pinned object.
       parameters:
         - description: Pin ID
@@ -1669,7 +1750,7 @@ paths:
         - pinning
   /public/by-cid/{cid}:
     get:
-      description: This endpoint returns the content associated with a CID
+      description: This endpoint returns the content record associated with a CID
       parameters:
         - description: Cid
           in: path
@@ -1964,9 +2045,7 @@ paths:
           description: OK
           schema:
             items:
-              items:
-                $ref: '#/definitions/main.getApiKeysResp'
-              type: array
+              $ref: '#/definitions/main.getApiKeysResp'
             type: array
         "400":
           description: Bad Request
@@ -2066,7 +2145,7 @@ paths:
         - User
   /user/stats:
     get:
-      description: This endpoint is used to create API keys for a user.
+      description: This endpoint is used to geet stats for the current user.
       produces:
         - application/json
       responses:
@@ -2082,7 +2161,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Create API keys for a user
+      summary: Get stats for the current user
       tags:
         - User
 swagger: "2.0"

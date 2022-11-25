@@ -4,6 +4,9 @@ import (
 	"errors"
 	"path/filepath"
 
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 )
 
@@ -82,6 +85,8 @@ func NewShuttle(appVersion string) *Shuttle {
 
 		Content: Content{
 			DisableLocalAdding: false,
+			MaxSize:            constants.MaxDealContentSize,
+			MinSize:            constants.MinDealContentSize,
 		},
 
 		Jaeger: Jaeger{
@@ -116,38 +121,46 @@ func NewShuttle(appVersion string) *Shuttle {
 			},
 
 			NoLimiter: true,
-			Limits: Limits{
-				SystemLimit: SystemLimit{
-					MinMemory:      1 << 30,
-					MaxMemory:      10 << 30,
-					MemoryFraction: .2,
-
+			Limits: rcmgr.ScalingLimitConfig{
+				SystemBaseLimit: rcmgr.BaseLimit{
+					Memory:          10 << 30,
 					StreamsInbound:  64 << 10,
 					StreamsOutbound: 128 << 10,
 					Streams:         256 << 10,
-
-					ConnsInbound:  256,
-					ConnsOutbound: 256,
-					Conns:         1024,
-
-					FD: 8192,
+					ConnsInbound:    256,
+					ConnsOutbound:   256,
+					Conns:           1024,
+					FD:              8192,
 				},
-				TransientLimit: TransientLimit{
+				TransientBaseLimit: rcmgr.BaseLimit{
+					Memory:          4096,
 					StreamsInbound:  2 << 10,
 					StreamsOutbound: 4 << 10,
 					Streams:         4 << 10,
-
-					ConnsInbound:  256,
-					ConnsOutbound: 256,
-					Conns:         512,
-
-					FD: 1024,
+					ConnsInbound:    256,
+					ConnsOutbound:   256,
+					Conns:           512,
+					FD:              1024,
+				},
+				// TODO: remove after https://github.com/libp2p/go-libp2p/pull/1878 is released
+				ServicePeerBaseLimit: rcmgr.BaseLimit{
+					StreamsInbound:  128,
+					StreamsOutbound: 256,
+					Streams:         256,
+					Memory:          16 << 20,
+				},
+				ServicePeerLimitIncrease: rcmgr.BaseLimitIncrease{
+					StreamsInbound:  4,
+					StreamsOutbound: 8,
+					Streams:         8,
+					Memory:          4 << 20,
 				},
 			},
 			ConnectionManager: ConnectionManager{
 				LowWater:  2000,
 				HighWater: 3000,
 			},
+			Libp2pThrottleLimit: 100,
 		},
 
 		EstuaryRemote: EstuaryRemote{

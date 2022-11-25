@@ -15,7 +15,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -209,8 +209,7 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 	if pm.pinQueue.Length() == 0 {
 		return nil // no content in queue
 	}
-
-	var minCount int = 10000
+	var minCount = 10000
 	var user uint
 	success := false
 	//if user id = 0 has any pins to work on, use that
@@ -378,38 +377,28 @@ func (pm *PinManager) Run(workers int) {
 
 	var next *PinningOperation
 
-	var send chan *PinningOperation
-
+	pm.pinQueueLk.Lock()
 	next = pm.popNextPinOp()
-	if next != nil {
-		send = pm.pinQueueOut
-	}
+	pm.pinQueueLk.Unlock()
 
 	for {
 		select {
 		case op := <-pm.pinQueueIn:
 			if next == nil {
 				next = op
-				send = pm.pinQueueOut
 			} else {
 				pm.pinQueueLk.Lock()
 				pm.enqueuePinOp(op)
 				pm.pinQueueLk.Unlock()
 			}
-		case send <- next:
+		case pm.pinQueueOut <- next:
 			pm.pinQueueLk.Lock()
 			next = pm.popNextPinOp()
-			if next == nil {
-				send = nil
-			}
 			pm.pinQueueLk.Unlock()
 		case <-pm.pinComplete:
 			pm.pinQueueLk.Lock()
 			if next == nil {
 				next = pm.popNextPinOp()
-				if next != nil {
-					send = pm.pinQueueOut
-				}
 			}
 			pm.pinQueueLk.Unlock()
 		}
@@ -418,9 +407,11 @@ func (pm *PinManager) Run(workers int) {
 
 func (pm *PinManager) pinWorker() {
 	for op := range pm.pinQueueOut {
-		if err := pm.doPinning(op); err != nil {
-			log.Errorf("pinning queue error: %+v", err)
+		if op != nil {
+			if err := pm.doPinning(op); err != nil {
+				log.Errorf("pinning queue error: %+v", err)
+			}
+			pm.pinComplete <- op
 		}
-		pm.pinComplete <- op
 	}
 }
