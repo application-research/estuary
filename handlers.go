@@ -27,6 +27,7 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/contentmgr"
+	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -41,11 +42,7 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/crypto"
-	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
@@ -2144,7 +2141,6 @@ func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, stats)
 }
 
@@ -2156,44 +2152,21 @@ func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, sml)
 }
 
-type minerSetInfoParams struct {
-	Name string `json:"name"`
-}
-
 func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var sm model.StorageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
-		return err
-	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	var params minerSetInfoParams
+	var params miner.MinerSetInfoParams
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
 
-	if err := s.DB.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+	if err := s.minerManager.SetMinerInfo(m, params, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
@@ -2205,52 +2178,26 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-type suspendMinerBody struct {
-	Reason string `json:"reason"`
-}
+type emptyResp struct{}
 
 func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
+	var body miner.SuspendMinerBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var sm model.StorageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
+	if err := s.minerManager.SuspendMiner(m, body, u); err != nil {
 		return err
 	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	var body suspendMinerBody
-	if err := c.Bind(&body); err != nil {
-		return err
-	}
-
-	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
-		"suspended":        true,
-		"suspended_reason": body.Reason,
-	}).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
@@ -2259,30 +2206,10 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var sm model.StorageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
+	if err := s.minerManager.UnSuspendMiner(m, u); err != nil {
 		return err
 	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	if err := s.DB.Model(&model.StorageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -2292,7 +2219,6 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 	}
 
 	name := c.QueryParam("name")
-
 	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
@@ -5111,121 +5037,26 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	})
 }
 
-type claimMinerBody struct {
-	Miner address.Address `json:"miner"`
-	Claim string          `json:"claim"`
-	Name  string          `json:"name"`
+type claimResponse struct {
+	Success bool `json:"success"`
 }
 
 func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
-	var cmb claimMinerBody
+	var cmb miner.ClaimMinerBody
 	if err := c.Bind(&cmb); err != nil {
 		return err
 	}
 
-	var sm []model.StorageMiner
-	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
+	if err := s.minerManager.ClaimMiner(ctx, cmb, u); err != nil {
 		return err
 	}
-
-	minfo, err := s.Api.StateMinerInfo(ctx, cmb.Miner, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
-	acckey, err := s.Api.StateAccountKey(ctx, minfo.Worker, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
-	sigb, err := hex.DecodeString(cmb.Claim)
-	if err != nil {
-		return err
-	}
-
-	if len(sigb) < 2 {
-		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_INVALID_INPUT,
-		}
-	}
-
-	sig := &crypto.Signature{
-		Type: crypto.SigType(sigb[0]),
-		Data: sigb[1:],
-	}
-
-	msg := s.msgForMinerClaim(cmb.Miner, u.ID)
-
-	if err := sigs.Verify(sig, acckey, msg); err != nil {
-		return err
-	}
-
-	if len(sm) == 0 {
-		// This is a new miner, need to run some checks first
-		if err := s.checkNewMiner(ctx, minfo, cmb.Miner); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			})
-		}
-
-		if err := s.DB.Create(&model.StorageMiner{
-			Address: util.DbAddr{Addr: cmb.Miner},
-			Name:    cmb.Name,
-			Owner:   u.ID,
-		}).Error; err != nil {
-			return err
-		}
-
-	} else {
-		if err := s.DB.Model(model.StorageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
-			return err
-		}
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success": true,
-	})
+	return c.JSON(http.StatusOK, claimResponse{Success: true})
 }
 
-func (s *Server) checkNewMiner(ctx context.Context, minfo api.MinerInfo, addr address.Address) error {
-	if minfo.PeerId == nil {
-		return fmt.Errorf("miner has no peer ID set")
-	}
-
-	if len(minfo.Multiaddrs) == 0 {
-		return fmt.Errorf("miner has no addresses set on chain")
-	}
-
-	pow, err := s.Api.StateMinerPower(ctx, addr, types.EmptyTSK)
-	if err != nil {
-		return fmt.Errorf("could not check miners power: %w", err)
-	}
-
-	if pow == nil {
-		return fmt.Errorf("no miner power details were found")
-	}
-
-	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
-		return fmt.Errorf("miner must have at least 1TiB of power to be considered by estuary")
-	}
-
-	ask, err := s.FilClient.GetAsk(ctx, addr)
-	if err != nil {
-		return fmt.Errorf("failed to get ask from miner: %w", err)
-	}
-
-	if ask == nil || ask.Ask == nil || ask.Ask.Ask == nil {
-		return fmt.Errorf("miner ask has not been properly set")
-	}
-
-	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
-		return fmt.Errorf("miners verified deal price is not zero")
-	}
-	return nil
+type claimMsgResponse struct {
+	Hexmsg string `json:"hexmsg"`
 }
 
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
@@ -5234,13 +5065,9 @@ func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error 
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{
-		"hexmsg": hex.EncodeToString(s.msgForMinerClaim(m, u.ID)),
+	return c.JSON(http.StatusOK, claimMsgResponse{
+		Hexmsg: hex.EncodeToString(s.minerManager.GetMsgForMinerClaim(m, u.ID)),
 	})
-}
-
-func (s *Server) msgForMinerClaim(miner address.Address, uid uint) []byte {
-	return []byte(fmt.Sprintf("---- user %d owns miner %s ----", uid, miner))
 }
 
 type progressResponse struct {

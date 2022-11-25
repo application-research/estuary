@@ -10,9 +10,11 @@ import (
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p-core/protocol"
@@ -29,6 +31,11 @@ type IMinerManager interface {
 	ComputeSortedMinerList() ([]*minerDealStats, error)
 	SortedMinerList() ([]address.Address, []*minerDealStats, error)
 	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error)
+	SetMinerInfo(m address.Address, params MinerSetInfoParams, u *util.User) error
+	GetMsgForMinerClaim(miner address.Address, uid uint) []byte
+	ClaimMiner(ctx context.Context, params ClaimMinerBody, u *util.User) error
+	SuspendMiner(m address.Address, params SuspendMinerBody, u *util.User) error
+	UnSuspendMiner(m address.Address, u *util.User) error
 }
 
 type MinerManager struct {
@@ -37,19 +44,20 @@ type MinerManager struct {
 	sortedMiners []address.Address
 	rawData      []*minerDealStats
 	lastComputed time.Time
-
-	DB        *gorm.DB
-	FilClient *filclient.FilClient
-	cfg       *config.Estuary
-	tracer    trace.Tracer
+	db           *gorm.DB
+	filClient    *filclient.FilClient
+	cfg          *config.Estuary
+	tracer       trace.Tracer
+	api          api.Gateway
 }
 
-func NewMinerManager(db *gorm.DB, fc *filclient.FilClient, cfg *config.Estuary) IMinerManager {
+func NewMinerManager(db *gorm.DB, fc *filclient.FilClient, cfg *config.Estuary, api api.Gateway) IMinerManager {
 	return &MinerManager{
-		DB:        db,
-		FilClient: fc,
+		db:        db,
+		filClient: fc,
 		cfg:       cfg,
 		tracer:    otel.Tracer("miner_manager"),
+		api:       api,
 	}
 }
 
@@ -58,13 +66,13 @@ type estimateResponse struct {
 	Asks  []*model.MinerStorageAsk
 }
 
-func (mgr *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
-	ctx, span := mgr.tracer.Start(ctx, "estimatePrice", trace.WithAttributes(
+func (mm *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize abi.PaddedPieceSize, duration abi.ChainEpoch, verified bool) (*estimateResponse, error) {
+	ctx, span := mm.tracer.Start(ctx, "estimatePrice", trace.WithAttributes(
 		attribute.Int("replication", repl),
 	))
 	defer span.End()
 
-	miners, err := mgr.PickMiners(ctx, repl, pieceSize, nil, false)
+	miners, err := mm.PickMiners(ctx, repl, pieceSize, nil, false)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +116,8 @@ func pickMinerDist(n int) (int, int) {
 	return n - (n / 2), n / 2
 }
 
-func (mgr *MinerManager) PickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	ctx, span := mgr.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
+func (mm *MinerManager) PickMiners(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
+	ctx, span := mm.tracer.Start(ctx, "pickMiners", trace.WithAttributes(
 		attribute.Int("count", n),
 	))
 	defer span.End()
@@ -122,16 +130,16 @@ func (mgr *MinerManager) PickMiners(ctx context.Context, n int, pieceSize abi.Pa
 	// give miners more of a chance to prove themselves
 	_, nrand := pickMinerDist(n)
 
-	out, err := mgr.randomMinerListForDeal(ctx, nrand, pieceSize, exclude, filterByPrice)
+	out, err := mm.randomMinerListForDeal(ctx, nrand, pieceSize, exclude, filterByPrice)
 	if err != nil {
 		return nil, err
 	}
-	return mgr.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
+	return mm.sortedMinersForDeal(ctx, out, n, pieceSize, exclude, filterByPrice)
 }
 
 // add a check to make sure miners selected is still active in db
-func (mgr *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
-	sortedMiners, _, err := mgr.SortedMinerList()
+func (mm *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
+	sortedMiners, _, err := mm.SortedMinerList()
 	if err != nil {
 		return nil, err
 	}
@@ -157,20 +165,20 @@ func (mgr *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n
 			continue
 		}
 
-		proto, err := mgr.GetDealProtocolForMiner(ctx, m)
+		proto, err := mm.GetDealProtocolForMiner(ctx, m)
 		if err != nil {
 			log.Warnf("getting deal protocol for %s failed: %s", m, err)
 			continue
 		}
 
-		ask, err := mgr.GetAsk(ctx, m, time.Minute*30)
+		ask, err := mm.GetAsk(ctx, m, time.Minute*30)
 		if err != nil {
 			log.Warnf("getting ask from %s failed: %s", m, err)
 			continue
 		}
 
 		if filterByPrice {
-			if ask.PriceIsTooHigh(mgr.cfg.Deal.IsVerified) {
+			if ask.PriceIsTooHigh(mm.cfg.Deal.IsVerified) {
 				continue
 			}
 		}
