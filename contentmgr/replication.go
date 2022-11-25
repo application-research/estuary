@@ -908,8 +908,8 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	))
 	defer span.End()
 
-	// if the content is not active or is in pinning state, do not proceed
-	if !content.Active || content.Pinning {
+	// if the content is not active or is in pinning state, or has missing blocks do not proceed
+	if !content.Active || content.Pinning || content.FailedSanityCheck {
 		return nil
 	}
 
