@@ -1,8 +1,6 @@
 package config
 
 import (
-	"github.com/application-research/estuary/constants"
-
 	"path/filepath"
 	"time"
 
