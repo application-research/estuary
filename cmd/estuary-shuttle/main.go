@@ -521,6 +521,8 @@ func main() {
 			shuttleConfig:      cfg,
 		}
 
+		nd.Blockstore.SetSanityCheckFn(s.SendSanityCheck)
+
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
 			go func() {

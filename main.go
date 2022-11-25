@@ -731,6 +731,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
 		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
 		s.CM = cm
