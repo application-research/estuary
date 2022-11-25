@@ -4,15 +4,16 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/ipfs/go-bitswap"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
-	"io/ioutil"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/application-research/estuary/node/modules/peering"
 
@@ -106,7 +107,7 @@ type Node struct {
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
-	Blockstore      blockstore.Blockstore
+	Blockstore      SanityCheckBlockstore
 	Bitswap         *bitswap.Bitswap
 	NotifBlockstore *NotifyBlockstore
 
@@ -290,7 +291,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
-		Blockstore: mbs,
+		Blockstore: newSanityCheckBlockstoreWrapper(mbs),
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
 		Bitswap:    bswap,
