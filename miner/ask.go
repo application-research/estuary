@@ -2,6 +2,7 @@ package miner
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/application-research/estuary/model"
@@ -14,18 +15,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error) {
-	ctx, span := mgr.tracer.Start(ctx, "getAsk", trace.WithAttributes(
+func (mm *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error) {
+	ctx, span := mm.tracer.Start(ctx, "getAsk", trace.WithAttributes(
 		attribute.Stringer("miner", m),
 	))
 	defer span.End()
 
 	var asks []model.MinerStorageAsk
-	if err := mgr.DB.Find(&asks, "miner = ?", m.String()).Error; err != nil {
+	if err := mm.db.Find(&asks, "miner = ?", m.String()).Error; err != nil {
 		return nil, err
 	}
 
-	minerVersion, err := mgr.updateMinerVersion(ctx, m)
+	minerVersion, err := mm.updateMinerVersion(ctx, m)
 	if err != nil {
 		log.Warnf("failed to update miner version: %s", err)
 	}
@@ -50,17 +51,20 @@ func (mgr *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCache
 		return &ask, nil
 	}
 
-	netask, err := mgr.FilClient.GetAsk(ctx, m)
+	netask, err := mm.filClient.GetAsk(ctx, m)
 	if err != nil {
-		span.RecordError(err)
 		return nil, err
+	}
+
+	if netask == nil || netask.Ask == nil || netask.Ask.Ask == nil {
+		return nil, fmt.Errorf("miner ask has not been properly set")
 	}
 
 	nmsa := toDBAsk(netask)
 	nmsa.UpdatedAt = time.Now()
 	nmsa.MinerVersion = minerVersion
 
-	if err := mgr.DB.Clauses(clause.OnConflict{
+	if err := mm.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{
 			{Name: "miner"},
 		},

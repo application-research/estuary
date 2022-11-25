@@ -19,9 +19,9 @@ type miner struct {
 	Ask                 *model.MinerStorageAsk
 }
 
-func (mgr *MinerManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
+func (mm *MinerManager) randomMinerListForDeal(ctx context.Context, n int, pieceSize abi.PaddedPieceSize, exclude map[address.Address]bool, filterByPrice bool) ([]miner, error) {
 	var dbminers []model.StorageMiner
-	if err := mgr.DB.Find(&dbminers, "not suspended").Error; err != nil {
+	if err := mm.db.Find(&dbminers, "not suspended").Error; err != nil {
 		return nil, err
 	}
 
@@ -43,20 +43,20 @@ func (mgr *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piec
 			continue
 		}
 
-		proto, err := mgr.GetDealProtocolForMiner(ctx, dbm.Address.Addr)
+		proto, err := mm.GetDealProtocolForMiner(ctx, dbm.Address.Addr)
 		if err != nil {
 			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
 			continue
 		}
 
-		ask, err := mgr.GetAsk(ctx, dbm.Address.Addr, time.Minute*30)
+		ask, err := mm.GetAsk(ctx, dbm.Address.Addr, time.Minute*30)
 		if err != nil {
 			log.Errorf("getting ask from %s failed: %s", dbm.Address.Addr, err)
 			continue
 		}
 
 		if filterByPrice {
-			if ask.PriceIsTooHigh(mgr.cfg.Deal.IsVerified) {
+			if ask.PriceIsTooHigh(mm.cfg.Deal.IsVerified) {
 				continue
 			}
 		}
@@ -69,27 +69,27 @@ func (mgr *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piec
 	return out, nil
 }
 
-func (mgr *MinerManager) updateMinerVersion(ctx context.Context, m address.Address) (string, error) {
-	vers, err := mgr.FilClient.GetMinerVersion(ctx, m)
+func (mm *MinerManager) updateMinerVersion(ctx context.Context, m address.Address) (string, error) {
+	vers, err := mm.filClient.GetMinerVersion(ctx, m)
 	if err != nil {
 		return "", err
 	}
 
 	if vers != "" {
-		if err := mgr.DB.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
+		if err := mm.db.Model(model.StorageMiner{}).Where("address = ?", m.String()).Update("version", vers).Error; err != nil {
 			return "", err
 		}
 	}
 	return vers, nil
 }
 
-func (mgr *MinerManager) GetDealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
-	proto, err := mgr.FilClient.DealProtocolForMiner(ctx, miner)
+func (mm *MinerManager) GetDealProtocolForMiner(ctx context.Context, miner address.Address) (protocol.ID, error) {
+	proto, err := mm.filClient.DealProtocolForMiner(ctx, miner)
 	if err != nil {
 		return "", err
 	}
 
-	_, ok := mgr.cfg.Deal.EnabledDealProtocolsVersions[proto]
+	_, ok := mm.cfg.Deal.EnabledDealProtocolsVersions[proto]
 	if !ok {
 		return "", fmt.Errorf("miner deal protocol:%s is not currently enabeld", proto)
 	}

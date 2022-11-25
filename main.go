@@ -725,7 +725,7 @@ func main() {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
-		minerMgr := miner.NewMinerManager(db, fc, cfg)
+		minerMgr := miner.NewMinerManager(db, fc, cfg, api)
 
 		cm, err := contentmgr.NewContentManager(db, api, fc, init.trackingBstore, pinmgr, nd, cfg, minerMgr, log)
 		if err != nil {
