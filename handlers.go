@@ -2166,7 +2166,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	if err := s.minerManager.SetMinerInfo(m, params, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
@@ -2180,6 +2180,8 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
 }
+
+type emptyResp struct{}
 
 func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
@@ -2195,7 +2197,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	if err := s.minerManager.SuspendMiner(m, body, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
@@ -2207,7 +2209,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	if err := s.minerManager.UnSuspendMiner(m, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -5035,6 +5037,10 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	})
 }
 
+type claimResponse struct {
+	Success bool `json:"success"`
+}
+
 func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
@@ -5046,10 +5052,11 @@ func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	if err := s.minerManager.ClaimMiner(ctx, cmb, u); err != nil {
 		return err
 	}
+	return c.JSON(http.StatusOK, claimResponse{Success: true})
+}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success": true,
-	})
+type claimMsgResponse struct {
+	Hexmsg string `json:"hexmsg"`
 }
 
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
@@ -5058,8 +5065,8 @@ func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error 
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{
-		"hexmsg": hex.EncodeToString(s.minerManager.GetMsgForMinerClaim(m, u.ID)),
+	return c.JSON(http.StatusOK, claimMsgResponse{
+		Hexmsg: hex.EncodeToString(s.minerManager.GetMsgForMinerClaim(m, u.ID)),
 	})
 }
 
