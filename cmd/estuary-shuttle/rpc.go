@@ -70,7 +70,7 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 }
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, err error) {
-	// send 
+	// send - tell estuary about a bad block on this shuttle
 	s.sendRpcMessage(context.TODO(), &drpc.Message{
 		Op: drpc.OP_SanityCheck,
 		Params: drpc.MsgParams{
@@ -80,7 +80,6 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, err error) {
 			},
 		},
 	})
-
 	//mark shuttle content?
 }
 

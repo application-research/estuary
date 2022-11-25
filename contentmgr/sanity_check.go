@@ -6,7 +6,7 @@ import (
 )
 
 func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, err error) {
-	// get a contents affected by this missing block
+	// get all contents affected by this missing block on estuary or from shuttles
 	var cnts []util.Content
 	where := "id in (select content from obj_refs where object = (select id from objects where cid = ?))"
 	if err := cm.DB.Find(&cnts, where, cc.Bytes()).Error; err != nil {
