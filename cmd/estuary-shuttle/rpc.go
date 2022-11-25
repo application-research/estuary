@@ -69,6 +69,21 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	}
 }
 
+func (s *Shuttle) SendSanityCheck(cc cid.Cid, err error) {
+	// send 
+	s.sendRpcMessage(context.TODO(), &drpc.Message{
+		Op: drpc.OP_SanityCheck,
+		Params: drpc.MsgParams{
+			SanityCheck: &drpc.SanityCheck{
+				CID: cc,
+				Err: err,
+			},
+		},
+	})
+
+	//mark shuttle content?
+}
+
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
