@@ -363,7 +363,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 		}
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
+	bserv := blockservice.New(&s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 
 	sort.Slice(aggregate.Contents, func(i, j int) bool {
@@ -654,13 +654,13 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		return nil
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(req.Size), 0)
 	if err := b.Pack(ctx, pin.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(s.Node.Blockstore)
+	cst := cbor.NewCborStore(&s.Node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {
@@ -693,7 +693,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, c, func(int64) {})
 		if err != nil {
 			return err
 		}

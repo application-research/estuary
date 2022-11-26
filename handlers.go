@@ -806,7 +806,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -971,7 +971,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -2825,7 +2825,7 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		return err
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -3606,7 +3606,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 		origins = append(origins, ai)
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, nil)
+	bserv := blockservice.New(&s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
 	// create DAG respecting directory structure
@@ -4528,7 +4528,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -4601,7 +4601,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -5147,7 +5147,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 
 	if c.QueryParam("check-missing-children") != "" {
 		var childRes []map[string]interface{}
-		bserv := blockservice.New(s.Node.Blockstore, nil)
+		bserv := blockservice.New(&s.Node.Blockstore, nil)
 		dserv := merkledag.NewDAGService(bserv)
 
 		for _, c := range children {

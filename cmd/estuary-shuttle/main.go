@@ -433,7 +433,7 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, &nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
 			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
 		})
 		if err != nil {
@@ -453,7 +453,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
+			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, &nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}
@@ -497,7 +497,7 @@ func main() {
 			Filc:        filc,
 			StagingMgr:  sbm,
 			Private:     cfg.Private,
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+			gwayHandler: gateway.NewGatewayHandler(&nd.Blockstore),
 
 			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
 
@@ -1330,7 +1330,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1473,7 +1473,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1619,11 +1619,11 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 	}
 
-	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
+	bserv := blockservice.New(&d.Node.Blockstore, d.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, &d.Node.Blockstore, op.Obj, cb)
 	if err != nil {
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
@@ -2038,7 +2038,7 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -2093,7 +2093,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -2363,8 +2363,8 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, cc, nil)
 	if err != nil {
 		return err
 	}

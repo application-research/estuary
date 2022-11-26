@@ -629,7 +629,7 @@ func main() {
 			StagingMgr:       sbmgr,
 			tracer:           otel.Tracer("api"),
 			cacher:           memo.NewCacher(),
-			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			gwayHandler:      gateway.NewGatewayHandler(&nd.Blockstore),
 			cfg:              cfg,
 			trackingChannels: make(map[string]*util.ChanTrack),
 		}
@@ -662,7 +662,7 @@ func main() {
 			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
 		})
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
