@@ -99,8 +99,6 @@ type Content struct {
 	// them (unlike with aggregates)
 	DagSplit  bool `json:"dagSplit"`
 	SplitFrom uint `json:"splitFrom"`
-
-	FailedSanityCheck bool `json:"-"`
 }
 
 type ContentWithPath struct {

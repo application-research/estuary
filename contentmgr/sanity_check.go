@@ -1,8 +1,10 @@
 package contentmgr
 
 import (
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
+	"gorm.io/gorm/clause"
 )
 
 func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, errMsg string) {
@@ -17,11 +19,18 @@ func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, errMsg string) {
 	}
 
 	// mark all contents affected by this missing block
-	var marks map[uint]bool
+	marks := make(map[uint]bool, 0)
 	for _, cnt := range cnts {
 		if _, ok := marks[cnt.ID]; !ok {
-			if err := cm.DB.Model(&util.Content{}).Where("id = ?", cnt.ID).Update("failed_sanity_check", true).Error; err != nil {
-				cm.log.Errorf("sanity check failed to mark content: %d, err: %w", cnt.ID, err)
+			cm.log.Debugf("setting sanity check for cont: %d", cnt.ID)
+
+			chk := &model.SanityCheck{
+				BlockCid:  util.DbCID{CID: cc},
+				ContentID: cnt.ID,
+				ErrMsg:    errMsg,
+			}
+			if err := cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(chk).Error; err != nil {
+				cm.log.Errorf("failed to create sanity check mark for content: %d, err: %w", cnt.ID, err)
 				return
 			}
 			marks[cnt.ID] = true

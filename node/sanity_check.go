@@ -23,7 +23,6 @@ func newSanityCheckBlockstoreWrapper(bs blockstore.Blockstore) SanityCheckBlocks
 }
 
 func (sc SanityCheckBlockstore) Get(ctx context.Context, cid cid.Cid) (blocks.Block, error) {
-	blk, err := sc.Get(ctx, cid)
 	blk, err := sc.Blockstore.Get(ctx, cid)
 	if err != nil {
 		// anytime a block reads fail, do sanity check

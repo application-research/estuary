@@ -909,7 +909,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	defer span.End()
 
 	// if the content is not active or is in pinning state, or has missing blocks do not proceed
-	if !content.Active || content.Pinning || content.FailedSanityCheck {
+	if !content.Active || content.Pinning {
 		return nil
 	}
 
@@ -2747,13 +2747,13 @@ func (cm *ContentManager) SetDealMakingEnabled(enable bool) {
 }
 
 func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
-	dserv := merkledag.NewDAGService(blockservice.New(cm.Node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(&cm.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(size), 0)
 	if err := b.Pack(ctx, cont.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(cm.Node.Blockstore)
+	cst := cbor.NewCborStore(&cm.Node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {

@@ -821,7 +821,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.AuthToken{},
 		&util.InviteCode{},
 		&model.Shuttle{},
-		&autoretrieve.Autoretrieve{}); err != nil {
+		&autoretrieve.Autoretrieve{},
+		&model.SanityCheck{},
+	); err != nil {
 		return err
 	}
 	return nil
