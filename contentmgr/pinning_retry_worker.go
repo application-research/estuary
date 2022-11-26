@@ -21,7 +21,7 @@ func (cm *ContentManager) RunPinningRetryWorker(ctx context.Context) {
 			batchDate := time.Now().Add(-cm.cfg.Pinning.RetryWorker.BatchSelectionDuration)
 			for {
 				var contents []util.Content
-				if err := cm.DB.Limit(cm.cfg.Pinning.RetryWorker.BatchSelectionLimit).Order("id ASC").Find(&contents, "pinning and not active and not failed and not aggregate and id > ? and created_at > ?", startContentID, batchDate).Error; err != nil {
+				if err := cm.db.Limit(cm.cfg.Pinning.RetryWorker.BatchSelectionLimit).Order("id ASC").Find(&contents, "pinning and not active and not failed and not aggregate and id > ? and created_at > ?", startContentID, batchDate).Error; err != nil {
 					cm.log.Errorf("failed to get contents for pinning monitor: %s", err)
 					return
 				}

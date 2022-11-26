@@ -10,12 +10,20 @@ import (
 	"gorm.io/gorm"
 )
 
+func (cm *ContentManager) isInflight(c cid.Cid) bool {
+	cm.inflightCidsLk.Lock()
+	defer cm.inflightCidsLk.Unlock()
+
+	v, ok := cm.inflightCids[c]
+	return ok && v > 0
+}
+
 func (cm *ContentManager) GarbageCollect(ctx context.Context) error {
 	// since we're reference counting all the content, garbage collection becomes easy
 	// its even easier if we don't care that its 'perfect'
 
 	// We can probably even just remove stuff when its references are removed from the database
-	keych, err := cm.Blockstore.AllKeysChan(ctx)
+	keych, err := cm.blockstore.AllKeysChan(ctx)
 	if err != nil {
 		return err
 	}
@@ -40,7 +48,7 @@ func (cm *ContentManager) maybeRemoveObject(ctx context.Context, c cid.Cid) (boo
 
 	if !keep {
 		// can batch these deletes and execute them at the datastore layer for more perfs
-		if err := cm.Blockstore.DeleteBlock(ctx, c); err != nil {
+		if err := cm.blockstore.DeleteBlock(ctx, c); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -58,7 +66,7 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 	}
 
 	var count int64
-	if err := cm.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
+	if err := cm.db.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return false, nil
 		}
@@ -74,7 +82,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	if err := cm.DB.Delete(&util.Content{}, contID).Error; err != nil {
+	if err := cm.db.Delete(&util.Content{}, contID).Error; err != nil {
 		return fmt.Errorf("failed to delete content from db: %w", err)
 	}
 
@@ -82,11 +90,11 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 		Object uint
 	}
 
-	if err := cm.DB.Model(&util.ObjRef{}).Find(&objIds, "content = ?", contID).Error; err != nil {
+	if err := cm.db.Model(&util.ObjRef{}).Find(&objIds, "content = ?", contID).Error; err != nil {
 		return fmt.Errorf("failed to gather referenced object IDs: %w", err)
 	}
 
-	if err := cm.DB.Where("content = ?", contID).Delete(&util.ObjRef{}).Error; err != nil {
+	if err := cm.db.Where("content = ?", contID).Delete(&util.ObjRef{}).Error; err != nil {
 		return fmt.Errorf("failed to delete related object references: %w", err)
 	}
 
@@ -106,8 +114,8 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 
 		slice := ids[i : i+count]
 
-		subq := cm.DB.Table("obj_refs").Select("1").Where("obj_refs.object = objects.id")
-		if err := cm.DB.Where("id IN ? and not exists (?)", slice, subq).Delete(&util.Object{}).Error; err != nil {
+		subq := cm.db.Table("obj_refs").Select("1").Where("obj_refs.object = objects.id")
+		if err := cm.db.Where("id IN ? and not exists (?)", slice, subq).Delete(&util.Object{}).Error; err != nil {
 			return err
 		}
 	}
@@ -117,7 +125,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 	}
 
 	// TODO: copied from the offloading method, need to refactor this into something better
-	q := cm.DB.Model(&util.ObjRef{}).
+	q := cm.db.Model(&util.ObjRef{}).
 		Select("cid").
 		Joins("left join objects on obj_refs.object = objects.id").
 		Group("cid").
@@ -134,7 +142,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 			return err
 		}
 
-		if err := cm.Blockstore.DeleteBlock(ctx, dbc.CID); err != nil {
+		if err := cm.blockstore.DeleteBlock(ctx, dbc.CID); err != nil {
 			return err
 		}
 	}
@@ -143,7 +151,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 
 func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 	var pin util.Content
-	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
+	if err := cm.db.First(&pin, "id = ?", contid).Error; err != nil {
 		return err
 	}
 
@@ -152,11 +160,11 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
+	if err := cm.db.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
 		return err
 	}
 
-	if err := cm.DB.Where("content = ?", pin.ID).Delete(&util.ObjRef{}).Error; err != nil {
+	if err := cm.db.Where("content = ?", pin.ID).Delete(&util.ObjRef{}).Error; err != nil {
 		return err
 	}
 
@@ -171,7 +179,7 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		}
 	}
 
-	buckets, ok := cm.Buckets[pin.UserID]
+	buckets, ok := cm.buckets[pin.UserID]
 	if ok {
 		for _, bucket := range buckets {
 			if _, err := cm.tryRemoveContent(bucket, pin); err != nil {
@@ -197,11 +205,11 @@ func (cm *ContentManager) deleteIfNotPinnedLock(ctx context.Context, o *util.Obj
 	defer span.End()
 
 	var objs []util.Object
-	if err := cm.DB.Limit(1).Model(util.Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
+	if err := cm.db.Limit(1).Model(util.Object{}).Where("id = ? OR cid = ?", o.ID, o.Cid).Find(&objs).Error; err != nil {
 		return false, err
 	}
 	if len(objs) == 0 {
-		return true, cm.Node.Blockstore.DeleteBlock(ctx, o.Cid.CID)
+		return true, cm.node.Blockstore.DeleteBlock(ctx, o.Cid.CID)
 	}
 	return false, nil
 }
@@ -214,8 +222,8 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 
-	if err := cm.DB.Where("(?) = 0 and id in ?",
-		cm.DB.Model(util.ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
+	if err := cm.db.Where("(?) = 0 and id in ?",
+		cm.db.Model(util.ObjRef{}).Where("object = objects.id").Select("count(1)"), ids).
 		Delete(util.Object{}).Error; err != nil {
 		return err
 	}
@@ -224,7 +232,7 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 
 func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*util.Object, error) {
 	var objects []*util.Object
-	if err := cm.DB.Model(util.ObjRef{}).Where("content = ?", cont).
+	if err := cm.db.Model(util.ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").
 		Scan(&objects).Error; err != nil {
 		return nil, err

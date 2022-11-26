@@ -70,8 +70,8 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	if cont.Location == constants.ContentLocationLocal {
 		var out []string
-		for _, a := range cm.Node.Host.Addrs() {
-			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.Node.Host.ID()))
+		for _, a := range cm.node.Host.Addrs() {
+			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.node.Host.ID()))
 		}
 		return out
 
@@ -131,7 +131,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
-		if err := cm.DB.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
+		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
 			return nil, err
 		}
 	}
@@ -165,7 +165,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Location:    loc,
 		Origins:     originsStr,
 	}
-	if err := cm.DB.Create(&cont).Error; err != nil {
+	if err := cm.db.Create(&cont).Error; err != nil {
 		return nil, err
 	}
 
@@ -174,7 +174,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			c.Content = cont.ID
 		}
 
-		if err := cm.DB.Clauses(clause.OnConflict{
+		if err := cm.db.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
@@ -252,7 +252,7 @@ func (cm *ContentManager) selectLocationForContent(ctx context.Context, obj cid.
 	cm.ShuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
-	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	if err := cm.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
@@ -314,7 +314,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 	cm.ShuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
-	if err := cm.DB.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	if err := cm.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
@@ -336,9 +336,9 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 }
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	cm.BucketLk.Lock()
-	defer cm.BucketLk.Unlock()
-	zones, ok := cm.Buckets[uid]
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+	zones, ok := cm.buckets[uid]
 	if !ok {
 		return ""
 	}
@@ -358,7 +358,7 @@ func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) 
 func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
 	if status == types.PinningStatusFailed {
 		var c util.Content
-		if err := cm.DB.First(&c, "id = ?", contID).Error; err != nil {
+		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
 			return errors.Wrap(err, "failed to look up content")
 		}
 
@@ -366,7 +366,7 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
 		}
 
-		if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"active":  false,
 			"pinning": false,
 			"failed":  true,
@@ -382,14 +382,14 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	defer span.End()
 
 	var cont util.Content
-	if err := cm.DB.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
+	if err := cm.db.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
 		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
 	if cont.Active {
 		// content already active, no need to add objects, just update location
 		// this is used by consolidated contents
-		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
 		}).Error; err != nil {
@@ -408,18 +408,18 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 			Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
 			Size: pincomp.Objects[0].Size,
 		}
-		if err := cm.DB.Create(obj).Error; err != nil {
+		if err := cm.db.Create(obj).Error; err != nil {
 			return xerrors.Errorf("failed to create Object: %w", err)
 		}
 
-		if err := cm.DB.Create(&util.ObjRef{
+		if err := cm.db.Create(&util.ObjRef{
 			Content: cont.ID,
 			Object:  obj.ID,
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to create Object reference: %w", err)
 		}
 
-		if err := cm.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"pinning":  false,
 			"location": handle,

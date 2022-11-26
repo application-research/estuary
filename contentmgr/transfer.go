@@ -42,7 +42,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 
 	if loc == constants.ContentLocationLocal {
 		// get the deal data transfer state pull deals
-		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
+		st, err := cm.filClient.TransferStatus(ctx, &chanid)
 		if err != nil && err != filclient.ErrNoTransferFound {
 			return err
 		}
@@ -55,7 +55,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 		if cannotRestart {
 			trsFailed, msg := util.TransferFailed(st)
 			if trsFailed {
-				if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
+				if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
 					"failed":    true,
 					"failed_at": time.Now(),
 				}).Error; err != nil {
@@ -66,7 +66,7 @@ func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chani
 			}
 			return nil
 		}
-		return cm.FilClient.RestartTransfer(ctx, &chanid)
+		return cm.filClient.RestartTransfer(ctx, &chanid)
 	}
 	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
 }
