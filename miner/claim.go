@@ -69,11 +69,7 @@ func (mm *MinerManager) ClaimMiner(ctx context.Context, params ClaimMinerBody, u
 	if len(sm) == 0 {
 		// This is a new miner, need to run some checks first
 		if err := mm.checkNewMiner(ctx, minfo, params.Miner); err != nil {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  util.ERR_INVALID_MINER_SETUP,
-				Details: err.Error(),
-			}
+			return err
 		}
 
 		return mm.db.Create(&model.StorageMiner{
@@ -91,11 +87,19 @@ func (mm *MinerManager) GetMsgForMinerClaim(miner address.Address, uid uint) []b
 
 func (mm *MinerManager) checkNewMiner(ctx context.Context, minfo api.MinerInfo, addr address.Address) error {
 	if minfo.PeerId == nil {
-		return fmt.Errorf("miner has no peer ID set")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_NO_PEER_ID,
+			Details: "miner has no peer ID set",
+		}
 	}
 
 	if len(minfo.Multiaddrs) == 0 {
-		return fmt.Errorf("miner has no addresses set on chain")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_NO_MULTI_ADDR,
+			Details: "miner has no addresses set on chain",
+		}
 	}
 
 	pow, err := mm.api.StateMinerPower(ctx, addr, types.EmptyTSK)
@@ -104,11 +108,19 @@ func (mm *MinerManager) checkNewMiner(ctx context.Context, minfo api.MinerInfo, 
 	}
 
 	if pow == nil {
-		return fmt.Errorf("no miner power details were found")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_NO_POWER,
+			Details: "no miner power details were found",
+		}
 	}
 
 	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
-		return fmt.Errorf("miner must have at least 1TiB of power to be considered by estuary")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_POWER_BELOW_1TIB,
+			Details: "miner must have at least 1TiB of power to be considered by estuary",
+		}
 	}
 
 	ask, err := mm.filClient.GetAsk(ctx, addr)
@@ -117,11 +129,19 @@ func (mm *MinerManager) checkNewMiner(ctx context.Context, minfo api.MinerInfo, 
 	}
 
 	if ask == nil || ask.Ask == nil || ask.Ask.Ask == nil {
-		return fmt.Errorf("miner ask has not been properly set")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_NO_ASK,
+			Details: "miner ask has not been properly set",
+		}
 	}
 
 	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
-		return fmt.Errorf("miners verified deal price is not zero")
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO,
+			Details: "miners verified deal price is not zero",
+		}
 	}
 	return nil
 }
