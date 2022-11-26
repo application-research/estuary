@@ -934,6 +934,15 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	var sncks []model.SanityCheck
+	if err := cm.DB.Find(&sncks, "content_id = ?", content.ID).Error; err != nil {
+		return err
+	}
+	if len(sncks) > 0 {
+		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
+		return nil
+	}
+
 	// If this content is already scheduled to be aggregated and is waiting in a bucket
 	if cm.contentInStagingZone(ctx, content) {
 		return nil
