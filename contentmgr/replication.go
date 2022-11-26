@@ -962,7 +962,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content, deals) {
+	if cm.canStageContent(content) {
 		return cm.addContentToStagingZone(ctx, content)
 	}
 
@@ -1110,10 +1110,9 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	return nil
 }
 
-// if content has no deals, is not already staged, is below min content size,
-// and staging zone is enabled
-func (cm *ContentManager) canStageContent(cont util.Content, deals []model.ContentDeal) bool {
-	return len(deals) == 0 && !cont.Aggregate && cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
+// if content is not already staged, if it is below min deal content size, and staging zone is enabled
+func (cm *ContentManager) canStageContent(cont util.Content) bool {
+	return !cont.Aggregate && cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
