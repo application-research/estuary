@@ -908,7 +908,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	))
 	defer span.End()
 
-	// if the content is not active or is in pinning state, or has missing blocks do not proceed
+	// if the content is not active or is in pinning state, do not proceed
 	if !content.Active || content.Pinning {
 		return nil
 	}
@@ -934,6 +934,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	// if content has any missing blocks, do not proceed
 	var sncks []model.SanityCheck
 	if err := cm.DB.Find(&sncks, "content_id = ?", content.ID).Error; err != nil {
 		return err
