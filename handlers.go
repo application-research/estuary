@@ -1636,8 +1636,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
@@ -4751,32 +4751,48 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
-	// validate peerid and peer multi addresses
-	addresses := strings.Split(c.FormValue("addresses"), ",")
-	addrInfo, err := autoretrieve.ValidatePeerInfo(c.FormValue("pubKey"), addresses)
+
+	err := func() error {
+		// If there's already an Autoretrieve database entry under the requested pub
+		// key, delete it first
+		if err := s.DB.Unscoped().Delete(&autoretrieve.Autoretrieve{}, "pub_key = ?", c.FormValue("pubKey")).Error; err != nil {
+			return err
+		}
+
+		// Initialize Autoretrieve database entry
+		ar := &autoretrieve.Autoretrieve{
+			Handle:            "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+			Token:             "SECRET" + uuid.New().String() + "SECRET",
+			LastConnection:    time.Now(),
+			LastAdvertisement: time.Time{},
+			PubKey:            c.FormValue("pubKey"),
+			Addresses:         c.FormValue("addresses"),
+		}
+		if err := s.DB.Create(ar).Error; err != nil {
+			return err
+		}
+
+		addrInfo, err := ar.AddrInfo()
+		if err != nil {
+			return err
+		}
+
+		log.Infof("Added autoretrieve with addr info %s", addrInfo)
+
+		return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
+			Handle:            ar.Handle,
+			Token:             ar.Token,
+			LastConnection:    ar.LastConnection,
+			AddrInfo:          addrInfo,
+			AdvertiseInterval: s.Node.Config.IndexerAdvertisementInterval.String(),
+		})
+	}()
+
 	if err != nil {
-		return err
+		log.Errorf("Failed to register estuary: %v", err)
 	}
 
-	ar := &autoretrieve.Autoretrieve{
-		Handle:            "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
-		Token:             "SECRET" + uuid.New().String() + "SECRET",
-		LastConnection:    time.Now(),
-		LastAdvertisement: time.Time{},
-		PubKey:            c.FormValue("pubKey"),
-		Addresses:         c.FormValue("addresses"), // cant store []string in gorm
-	}
-	if err := s.DB.Create(ar).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
-		Handle:            ar.Handle,
-		Token:             ar.Token,
-		LastConnection:    ar.LastConnection,
-		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
-	})
+	return err
 }
 
 // handleAutoretrieveList godoc
@@ -4797,10 +4813,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 	var out []autoretrieve.AutoretrieveListResponse
 
 	for _, ar := range autoretrieves {
-		// any of the multiaddresses of the peer should work to get addrInfo
-		// we get the first one
-		addresses := strings.Split(ar.Addresses, ",")
-		addrInfo, err := peer.AddrInfoFromString(addresses[0])
+		addrInfo, err := ar.AddrInfo()
 		if err != nil {
 			return err
 		}
@@ -4841,10 +4854,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	// any of the multiaddresses of the peer should work to get addrInfo
-	// we get the first one
-	addresses := strings.Split(ar.Addresses, ",")
-	addrInfo, err := peer.AddrInfoFromString(addresses[0])
+	addrInfo, err := ar.AddrInfo()
 	if err != nil {
 		return err
 	}
@@ -4854,7 +4864,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		LastConnection:    ar.LastConnection,
 		LastAdvertisement: ar.LastAdvertisement,
 		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
+		AdvertiseInterval: s.Node.Config.IndexerAdvertisementInterval.String(),
 	}
 	return c.JSON(http.StatusOK, out)
 }

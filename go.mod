@@ -5,7 +5,7 @@ go 1.18
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.0
 	github.com/application-research/filclient v0.4.0
-	github.com/application-research/go-bs-autobatch v0.1.0
+	github.com/application-research/goque v1.0.3-0.20221024210042-22e2e2c1a730
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/cheggaaa/pb/v3 v3.0.8
 	github.com/docker/go-units v0.5.0
@@ -19,12 +19,14 @@ require (
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.25.1
 	github.com/filecoin-project/go-jsonrpc v0.1.8
+	github.com/filecoin-project/go-legs v0.4.9 // indirect
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.9.8
-	github.com/filecoin-project/index-provider v0.8.2
+	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
 	github.com/filecoin-project/lotus v1.18.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
-	github.com/filecoin-project/storetheindex v0.4.18
+	github.com/filecoin-project/storetheindex v0.4.18 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.0
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru v0.5.4
@@ -35,21 +37,19 @@ require (
 	github.com/ipfs/go-cid v0.3.2
 	github.com/ipfs/go-cidutil v0.1.0
 	github.com/ipfs/go-datastore v0.6.0
-	github.com/ipfs/go-ds-flatfs v0.5.1
 	github.com/ipfs/go-ds-leveldb v0.5.0
 	github.com/ipfs/go-fetcher v1.6.1
 	github.com/ipfs/go-graphsync v0.13.1
+	github.com/ipfs/go-ipfs v0.13.1
 	github.com/ipfs/go-ipfs-blockstore v1.2.0
 	github.com/ipfs/go-ipfs-chunker v0.0.5
 	github.com/ipfs/go-ipfs-exchange-interface v0.2.0
 	github.com/ipfs/go-ipfs-exchange-offline v0.3.0
-	github.com/ipfs/go-ipfs-provider v0.7.1
 	github.com/ipfs/go-ipld-cbor v0.0.6
 	github.com/ipfs/go-ipld-format v0.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/ipfs/go-merkledag v0.8.0
 	github.com/ipfs/go-metrics-interface v0.0.1
-	github.com/ipfs/go-metrics-prometheus v0.0.2
 	github.com/ipfs/go-path v0.3.0
 	github.com/ipfs/go-unixfs v0.3.1
 	github.com/ipfs/go-unixfsnode v1.4.0
@@ -58,26 +58,31 @@ require (
 	github.com/ipld/go-ipld-prime v0.18.0
 	github.com/jinzhu/gorm v1.9.16
 	github.com/labstack/echo/v4 v4.6.1
+	github.com/labstack/gommon v0.3.1
 	github.com/libp2p/go-libp2p v0.23.4
+	github.com/libp2p/go-libp2p-core v0.20.0
 	github.com/libp2p/go-libp2p-kad-dht v0.18.0
+	github.com/libp2p/go-libp2p-pubsub v0.8.0 // indirect
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.2.3
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/multiformats/go-multiaddr v0.7.0
 	github.com/multiformats/go-multihash v0.2.1
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.13.0
 	github.com/stretchr/testify v1.8.0
 	github.com/swaggo/echo-swagger v1.3.0
 	github.com/swaggo/swag v1.7.9
-	github.com/urfave/cli/v2 v2.8.1
+	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
+	github.com/urfave/cli/v2 v2.11.1
 	github.com/whyrusleeping/cbor-gen v0.0.0-20220514204315-f29c37e9c44c
-	github.com/whyrusleeping/go-bs-measure v0.0.0-20211215015044-d56d1cad3b9e
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
 	go.opencensus.io v0.23.0
 	go.opentelemetry.io/otel v1.9.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.7.0
 	go.opentelemetry.io/otel/sdk v1.9.0
 	go.opentelemetry.io/otel/trace v1.9.0
+	go.uber.org/zap v1.23.0
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90
 	golang.org/x/net v0.0.0-20220920183852-bf014ff85ad5
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
@@ -88,17 +93,11 @@ require (
 )
 
 require (
-	github.com/application-research/goque v1.0.3-0.20221024210042-22e2e2c1a730
-	github.com/filecoin-project/go-legs v0.4.9
-	github.com/gabriel-vasile/mimetype v1.4.0
-	github.com/hashicorp/go-multierror v1.1.1
-	github.com/ipfs/go-ipfs v0.13.1
-	github.com/labstack/gommon v0.3.1
-	github.com/libp2p/go-libp2p-core v0.20.0
-	github.com/libp2p/go-libp2p-pubsub v0.8.0
-	github.com/pkg/errors v0.9.1
-	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
-	go.uber.org/zap v1.23.0
+	github.com/application-research/go-bs-autobatch v0.1.0
+	github.com/ipfs/go-ds-flatfs v0.5.1
+	github.com/ipfs/go-ipfs-provider v0.7.1
+	github.com/ipfs/go-metrics-prometheus v0.0.2
+	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
 )
 
 require (
@@ -130,7 +129,7 @@ require (
 	github.com/cilium/ebpf v0.6.2 // indirect
 	github.com/containerd/cgroups v1.0.4 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.1 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
 	github.com/cskr/pubsub v1.0.2 // indirect
 	github.com/daaku/go.zipexe v1.0.0 // indirect
@@ -203,6 +202,7 @@ require (
 	github.com/hannahhoward/cbor-gen-for v0.0.0-20200817222906-ea96cece81f1 // indirect
 	github.com/hannahhoward/go-pubsub v0.0.0-20200423002714-8d62886cc36e // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/huin/goupnp v1.0.3 // indirect
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
@@ -362,5 +362,3 @@ replace github.com/raulk/go-bs-tests => github.com/whyrusleeping/go-bs-tests v0.
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
 
 replace github.com/filecoin-project/go-bs-lmdb => github.com/gmelodie/go-bs-lmdb v0.1.0
-
-replace github.com/filecoin-project/index-provider => github.com/gmelodie/index-provider v0.8.2
