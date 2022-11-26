@@ -1278,9 +1278,9 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	}
 	defer fi.Close()
 
-	cic := util.ContentInCollection{
-		CollectionID:  c.QueryParam(ColUuid),
-		CollectionDir: c.QueryParam(ColDir),
+	cic := util.ContentInBucket{
+		BucketID:  c.QueryParam(ColUuid),
+		BucketDir: c.QueryParam(ColDir),
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1444,9 +1444,9 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
-	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
-		CollectionID:  c.QueryParam(ColUuid),
-		CollectionDir: c.QueryParam(ColDir),
+	contid, err := s.createContent(ctx, u, root, filename, util.ContentInBucket{
+		BucketID:  c.QueryParam(ColUuid),
+		BucketDir: c.QueryParam(ColDir),
 	})
 	if err != nil {
 		return err
@@ -1503,11 +1503,11 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
-	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInBucket) (uint, error) {
+	log.Debugf("createContent> cid: %v, filename: %s, bucket: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
-		ContentInCollection: cic,
+		ContentInBucket: cic,
 		Root:                root.String(),
 		Name:                filename,
 		Location:            s.shuttleHandle,
@@ -1550,10 +1550,10 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, bucket string, dagsplitroot uint) (uint, error) {
 	var cols []string
-	if collection != "" {
-		cols = []string{collection}
+	if bucket != "" {
+		cols = []string{bucket}
 	}
 
 	data, err := json.Marshal(&util.ShuttleCreateContentBody{
@@ -1562,7 +1562,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 			Name:     filename,
 			Location: s.shuttleHandle,
 		},
-		Collections:  cols,
+		Buckets:  cols,
 		DagSplitRoot: dagsplitroot,
 		User:         uid,
 	})
@@ -2265,7 +2265,7 @@ func (s *Shuttle) handleGetWantlist(c echo.Context) error {
 }
 
 type importDealBody struct {
-	util.ContentInCollection
+	util.ContentInBucket
 
 	Name    string   `json:"name"`
 	DealIDs []uint64 `json:"dealIDs"`
@@ -2342,7 +2342,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		break
 	}
 
-	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInCollection)
+	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInBucket)
 	if err != nil {
 		return err
 	}

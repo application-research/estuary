@@ -11,7 +11,7 @@ import (
 )
 
 func (cm *ContentManager) GarbageCollect(ctx context.Context) error {
-	// since we're reference counting all the content, garbage collection becomes easy
+	// since we're reference counting all the content, garbage bucket becomes easy
 	// its even easier if we don't care that its 'perfect'
 
 	// We can probably even just remove stuff when its references are removed from the database

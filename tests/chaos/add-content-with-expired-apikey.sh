@@ -14,10 +14,10 @@ echo '#####################################'
 echo ''
 
 fname=$(basename $EST_SAMPLE_FILE)
-name="Sample Collection"
-description="This is a sample collection"
+name="Sample Bucket"
+description="This is a sample bucket"
 
-# Let's add a collection
+# Let's add a bucket
 data="$(echo {} | jq --raw-output \
   --arg name "$name" \
   --arg description "$description" \

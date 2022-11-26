@@ -18,8 +18,8 @@ func isEntityOwner(uID, entityID uint, entity string) error {
 	return nil
 }
 
-func IsCollectionOwner(uID, entityID uint) error {
-	return isEntityOwner(uID, entityID, "collection")
+func IsBucketOwner(uID, entityID uint) error {
+	return isEntityOwner(uID, entityID, "bucket")
 }
 
 func IsContentOwner(uID, entityID uint) error {

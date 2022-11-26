@@ -19,5 +19,5 @@ EST_UPLOAD_HOST=https://upload.estuary.tech
 COLLECTION="185d7ffc-85d8-4b73-86bb-1ca6419bc10d"
 
 set -x
-curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$EST_SAMPLE_FILE" -F "filename=$fname" $EST_UPLOAD_HOST/content/add\?collection="$COLLECTION"
+curl --trace - --trace-time --progress-bar -X POST -H "Authorization: Bearer $ESTUARY_TOKEN" -F "data=@$EST_SAMPLE_FILE" -F "filename=$fname" $EST_UPLOAD_HOST/content/add\?bucket="$COLLECTION"
 

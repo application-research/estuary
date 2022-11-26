@@ -1,6 +1,6 @@
 # Estuary Regression Tests
 
-Collection of shell scripts to perform several estuary API regression tests
+Bucket of shell scripts to perform several estuary API regression tests
 
 ## Before running
 Make sure data/config/run.config is setup with the right keys.

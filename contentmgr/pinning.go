@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/application-research/estuary/collections"
+	"github.com/application-research/estuary/buckets"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
@@ -123,7 +123,7 @@ func (cm *ContentManager) pinContents(ctx context.Context, contents []util.Conte
 	}
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*buckets.BucketRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -175,7 +175,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 
 		if err := cm.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
+			Columns:   []clause.Column{{Name: "path"}, {Name: "bucket"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
 			return nil, err

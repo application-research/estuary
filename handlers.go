@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/application-research/estuary/collections"
+	"github.com/application-research/estuary/buckets"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/model"
@@ -197,22 +197,19 @@ func (s *Server) ServeAPI() error {
 	deals.GET("/info/:dealid", s.handleGetDealInfo)
 	deals.GET("/failures", withUser(s.handleStorageFailures))
 
-	cols := e.Group("/collections")
-	cols.Use(s.AuthRequired(util.PermLevelUser))
+	buckets := e.Group("/buckets")
+	buckets.Use(s.AuthRequired(util.PermLevelUser))
 
-	cols.GET("", withUser(s.handleListCollections))
-	cols.POST("", withUser(s.handleCreateCollection))
+	buckets.GET("", withUser(s.handleListBuckets))
+	buckets.POST("", withUser(s.handleCreateBucket))
 
-	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
-	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
-	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
+	buckets.DELETE("/:uuid", withUser(s.handleDeleteBucket))
+	buckets.POST("/:uuid", withUser(s.handleAddContentsToBucket))
+	buckets.GET("/:uuid", withUser(s.handleGetBucketContents))
 
-	cols.DELETE("/:coluuid/contents", withUser(s.handleDeleteContentFromCollection))
+	buckets.DELETE("/:bucketuuid/contents", withUser(s.handleDeleteContentFromBucket))
 
-	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
-
-	colfs := cols.Group("/fs")
-	colfs.POST("/add", withUser(s.handleColfsAdd))
+	buckets.POST("/:uuid/commit", withUser(s.handleCommitBucket))
 
 	pinning := e.Group("/pinning")
 	pinning.Use(openApiMiddleware)
@@ -273,7 +270,7 @@ func (s *Server) ServeAPI() error {
 	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
-	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
+	admin.POST("/cm/offload/collect", s.handleRunOffloadingBucket)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.POST("/cm/gc", s.handleRunGc)
 	admin.POST("/cm/move", s.handleMoveContent)
@@ -650,37 +647,37 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 		filename = params.Root
 	}
 
-	var cols []*collections.CollectionRef
-	if params.CollectionID != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
+	var bucks []*buckets.BucketRef
+	if params.BucketID != "" {
+		var srchbucket buckets.Bucket
+		if err := s.DB.First(&srchbucket, "uuid = ? and user_id = ?", params.BucketID, u.ID).Error; err != nil {
 			return err
 		}
 
 		// if dir is "" or nil, put the file on the root dir (/filename)
 		defaultPath := "/" + filename
-		colp := defaultPath
-		if params.CollectionDir != "" {
-			p, err := sanitizePath(params.CollectionDir)
+		bucketp := defaultPath
+		if params.BucketDir != "" {
+			p, err := sanitizePath(params.BucketDir)
 			if err != nil {
 				return err
 			}
-			colp = p
+			bucketp = p
 		}
 
-		// default: colp ends in / (does not include filename e.g. /hello/)
-		path := colp + filename
+		// default: bucketp ends in / (does not include filename e.g. /hello/)
+		path := bucketp + filename
 
 		// if path does not end in /, it includes the filename
-		if !strings.HasSuffix(colp, "/") {
-			path = colp
-			filename = filepath.Base(colp)
+		if !strings.HasSuffix(bucketp, "/") {
+			path = bucketp
+			filename = filepath.Base(bucketp)
 		}
 
-		cols = []*collections.CollectionRef{
+		bucks = []*buckets.BucketRef{
 			{
-				Collection: srchCol.ID,
-				Path:       &path,
+				Bucket: srchbucket.ID,
+				Path:   &path,
 			},
 		}
 	}
@@ -710,7 +707,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, bucks, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -847,7 +844,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Accept       multipart/form-data
 // @Param        data          formData  file    true   "File to upload"
 // @Param        filename      formData  string  false  "Filename to use for upload"
-// @Param        coluuid       query     string  false  "Collection UUID"
+// @Param        uuid       query     string  false  "Bucket UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
@@ -912,18 +909,18 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	coluuid := c.QueryParam("coluuid")
-	var col *collections.Collection
-	if coluuid != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
+	uuid := c.QueryParam("uuid")
+	var bucket *buckets.Bucket
+	if uuid != "" {
+		var srchbucket buckets.Bucket
+		if err := s.DB.First(&srchbucket, "uuid = ? and user_id = ?", uuid, u.ID).Error; err != nil {
 			return err
 		}
 
-		col = &srchCol
+		bucket = &srchbucket
 	}
 
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
+	path, err := constructDirectoryPath(c.QueryParam(BucketDir))
 	if err != nil {
 		return err
 	}
@@ -962,14 +959,14 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	}
 	fullPath := filepath.Join(path, content.Name)
 
-	if col != nil {
-		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := s.DB.Create(&collections.CollectionRef{
-			Collection: col.ID,
-			Content:    content.ID,
-			Path:       &fullPath,
+	if bucket != nil {
+		log.Infof("BUCKET CREATION: %d, %d", bucket.ID, content.ID)
+		if err := s.DB.Create(&buckets.BucketRef{
+			Bucket:  bucket.ID,
+			Content: content.ID,
+			Path:    &fullPath,
 		}).Error; err != nil {
-			log.Errorf("failed to add content to requested collection: %s", err)
+			log.Errorf("failed to add content to requested bucket: %s", err)
 		}
 	}
 
@@ -2799,7 +2796,7 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, conts)
 }
 
-func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
+func (s *Server) handleRunOffloadingBucket(c echo.Context) error {
 	var body struct {
 		Execute        bool   `json:"execute"`
 		SpaceRequested int64  `json:"spaceRequested"`
@@ -3464,84 +3461,84 @@ func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-type createCollectionBody struct {
+type createBucketBody struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// handleCreateCollection godoc
-// @Summary      Create a new collection
-// @Description  This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.
-// @Tags         collections
+// handleCreateBucket godoc
+// @Summary      Create a new bucket
+// @Description  This endpoint is used to create a new bucket. A bucket is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new bucket.
+// @Tags         buckets
 // @Produce      json
-// @Param        body  body      createCollectionBody  true  "Collection name and description"
-// @Success      200   {object}  collections.Collection
+// @Param        body  body      createBucketBody  true  "Bucket name and description"
+// @Success      200   {object}  buckets.Bucket
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/ [post]
-func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
-	var body createCollectionBody
+// @Router       /buckets/ [post]
+func (s *Server) handleCreateBucket(c echo.Context, u *util.User) error {
+	var body createBucketBody
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	col := &collections.Collection{
+	bucket := &buckets.Bucket{
 		UUID:        uuid.New().String(),
 		Name:        body.Name,
 		Description: body.Description,
 		UserID:      u.ID,
 	}
 
-	if err := s.DB.Create(col).Error; err != nil {
+	if err := s.DB.Create(bucket).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, col)
+	return c.JSON(http.StatusOK, bucket)
 }
 
-// handleListCollections godoc
-// @Summary      List all collections
-// @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
-// @Tags         collections
+// handleListBuckets godoc
+// @Summary      List all buckets
+// @Description  This endpoint is used to list all buckets. Whenever a user logs on estuary, it will list all buckets that the user has access to. This endpoint provides a way to list all buckets to the user.
+// @Tags         buckets
 // @Produce      json
-// @Success      200  {array}   collections.Collection
+// @Success      200  {array}   buckets.Bucket
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/ [get]
-func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
-	var cols []collections.Collection
-	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
+// @Router       /buckets/ [get]
+func (s *Server) handleListBuckets(c echo.Context, u *util.User) error {
+	var buckets []buckets.Bucket
+	if err := s.DB.Find(&buckets, "user_id = ?", u.ID).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, cols)
+	return c.JSON(http.StatusOK, buckets)
 }
 
-type addContentsToCollectionBody struct {
+type addContentsToBucketBody struct {
 	ContentIDs []uint `json:"contentids"`
 }
 
-// handleAddContentsToCollection godoc
-// @Summary      Add contents to a collection
-// @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a collection.
-// @Tags         collections
+// handleAddContentsToBucket godoc
+// @Summary      Add contents to a bucket
+// @Description  This endpoint adds already-pinned contents (that have ContentIDs) to a bucket.
+// @Tags         buckets
 // @Accept       json
 // @Produce      json
-// @Param        coluuid     path      string  true  "Collection UUID"
-// @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
+// @Param        uuid     path      string  true  "Bucket UUID"
+// @Param        contentIDs  body      []uint  true  "Content IDs to add to bucket"
 // @Param		 dir		 query	   string  false  "Directory"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/{coluuid} [post]
-func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
-	coluuid := c.Param("coluuid")
+// @Router       /buckets/{uuid} [post]
+func (s *Server) handleAddContentsToBucket(c echo.Context, u *util.User) error {
+	uuid := c.Param("uuid")
 
 	// we accept both {"contentids": [1, 2]} and [1, 2] as json payloads
-	var body addContentsToCollectionBody // {"contentids": [1, 2]}
-	var contentIDs []uint                // [1, 2]
+	var body addContentsToBucketBody // {"contentids": [1, 2]}
+	var contentIDs []uint            // [1, 2]
 
 	// Save the body of the request so that we can try to unmarshal it twice (if first bind fails)
 	// We can't simply c.Bind() because that reads directly from the socket
@@ -3576,19 +3573,19 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 		}
 	}
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+	var bucket buckets.Bucket
+	if err := s.DB.First(&bucket, "uuid = ?", uuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+				Details: fmt.Sprintf("bucket: %s was not found", uuid),
 			}
 		}
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+	if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
 		return err
 	}
 
@@ -3601,58 +3598,58 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
-	var colrefs []collections.CollectionRef
+	path, err := constructDirectoryPath(c.QueryParam(BucketDir))
+	var bucketrefs []buckets.BucketRef
 	for _, cont := range contents {
 		fullPath := filepath.Join(path, cont.Name)
-		colrefs = append(colrefs, collections.CollectionRef{
-			Collection: col.ID,
-			Content:    cont.ID,
-			Path:       &fullPath,
+		bucketrefs = append(bucketrefs, buckets.BucketRef{
+			Bucket:  bucket.ID,
+			Content: cont.ID,
+			Path:    &fullPath,
 		})
 	}
 
-	if err := s.DB.Create(colrefs).Error; err != nil {
+	if err := s.DB.Create(bucketrefs).Error; err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-// handleCommitCollection godoc
-// @Summary      Produce a CID of the collection contents
-// @Description  This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.
-// @Param        coluuid  path  string  true  "coluuid"
-// @Tags         collections
+// handleCommitBucket godoc
+// @Summary      Produce a CID of the bucket contents
+// @Description  This endpoint is used to save the contents in a bucket, producing a top-level CID that references all the current CIDs in the bucket.
+// @Param        uuid  path  string  true  "uuid"
+// @Tags         buckets
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/{coluuid}/commit [post]
-func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
-	colid := c.Param("coluuid")
+// @Router       /buckets/{uuid}/commit [post]
+func (s *Server) handleCommitBucket(c echo.Context, u *util.User) error {
+	uuid := c.Param("uuid")
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", colid).Error; err != nil {
+	var bucket buckets.Bucket
+	if err := s.DB.First(&bucket, "uuid = ?", uuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", colid),
+				Details: fmt.Sprintf("bucket: %s was not found", uuid),
 			}
 		}
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+	if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
 		return err
 	}
 
 	contents := []util.ContentWithPath{}
-	if err := s.DB.Model(collections.CollectionRef{}).
-		Where("collection = ?", col.ID).
-		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path").
+	if err := s.DB.Model(buckets.BucketRef{}).
+		Where("bucket = ?", bucket.ID).
+		Joins("left join contents on contents.id = bucket_refs.content").
+		Select("contents.*, bucket_refs.path").
 		Scan(&contents).Error; err != nil {
 		return err
 	}
@@ -3683,14 +3680,14 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	dserv := merkledag.NewDAGService(bserv)
 
 	// create DAG respecting directory structure
-	collectionNode := unixfs.EmptyDirNode()
+	bucketNode := unixfs.EmptyDirNode()
 	for _, c := range contents {
 		dirs, err := util.DirsFromPath(c.Path, c.Name)
 		if err != nil {
 			return err
 		}
 
-		lastDirNode, err := util.EnsurePathIsLinked(dirs, collectionNode, dserv)
+		lastDirNode, err := util.EnsurePathIsLinked(dirs, bucketNode, dserv)
 		if err != nil {
 			return err
 		}
@@ -3703,67 +3700,67 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := dserv.Add(context.Background(), collectionNode); err != nil {
+	if err := dserv.Add(context.Background(), bucketNode); err != nil {
 		return err
 	} // add new CID to local blockstore
 
-	// update DB with new collection CID
-	col.CID = collectionNode.Cid().String()
-	if err := s.DB.Model(collections.Collection{}).Where("id = ?", col.ID).UpdateColumn("c_id", collectionNode.Cid().String()).Error; err != nil {
+	// update DB with new bucket CID
+	bucket.CID = bucketNode.Cid().String()
+	if err := s.DB.Model(buckets.Bucket{}).Where("id = ?", bucket.ID).UpdateColumn("c_id", bucketNode.Cid().String()).Error; err != nil {
 		return err
 	}
 
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, bucketNode.Cid(), bucketNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, pinstatus)
 }
 
-// handleGetCollectionContents godoc
-// @Summary      Get contents in a collection
-// @Description  This endpoint is used to get contents in a collection. If no colpath query param is passed
-// @Tags         collections
+// handleGetBucketContents godoc
+// @Summary      Get contents in a bucket
+// @Description  This endpoint is used to get contents in a bucket. If no path query param is passed
+// @Tags         buckets
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        coluuid  path      string  true   "coluuid"
+// @Param        uuid  path      string  true   "uuid"
 // @Param        dir      query     string  false  "Directory"
-// @Router       /collections/{coluuid} [get]
-func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
-	coluuid := c.Param("coluuid")
+// @Router       /buckets/{uuid} [get]
+func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
+	uuid := c.Param("uuid")
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+	var bucket buckets.Bucket
+	if err := s.DB.First(&bucket, "uuid = ?", uuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
+				Details: fmt.Sprintf("bucket: %s was not found", uuid),
 			}
 		}
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+	if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
 		return err
 	}
 
 	// TODO: optimize this a good deal
 	var refs []util.ContentWithPath
-	if err := s.DB.Model(collections.CollectionRef{}).
-		Where("collection = ?", col.ID).
-		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path as path").
+	if err := s.DB.Model(buckets.BucketRef{}).
+		Where("bucket = ?", bucket.ID).
+		Joins("left join contents on contents.id = bucket_refs.content").
+		Select("contents.*, bucket_refs.path as path").
 		Scan(&refs).Error; err != nil {
 		return err
 	}
 
-	queryDir := c.QueryParam(ColDir)
+	queryDir := c.QueryParam(BucketDir)
 	if queryDir == "" {
 		return c.JSON(http.StatusOK, refs)
 	}
@@ -3772,7 +3769,7 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 	queryDir = filepath.Clean(queryDir)
 
 	dirs := make(map[string]bool)
-	var out []collectionListResponse
+	var out []bucketListResponse
 	for _, r := range refs {
 		if r.Path == "" || r.Name == "" {
 			continue
@@ -3794,13 +3791,13 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
 
-			out = append(out, collectionListResponse{
+			out = append(out, bucketListResponse{
 				Name:      r.Name,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
 				Dir:       queryDir,
-				ColUuid:   coluuid,
+				uuid:      uuid,
 				UpdatedAt: r.UpdatedAt,
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
@@ -3809,14 +3806,14 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 			//if r.Type == util.Directory {
 			//	if !dirs[relp] {
 			//		dirs[relp] = true
-			//		out = append(out, collectionListResponse{
+			//		out = append(out, bucketListResponse{
 			//			Name:    relp,
 			//			Type:    Dir,
 			//			Size:    r.Size,
 			//			ContID:  r.ID,
 			//			Cid:     &r.Cid,
 			//			Dir:     queryDir,
-			//			ColUuid: coluuid,
+			//			uuid: uuid,
 			//		})
 			//	}
 			//	continue
@@ -3833,11 +3830,11 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 			}
 			if !dirs[subDir] {
 				dirs[subDir] = true
-				out = append(out, collectionListResponse{
-					Name:    subDir,
-					Type:    Dir,
-					Dir:     queryDir,
-					ColUuid: coluuid,
+				out = append(out, bucketListResponse{
+					Name: subDir,
+					Type: Dir,
+					Dir:  queryDir,
+					uuid: uuid,
 				})
 				continue
 			}
@@ -3848,14 +3845,14 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 		//if r.Type == util.Directory {
 		//	contentType = Dir
 		//}
-		//out = append(out, collectionListResponse{
+		//out = append(out, bucketListResponse{
 		//	Name:    r.Name,
 		//	Type:    contentType,
 		//	Size:    r.Size,
 		//	ContID:  r.ID,
 		//	Cid:     &util.DbCID{CID: r.Cid.CID},
 		//	Dir:     queryDir,
-		//	ColUuid: coluuid,
+		//	uuid: uuid,
 		//})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -3867,63 +3864,63 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 	return relp, err
 }
 
-// handleDeleteCollection godoc
-// @Summary      Deletes a collection
-// @Description  This endpoint is used to delete an existing collection.
-// @Tags         collections
-// @Param        coluuid  path  string  true  "Collection ID"
-// @Router       /collections/{coluuid} [delete]
+// handleDeleteBucket godoc
+// @Summary      Deletes a bucket
+// @Description  This endpoint is used to delete an existing bucket.
+// @Tags         buckets
+// @Param        uuid  path  string  true  "Bucket ID"
+// @Router       /buckets/{uuid} [delete]
 // @Success      200  {string}  string  ""
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
-	coluuid := c.Param("coluuid")
+func (s *Server) handleDeleteBucket(c echo.Context, u *util.User) error {
+	uuid := c.Param("uuid")
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
+	var bucket buckets.Bucket
+	if err := s.DB.First(&bucket, "uuid = ?", uuid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection with ID(%s) was not found", coluuid),
+				Details: fmt.Sprintf("bucket with ID(%s) was not found", uuid),
 			}
 		}
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+	if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
 		return err
 	}
 
-	if err := s.DB.Delete(&col).Error; err != nil {
+	if err := s.DB.Delete(&bucket).Error; err != nil {
 		return err
 	}
 	return c.NoContent(http.StatusOK)
 }
 
-type deleteContentFromCollectionBody struct {
+type deleteContentFromBucketBody struct {
 	By    string `json:"by"`
 	Value string `json:"value"`
 }
 
-// handleDeleteContentFromCollection godoc
-// @Summary      Deletes a content from a collection
-// @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
-// @Tags         collections
-// @Param        coluuid    path  string                           true  "Collection ID"
+// handleDeleteContentFromBucket godoc
+// @Summary      Deletes a content from a bucket
+// @Description  This endpoint is used to delete an existing content from an existing bucket. If two or more files with the same contentid exist in the bucket, delete the one in the specified path
+// @Tags         buckets
+// @Param        uuid    path  string                           true  "Bucket ID"
 // @Param        contentid  path  string                           true  "Content ID"
-// @Param        body       body  deleteContentFromCollectionBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
+// @Param        body       body  deleteContentFromBucketBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /collections/{coluuid}/contents [delete]
-func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
-	var body deleteContentFromCollectionBody
+// @Router       /buckets/{uuid}/contents [delete]
+func (s *Server) handleDeleteContentFromBucket(c echo.Context, u *util.User) error {
+	var body deleteContentFromBucketBody
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
-	coluuid := c.Param("coluuid")
+	uuid := c.Param("uuid")
 
 	// check if 'by' is either 'path' or 'content_id'
 	if body.By != "path" && body.By != "content_id" {
@@ -3942,15 +3939,15 @@ func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User)
 		}
 	}
 
-	col, err := collections.GetCollection(coluuid, s.DB, u)
+	bucket, err := buckets.GetBucket(uuid, s.DB, u)
 	if err != nil {
 		return err
 	}
 
-	refs := []collections.CollectionRef{}
+	refs := []buckets.BucketRef{}
 	if body.By == "path" {
 		path := body.Value
-		refs, err = collections.GetContentsInPath(coluuid, path, s.DB, u)
+		refs, err = buckets.GetContentsInPath(uuid, path, s.DB, u)
 		if err != nil {
 			return err
 		}
@@ -3960,8 +3957,8 @@ func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User)
 		if err != nil {
 			return err
 		}
-		if err := s.DB.Model(collections.CollectionRef{}).
-			Where("collection = ?", col.ID).
+		if err := s.DB.Model(buckets.BucketRef{}).
+			Where("bucket = ?", bucket.ID).
 			Where("content = ?", content.ID).
 			Scan(&refs).Error; err != nil {
 			return err
@@ -5060,13 +5057,13 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 		}
 	}
 
-	var col collections.Collection
-	if req.CollectionID != "" {
-		if err := s.DB.First(&col, "uuid = ?", req.CollectionID).Error; err != nil {
+	var bucket buckets.Bucket
+	if req.BucketID != "" {
+		if err := s.DB.First(&bucket, "uuid = ?", req.BucketID).Error; err != nil {
 			return err
 		}
 
-		if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
 			return err
 		}
 	}
@@ -5085,21 +5082,21 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if req.CollectionID != "" {
-		if req.CollectionDir == "" {
-			req.CollectionDir = "/"
+	if req.BucketID != "" {
+		if req.BucketDir == "" {
+			req.BucketDir = "/"
 		}
 
-		sp, err := sanitizePath(req.CollectionDir)
+		sp, err := sanitizePath(req.BucketDir)
 		if err != nil {
 			return err
 		}
 
 		path := &sp
-		if err := s.DB.Create(&collections.CollectionRef{
-			Collection: col.ID,
-			Content:    content.ID,
-			Path:       path,
+		if err := s.DB.Create(&buckets.BucketRef{
+			Bucket:  bucket.ID,
+			Content: content.ID,
+			Path:    path,
 		}).Error; err != nil {
 			return err
 		}
@@ -5606,18 +5603,18 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Dir    CidType = "directory"
-	ColDir string  = "dir"
+	Dir       CidType = "directory"
+	BucketDir string  = "dir"
 )
 
-type collectionListResponse struct {
+type bucketListResponse struct {
 	Name      string      `json:"name"`
 	Type      CidType     `json:"type"`
 	Size      int64       `json:"size"`
 	ContID    uint        `json:"contId"`
 	Cid       *util.DbCID `json:"cid,omitempty"`
 	Dir       string      `json:"dir"`
-	ColUuid   string      `json:"coluuid"`
+	uuid      string      `json:"uuid"`
 	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
@@ -5640,70 +5637,6 @@ func sanitizePath(p string) (string, error) {
 		cleanPath = cleanPath + "/"
 	}
 	return cleanPath, nil
-}
-
-// handleColfsAdd godoc
-// @Summary      Add a file to a collection
-// @Description  This endpoint adds a file to a collection
-// @Tags         collections
-// @Param        coluuid  query  string  true  "Collection ID"
-// @Param        content  query  string  true  "Content"
-// @Param        path     query  string  true  "Path to file"
-// @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
-// @Failure      500  {object}  util.HttpError
-// @Router       /collections/fs/add [post]
-func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
-	coluuid := c.QueryParam("coluuid")
-	contid := c.QueryParam("content")
-	npath := c.QueryParam("path")
-
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
-		return err
-	}
-
-	var content util.Content
-	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection content: %s was not found", contid),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-		return err
-	}
-
-	var path *string
-	if npath != "" {
-		p, err := sanitizePath(npath)
-		if err != nil {
-			return err
-		}
-		path = &p
-	}
-
-	if err := s.DB.Create(&collections.CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
-		return errors.Wrap(err, "failed to add content to requested collection")
-	}
-	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleRunGc(c echo.Context) error {

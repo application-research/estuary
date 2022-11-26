@@ -493,23 +493,23 @@ const docTemplate = `{
                 }
             }
         },
-        "/collections/": {
+        "/buckets/": {
             "get": {
-                "description": "This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.",
+                "description": "This endpoint is used to list all buckets. Whenever a user logs on estuary, it will list all buckets that the user has access to. This endpoint provides a way to list all buckets to the user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "List all collections",
+                "summary": "List all buckets",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/collections.Collection"
+                                "$ref": "#/definitions/buckets.Bucket"
                             }
                         }
                     },
@@ -534,22 +534,22 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "This endpoint is used to create a new collection. A collection is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new collection.",
+                "description": "This endpoint is used to create a new bucket. A bucket is a representaion of a group of objects added on the estuary. This endpoint can be used to create a new bucket.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Create a new collection",
+                "summary": "Create a new bucket",
                 "parameters": [
                     {
-                        "description": "Collection name and description",
+                        "description": "Bucket name and description",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.createCollectionBody"
+                            "$ref": "#/definitions/main.createBucketBody"
                         }
                     }
                 ],
@@ -557,7 +557,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/collections.Collection"
+                            "$ref": "#/definitions/buckets.Bucket"
                         }
                     },
                     "400": {
@@ -581,76 +581,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/collections/fs/add": {
-            "post": {
-                "description": "This endpoint adds a file to a collection",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "collections"
-                ],
-                "summary": "Add a file to a collection",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Collection ID",
-                        "name": "coluuid",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Content",
-                        "name": "content",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Path to file",
-                        "name": "path",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/collections/{coluuid}": {
+        "/buckets/{uuid}": {
             "get": {
-                "description": "This endpoint is used to get contents in a collection. If no colpath query param is passed",
+                "description": "This endpoint is used to get contents in a bucket. If no path query param is passed",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Get contents in a collection",
+                "summary": "Get contents in a bucket",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "coluuid",
-                        "name": "coluuid",
+                        "description": "uuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
@@ -683,7 +628,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "This endpoint adds already-pinned contents (that have ContentIDs) to a collection.",
+                "description": "This endpoint adds already-pinned contents (that have ContentIDs) to a bucket.",
                 "consumes": [
                     "application/json"
                 ],
@@ -691,19 +636,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Add contents to a collection",
+                "summary": "Add contents to a bucket",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
+                        "description": "Bucket UUID",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Content IDs to add to collection",
+                        "description": "Content IDs to add to bucket",
                         "name": "contentIDs",
                         "in": "body",
                         "required": true,
@@ -743,16 +688,16 @@ const docTemplate = `{
                 }
             },
             "delete": {
-                "description": "This endpoint is used to delete an existing collection.",
+                "description": "This endpoint is used to delete an existing bucket.",
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Deletes a collection",
+                "summary": "Deletes a bucket",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection ID",
-                        "name": "coluuid",
+                        "description": "Bucket ID",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     }
@@ -779,21 +724,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/collections/{coluuid}/commit": {
+        "/buckets/{uuid}/commit": {
             "post": {
-                "description": "This endpoint is used to save the contents in a collection, producing a top-level CID that references all the current CIDs in the collection.",
+                "description": "This endpoint is used to save the contents in a bucket, producing a top-level CID that references all the current CIDs in the bucket.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Produce a CID of the collection contents",
+                "summary": "Produce a CID of the bucket contents",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "coluuid",
-                        "name": "coluuid",
+                        "description": "uuid",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     }
@@ -820,21 +765,21 @@ const docTemplate = `{
                 }
             }
         },
-        "/collections/{coluuid}/contents": {
+        "/buckets/{uuid}/contents": {
             "delete": {
-                "description": "This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path",
+                "description": "This endpoint is used to delete an existing content from an existing bucket. If two or more files with the same contentid exist in the bucket, delete the one in the specified path",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "collections"
+                    "buckets"
                 ],
-                "summary": "Deletes a content from a collection",
+                "summary": "Deletes a content from a bucket",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Collection ID",
-                        "name": "coluuid",
+                        "description": "Bucket ID",
+                        "name": "uuid",
                         "in": "path",
                         "required": true
                     },
@@ -851,7 +796,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.deleteContentFromCollectionBody"
+                            "$ref": "#/definitions/main.deleteContentFromBucketBody"
                         }
                     }
                 ],
@@ -906,8 +851,8 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
+                        "description": "Bucket UUID",
+                        "name": "uuid",
                         "in": "query"
                     },
                     {
@@ -3027,7 +2972,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "collections.Collection": {
+        "buckets.Bucket": {
             "type": "object",
             "properties": {
                 "cid": {
@@ -3064,7 +3009,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.createCollectionBody": {
+        "main.createBucketBody": {
             "type": "object",
             "properties": {
                 "description": {
@@ -3075,7 +3020,7 @@ const docTemplate = `{
                 }
             }
         },
-        "main.deleteContentFromCollectionBody": {
+        "main.deleteContentFromBucketBody": {
             "type": "object",
             "properties": {
                 "by": {

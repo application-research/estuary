@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/application-research/estuary/collections"
+	"github.com/application-research/estuary/buckets"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
@@ -305,9 +305,9 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
-	var cols []*collections.CollectionRef
-	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-		var srchCol collections.Collection
+	var cols []*buckets.BucketRef
+	if c, ok := pin.Meta["bucket"].(string); ok && c != "" {
+		var srchCol buckets.Bucket
 		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
 			return err
 		}
@@ -323,9 +323,9 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 			colpath = &p
 		}
 
-		cols = []*collections.CollectionRef{
+		cols = []*buckets.BucketRef{
 			{
-				Collection: srchCol.ID,
+				Bucket: srchCol.ID,
 				Path:       colpath,
 			},
 		}
