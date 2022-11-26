@@ -257,6 +257,6 @@ type SplitComplete struct {
 const OP_SanityCheck = "SanityCheck"
 
 type SanityCheck struct {
-	CID cid.Cid
-	Err error
+	CID    cid.Cid
+	ErrMsg string
 }

@@ -5,7 +5,9 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
-func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, err error) {
+func (cm *ContentManager) HandleSanityCheck(cc cid.Cid, errMsg string) {
+	cm.log.Debugf("running sanity check for cid: %s", cc)
+
 	// get all contents affected by this missing block on estuary or from shuttles
 	var cnts []util.Content
 	where := "id in (select content from obj_refs where object = (select id from objects where cid = ?))"

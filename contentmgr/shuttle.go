@@ -225,7 +225,7 @@ func (cm *ContentManager) processShuttleMessage(handle string, msg *drpc.Message
 		if sc == nil {
 			return ErrNilParams
 		}
-		cm.HandleSanityCheck(sc.CID, sc.Err)
+		cm.HandleSanityCheck(sc.CID, sc.ErrMsg)
 		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
