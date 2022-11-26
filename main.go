@@ -180,8 +180,14 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
-		case "indexer-tick-interval":
-			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
+		case "indexer-advertisement-interval":
+			value, err := time.ParseDuration(cctx.String("indexer-advertisement-interval"))
+			if err != nil {
+				return fmt.Errorf("failed to parse indexer advertisement interval: %v", err)
+			}
+			cfg.Node.IndexerAdvertisementInterval = value
+		case "advertise-offline-autoretrieves":
+			cfg.Node.AdvertiseOfflineAutoretrieves = cctx.Bool("advertise-offline-autoretrieves")
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -427,10 +433,14 @@ func main() {
 			Usage: "sets the indexer advertisement url",
 			Value: cfg.Node.IndexerURL,
 		},
-		&cli.IntFlag{
-			Name:  "indexer-tick-interval",
-			Usage: "sets the indexer advertisement interval in minutes",
-			Value: cfg.Node.IndexerTickInterval,
+		&cli.StringFlag{
+			Name:  "indexer-advertisement-interval",
+			Usage: "sets the indexer advertisement interval using a Go time string (e.g. '1m30s')",
+			Value: cfg.Node.IndexerAdvertisementInterval.String(),
+		},
+		&cli.BoolFlag{
+			Name:  "advertise-offline-autoretrieves",
+			Usage: "if set, registered autoretrieves will be advertised even if they are not currently online",
 		},
 		&cli.StringFlag{
 			Name:  "max-price",
@@ -748,13 +758,28 @@ func main() {
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore, s.FilClient.GetDtMgr())
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(
+				db,
+				cfg.Node.IndexerAdvertisementInterval,
+				cfg.Node.IndexerURL,
+				cfg.Node.AdvertiseOfflineAutoretrieves,
+			)
 			if err != nil {
 				return err
 			}
 
-			go s.Node.ArEngine.Run()
-			defer s.Node.ArEngine.Shutdown()
+			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Errorf("Autoretrieve provide loop panicked, cancelling until the executable is restarted: %v", err)
+					}
+				}()
+
+				if err := s.Node.AutoretrieveProvider.Run(context.Background()); err != nil {
+					log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
+				}
+			}()
+			defer s.Node.AutoretrieveProvider.Stop()
 		}
 
 		go func() {
@@ -823,6 +848,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&model.Shuttle{},
 		&autoretrieve.Autoretrieve{},
 		&model.SanityCheck{},
+		&autoretrieve.PublishedBatch{},
 	); err != nil {
 		return err
 	}

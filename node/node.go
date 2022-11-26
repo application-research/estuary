@@ -15,9 +15,9 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
 
+	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/node/modules/peering"
 
-	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
@@ -113,10 +113,10 @@ type Node struct {
 
 	Wallet *wallet.LocalWallet
 
-	Bwc      *metrics.BandwidthCounter
-	Peering  *peering.EstuaryPeeringService
-	Config   *config.Node
-	ArEngine *autoretrieve.AutoretrieveEngine
+	Bwc                  *metrics.BandwidthCounter
+	Peering              *peering.EstuaryPeeringService
+	Config               *config.Node
+	AutoretrieveProvider *autoretrieve.Provider
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
@@ -364,7 +364,9 @@ func parseBsCfg(bscfg string) (string, []string, string, error) {
 	return t, params, bscfg[end+1:], nil
 }
 
-/* format:
+/*
+	format:
+
 :lmdb:/path/to/thing
 */
 func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {

@@ -23,6 +23,11 @@ const MinDealContentSize = int64((4 << 30) * 9 / 10)
 // MaxDealContentSize 31.66 GB
 const MaxDealContentSize = int64(34_000_000_000)
 
+// how many contents to include per advertisement for autoretrieve
+const AutoretrieveProviderBatchSize = uint(25000)
+
+const DefaultIndexerURL = "https://cid.contact"
+
 const TokenExpiryDurationAdmin = time.Hour * 24 * 365           // 1 year
 const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
 const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days

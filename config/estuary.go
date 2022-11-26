@@ -1,14 +1,13 @@
 package config
 
 import (
-	"github.com/application-research/estuary/constants"
-
 	"path/filepath"
 	"time"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
 	"github.com/application-research/estuary/build"
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -131,8 +130,8 @@ func NewEstuary(appVersion string) *Estuary {
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
 
-			IndexerURL:          "https://cid.contact",
-			IndexerTickInterval: 720,
+			IndexerURL:                   constants.DefaultIndexerURL,
+			IndexerAdvertisementInterval: time.Minute,
 
 			ApiURL: "wss://api.chain.love",
 
