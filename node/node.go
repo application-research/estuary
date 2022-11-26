@@ -107,7 +107,7 @@ type Node struct {
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
-	Blockstore      blockstore.Blockstore
+	Blockstore      SanityCheckBlockstore
 	Bitswap         *bitswap.Bitswap
 	NotifBlockstore *NotifyBlockstore
 
@@ -291,7 +291,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
-		Blockstore: mbs,
+		Blockstore: newSanityCheckBlockstoreWrapper(mbs),
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
 		Bitswap:    bswap,

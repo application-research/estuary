@@ -639,7 +639,7 @@ func main() {
 			StagingMgr:       sbmgr,
 			tracer:           otel.Tracer("api"),
 			cacher:           memo.NewCacher(),
-			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			gwayHandler:      gateway.NewGatewayHandler(&nd.Blockstore),
 			cfg:              cfg,
 			trackingChannels: make(map[string]*util.ChanTrack),
 		}
@@ -672,7 +672,7 @@ func main() {
 			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
 		})
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
@@ -741,6 +741,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
 		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
 		s.CM = cm
@@ -846,6 +847,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.InviteCode{},
 		&model.Shuttle{},
 		&autoretrieve.Autoretrieve{},
+		&model.SanityCheck{},
 		&autoretrieve.PublishedBatch{},
 	); err != nil {
 		return err

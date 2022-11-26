@@ -181,6 +181,7 @@ type MsgParams struct {
 	ShuttleUpdate    *ShuttleUpdate             `json:",omitempty"`
 	GarbageCheck     *GarbageCheck              `json:",omitempty"`
 	SplitComplete    *SplitComplete             `json:",omitempty"`
+	SanityCheck      *SanityCheck               `json:",omitempty"`
 }
 
 const OP_UpdatePinStatus = "UpdatePinStatus"
@@ -251,4 +252,11 @@ const OP_SplitComplete = "SplitComplete"
 
 type SplitComplete struct {
 	ID uint
+}
+
+const OP_SanityCheck = "SanityCheck"
+
+type SanityCheck struct {
+	CID    cid.Cid
+	ErrMsg string
 }

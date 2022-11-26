@@ -923,6 +923,27 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	// if content is offloaded, do not proceed - since it needs the blocks for commp and data transfer
+	if content.Offloaded {
+		go func() {
+			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
+				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
+			}
+			done(time.Second * 30)
+		}()
+		return nil
+	}
+
+	// if content has any missing blocks, do not proceed
+	var sncks []model.SanityCheck
+	if err := cm.DB.Find(&sncks, "content_id = ?", content.ID).Error; err != nil {
+		return err
+	}
+	if len(sncks) > 0 {
+		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
+		return nil
+	}
+
 	// If this content is already scheduled to be aggregated and is waiting in a bucket
 	if cm.contentInStagingZone(ctx, content) {
 		return nil
@@ -942,7 +963,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	}
 
 	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content, deals) {
+	if cm.canStageContent(content) {
 		return cm.addContentToStagingZone(ctx, content)
 	}
 
@@ -1056,16 +1077,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	if content.Offloaded {
-		go func() {
-			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
-				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
-			}
-			done(time.Second * 30)
-		}()
-		return nil
-	}
-
 	if cm.DealMakingDisabled() {
 		cm.log.Warnf("deal making is disabled for now")
 		done(time.Minute * 60)
@@ -1100,10 +1111,9 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	return nil
 }
 
-// if content has no deals, is not already staged, is below min content size,
-// and staging zone is enabled
-func (cm *ContentManager) canStageContent(cont util.Content, deals []model.ContentDeal) bool {
-	return len(deals) == 0 && !cont.Aggregate && cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
+// if content is not already staged, if it is below min deal content size, and staging zone is enabled
+func (cm *ContentManager) canStageContent(cont util.Content) bool {
+	return !cont.Aggregate && cont.Size < cm.cfg.Content.MinSize && cm.cfg.StagingBucket.Enabled
 }
 
 func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, size int64) error {
@@ -2746,13 +2756,13 @@ func (cm *ContentManager) SetDealMakingEnabled(enable bool) {
 }
 
 func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
-	dserv := merkledag.NewDAGService(blockservice.New(cm.Node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(&cm.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(size), 0)
 	if err := b.Pack(ctx, cont.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(cm.Node.Blockstore)
+	cst := cbor.NewCborStore(&cm.Node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {
