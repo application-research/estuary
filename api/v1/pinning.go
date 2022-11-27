@@ -1,7 +1,6 @@
-package main
+package apiV1
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -9,12 +8,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/collections"
-	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
-	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-merkledag"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/xerrors"
@@ -27,53 +23,6 @@ const (
 	IPFS_PIN_LIMIT_MAX     = 1000
 )
 
-func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
-	ctx, span := s.tracer.Start(ctx, "doPinning")
-	defer span.End()
-
-	// remove replacement async - move this out
-	if op.Replace > 0 {
-		go func() {
-			if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
-			}
-		}()
-	}
-
-	for _, pi := range op.Peers {
-		if err := s.Node.Host.Connect(ctx, *pi); err != nil {
-			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
-		}
-	}
-
-	bserv := blockservice.New(&s.Node.Blockstore, s.Node.Bitswap)
-	dserv := merkledag.NewDAGService(bserv)
-	dsess := dserv.Session(ctx)
-
-	if err := s.CM.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
-		return err
-	}
-
-	if op.MakeDeal {
-		s.CM.ToCheck(op.ContId)
-	}
-
-	// this provide call goes out immediately
-	if err := s.Node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		log.Warnf("provider broadcast failed: %s", err)
-	}
-
-	// this one adds to a queue
-	if err := s.Node.Provider.Provide(op.Obj); err != nil {
-		log.Warnf("providing failed: %s", err)
-	}
-	return nil
-}
-
-func (s *Server) PinStatusFunc(contID uint, location string, status types.PinningStatus) error {
-	return s.CM.UpdatePinStatus(location, contID, status)
-}
-
 // handleListPins godoc
 // @Summary      List all pin status objects
 // @Description  This endpoint lists all pin status objects
@@ -83,7 +32,7 @@ func (s *Server) PinStatusFunc(contID uint, location string, status types.Pinnin
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
-func (s *Server) handleListPins(e echo.Context, u *util.User) error {
+func (s *apiV1) handleListPins(e echo.Context, u *util.User) error {
 	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
 	defer span.End()
 
@@ -293,7 +242,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @in           202,default  string  Token "token"
 // @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Router       /pinning/pins [post]
-func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
+func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	ctx := e.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -335,7 +284,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
-			log.Warnf("could not parse origin(%s): %s", p, err)
+			s.log.Warnf("could not parse origin(%s): %s", p, err)
 			continue
 		}
 		origins = append(origins, ai)
@@ -347,10 +296,12 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
+
+	s.pinMgr.Add(pinOp)
 	return e.JSON(http.StatusAccepted, status)
 }
 
@@ -364,7 +315,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 // @Failure      500    {object}  util.HttpError
 // @Param        pinid  path      string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
-func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
+func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
@@ -408,7 +359,7 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Param        origins	body      string  false  "Origins of new pin"
 // @Param        meta		body      string  false  "Meta information of new pin"
 // @Router       /pinning/pins/{pinid} [post]
-func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
+func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -455,10 +406,13 @@ func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
+
+	s.pinMgr.Add(pinOp)
+
 	return e.JSON(http.StatusAccepted, status)
 }
 
@@ -471,7 +425,7 @@ func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid  path      string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
-func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
+func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 	pinID, err := strconv.Atoi(e.Param("pinid"))
 	if err != nil {
 		return err
@@ -501,7 +455,7 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	// unpin async
 	go func() {
 		if err := s.CM.UnpinContent(e.Request().Context(), uint(pinID)); err != nil {
-			log.Errorf("could not unpinContent(%d): %s", err, pinID)
+			s.log.Errorf("could not unpinContent(%d): %s", err, pinID)
 		}
 	}()
 	return e.NoContent(http.StatusAccepted)

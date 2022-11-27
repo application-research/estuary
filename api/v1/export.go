@@ -1,4 +1,4 @@
-package main
+package apiV1
 
 import (
 	"time"
@@ -19,7 +19,7 @@ type ExportVersion1 struct {
 	Deals    []model.ContentDeal
 }
 
-func (s *Server) exportUserData(uid uint) (*DataExport, error) {
+func (s *apiV1) exportUserData(uid uint) (*DataExport, error) {
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
 		return nil, err
