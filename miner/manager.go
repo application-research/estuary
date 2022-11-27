@@ -16,11 +16,11 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p-core/protocol"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -49,15 +49,17 @@ type MinerManager struct {
 	cfg          *config.Estuary
 	tracer       trace.Tracer
 	api          api.Gateway
+	log          *zap.SugaredLogger
 }
 
-func NewMinerManager(db *gorm.DB, fc *filclient.FilClient, cfg *config.Estuary, api api.Gateway) IMinerManager {
+func NewMinerManager(db *gorm.DB, fc *filclient.FilClient, cfg *config.Estuary, api api.Gateway, log *zap.SugaredLogger) IMinerManager {
 	return &MinerManager{
 		db:        db,
 		filClient: fc,
 		cfg:       cfg,
 		tracer:    otel.Tracer("miner_manager"),
 		api:       api,
+		log:       log,
 	}
 }
 
@@ -167,13 +169,13 @@ func (mm *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n 
 
 		proto, err := mm.GetDealProtocolForMiner(ctx, m)
 		if err != nil {
-			log.Warnf("getting deal protocol for %s failed: %s", m, err)
+			mm.log.Warnf("getting deal protocol for %s failed: %s", m, err)
 			continue
 		}
 
 		ask, err := mm.GetAsk(ctx, m, time.Minute*30)
 		if err != nil {
-			log.Warnf("getting ask from %s failed: %s", m, err)
+			mm.log.Warnf("getting ask from %s failed: %s", m, err)
 			continue
 		}
 
