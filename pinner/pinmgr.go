@@ -124,9 +124,11 @@ func (pm *PinManager) PinQueueSize() int {
 }
 
 func (pm *PinManager) Add(op *pinning_op.PinningOperation) {
-	go func() {
-		pm.pinQueueIn <- op
-	}()
+	if op != nil {
+		go func() {
+			pm.pinQueueIn <- op
+		}()
+	}
 }
 
 var maxTimeout = 24 * time.Hour

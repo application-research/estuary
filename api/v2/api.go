@@ -81,5 +81,5 @@ func NewAPI(
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
-
+	_ = e.Group("/v2")
 }
