@@ -569,3 +569,19 @@ func (cm *ContentManager) setUpStaging(ctx context.Context) {
 		cm.log.Infof("rebuilt staging buckets and spun up staging bucket worker")
 	}
 }
+
+func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+	zones, ok := cm.buckets[uid]
+	if !ok {
+		return ""
+	}
+
+	// TODO: maybe we could make this more complex, but for now, if we have a
+	// staging zone opened in a particular location, just keep using that one
+	for _, z := range zones {
+		return z.Location
+	}
+	return ""
+}

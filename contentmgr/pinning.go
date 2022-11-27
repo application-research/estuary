@@ -314,22 +314,6 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 	return shuttles[0].Handle, nil
 }
 
-func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
-	zones, ok := cm.buckets[uid]
-	if !ok {
-		return ""
-	}
-
-	// TODO: maybe we could make this more complex, but for now, if we have a
-	// staging zone opened in a particular location, just keep using that one
-	for _, z := range zones {
-		return z.Location
-	}
-	return ""
-}
-
 // even though there are 4 pin statuses, queued, pinning, pinned and failed
 // the UpdatePinStatus only changes DB state for failed status
 // when the content was added, status = pinning
