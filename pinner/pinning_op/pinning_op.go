@@ -36,24 +36,42 @@ type PinningOperation struct {
 
 	SkipLimiter bool
 
-	Lk sync.Mutex
+	lk sync.Mutex
 
 	MakeDeal bool
 }
 
 func (po *PinningOperation) Fail(err error) {
-	po.Lk.Lock()
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
 	po.FetchErr = err
 	po.EndTime = time.Now()
 	po.Status = types.PinningStatusFailed
 	po.LastUpdate = time.Now()
-	po.Lk.Unlock()
 }
 
 func (po *PinningOperation) SetStatus(st types.PinningStatus) {
-	po.Lk.Lock()
-	defer po.Lk.Unlock()
+	po.lk.Lock()
+	defer po.lk.Unlock()
 
 	po.Status = st
 	po.LastUpdate = time.Now()
+}
+
+func (po *PinningOperation) Complete() {
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	po.EndTime = time.Now()
+	po.LastUpdate = time.Now()
+	po.Status = types.PinningStatusPinned
+}
+
+func (po *PinningOperation) UpdateProgress(size int64) {
+	po.lk.Lock()
+	defer po.lk.Unlock()
+
+	po.NumFetched++
+	po.SizeFetched += size
 }

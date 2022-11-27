@@ -96,9 +96,7 @@ func getPinningData(po *pinning_op.PinningOperation) PinningOperationData {
 
 func (pm *PinManager) complete(po *pinning_op.PinningOperation) {
 	pm.pinQueueLk.Lock()
-	po.Lk.Lock()
 	defer pm.pinQueueLk.Unlock()
-	defer po.Lk.Unlock()
 
 	opdata := getPinningData(po)
 	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
@@ -112,9 +110,7 @@ func (pm *PinManager) complete(po *pinning_op.PinningOperation) {
 		delete(pm.activePins, po.UserId)
 	}
 
-	po.EndTime = time.Now()
-	po.LastUpdate = time.Now()
-	po.Status = types.PinningStatusPinned
+	po.Complete()
 }
 
 func (pm *PinManager) PinQueueSize() int {
@@ -140,10 +136,7 @@ func (pm *PinManager) doPinning(op *pinning_op.PinningOperation) error {
 	op.SetStatus(types.PinningStatusPinning)
 
 	if err := pm.RunPinFunc(ctx, op, func(size int64) {
-		op.Lk.Lock()
-		defer op.Lk.Unlock()
-		op.NumFetched++
-		op.SizeFetched += size
+		op.UpdateProgress(size)
 	}); err != nil {
 		op.Fail(err)
 		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusFailed); err2 != nil {
@@ -308,7 +301,7 @@ func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
 	_, err = pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
 	pm.pinQueueCount[u]++
 	if err != nil {
-		log.Fatal("Unable to add pin to queue.")
+		log.Fatal("Unable to add pin to queue.", err)
 	}
 
 	err = pm.duplicateGuard.Put(createLevelDBKey(opdata), []byte{255}, nil)

@@ -57,7 +57,6 @@ func newPinData(name string, userid int, contid int) pinning_op.PinningOperation
 	return pinning_op.PinningOperation{
 		Name:   name,
 		UserId: uint(userid),
-		Lk:     sync.Mutex{},
 		ContId: uint(contid),
 	}
 }
