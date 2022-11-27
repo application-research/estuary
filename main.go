@@ -234,13 +234,11 @@ func main() {
 		log.Fatalf("could not determine homedir for estuary app: %+v", err)
 	}
 
-	app := cli.NewApp()
-	app.Version = appVersion
-
 	cfg := config.NewEstuary(appVersion)
 
+	app := cli.NewApp()
+	app.Version = appVersion
 	app.Usage = "Estuary server CLI"
-
 	app.Before = before
 
 	app.Flags = []cli.Flag{
@@ -487,7 +485,7 @@ func main() {
 					return nil
 				}
 
-				username := cctx.String("username")
+				username := strings.ToLower(cctx.String("username"))
 				if username == "" {
 					return errors.New("setup username cannot be empty")
 				}
@@ -506,8 +504,6 @@ func main() {
 					Logger: logger.Discard,
 				})
 
-				username = strings.ToLower(username)
-
 				var exist *util.User
 				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
 					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -520,20 +516,19 @@ func main() {
 					return fmt.Errorf("a user already exist for that username:%s", username)
 				}
 
-				salt := uuid.New().String()
-
 				//	work with bcrypt on cli defined password.
-				var passwordBytes = []byte(password)
-				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+				hashedPasswordBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+				if err != nil {
+					return fmt.Errorf("hashing admin password failed: %w", err)
+				}
 
 				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:     salt, // default salt.
+					Salt:     uuid.New().String(), // default salt.
 					PassHash: string(hashedPasswordBytes),
 					Perm:     100,
 				}
-
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
@@ -577,6 +572,10 @@ func main() {
 		}
 
 		if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
+			return err
+		}
+
+		if err := cfg.Validate(); err != nil {
 			return err
 		}
 
