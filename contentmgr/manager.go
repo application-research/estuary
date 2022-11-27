@@ -7,9 +7,9 @@ import (
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
-	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
+	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/ipfs/go-cid"
@@ -37,7 +37,6 @@ type ContentManager struct {
 	buckets              map[uint][]*ContentStagingZone
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
-	PinMgr               *pinner.PinManager
 	ShuttlesLk           sync.Mutex
 	Shuttles             map[string]*ShuttleConnection
 	remoteTransferStatus *lru.ARCCache
@@ -46,9 +45,13 @@ type ContentManager struct {
 	IncomingRPCMessages  chan *drpc.Message
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
+
+	// TODO move out to filc package
+	TcLk             sync.Mutex
+	TrackingChannels map[string]*util.ChanTrack
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, pinmgr *pinner.PinManager, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, error) {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -65,7 +68,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		toCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		buckets:              make(map[uint][]*ContentStagingZone),
-		PinMgr:               pinmgr,
 		remoteTransferStatus: cache,
 		Shuttles:             make(map[string]*ShuttleConnection),
 		inflightCids:         make(map[cid.Cid]uint),
@@ -74,10 +76,24 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		IncomingRPCMessages:  make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:         minerManager,
 		log:                  log,
+
+		// TODO move out to filc package
+		TrackingChannels: make(map[string]*util.ChanTrack),
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
 		cm.ToCheck(c)
 	})
 	return cm, nil
+}
+
+// TODO move out to filc package
+func (cm *ContentManager) TrackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
+	cm.TcLk.Lock()
+	defer cm.TcLk.Unlock()
+
+	cm.TrackingChannels[chanid.String()] = &util.ChanTrack{
+		Dbid: dealdbid,
+		Last: st,
+	}
 }

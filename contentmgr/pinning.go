@@ -5,16 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/pinner/pinning_op"
+	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-merkledag"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
@@ -95,44 +97,16 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) pinContents(ctx context.Context, contents []util.Content) {
-	makeDeal := true
-	for _, c := range contents {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			var origins []*peer.AddrInfo
-			// when refreshing pinning queue, use content origins if available
-			if c.Origins != "" {
-				_ = json.Unmarshal([]byte(c.Origins), &origins) // no need to handle or log err, its just a nice to have
-			}
-
-			if c.Location == constants.ContentLocationLocal {
-				// if local content adding is enabled, retry local pin
-				if !cm.cfg.Content.DisableLocalAdding {
-					cm.addPinToQueue(c, origins, 0, makeDeal)
-				}
-			} else {
-				if err := cm.pinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
-					cm.log.Errorf("failed to send pin message to shuttle: %s", err)
-					time.Sleep(time.Millisecond * 100)
-				}
-			}
-		}
-	}
-}
-
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *pinning_op.PinningOperation, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
-		return nil, xerrors.Errorf("selecting location for content failed: %w", err)
+		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
@@ -140,7 +114,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if meta != nil {
 		b, err := json.Marshal(meta)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		metaStr = string(b)
 	}
@@ -149,7 +123,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if origins != nil {
 		b, err := json.Marshal(origins)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		originsStr = string(b)
 	}
@@ -166,7 +140,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Origins:     originsStr,
 	}
 	if err := cm.db.Create(&cont).Error; err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if len(cols) > 0 {
@@ -178,26 +152,32 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
+	var pinOp *pinning_op.PinningOperation
 	if loc == constants.ContentLocationLocal {
-		cm.addPinToQueue(cont, origins, replaceID, makeDeal)
+		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
-		if err := cm.pinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
-			return nil, err
+		if err := cm.PinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
+			return nil, nil, err
 		}
 	}
-	return cm.PinStatus(cont, origins)
+
+	ipfsRes, err := cm.PinStatus(cont, origins)
+	if err != nil {
+		return nil, nil, err
+	}
+	return ipfsRes, pinOp, nil
 }
 
-func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) {
+func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *pinning_op.PinningOperation {
 	if cont.Location != constants.ContentLocationLocal {
 		cm.log.Errorf("calling addPinToQueue on non-local content")
 	}
 
-	op := &pinner.PinningOperation{
+	return &pinning_op.PinningOperation{
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
@@ -210,10 +190,9 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInf
 		MakeDeal: makeDeal,
 		Meta:     cont.PinMeta,
 	}
-	cm.PinMgr.Add(op)
 }
 
-func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, cont util.Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
+func (cm *ContentManager) PinContentOnShuttle(ctx context.Context, cont util.Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
 		attribute.String("CID", cont.Cid.CID.String()),
@@ -447,4 +426,51 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 
 	cm.ToCheck(cont.ID)
 	return nil
+}
+
+func (cm *ContentManager) DoPinning(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
+	ctx, span := cm.tracer.Start(ctx, "doPinning")
+	defer span.End()
+
+	// remove replacement async - move this out
+	if op.Replace > 0 {
+		go func() {
+			if err := cm.RemoveContent(ctx, op.Replace, true); err != nil {
+				cm.log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
+			}
+		}()
+	}
+
+	for _, pi := range op.Peers {
+		if err := cm.node.Host.Connect(ctx, *pi); err != nil {
+			cm.log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+		}
+	}
+
+	bserv := blockservice.New(&cm.node.Blockstore, cm.node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+	dsess := dserv.Session(ctx)
+
+	if err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
+		return err
+	}
+
+	if op.MakeDeal {
+		cm.ToCheck(op.ContId)
+	}
+
+	// this provide call goes out immediately
+	if err := cm.node.FullRT.Provide(ctx, op.Obj, true); err != nil {
+		cm.log.Warnf("provider broadcast failed: %s", err)
+	}
+
+	// this one adds to a queue
+	if err := cm.node.Provider.Provide(op.Obj); err != nil {
+		cm.log.Warnf("providing failed: %s", err)
+	}
+	return nil
+}
+
+func (cm *ContentManager) PinStatusFunc(contID uint, location string, status types.PinningStatus) error {
+	return cm.UpdatePinStatus(location, contID, status)
 }

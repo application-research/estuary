@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/pinning_op"
+	pinning_progress "github.com/application-research/estuary/pinner/progress"
+
 	"github.com/application-research/estuary/pinner/types"
 
 	"github.com/application-research/estuary/config"
@@ -1609,7 +1612,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -1806,7 +1809,7 @@ func (s *Shuttle) refreshPinQueue() error {
 }
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
-	op := &pinner.PinningOperation{
+	op := &pinning_op.PinningOperation{
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,

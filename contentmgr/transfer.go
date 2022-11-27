@@ -14,6 +14,34 @@ import (
 	"github.com/google/uuid"
 )
 
+func (cm *ContentManager) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
+	var deals []model.ContentDeal
+	if err := cm.db.Model(model.ContentDeal{}).
+		Joins("left join contents on contents.id = content_deals.content").
+		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
+		Scan(&deals).Error; err != nil {
+		return err
+	}
+
+	go func() {
+		for _, d := range deals {
+			chid, err := d.ChannelID()
+			if err != nil {
+				// Only legacy (push) transfers need to be restarted by Estuary.
+				// Newer (pull) transfers are restarted by the Storage Provider.
+				// So if it's not a legacy channel ID, ignore it.
+				continue
+			}
+
+			if err := cm.RestartTransfer(ctx, loc, chid, d); err != nil {
+				cm.log.Errorf("failed to restart transfer: %s", err)
+				continue
+			}
+		}
+	}()
+	return nil
+}
+
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
 // It supports only legacy deals (PushTransfer)
 func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
