@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/application-research/estuary/pinner/pinning_op"
+	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -24,7 +27,7 @@ func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/pinQueue")
 
 	return NewPinManager(
-		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -38,7 +41,7 @@ func newManager(count *int) *PinManager {
 
 func newManagerNoDelete(count *int) *PinManager {
 	return NewPinManager(
-		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -50,11 +53,11 @@ func newManagerNoDelete(count *int) *PinManager {
 		})
 }
 
-func newPinData(name string, userid int, contid int) PinningOperation {
-	return PinningOperation{
+func newPinData(name string, userid int, contid int) pinning_op.PinningOperation {
+	return pinning_op.PinningOperation{
 		Name:   name,
 		UserId: uint(userid),
-		lk:     sync.Mutex{},
+		Lk:     sync.Mutex{},
 		ContId: uint(contid),
 	}
 }

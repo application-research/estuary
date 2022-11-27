@@ -10,21 +10,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/pinner/pinning_op"
+	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
 
-	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
 var log = logging.Logger("pinner")
 
-type PinFunc func(context.Context, *PinningOperation, PinProgressCB) error
-
-type PinProgressCB func(int64)
+type PinFunc func(context.Context, *pinning_op.PinningOperation, pinning_progress.PinProgressCB) error
 type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
@@ -50,9 +48,9 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		pinQueue:         pinQueue,
 		activePins:       make(map[uint]int),
 		pinQueueCount:    pinQueueCount,
-		pinQueueIn:       make(chan *PinningOperation, 64),
-		pinQueueOut:      make(chan *PinningOperation),
-		pinComplete:      make(chan *PinningOperation, 64),
+		pinQueueIn:       make(chan *pinning_op.PinningOperation, 64),
+		pinQueueOut:      make(chan *pinning_op.PinningOperation),
+		pinComplete:      make(chan *pinning_op.PinningOperation, 64),
 		duplicateGuard:   createLevelDB(opts.QueueDataDir),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
@@ -72,9 +70,9 @@ type PinManagerOpts struct {
 }
 
 type PinManager struct {
-	pinQueueIn       chan *PinningOperation
-	pinQueueOut      chan *PinningOperation
-	pinComplete      chan *PinningOperation
+	pinQueueIn       chan *pinning_op.PinningOperation
+	pinQueueOut      chan *pinning_op.PinningOperation
+	pinComplete      chan *pinning_op.PinningOperation
 	duplicateGuard   *leveldb.DB
 	activePins       map[uint]int // used to limit the number of pins per user
 	pinQueueCount    map[uint]int // keep track of queue count per user
@@ -86,62 +84,21 @@ type PinManager struct {
 	QueueDataDir     string
 }
 
-// TODO: some of these fields are overkill for the generalized pin manager
-// thing, but are still in use by the primary estuary node. Should probably
-// find a way to decouple this better
-type PinningOperation struct {
-	Obj   cid.Cid
-	Name  string
-	Peers []*peer.AddrInfo
-	Meta  string
-
-	Status types.PinningStatus
-
-	UserId  uint
-	ContId  uint
-	Replace uint
-
-	LastUpdate time.Time
-
-	Started     time.Time
-	NumFetched  int
-	SizeFetched int64
-	FetchErr    error
-	EndTime     time.Time
-
-	Location string
-
-	SkipLimiter bool
-
-	lk sync.Mutex
-
-	MakeDeal bool
-}
-
 type PinningOperationData struct {
 	ContId uint
 }
 
-func getPinningData(po *PinningOperation) PinningOperationData {
+func getPinningData(po *pinning_op.PinningOperation) PinningOperationData {
 	return PinningOperationData{
 		ContId: po.ContId,
 	}
 }
 
-func (po *PinningOperation) fail(err error) {
-	po.lk.Lock()
-	po.FetchErr = err
-	po.EndTime = time.Now()
-	po.Status = types.PinningStatusFailed
-	po.LastUpdate = time.Now()
-	po.lk.Unlock()
-}
-
-func (pm *PinManager) complete(po *PinningOperation) {
+func (pm *PinManager) complete(po *pinning_op.PinningOperation) {
 	pm.pinQueueLk.Lock()
-	po.lk.Lock()
+	po.Lk.Lock()
 	defer pm.pinQueueLk.Unlock()
-	defer po.lk.Unlock()
+	defer po.Lk.Unlock()
 
 	opdata := getPinningData(po)
 	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
@@ -160,21 +117,13 @@ func (pm *PinManager) complete(po *PinningOperation) {
 	po.Status = types.PinningStatusPinned
 }
 
-func (po *PinningOperation) SetStatus(st types.PinningStatus) {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	po.Status = st
-	po.LastUpdate = time.Now()
-}
-
 func (pm *PinManager) PinQueueSize() int {
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
 	return int(pm.pinQueue.Length())
 }
 
-func (pm *PinManager) Add(op *PinningOperation) {
+func (pm *PinManager) Add(op *pinning_op.PinningOperation) {
 	go func() {
 		pm.pinQueueIn <- op
 	}()
@@ -182,19 +131,19 @@ func (pm *PinManager) Add(op *PinningOperation) {
 
 var maxTimeout = 24 * time.Hour
 
-func (pm *PinManager) doPinning(op *PinningOperation) error {
+func (pm *PinManager) doPinning(op *pinning_op.PinningOperation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
 	op.SetStatus(types.PinningStatusPinning)
 
 	if err := pm.RunPinFunc(ctx, op, func(size int64) {
-		op.lk.Lock()
-		defer op.lk.Unlock()
+		op.Lk.Lock()
+		defer op.Lk.Unlock()
 		op.NumFetched++
 		op.SizeFetched += size
 	}); err != nil {
-		op.fail(err)
+		op.Fail(err)
 		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusFailed); err2 != nil {
 			return err2
 		}
@@ -204,11 +153,11 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 	return nil
 }
 
-func (pm *PinManager) popNextPinOp() *PinningOperation {
-
+func (pm *PinManager) popNextPinOp() *pinning_op.PinningOperation {
 	if pm.pinQueue.Length() == 0 {
 		return nil // no content in queue
 	}
+
 	var minCount = 10000
 	var user uint
 	success := false
@@ -252,7 +201,7 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
-	var next *PinningOperation
+	var next *pinning_op.PinningOperation
 	err = item.ToObject(&next)
 
 	if err != nil {
@@ -260,7 +209,6 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		return nil
 	}
 	return next
-
 }
 
 //currently only used for the tests since the tests need to open and close multiple dbs
@@ -341,12 +289,10 @@ func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
 }
 
-func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
-
+func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
 	opdata := getPinningData(po)
 
 	_, err := pm.duplicateGuard.Get(createLevelDBKey(opdata), nil)
-
 	if err != leveldb.ErrNotFound {
 		//work already exists in the queue not adding duplicate
 		return
@@ -375,7 +321,7 @@ func (pm *PinManager) Run(workers int) {
 		go pm.pinWorker()
 	}
 
-	var next *PinningOperation
+	var next *pinning_op.PinningOperation
 
 	pm.pinQueueLk.Lock()
 	next = pm.popNextPinOp()
