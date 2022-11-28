@@ -229,6 +229,7 @@ func (s *Server) ServeAPI() error {
 	public.GET("/deals/failures", s.handlePublicStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
 	public.GET("/miners", s.handlePublicGetMinerStats)
+	public.GET("/storage-providers", s.handleStorageProviders)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
