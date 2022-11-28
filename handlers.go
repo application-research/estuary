@@ -2152,6 +2152,17 @@ func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, sml)
 }
 
+// handleMinersSetInfo godoc
+// @Summary      Set Miner Info
+// @Description  This endpoint lets a user set miner info.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        params           body      miner.MinerSetInfoParams  true   "Miner set info params"
+// @Param        miner           path      string  true   "Miner to set info for"
+// @Router       /miner/set-info/{miner} [put]
 func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -2183,6 +2194,17 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 
 type emptyResp struct{}
 
+// handleSuspendMiner godoc
+// @Summary      Suspend Miner
+// @Description  This endpoint lets a user suspend a miner.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      miner.SuspendMinerBody  true   "Suspend Miner Body"
+// @Param        miner           path      string  true   "Miner to suspend"
+// @Router       /miner/suspend/{miner} [post]
 func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
 	if err := c.Bind(&body); err != nil {
@@ -2200,6 +2222,16 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, emptyResp{})
 }
 
+// handleUnsuspendMiner godoc
+// @Summary      Unuspend Miner
+// @Description  This endpoint lets a user unsuspend a miner.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner           path      string  true   "Miner to unsuspend"
+// @Router       /miner/unsuspend/{miner} [put]
 func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -5051,6 +5083,16 @@ type claimResponse struct {
 	Success bool `json:"success"`
 }
 
+// handleUserClaimMiner godoc
+// @Summary      Claim Miner
+// @Description  This endpoint lets a user claim a miner
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  claimResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      miner.ClaimMinerBody  true   "Claim Miner Body"
+// @Router       /miner/claim [post]
 func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
@@ -5069,6 +5111,16 @@ type claimMsgResponse struct {
 	Hexmsg string `json:"hexmsg"`
 }
 
+// handleUserGetClaimMinerMsg godoc
+// @Summary      Get Claim Miner Message
+// @Description  This endpoint lets a user get the message in order to claim a miner
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  claimMsgResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner           param      miner  true   "Miner claim message"
+// @Router       /miner/claim/{miner} [get]
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
@@ -5214,7 +5266,7 @@ type publicNodeInfo struct {
 // @Description  This endpoint returns information about the node
 // @Tags         public
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  publicNodeInfo
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/info [get]
