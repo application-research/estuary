@@ -1723,47 +1723,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/deal/query/{miner}": {
-            "get": {
-                "description": "This endpoint returns the ask for a given CID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Query Ask",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "CID",
-                        "name": "miner",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/deal/status-by-proposal/{propcid}": {
             "get": {
                 "description": "Get Deal Status by PropCid",
@@ -2478,169 +2437,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/public/miners": {
-            "get": {
-                "description": "This endpoint returns all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Get all miners",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/public/miners/deals/{miner}": {
-            "get": {
-                "description": "This endpoint returns all miners deals",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "miner"
-                ],
-                "summary": "Get all miners deals",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by miner",
-                        "name": "miner",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Ignore Failed",
-                        "name": "ignore-failed",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/public/miners/failures/{miner}": {
-            "get": {
-                "description": "This endpoint returns all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Get all miners",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by miner",
-                        "name": "miner",
-                        "in": "path"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/public/miners/storage/query/{miner}": {
-            "get": {
-                "description": "This endpoint returns the ask for a given CID",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "deals"
-                ],
-                "summary": "Query Ask",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "CID",
-                        "name": "miner",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/public/net/addrs": {
             "get": {
                 "description": "This endpoint is used to get net addrs",
@@ -2711,6 +2507,167 @@ const docTemplate = `{
                     "public"
                 ],
                 "summary": "Public stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage-providers": {
+            "get": {
+                "description": "This endpoint returns all storage providers",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public",
+                    "net"
+                ],
+                "summary": "Get all storage providers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage-providers/{sp}/deals": {
+            "get": {
+                "description": "This endpoint returns all storage provider's deals",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sp"
+                ],
+                "summary": "Get all storage provider's deals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by storage provider",
+                        "name": "sp",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Failed",
+                        "name": "ignore-failed",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage-providers/{sp}/failures": {
+            "get": {
+                "description": "This endpoint returns failures for a storage provider",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "sp"
+                ],
+                "summary": "Get failures for storage provider",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by sp",
+                        "name": "sp",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage-providers/{sp}/queryask": {
+            "get": {
+                "description": "This endpoint returns the ask for a given CID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "deals"
+                ],
+                "summary": "Query Ask",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "CID",
+                        "name": "sp",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
