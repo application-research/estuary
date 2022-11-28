@@ -1919,9 +1919,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/deals/make/{miner}": {
+        "/deals/make/{sp}": {
             "post": {
-                "description": "This endpoint makes a deal for a given content and miner",
+                "description": "This endpoint makes a deal for a given content and storage provider",
                 "produces": [
                     "application/json"
                 ],
@@ -1932,8 +1932,8 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Miner",
-                        "name": "miner",
+                        "description": "Storage Provider",
+                        "name": "sp",
                         "in": "path",
                         "required": true
                     },

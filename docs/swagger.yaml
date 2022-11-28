@@ -1434,13 +1434,13 @@ paths:
       summary: Get storage failures for user
       tags:
         - deals
-  /deals/make/{miner}:
+  /deals/make/{sp}:
     post:
-      description: This endpoint makes a deal for a given content and miner
+      description: This endpoint makes a deal for a given content and storage provider
       parameters:
-        - description: Miner
+        - description: Storage Provider
           in: path
-          name: miner
+          name: sp
           required: true
           type: string
         - description: Deal Request
