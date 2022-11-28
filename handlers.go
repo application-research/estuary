@@ -185,7 +185,7 @@ func (s *Server) ServeAPI() error {
 	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
-	deals.GET("/query/:miner", s.handleQueryAsk)
+	deals.GET("/query/:miner", s.handleSpQueryAsk)
 	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.GET("/transfer/status/:id", s.handleTransferStatusByID)
@@ -237,14 +237,12 @@ func (s *Server) ServeAPI() error {
 	netw.GET("/peers", s.handleNetPeers)
 	netw.GET("/addrs", s.handleNetAddrs)
 
-	miners := public.Group("/miners")
-	miners.GET("", s.handleAdminGetMiners)
-	miners.GET("/failures/:miner", s.handleGetMinerFailures)
-
 	storageProviders := e.Group("/storage-providers")
+	storageProviders.GET("", s.handleAdminGetStorageProviders)
 	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpGetDeals)
-	storageProviders.GET("/storage-providers/:sp/deals", s.handleQueryAsk)
+	storageProviders.GET("/storage-providers/:sp/queryask", s.handleSpQueryAsk)
 	storageProviders.GET("/storage-providers/:sp/stats", s.handleGetSpStats)
+	storageProviders.GET("/storage-providers/:sp/failures", s.handleGetSpFailures)
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
@@ -262,7 +260,7 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
 	admin.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
 	admin.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
-	admin.GET("/miners", s.handleAdminGetMiners)
+	admin.GET("/miners", s.handleAdminGetStorageProviders)
 	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
 	admin.GET("/miners/transfers/:miner", s.handleMinerTransferDiagnostics)
 
@@ -1547,7 +1545,7 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 	return c.Redirect(http.StatusTemporaryRedirect, "/gw/ipfs/"+cidStr)
 }
 
-// handleQueryAsk godoc
+// handleSpQueryAsk godoc
 // @Summary      Query Ask
 // @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
@@ -1557,7 +1555,7 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 // @Failure      500   {object}  util.HttpError
 // @Param        sp  path      string  true  "CID"
 // @router       /storage-providers/{sp}/queryask [get]
-func (s *Server) handleQueryAsk(c echo.Context) error {
+func (s *Server) handleSpQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
@@ -2101,7 +2099,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-type minerResp struct {
+type spResp struct {
 	Addr            address.Address `json:"addr"`
 	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
@@ -2109,23 +2107,23 @@ type minerResp struct {
 	Version         string          `json:"version"`
 }
 
-// handleAdminGetMiners godoc
-// @Summary      Get all miners
-// @Description  This endpoint returns all miners
+// handleAdminGetStorageProviders godoc
+// @Summary      Get all storage providers
+// @Description  This endpoint returns all storage providers
 // @Tags         public,net
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /public/miners [get]
-func (s *Server) handleAdminGetMiners(c echo.Context) error {
-	var miners []model.StorageMiner
-	if err := s.DB.Find(&miners).Error; err != nil {
+// @Router       /storage-providers [get]
+func (s *Server) handleAdminGetStorageProviders(c echo.Context) error {
+	var sps []model.StorageMiner
+	if err := s.DB.Find(&sps).Error; err != nil {
 		return err
 	}
 
-	out := make([]minerResp, len(miners))
-	for i, m := range miners {
+	out := make([]spResp, len(sps))
+	for i, m := range sps {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
@@ -2498,18 +2496,18 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	})
 }
 
-// handleGetMinerFailures godoc
-// @Summary      Get all miners
-// @Description  This endpoint returns all miners
-// @Tags         public,net
+// handleGetSpFailures godoc
+// @Summary      Get failures for storage provider
+// @Description  This endpoint returns failures for a storage provider
+// @Tags         sp
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
-// @Router       /public/miners/failures/{miner} [get]
-func (s *Server) handleGetMinerFailures(c echo.Context) error {
-	maddr, err := address.NewFromString(c.Param("miner"))
+// @Param        sp  path      string  false  "Filter by sp"
+// @Router       /storage-providers/{sp}/failures [get]
+func (s *Server) handleGetSpFailures(c echo.Context) error {
+	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
