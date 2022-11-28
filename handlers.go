@@ -185,8 +185,8 @@ func (s *Server) ServeAPI() error {
 	deals.Use(s.AuthRequired(util.PermLevelUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
-	deals.GET("/query/:miner", s.handleSpQueryAsk)
-	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
+	deals.GET("/query/:sp", s.handleStorageProviderQueryAsk)
+	deals.POST("/make/:sp", withUser(s.handleMakeDeal))
 	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
 	deals.GET("/transfer/status/:id", s.handleTransferStatusByID)
 	deals.POST("/transfer/status", s.handleTransferStatus)
@@ -239,10 +239,10 @@ func (s *Server) ServeAPI() error {
 
 	storageProviders := e.Group("/storage-providers")
 	storageProviders.GET("", s.handleAdminGetStorageProviders)
-	storageProviders.GET("/:sp/deals", s.handleSpGetDeals)
-	storageProviders.GET("/:sp/queryask", s.handleSpQueryAsk)
-	storageProviders.GET("/:sp/stats", s.handleGetSpStats)
-	storageProviders.GET("/:sp/failures", s.handleGetSpFailures)
+	storageProviders.GET("/:sp/deals", s.handleStorageProviderGetDeals)
+	storageProviders.GET("/:sp/queryask", s.handleStorageProviderQueryAsk)
+	storageProviders.GET("/:sp/stats", s.handleGetStorageProviderStats)
+	storageProviders.GET("/:sp/failures", s.handleGetStorageProviderFailures)
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
@@ -1545,7 +1545,7 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 	return c.Redirect(http.StatusTemporaryRedirect, "/gw/ipfs/"+cidStr)
 }
 
-// handleSpQueryAsk godoc
+// handleStorageProviderQueryAsk godoc
 // @Summary      Query Ask
 // @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
@@ -1555,7 +1555,7 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 // @Failure      500   {object}  util.HttpError
 // @Param        sp  path      string  true  "CID"
 // @router       /storage-providers/{sp}/queryask [get]
-func (s *Server) handleSpQueryAsk(c echo.Context) error {
+func (s *Server) handleStorageProviderQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
@@ -1574,15 +1574,15 @@ type dealRequest struct {
 
 // handleMakeDeal godoc
 // @Summary      Make Deal
-// @Description  This endpoint makes a deal for a given content and miner
+// @Description  This endpoint makes a deal for a given content and storage provider
 // @Tags         deals
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400          {object}  util.HttpError
 // @Failure      500          {object}  util.HttpError
-// @Param        miner        path      string  true  "Miner"
+// @Param        sp        path      string  true  "Storage Provider"
 // @Param        dealRequest  body      string  true  "Deal Request"
-// @Router       /deals/make/{miner} [post]
+// @Router       /deals/make/{sp} [post]
 func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
@@ -1594,9 +1594,9 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 		}
 	}
 
-	addr, err := address.NewFromString(c.Param("miner"))
+	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
-		return errors.Wrapf(err, "invalid miner address")
+		return errors.Wrapf(err, "invalid storage provider address")
 	}
 
 	var req dealRequest
@@ -2099,7 +2099,7 @@ func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-type spResp struct {
+type storageProviderResp struct {
 	Addr            address.Address `json:"addr"`
 	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
@@ -2122,7 +2122,7 @@ func (s *Server) handleAdminGetStorageProviders(c echo.Context) error {
 		return err
 	}
 
-	out := make([]spResp, len(sps))
+	out := make([]storageProviderResp, len(sps))
 	for i, m := range sps {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
@@ -2496,7 +2496,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 	})
 }
 
-// handleGetSpFailures godoc
+// handleGetStorageProviderFailures godoc
 // @Summary      Get failures for storage provider
 // @Description  This endpoint returns failures for a storage provider
 // @Tags         sp
@@ -2506,7 +2506,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  false  "Filter by sp"
 // @Router       /storage-providers/{sp}/failures [get]
-func (s *Server) handleGetSpFailures(c echo.Context) error {
+func (s *Server) handleGetStorageProviderFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
@@ -2540,7 +2540,7 @@ type minerChainInfo struct {
 	Worker string `json:"worker"`
 }
 
-// handleGetSpStats godoc
+// handleGetStorageProviderStats godoc
 // @Summary      Get storage provider stats
 // @Description  This endpoint returns storage provider stats
 // @Tags         storage-provider
@@ -2550,7 +2550,7 @@ type minerChainInfo struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  false  "Filter by SP"
 // @Router       /storage-providers/{sp}/stats [get]
-func (s *Server) handleGetSpStats(c echo.Context) error {
+func (s *Server) handleGetStorageProviderStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetSpStats")
 	defer span.End()
 
@@ -2644,7 +2644,7 @@ type spDealsResp struct {
 // @Param        sp          path      string  true   "Filter by storage provider"
 // @Param        ignore-failed  query     string  false  "Ignore Failed"
 // @Router       /storage-providers/{sp}/deals [get]
-func (s *Server) handleSpGetDeals(c echo.Context) error {
+func (s *Server) handleStorageProviderGetDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
