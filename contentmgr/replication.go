@@ -809,15 +809,16 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	}
 
 	for _, zone := range zones {
-		if !excludedZoneIds[zone.ID] {
-			ok, err := cm.tryAddContent(&zone, content)
-			if err != nil {
-				return err
-			}
+		if excludedZoneIds[zone.ID] {
+			continue
+		}
+		ok, err := cm.tryAddContent(&zone, content)
+		if err != nil {
+			return err
+		}
 
-			if ok {
-				return nil
-			}
+		if ok {
+			return nil
 		}
 	}
 
