@@ -26,7 +26,6 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -4472,29 +4471,13 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
-			var zSize int64
-			for _, zc := range aggr {
-				zSize += zc.Size
-			}
-
-			z := &contentmgr.ContentStagingZone{
-				ZoneOpened: cont.CreatedAt,
-				Contents:   aggr,
-				MinSize:    s.cfg.Content.MinSize,
-				MaxSize:    s.cfg.Content.MaxSize,
-				CurSize:    zSize,
-				User:       cont.UserID,
-				ContID:     cont.ID,
-				Location:   cont.Location,
-			}
-
 			var aggrLoc string
 			for loc := range aggrLocs {
 				aggrLoc = loc
 				break
 			}
 
-			if err := s.CM.AggregateStagingZone(ctx, z, aggrLoc); err != nil {
+			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
