@@ -768,17 +768,6 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	return nil
 }
 
-func (cm *ContentManager) contentInStagingZone(ctx context.Context, content util.Content) (bool, error) {
-	var contents []util.Content
-	if err := cm.DB.Find(&contents, "id = ? AND aggregated_in > 0", content.ID).Error; err != nil {
-		return false, err
-	}
-	if len(contents) > 0 {
-		return true, nil
-	}
-	return false, nil
-}
-
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
@@ -926,15 +915,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	// If this content is already scheduled to be aggregated and is waiting in a bucket
-	in, err := cm.contentInStagingZone(ctx, content)
-	if err != nil {
-		return err
-	}
-	if in {
-		return nil
-	}
-
 	// it's too big, need to split it up into chunks, no need to requeue dagsplit root content
 	if content.Size > cm.cfg.Content.MaxSize {
 		return cm.splitContent(ctx, content, cm.cfg.Content.MaxSize)
@@ -953,7 +933,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return cm.addContentToStagingZone(ctx, content)
 	}
 
-	// check on each of the existing deals, see if they any needs fixing
+	// check on each of the existing deals, see if any needs fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
 	var wg sync.WaitGroup
