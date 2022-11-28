@@ -239,10 +239,10 @@ func (s *Server) ServeAPI() error {
 
 	storageProviders := e.Group("/storage-providers")
 	storageProviders.GET("", s.handleAdminGetStorageProviders)
-	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpGetDeals)
-	storageProviders.GET("/storage-providers/:sp/queryask", s.handleSpQueryAsk)
-	storageProviders.GET("/storage-providers/:sp/stats", s.handleGetSpStats)
-	storageProviders.GET("/storage-providers/:sp/failures", s.handleGetSpFailures)
+	storageProviders.GET("/:sp/deals", s.handleSpGetDeals)
+	storageProviders.GET("/:sp/queryask", s.handleSpQueryAsk)
+	storageProviders.GET("/:sp/stats", s.handleGetSpStats)
+	storageProviders.GET("/:sp/failures", s.handleGetSpFailures)
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
