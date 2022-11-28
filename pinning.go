@@ -71,7 +71,12 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 }
 
 func (s *Server) PinStatusFunc(contID uint, location string, status types.PinningStatus) error {
-	return s.CM.UpdatePinStatus(location, contID, status)
+	if status == types.PinningStatusFailed {
+		log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
+
+		return s.CM.UpdatePinStatus(location, contID, status)
+	}
+	return nil
 }
 
 // handleListPins godoc
