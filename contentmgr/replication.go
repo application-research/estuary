@@ -465,24 +465,15 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
-func (cm *ContentManager) currentLocationForContent(cntId uint) (string, error) {
-	var cont util.Content
-	if err := cm.DB.First(&cont, "id = ?", cntId).Error; err != nil {
-		return "", err
+func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneContentID uint) (map[string][]util.Content, error) {
+	var conts []util.Content
+	if err := cm.DB.Find(&conts, "aggregated_id = ?", zoneContentID).Error; err != nil {
+		return nil, err
 	}
-	return cont.Location, nil
-}
 
-func (cm *ContentManager) getGroupedStagedContentLocations(ctx context.Context, b *ContentStagingZone) (map[string]string, error) {
-	out := make(map[string]string)
-	for _, c := range b.Contents {
-		// need to get current location from db, incase this stage content was a part of a consolidated content - its location would have changed.
-		// so we can group it into its current location
-		loc, err := cm.currentLocationForContent(c.ID)
-		if err != nil {
-			return nil, err
-		}
-		out[c.Location] = loc
+	out := make(map[string][]util.Content)
+	for _, c := range conts {
+		out[c.Location] = append(out[c.Location], c)
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("no location for staged contents")
@@ -494,18 +485,17 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, b *Conte
 	var dstLocation string
 	var curMax int64
 	dataByLoc := make(map[string]int64)
-	contentByLoc := make(map[string][]util.Content)
+	contentByLoc, err := cm.getStagedContentsGroupedByLocation(ctx, b.ContID)
+	if err != nil {
+		return err
+	}
 
-	// TODO: make this one batch DB query instead of querying per content
-	for _, c := range b.Contents {
-		loc, err := cm.currentLocationForContent(c.ID)
-		if err != nil {
-			return err
+	for loc, contents := range contentByLoc {
+		var ntot int64
+		for _, c := range contents {
+			ntot = dataByLoc[loc] + c.Size
+			dataByLoc[loc] = ntot
 		}
-		contentByLoc[loc] = append(contentByLoc[loc], c)
-
-		ntot := dataByLoc[loc] + c.Size
-		dataByLoc[loc] = ntot
 
 		// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
 		if loc == constants.ContentLocationLocal {
@@ -538,7 +528,7 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, b *ContentStag
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
-	grpLocs, err := cm.getGroupedStagedContentLocations(ctx, b)
+	grpLocs, err := cm.getStagedContentsGroupedByLocation(ctx, b.ContID)
 	if err != nil {
 		return err
 	}
@@ -564,22 +554,20 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, b *ContentStag
 		cm.BucketLk.Unlock()
 		return nil
 	}
+	var loc string
+	for grpLoc := range grpLocs {
+		loc = grpLoc
+		break
+	}
 	// if all contents are already in one location, proceed to aggregate them
-	return cm.AggregateStagingZone(ctx, b, grpLocs)
+	return cm.AggregateStagingZone(ctx, b, loc)
 }
 
-func (cm *ContentManager) AggregateStagingZone(ctx context.Context, z *ContentStagingZone, grpLocs map[string]string) error {
+func (cm *ContentManager) AggregateStagingZone(ctx context.Context, z *ContentStagingZone, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateStagingZone")
 	defer span.End()
 
 	cm.log.Debugf("aggregating zone: %d", z.ContID)
-
-	// get the aggregate content location
-	var loc string
-	for _, cl := range grpLocs {
-		loc = cl
-		break
-	}
 
 	if loc == constants.ContentLocationLocal {
 		dir, err := cm.CreateAggregate(ctx, z.Contents)

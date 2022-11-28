@@ -4488,7 +4488,13 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 				Location:   cont.Location,
 			}
 
-			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+			var aggrLoc string
+			for loc := range aggrLocs {
+				aggrLoc = loc
+				break
+			}
+
+			if err := s.CM.AggregateStagingZone(ctx, z, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
