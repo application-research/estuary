@@ -240,12 +240,10 @@ func (s *Server) ServeAPI() error {
 	miners := public.Group("/miners")
 	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
-	miners.GET("/deals/:miner", s.handleGetMinerDeals)
-	miners.GET("/storage/query/:miner", s.handleQueryAsk)
 
 	storageProviders := e.Group("/storage-providers")
 	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpGetDeals)
-	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpQueryAsk)
+	storageProviders.GET("/storage-providers/:sp/deals", s.handleQueryAsk)
 	storageProviders.GET("/storage-providers/:sp/stats", s.handleGetSpStats)
 
 	admin := e.Group("/admin")
@@ -1557,11 +1555,10 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 // @Success      200    {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Param        miner  path      string  true  "CID"
-// @Router       /deal/query/{miner} [get]
-// @router       /public/miners/storage/query/{miner} [get]
+// @Param        sp  path      string  true  "CID"
+// @router       /storage-providers/{sp}/queryask [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
-	addr, err := address.NewFromString(c.Param("miner"))
+	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -2619,7 +2616,7 @@ func (s *Server) handleGetSpStats(c echo.Context) error {
 	})
 }
 
-type minerDealsResp struct {
+type spDealsResp struct {
 	ID               uint       `json:"id"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
@@ -2639,17 +2636,17 @@ type minerDealsResp struct {
 }
 
 // handleGetMinerDeals godoc
-// @Summary      Get all miners deals
-// @Description  This endpoint returns all miners deals
-// @Tags         public,miner
+// @Summary      Get all storage provider's deals
+// @Description  This endpoint returns all storage provider's deals
+// @Tags         sp
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner          path      string  true   "Filter by miner"
+// @Param        sp          path      string  true   "Filter by storage provider"
 // @Param        ignore-failed  query     string  false  "Ignore Failed"
-// @Router       /public/miners/deals/{miner} [get]
-func (s *Server) handleGetMinerDeals(c echo.Context) error {
+// @Router       /storage-providers/{sp}/deals [get]
+func (s *Server) handleSpGetDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2663,7 +2660,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 		q = q.Where("not content_deals.failed")
 	}
 
-	var deals []minerDealsResp
+	var deals []spDealsResp
 	if err := q.Select("contents.cid as content_cid, content_deals.*").Scan(&deals).Error; err != nil {
 		return err
 	}
