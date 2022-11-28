@@ -171,15 +171,6 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		}
 	}
 
-	// this step can be removed when all other references to in-memory buckets are removed
-	buckets, ok := cm.Buckets[pin.UserID]
-	if ok {
-		for _, bucket := range buckets {
-			if _, err := cm.tryRemoveContent(bucket, pin); err != nil {
-				return err
-			}
-		}
-	}
 	return nil
 }
 

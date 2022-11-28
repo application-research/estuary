@@ -426,6 +426,8 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+
+		delete(cm.ZonesConsolidating, cont.ID)
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)
 		return nil

@@ -2743,10 +2743,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.BucketLk.Lock()
-	defer s.CM.BucketLk.Unlock()
-
-	return c.JSON(http.StatusOK, s.CM.Buckets)
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
