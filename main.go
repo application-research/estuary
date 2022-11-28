@@ -16,6 +16,9 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/contentmgr"
+	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/multiformats/go-multiaddr"
 
@@ -58,17 +61,6 @@ import (
 
 var appVersion string
 var log = logging.Logger("estuary").With("app_version", appVersion)
-
-type storageMiner struct {
-	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
-}
 
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
@@ -188,8 +180,14 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
 			cfg.Node.IndexerURL = cctx.String("indexer-url")
-		case "indexer-tick-interval":
-			cfg.Node.IndexerTickInterval = cctx.Int("indexer-tick-interval")
+		case "indexer-advertisement-interval":
+			value, err := time.ParseDuration(cctx.String("indexer-advertisement-interval"))
+			if err != nil {
+				return fmt.Errorf("failed to parse indexer advertisement interval: %v", err)
+			}
+			cfg.Node.IndexerAdvertisementInterval = value
+		case "advertise-offline-autoretrieves":
+			cfg.Node.AdvertiseOfflineAutoretrieves = cctx.Bool("advertise-offline-autoretrieves")
 		case "deal-protocol-version":
 			dprs := make(map[protocol.ID]bool, 0)
 			for _, dprv := range cctx.StringSlice("deal-protocol-version") {
@@ -435,10 +433,14 @@ func main() {
 			Usage: "sets the indexer advertisement url",
 			Value: cfg.Node.IndexerURL,
 		},
-		&cli.IntFlag{
-			Name:  "indexer-tick-interval",
-			Usage: "sets the indexer advertisement interval in minutes",
-			Value: cfg.Node.IndexerTickInterval,
+		&cli.StringFlag{
+			Name:  "indexer-advertisement-interval",
+			Usage: "sets the indexer advertisement interval using a Go time string (e.g. '1m30s')",
+			Value: cfg.Node.IndexerAdvertisementInterval.String(),
+		},
+		&cli.BoolFlag{
+			Name:  "advertise-offline-autoretrieves",
+			Usage: "if set, registered autoretrieves will be advertised even if they are not currently online",
 		},
 		&cli.StringFlag{
 			Name:  "max-price",
@@ -637,7 +639,7 @@ func main() {
 			StagingMgr:       sbmgr,
 			tracer:           otel.Tracer("api"),
 			cacher:           memo.NewCacher(),
-			gwayHandler:      gateway.NewGatewayHandler(nd.Blockstore),
+			gwayHandler:      gateway.NewGatewayHandler(&nd.Blockstore),
 			cfg:              cfg,
 			trackingChannels: make(map[string]*util.ChanTrack),
 		}
@@ -666,7 +668,11 @@ func main() {
 			})
 		}
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		opts = append(opts, func(config *filclient.Config) {
+			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
+		})
+
+		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
@@ -713,7 +719,7 @@ func main() {
 				default:
 					// for every other events
 					trsFailed, msg := util.TransferFailed(&fst)
-					if err = s.CM.handleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+					if err = s.CM.HandleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
 						Chanid:   fst.TransferID,
 						DealDBID: dbid,
 						State:    &fst,
@@ -729,13 +735,17 @@ func main() {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
-		cm, err := NewContentManager(db, api, fc, init.trackingBstore, nd.NotifBlockstore, nd.Provider, pinmgr, nd, cfg)
+		minerMgr := miner.NewMinerManager(db, fc, cfg, api)
+
+		cm, err := contentmgr.NewContentManager(db, api, fc, init.trackingBstore, pinmgr, nd, cfg, minerMgr, log)
 		if err != nil {
 			return err
 		}
-		s.CM = cm
+		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
+		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
-		fc.SetPieceCommFunc(cm.getPieceCommitment)
+		s.CM = cm
+		s.minerManager = minerMgr
 		s.FilClient = fc
 
 		if !cfg.DisableAutoRetrieve {
@@ -743,17 +753,33 @@ func main() {
 		}
 
 		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
-		go cm.handleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+		go cm.HandleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
+		go cm.RunPinningRetryWorker(cctx.Context)                               // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.ArEngine, err = autoretrieve.NewAutoretrieveEngine(context.Background(), cfg, s.DB, s.Node.Host, s.Node.Datastore, s.FilClient.GetDtMgr())
+			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(
+				db,
+				cfg.Node.IndexerAdvertisementInterval,
+				cfg.Node.IndexerURL,
+				cfg.Node.AdvertiseOfflineAutoretrieves,
+			)
 			if err != nil {
 				return err
 			}
 
-			go s.Node.ArEngine.Run()
-			defer s.Node.ArEngine.Shutdown()
+			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						log.Errorf("Autoretrieve provide loop panicked, cancelling until the executable is restarted: %v", err)
+					}
+				}()
+
+				if err := s.Node.AutoretrieveProvider.Run(context.Background()); err != nil {
+					log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
+				}
+			}()
+			defer s.Node.AutoretrieveProvider.Stop()
 		}
 
 		go func() {
@@ -788,16 +814,15 @@ func setupDatabase(dbConnStr string) (*gorm.DB, error) {
 	}
 
 	var count int64
-	if err := db.Model(&storageMiner{}).Count(&count).Error; err != nil {
+	if err := db.Model(&model.StorageMiner{}).Count(&count).Error; err != nil {
 		return nil, err
 	}
 
 	if count == 0 {
 		fmt.Println("adding default miner list to database...")
 		for _, m := range build.DefaultMiners {
-			db.Create(&storageMiner{Address: util.DbAddr{Addr: m}})
+			db.Create(&model.StorageMiner{Address: util.DbAddr{Addr: m}})
 		}
-
 	}
 	return db, nil
 }
@@ -809,40 +834,41 @@ func migrateSchemas(db *gorm.DB) error {
 		&util.ObjRef{},
 		&collections.Collection{},
 		&collections.CollectionRef{},
-		&contentDeal{},
-		&dfeRecord{},
-		&PieceCommRecord{},
-		&proposalRecord{},
+		&model.ContentDeal{},
+		&model.DfeRecord{},
+		&model.PieceCommRecord{},
+		&model.ProposalRecord{},
 		&util.RetrievalFailureRecord{},
-		&retrievalSuccessRecord{},
-		&minerStorageAsk{},
-		&storageMiner{},
+		&model.RetrievalSuccessRecord{},
+		&model.MinerStorageAsk{},
+		&model.StorageMiner{},
 		&util.User{},
 		&util.AuthToken{},
 		&util.InviteCode{},
-		&Shuttle{},
-		&autoretrieve.Autoretrieve{}); err != nil {
+		&model.Shuttle{},
+		&autoretrieve.Autoretrieve{},
+		&model.SanityCheck{},
+		&autoretrieve.PublishedBatch{},
+	); err != nil {
 		return err
 	}
 	return nil
 }
 
 type Server struct {
-	cfg        *config.Estuary
-	tracer     trace.Tracer
-	Node       *node.Node
-	DB         *gorm.DB
-	FilClient  *filclient.FilClient
-	Api        api.Gateway
-	CM         *ContentManager
-	StagingMgr *stagingbs.StagingBSMgr
-
-	gwayHandler *gateway.GatewayHandler
-
-	cacher *memo.Cacher
-
+	cfg              *config.Estuary
+	tracer           trace.Tracer
+	Node             *node.Node
+	DB               *gorm.DB
+	FilClient        *filclient.FilClient
+	Api              api.Gateway
+	CM               *contentmgr.ContentManager
+	StagingMgr       *stagingbs.StagingBSMgr
+	gwayHandler      *gateway.GatewayHandler
+	cacher           *memo.Cacher
 	tcLk             sync.Mutex
 	trackingChannels map[string]*util.ChanTrack
+	minerManager     miner.IMinerManager
 }
 
 func (s *Server) GarbageCollect(ctx context.Context) error {
@@ -885,8 +911,8 @@ func (s *Server) trackingObject(c cid.Cid) (bool, error) {
 }
 
 func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []contentDeal
-	if err := s.DB.Model(contentDeal{}).
+	var deals []model.ContentDeal
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
 		Scan(&deals).Error; err != nil {
@@ -920,74 +946,4 @@ func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st
 		Dbid: dealdbid,
 		Last: st,
 	}
-}
-
-// RestartTransfer tries to resume incomplete data transfers between client and storage providers.
-// It supports only legacy deals (PushTransfer)
-func (cm *ContentManager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
-	maddr, err := d.MinerAddr()
-	if err != nil {
-		return err
-	}
-
-	var dealUUID *uuid.UUID
-	if d.DealUUID != "" {
-		parsed, err := uuid.Parse(d.DealUUID)
-		if err != nil {
-			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
-		}
-		dealUUID = &parsed
-	}
-
-	_, isPushTransfer, err := cm.getProviderDealStatus(ctx, &d, maddr, dealUUID)
-	if err != nil {
-		return err
-	}
-
-	if !isPushTransfer {
-		return nil
-	}
-
-	if loc == constants.ContentLocationLocal {
-		// get the deal data transfer state pull deals
-		st, err := cm.FilClient.TransferStatus(ctx, &chanid)
-		if err != nil && err != filclient.ErrNoTransferFound {
-			return err
-		}
-
-		if st == nil {
-			return fmt.Errorf("no data transfer state was found")
-		}
-
-		cannotRestart := !util.CanRestartTransfer(st)
-		if cannotRestart {
-			trsFailed, msg := util.TransferFailed(st)
-			if trsFailed {
-				if err := cm.DB.Model(contentDeal{}).Where("id = ?", d.ID).UpdateColumns(map[string]interface{}{
-					"failed":    true,
-					"failed_at": time.Now(),
-				}).Error; err != nil {
-					return err
-				}
-				errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
-				return fmt.Errorf("deal in database is in progress, but data transfer is terminated: %s", errMsg)
-			}
-			return nil
-		}
-		return cm.FilClient.RestartTransfer(ctx, &chanid)
-	}
-	return cm.sendRestartTransferCmd(ctx, loc, chanid, d)
-}
-
-func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string, chanid datatransfer.ChannelID, d contentDeal) error {
-	return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_RestartTransfer,
-		Params: drpc.CmdParams{
-			RestartTransfer: &drpc.RestartTransfer{
-				ChanID:    chanid,
-				DealDBID:  d.ID,
-				ContentID: d.Content,
-			},
-		},
-	})
 }

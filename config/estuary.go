@@ -35,6 +35,7 @@ type Estuary struct {
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
 	RPCMessage             RPCMessage    `json:"rpc_message"`
+	Pinning                Pinning       `json:"pinning"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -79,7 +80,7 @@ func NewEstuary(appVersion string) *Estuary {
 			IsDisabled:            false,
 			FailOnTransferFailure: false,
 			IsVerified:            true,
-			Duration:              abi.ChainEpoch(1555200 - (2880 * 21)), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
+			Duration:              abi.ChainEpoch(constants.DealDuration), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
 			EnabledDealProtocolsVersions: map[protocol.ID]bool{
 				filclient.DealProtocolv110: true,
 				filclient.DealProtocolv120: true,
@@ -91,19 +92,21 @@ func NewEstuary(appVersion string) *Estuary {
 		Content: Content{
 			DisableLocalAdding:  false,
 			DisableGlobalAdding: false,
+			MaxSize:             constants.MaxDealContentSize,
+			MinSize:             constants.MinDealContentSize,
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:                 true,
-			MaxLifeTime:             time.Hour * 8,
-			MaxContentAge:           time.Hour * 24 * 7,
-			MaxItems:                10000,
-			MaxSize:                 int64((abi.PaddedPieceSize(16<<30).Unpadded() * 9) / 10),                // 14.29 Gib
-			MinSize:                 int64(int64((abi.PaddedPieceSize(16<<30).Unpadded()*9)/10) - (1 << 30)), // 13.29 GiB
-			KeepAlive:               time.Minute * 40,
-			MinDealSize:             256 << 20,                                               //0.25 Gib
-			IndividualDealThreshold: int64((abi.PaddedPieceSize(4<<30).Unpadded() * 9) / 10), // 90% of the unpadded data size for a 4GB piece, the 10% gap is to accommodate car file packing overhead, can probably do this better
-			AggregateInterval:       time.Minute * 5,                                         // aggregate staging buckets every 5 minutes
+			Enabled:           true,
+			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
+		},
+
+		Pinning: Pinning{
+			RetryWorker: RetryWorker{
+				Interval:               1 * time.Hour, // check every 1hr
+				BatchSelectionLimit:    1000,
+				BatchSelectionDuration: time.Hour * 24 * 30 * 6, // select pins from 6 months ago only
+			},
 		},
 
 		Jaeger: Jaeger{
@@ -127,8 +130,8 @@ func NewEstuary(appVersion string) *Estuary {
 			WriteLogTruncate:  false,
 			NoBlockstoreCache: false,
 
-			IndexerURL:          "https://cid.contact",
-			IndexerTickInterval: 720,
+			IndexerURL:                   constants.DefaultIndexerURL,
+			IndexerAdvertisementInterval: time.Minute,
 
 			ApiURL: "wss://api.chain.love",
 
@@ -177,6 +180,7 @@ func NewEstuary(appVersion string) *Estuary {
 				LowWater:  2000,
 				HighWater: 3000,
 			},
+			Libp2pThrottleLimit: 100,
 		},
 		RPCMessage: RPCMessage{
 			IncomingQueueSize: 100000,

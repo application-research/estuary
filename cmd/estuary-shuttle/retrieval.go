@@ -84,7 +84,7 @@ func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, s
 			return fmt.Errorf("failed to get objects for pin: %w", err)
 		}
 
-		s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects)
+		s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects, req.Cid)
 		return nil
 	}
 
@@ -138,14 +138,14 @@ func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, s
 			return err
 		}
 
-		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, s.Node.Blockstore, req.Cid, func(int64) {})
+		dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, &s.Node.Blockstore, req.Cid, func(int64) {})
 		if err != nil {
 			log.Errorw("failed adding content to database after successful retrieval", "cont", req.Content, "err", err.Error())
 			return err
 		}
 
-		s.sendPinCompleteMessage(ctx, req.Content, totalSize, objects)
+		s.sendPinCompleteMessage(ctx, req.Content, totalSize, objects, req.Cid)
 		return nil
 	}
 	return fmt.Errorf("failed to retrieve with any miner we have deals with")

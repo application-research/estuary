@@ -2,30 +2,28 @@ package autoretrieve
 
 import (
 	"context"
-	"crypto/rand"
+	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"strings"
 	"time"
 
-	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
-	datatransfer "github.com/filecoin-project/go-data-transfer"
-	provider "github.com/filecoin-project/index-provider"
+	"github.com/application-research/estuary/util"
+	providerpkg "github.com/filecoin-project/index-provider"
+	"github.com/filecoin-project/index-provider/engine"
 	"github.com/filecoin-project/index-provider/metadata"
 	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/crypto"
-	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"gorm.io/gorm"
 )
 
-var arLog = logging.Logger("autoretrieve")
+var log = logging.Logger("autoretrieve")
 
 type Autoretrieve struct {
 	gorm.Model
@@ -38,12 +36,61 @@ type Autoretrieve struct {
 	Addresses         string
 }
 
+func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
+	addrStrings := strings.Split(autoretrieve.Addresses, ",")
+
+	pubKeyBytes, err := crypto.ConfigDecodeKey(autoretrieve.PubKey)
+	if err != nil {
+		return nil, err
+	}
+	pubKey, err := crypto.UnmarshalPublicKey(pubKeyBytes)
+	if err != nil {
+		return nil, err
+	}
+	peerID, err := peer.IDFromPublicKey(pubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	var addrs []multiaddr.Multiaddr
+	var invalidAddrStrings []string
+	for _, addrString := range addrStrings {
+		addr, err := multiaddr.NewMultiaddr(addrString)
+		if err != nil {
+			invalidAddrStrings = append(invalidAddrStrings, addrString)
+			continue
+		}
+		addrs = append(addrs, addr)
+	}
+	if len(invalidAddrStrings) != 0 {
+		return nil, fmt.Errorf("got invalid addresses: %#v", invalidAddrStrings)
+	}
+
+	addrInfo := peer.AddrInfo{
+		ID:    peerID,
+		Addrs: addrs,
+	}
+
+	return &addrInfo, nil
+}
+
+// A batch that has been published for a specific autoretrieve
+type PublishedBatch struct {
+	gorm.Model
+
+	FirstContentID     uint
+	Count              uint
+	AutoretrieveHandle string
+}
+
+func (PublishedBatch) TableName() string { return "published_batches" }
+
 type HeartbeatAutoretrieveResponse struct {
 	Handle            string         `json:"handle"`
 	LastConnection    time.Time      `json:"lastConnection"`
 	LastAdvertisement time.Time      `json:"lastAdvertisement"`
 	AddrInfo          *peer.AddrInfo `json:"addrInfo"`
-	AdvertiseInterval string         `json:AdvertiseInterval`
+	AdvertiseInterval string         `json:"advertiseInterval"`
 }
 
 type AutoretrieveListResponse struct {
@@ -58,271 +105,360 @@ type AutoretrieveInitResponse struct {
 	Token             string         `json:"token"`
 	LastConnection    time.Time      `json:"lastConnection"`
 	AddrInfo          *peer.AddrInfo `json:"addrInfo"`
-	AdvertiseInterval string         `json:AdvertiseInterval`
+	AdvertiseInterval string         `json:"advertiseInterval"`
 }
 
-// EstuaryMhIterator contains objects to query the database
-// incrementally, to avoid having all CIDs in memory at once
-type EstuaryMhIterator struct {
-	// we need contentOffset because one content might have more than one CID
-	offset int // offset of the cid related to the current content
-	Cids   []cid.Cid
+type Provider struct {
+	engine                *engine.Engine
+	db                    *gorm.DB
+	advertisementInterval time.Duration
+	advertiseOffline      bool
+	batchSize             uint
 }
 
-func (m *EstuaryMhIterator) Next() (multihash.Multihash, error) {
+type Iterator struct {
+	mhs            []multihash.Multihash
+	index          uint
+	firstContentID uint
+	count          uint
+}
 
-	if m.offset >= len(m.Cids) {
+func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error) {
+
+	// Read CID strings for this content ID
+	var cidStrings []string
+	if err := db.Raw(
+		"SELECT objects.cid FROM objects LEFT JOIN obj_refs ON objects.id = obj_refs.object WHERE obj_refs.content BETWEEN ? AND ?",
+		firstContentID,
+		firstContentID+count,
+	).Scan(&cidStrings).Error; err != nil {
+		return nil, err
+	}
+
+	if len(cidStrings) == 0 {
+		return nil, fmt.Errorf("no multihashes for this content")
+	}
+
+	log.Infof(
+		"Creating iterator for content IDs %d to %d (%d MHs)",
+		firstContentID,
+		firstContentID+count,
+		len(cidStrings),
+	)
+
+	// Parse CID strings and extract multihashes
+	var mhs []multihash.Multihash
+	// NOTE(@elijaharita 2022-12-11): CIDs are often empty in the database for
+	// some reason, so I just count the amount that are empty and put one print
+	// statement for them at the end to avoid thousands of lines of log spam.
+	emptyCount := 0
+	for _, cidString := range cidStrings {
+		if cidString == "" {
+			emptyCount++
+			continue
+		}
+
+		_, cid, err := cid.CidFromBytes([]byte(cidString))
+		if err != nil {
+			log.Warnf("Failed to parse CID string '%s': %v", cidString, err)
+			continue
+		}
+
+		mhs = append(mhs, cid.Hash())
+	}
+
+	if emptyCount != 0 {
+		log.Warnf("Skipped %d empty CIDs", emptyCount)
+	}
+
+	return &Iterator{
+		mhs:            mhs,
+		firstContentID: firstContentID,
+		count:          count,
+	}, nil
+}
+
+func (iter *Iterator) Next() (multihash.Multihash, error) {
+	if iter.index == uint(len(iter.mhs)) {
 		return nil, io.EOF
 	}
 
-	curCid := m.Cids[m.offset]
-	m.offset++ // go to next CID
+	mh := iter.mhs[iter.index]
 
-	return curCid.Hash(), nil
+	iter.index++
+
+	return mh, nil
 }
 
-// findNewContents takes a time.Time struct `since` and queries all CIDs
-// associated to active util.Content entries created after that time
-// Returns a list of the cid.CID created after `since`
-// Returns an error if failed
-func findNewCids(db *gorm.DB, lastAdvertisement time.Time) ([]cid.Cid, error) {
-	var newCids []cid.Cid
-	err := db.Raw(constants.QueryNewCIDs, lastAdvertisement).
-		Scan(&newCids).
-		Error
+func NewProvider(db *gorm.DB, advertisementInterval time.Duration, indexerURL string, advertiseOffline bool) (*Provider, error) {
+	eng, err := engine.New(engine.WithPublisherKind(engine.DataTransferPublisher), engine.WithDirectAnnounce(indexerURL))
 	if err != nil {
-		return nil, fmt.Errorf("unable to query new CIDs from database: %s", err)
+		return nil, fmt.Errorf("failed to init engine: %v", err)
 	}
 
-	return newCids, nil
-}
+	eng.RegisterMultihashLister(func(
+		ctx context.Context,
+		peer peer.ID,
+		contextID []byte,
+	) (providerpkg.MultihashIterator, error) {
+		log := log.Named("lister")
 
-// newIndexProvider creates a new index-provider engine to send announcements to storetheindex
-// this needs to keep running continuously because storetheindex
-// will come to fetch advertisements "when it feels like it"
-func NewAutoretrieveEngine(ctx context.Context, cfg *config.Estuary, db *gorm.DB, libp2pHost host.Host, ds datastore.Batching, dtMgr datatransfer.Manager) (*AutoretrieveEngine, error) {
-	newEngine, err := New(
-		WithHost(libp2pHost), // need to be localhost/estuary
-		WithPublisherKind(DataTransferPublisher),
-		WithDirectAnnounce(cfg.Node.IndexerURL),
-		WithDatastore(ds),
-		WithDataTransfer(dtMgr),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create index-provider engine (s.Node.IndexProvider) to send announcements to
-	// this needs to keep running continuously because storetheindex
-	// will come to fetch for advertisements "when it feels like it"
-	newEngine.RegisterMultihashLister(func(ctx context.Context, contextID []byte) (provider.MultihashIterator, error) {
-
-		// contextID = autoretrievehandle_randomnumber
-		arHandle := strings.Split(string(contextID), "_")[0]
-		// arHandle := contextID // contextID is the autoretrieve handle
-
-		// get the autoretrieve entry from the database
-		var ar Autoretrieve
-		err = db.Find(&ar, "handle = ?", arHandle).Error
+		params, err := readContextID(contextID)
 		if err != nil {
 			return nil, err
 		}
 
-		// find all new content entries since the last time we advertised for this autoretrieve server
-		arLog.Debugf("Querying for new CIDs now (this could take a while)")
-		newCids, err := findNewCids(db, ar.LastAdvertisement)
+		log = log.With(
+			"first_content_id", params.firstContentID,
+			"count", params.count,
+			"indexer_peer_id", params.provider,
+		)
+
+		log.Infof(
+			"Received pull request (peer ID: %s, first content ID: %d, count: %d)",
+			params.provider,
+			params.firstContentID,
+			params.count,
+		)
+		iter, err := NewIterator(db, params.firstContentID, params.count)
 		if err != nil {
 			return nil, err
 		}
 
-		if len(newCids) == 0 {
-			return nil, fmt.Errorf("no new CIDs to announce")
-		}
-
-		arLog.Infof("announcing %d new CIDs", len(newCids))
-
-		return &EstuaryMhIterator{
-			Cids: newCids,
-		}, nil
+		return iter, nil
 	})
 
-	newEngine.context = ctx
-	newEngine.TickInterval = time.Duration(cfg.Node.IndexerTickInterval) * time.Minute
-	newEngine.db = db
-
-	// start engine
-	if err := newEngine.Start(newEngine.context); err != nil {
-		return nil, err
-	}
-
-	return newEngine, nil
+	return &Provider{
+		engine:                eng,
+		db:                    db,
+		advertisementInterval: advertisementInterval,
+		advertiseOffline:      advertiseOffline,
+		batchSize:             constants.AutoretrieveProviderBatchSize,
+	}, nil
 }
 
-func (arEng *AutoretrieveEngine) announceForAR(ar Autoretrieve) error {
-	// TODO: every contextID needs to be unique but we can't use more than 64 chars for it. Make this better (fix the code in RegisterMultihashLister when we change this)
-	nBig, err := rand.Int(rand.Reader, big.NewInt(10000000000))
-	if err != nil {
-		panic(err)
-	}
-	newContextID := []byte(ar.Handle + "_" + nBig.String())
+func (provider *Provider) Run(ctx context.Context) error {
+	log := log.Named("loop")
 
-	retrievalAddresses := []string{}
-	providerID := ""
-	for _, fullAddr := range strings.Split(ar.Addresses, ",") {
-		arAddrInfo, err := peer.AddrInfoFromString(fullAddr)
-		if err != nil {
-			arLog.Errorf("could not parse multiaddress '%s': %s", fullAddr, err)
+	if err := provider.engine.Start(ctx); err != nil {
+		return err
+	}
+
+	// time.Tick will drop ticks to make up for slow advertisements
+	log.Infof("Starting autoretrieve advertisement loop every %s", provider.advertisementInterval)
+	ticker := time.NewTicker(provider.advertisementInterval)
+	for ; true; <-ticker.C {
+		if ctx.Err() != nil {
+			ticker.Stop()
+			break
+		}
+
+		log.Infof("Starting autoretrieve advertisement tick")
+
+		// Find the highest current content ID for later
+		var lastContent util.Content
+		if err := provider.db.Last(&lastContent).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				log.Infof("Failed to get last provider content ID: %v", err)
+				continue
+			} else {
+				log.Warnf("No contents to advertise")
+				continue
+			}
+		}
+
+		var autoretrieves []Autoretrieve
+		if err := provider.db.Find(&autoretrieves).Error; err != nil {
+			log.Errorf("Failed to get autoretrieves: %v", err)
 			continue
 		}
-		providerID = arAddrInfo.ID.String()
-		retrievalAddresses = append(retrievalAddresses, arAddrInfo.Addrs[0].String())
-	}
-	if providerID == "" {
-		return fmt.Errorf("no providerID for autoretrieve %s, skipping", ar.Handle)
-	}
-	if len(retrievalAddresses) == 0 {
-		return fmt.Errorf("no retrieval addresses for autoretrieve %s, skipping", ar.Handle)
+
+		// For each registered autoretrieve...
+		for _, autoretrieve := range autoretrieves {
+			log := log.With("autoretrieve_handle", autoretrieve.Handle)
+
+			// Make sure it is online (if offline checking isn't disabled)
+			if !provider.advertiseOffline {
+				if time.Since(autoretrieve.LastConnection) > provider.advertisementInterval {
+					log.Debugf("Skipping offline autoretrieve")
+					continue
+				}
+			}
+
+			// Get address info for later
+			addrInfo, err := autoretrieve.AddrInfo()
+			if err != nil {
+				log.Errorf("Failed to get autoretrieve address info: %v", err)
+				continue
+			}
+
+			// For each batch that should be advertised...
+			for firstContentID := uint(0); firstContentID <= lastContent.ID; firstContentID += provider.batchSize {
+
+				// Find the amount of contents in this batch (likely less than
+				// the batch size if this is the last batch)
+				count := provider.batchSize
+				remaining := lastContent.ID - firstContentID
+				if remaining < count {
+					count = remaining
+				}
+
+				log := log.With("first_content_id", firstContentID, "count", count)
+
+				// Search for an entry (this array will have either 0 or 1
+				// elements depending on whether an advertisement was found)
+				var publishedBatches []PublishedBatch
+				if err := provider.db.Where(
+					"autoretrieve_handle = ? AND first_content_id = ?",
+					autoretrieve.Handle,
+					firstContentID,
+				).Find(&publishedBatches).Error; err != nil {
+					log.Errorf("Failed to get published contents: %v", err)
+					continue
+				}
+
+				// And check if it's...
+
+				// 1. fully advertised, or no changes: do nothing
+				if len(publishedBatches) != 0 && publishedBatches[0].Count == count {
+					log.Debugf("Skipping already advertised batch")
+					continue
+				}
+
+				// The batch size should always be the same unless the
+				// config changes
+				contextID, err := makeContextID(contextParams{
+					provider:       addrInfo.ID,
+					firstContentID: firstContentID,
+					count:          provider.batchSize,
+				})
+				if err != nil {
+					log.Errorf("Failed to make context ID: %v", err)
+					continue
+				}
+
+				// 2. not advertised: notify put, create DB entry, continue
+				if len(publishedBatches) == 0 {
+					adCid, err := provider.engine.NotifyPut(
+						ctx,
+						addrInfo,
+						contextID,
+						metadata.New(metadata.Bitswap{}),
+					)
+					if err != nil {
+						// If there was an error, check whether already
+						// advertised
+						if errors.Is(err, providerpkg.ErrAlreadyAdvertised) {
+							// If so, try deleting it first...
+							log.Warnf("Batch was unexpectedly already advertised, removing old batch")
+							if _, err := provider.engine.NotifyRemove(ctx, addrInfo.ID, contextID); err != nil {
+								log.Errorf("Failed to remove unexpected existing advertisement: %v", err)
+							}
+
+							// ...and then re-advertise
+							_adCid, err := provider.engine.NotifyPut(
+								ctx,
+								addrInfo,
+								contextID,
+								metadata.New(metadata.Bitswap{}),
+							)
+							if err != nil {
+								log.Errorf("Failed to publish batch after deleting unexpected existing advertisement: %v", err)
+								continue
+							}
+
+							adCid = _adCid
+						} else {
+							// Otherwise, fail out
+							log.Errorf("Failed to publish batch: %v", err)
+							continue
+						}
+					}
+
+					log.Infof("Published new batch with advertisement CID %s", adCid)
+					if err := provider.db.Create(&PublishedBatch{
+						FirstContentID:     firstContentID,
+						AutoretrieveHandle: autoretrieve.Handle,
+						Count:              count,
+					}).Error; err != nil {
+						log.Errorf("Failed to write batch to database: %v", err)
+					}
+					continue
+				}
+
+				// 3. incompletely advertised: delete and then notify put,
+				// update DB entry, continue
+				publishedBatch := publishedBatches[0]
+				if publishedBatch.Count != count {
+					oldAdCid, err := provider.engine.NotifyRemove(
+						ctx,
+						addrInfo.ID,
+						contextID,
+					)
+					if err != nil {
+						log.Warnf("Failed to remove batch (going to re-publish anyway): %v", err)
+					}
+					log.Infof("Removed old advertisement")
+
+					adCid, err := provider.engine.NotifyPut(
+						ctx,
+						addrInfo,
+						contextID,
+						metadata.New(metadata.Bitswap{}),
+					)
+					if err != nil {
+						log.Errorf("Failed to publish batch: %v", err)
+						continue
+					}
+
+					log.Infof("Updated incomplete batch with new ad CID %s (previously %s)", adCid, oldAdCid)
+					publishedBatch.Count = count
+					if err := provider.db.Save(&publishedBatch).Error; err != nil {
+						log.Errorf("Failed to update batch in database")
+					}
+					continue
+				}
+			}
+		}
 	}
 
-	arLog.Debugf("sending announcement to %s", ar.Handle)
-	adCid, err := arEng.NotifyPut(context.Background(), newContextID, providerID, retrievalAddresses, metadata.New(metadata.Bitswap{}))
-	if err != nil {
-		return fmt.Errorf("could not announce new CIDs: %s", err)
-	}
-
-	// update lastAdvertisement time on database
-	if err := arEng.db.Model(&Autoretrieve{}).Where("token = ?", ar.Token).UpdateColumn("last_advertisement", time.Now()).Error; err != nil {
-		return fmt.Errorf("unable to update advertisement time on database: %s", err)
-	}
-
-	arLog.Infof("announced new CIDs: %s", adCid)
 	return nil
 }
 
-func (arEng *AutoretrieveEngine) Run() {
-	var autoretrieves []Autoretrieve
-	var lastTickTime time.Time
-	var curTime time.Time
-
-	arLog.Infof("starting autoretrieves engine")
-
-	// start ticker
-	ticker := time.NewTicker(arEng.TickInterval)
-	defer ticker.Stop()
-
-	for {
-		curTime = time.Now()
-		lastTickTime = curTime.Add(-arEng.TickInterval)
-		// Find all autoretrieve servers that are online (that sent heartbeat)
-		err := arEng.db.Find(&autoretrieves, "last_connection > ?", lastTickTime).Error
-		if err != nil {
-			arLog.Errorf("unable to query autoretrieve servers from database: %s", err)
-			return
-		}
-		if len(autoretrieves) == 0 {
-			arLog.Infof("no autoretrieve servers online")
-			// wait for next tick, or quit
-			select {
-			case <-ticker.C:
-				continue
-			case <-arEng.context.Done():
-				break
-			}
-		}
-
-		arLog.Infof("announcing new CIDs to %d autoretrieve servers", len(autoretrieves))
-		// send announcement with new CIDs for each autoretrieve server
-		for _, ar := range autoretrieves {
-			if err = arEng.announceForAR(ar); err != nil {
-				arLog.Error(err)
-			}
-		}
-
-		// wait for next tick, or quit
-		select {
-		case <-ticker.C:
-			continue
-		case <-arEng.context.Done():
-			break
-		}
-	}
+func (provider *Provider) Stop() error {
+	return provider.engine.Shutdown()
 }
 
-// ValidateAddresses checks to see if all multiaddresses are valid
-// returns empty []string if all multiaddresses are valid strings
-// returns a list of all invalid multiaddresses if any is invalid
-func validateAddresses(addresses []string) []string {
-	var invalidAddresses []string
-	for _, addr := range addresses {
-		_, err := multiaddr.NewMultiaddr(addr)
-		if err != nil {
-			invalidAddresses = append(invalidAddresses, addr)
-		}
-	}
-	return invalidAddresses
+type contextParams struct {
+	provider       peer.ID
+	firstContentID uint
+	count          uint
 }
 
-func ValidatePeerInfo(pubKeyStr string, addresses []string) (*peer.AddrInfo, error) {
-	// check if peerid is correct
-	pubKey, err := stringToPubKey(pubKeyStr)
+// Content ID to context ID
+func makeContextID(params contextParams) ([]byte, error) {
+	contextID := make([]byte, 8)
+	binary.BigEndian.PutUint32(contextID[0:4], uint32(params.firstContentID))
+	binary.BigEndian.PutUint32(contextID[4:8], uint32(params.count))
+
+	peerIDBytes, err := params.provider.MarshalBinary()
 	if err != nil {
-		return nil, fmt.Errorf("unable to decode public key: %s", err)
+		return nil, fmt.Errorf("failed to write context peer ID: %v", err)
 	}
-	_, err = peer.IDFromPublicKey(pubKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid peer information: %s", err)
-	}
-
-	if len(addresses) == 0 || addresses[0] == "" {
-		return nil, fmt.Errorf("no addresses provided")
-	}
-
-	// check if multiaddresses formats are correct
-	invalidAddrs := validateAddresses(addresses)
-	if len(invalidAddrs) != 0 {
-		return nil, fmt.Errorf("invalid address(es): %s", strings.Join(invalidAddrs, ", "))
-	}
-
-	// any of the multiaddresses of the peer should work to get addrInfo
-	// we get the first one
-	addrInfo, err := peer.AddrInfoFromString(addresses[0])
-	if err != nil {
-		return nil, err
-	}
-
-	return addrInfo, nil
+	contextID = append(contextID, peerIDBytes...)
+	return contextID, nil
 }
 
-func stringToPubKey(pubKeyStr string) (crypto.PubKey, error) {
-	pubKeyBytes, err := crypto.ConfigDecodeKey(pubKeyStr)
+// Context ID to content ID
+func readContextID(contextID []byte) (contextParams, error) {
+	peerID, err := peer.IDFromBytes(contextID[8:])
 	if err != nil {
-		return nil, err
+		return contextParams{}, fmt.Errorf("failed to read context peer ID: %v", err)
 	}
 
-	pubKey, err := crypto.UnmarshalPublicKey(pubKeyBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return pubKey, nil
-}
-
-func multiAddrsToString(addrs []multiaddr.Multiaddr) []string {
-	var rAddrs []string
-	for _, addr := range addrs {
-		rAddrs = append(rAddrs, addr.String())
-	}
-	return rAddrs
-}
-
-func stringToMultiAddrs(addrStr string) ([]multiaddr.Multiaddr, error) {
-	var mAddrs []multiaddr.Multiaddr
-	for _, addr := range strings.Split(addrStr, ",") {
-		ma, err := multiaddr.NewMultiaddr(addr)
-		if err != nil {
-			return nil, err
-		}
-		mAddrs = append(mAddrs, ma)
-	}
-	return mAddrs, nil
+	return contextParams{
+		provider:       peerID,
+		firstContentID: uint(binary.BigEndian.Uint32(contextID[0:4])),
+		count:          uint(binary.BigEndian.Uint32(contextID[4:8])),
+	}, nil
 }

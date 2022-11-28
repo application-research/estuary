@@ -104,6 +104,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/invites": {
+            "get": {
+                "description": "This endpoint is used to list all estuary invites.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get Estuary invites",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "This endpoint is used to create an estuary invite.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Create an Estuary invite",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Invite code to be created",
+                        "name": "code",
+                        "in": "path"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/peering/peers": {
             "get": {
                 "description": "This endpoint can be used to list all peers on Peering Service",
@@ -439,10 +509,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "array",
-                                "items": {
-                                    "$ref": "#/definitions/collections.Collection"
-                                }
+                                "$ref": "#/definitions/collections.Collection"
                             }
                         }
                     },
@@ -646,6 +713,12 @@ const docTemplate = `{
                                 "type": "integer"
                             }
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -827,7 +900,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filenam to use for upload",
+                        "description": "Filename to use for upload",
                         "name": "filename",
                         "in": "formData"
                     },
@@ -921,7 +994,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentAddResponse"
                         }
                     },
                     "400": {
@@ -2033,6 +2106,47 @@ const docTemplate = `{
                 }
             }
         },
+        "/get/{cid}": {
+            "get": {
+                "description": "This endpoint returns the content associated with a CID",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public"
+                ],
+                "summary": "Get Full Content by Cid",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Cid",
+                        "name": "cid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "307": {
+                        "description": "Temporary Redirect",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/net/addrs": {
             "get": {
                 "description": "This endpoint is used to get net addrs",
@@ -2283,7 +2397,7 @@ const docTemplate = `{
         },
         "/public/by-cid/{cid}": {
             "get": {
-                "description": "This endpoint returns the content associated with a CID",
+                "description": "This endpoint returns the content record associated with a CID",
                 "produces": [
                     "application/json"
                 ],
@@ -2731,10 +2845,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "array",
-                                "items": {
-                                    "$ref": "#/definitions/main.getApiKeysResp"
-                                }
+                                "$ref": "#/definitions/main.getApiKeysResp"
                             }
                         }
                     },
@@ -2884,14 +2995,14 @@ const docTemplate = `{
         },
         "/user/stats": {
             "get": {
-                "description": "This endpoint is used to create API keys for a user.",
+                "description": "This endpoint is used to geet stats for the current user.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "User"
                 ],
-                "summary": "Create API keys for a user",
+                "summary": "Get stats for the current user",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3122,6 +3233,9 @@ const docTemplate = `{
                 },
                 "estuaryId": {
                     "type": "integer"
+                },
+                "estuary_retrieval_url": {
+                    "type": "string"
                 },
                 "providers": {
                     "type": "array",

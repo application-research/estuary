@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/pinner/types"
 
@@ -56,7 +55,6 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -435,7 +433,9 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir)
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, &nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
+			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
+		})
 		if err != nil {
 			return err
 		}
@@ -453,7 +453,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
+			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, &nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}
@@ -497,7 +497,7 @@ func main() {
 			Filc:        filc,
 			StagingMgr:  sbm,
 			Private:     cfg.Private,
-			gwayHandler: gateway.NewGatewayHandler(nd.Blockstore),
+			gwayHandler: gateway.NewGatewayHandler(&nd.Blockstore),
 
 			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
 
@@ -520,6 +520,8 @@ func main() {
 			dev:                cfg.Dev,
 			shuttleConfig:      cfg,
 		}
+
+		nd.Blockstore.SetSanityCheckFn(s.SendSanityCheck)
 
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
@@ -1101,6 +1103,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
 	e.Binder = new(util.Binder)
+	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -1109,6 +1112,7 @@ func (s *Shuttle) ServeAPI() error {
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
 	e.HTTPErrorHandler = util.ErrorHandler
+	e.Use(middleware.Recover())
 
 	e.GET("/debug/metrics", func(e echo.Context) error {
 		estumetrics.Exporter().ServeHTTP(e.Response().Writer, e.Request())
@@ -1263,11 +1267,11 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > constants.DefaultContentSizeLimit {
+	if !u.FlagSplitContent() && mpf.Size > s.shuttleConfig.Content.MaxSize {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, constants.DefaultContentSizeLimit),
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.shuttleConfig.Content.MaxSize),
 		}
 	}
 
@@ -1326,21 +1330,22 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
 
 	if err := s.Provide(ctx, nd.Cid()); err != nil {
 		log.Warnf("failed to provide: %+v", err)
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          nd.Cid().String(),
-		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
-		EstuaryId:    contid,
-		Providers:    s.addrsForShuttle(),
+		Cid:                 nd.Cid().String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
+		EstuaryId:           contid,
+		Providers:           s.addrsForShuttle(),
 	})
 }
 
@@ -1397,11 +1402,11 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	// 		return err
 	// 	}
 
-	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 	if bdSize > util.MaxDealContentSize {
 	// 		return &util.HttpError{
 	// 			Code:    http.StatusBadRequest,
 	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.MaxDealContentSize),
 	// 		}
 	// 	}
 
@@ -1468,21 +1473,22 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
 
 	if err := s.Provide(ctx, root); err != nil {
 		log.Warn(err)
 	}
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          root.String(),
-		RetrievalURL: util.CreateRetrievalURL(root.String()),
-		EstuaryId:    contid,
-		Providers:    s.addrsForShuttle(),
+		Cid:                 root.String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(root.String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(root.String()),
+		EstuaryId:           contid,
+		Providers:           s.addrsForShuttle(),
 	})
 }
 
@@ -1613,19 +1619,19 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 		}
 	}
 
-	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
+	bserv := blockservice.New(&d.Node.Blockstore, d.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, &d.Node.Blockstore, op.Obj, cb)
 	if err != nil {
 		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
 	}
 
-	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects)
+	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		log.Warnf("failed to provide - contID(%d), cid(%s), err: %w", op.ContId, op.Obj.String(), ctx.Err())
 	}
 	return nil
 }
@@ -1750,8 +1756,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Debugf("updating pin status: %d %s", cont, status)
 	if status == types.PinningStatusFailed {
+		log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
+
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
@@ -1759,21 +1766,21 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 		}).Error; err != nil {
 			log.Errorf("failed to mark pin as failed in database: %s", err)
 		}
-	}
 
-	go func() {
-		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-			Op: drpc.OP_UpdatePinStatus,
-			Params: drpc.MsgParams{
-				UpdatePinStatus: &drpc.UpdatePinStatus{
-					DBID:   cont,
-					Status: status,
+		go func() {
+			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+				Op: drpc.OP_UpdatePinStatus,
+				Params: drpc.MsgParams{
+					UpdatePinStatus: &drpc.UpdatePinStatus{
+						DBID:   cont,
+						Status: status,
+					},
 				},
-			},
-		}); err != nil {
-			log.Errorf("failed to send pin status update: %s", err)
-		}
-	}()
+			}); err != nil {
+				log.Errorf("failed to send pin status update: %s", err)
+			}
+		}()
+	}
 	return nil
 }
 
@@ -1826,52 +1833,6 @@ func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.R
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
-}
-
-func (s *Shuttle) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := s.Tracer.Start(ctx, "blockstoreCopy")
-	defer span.End()
-
-	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
-	keys, err := from.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	var batches [][]blocks.Block
-	var batch []blocks.Block
-
-	for k := range keys {
-		blk, err := from.Get(ctx, k)
-		if err != nil {
-			return err
-		}
-		batch = append(batch, blk)
-
-		if len(batch) > 500 {
-			batches = append(batches, batch)
-			batch = batch[:0]
-		}
-	}
-
-	if len(batch) > 0 {
-		batches = append(batches, batch)
-	}
-
-	for _, batch := range batches {
-		var retryCount int
-	retry:
-
-		if err := to.PutMany(ctx, batch); err != nil {
-			if retryCount <= 2 {
-				retryCount = retryCount + 1
-				time.Sleep(2 * time.Second)
-				goto retry
-			}
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
@@ -2078,7 +2039,7 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -2133,7 +2094,7 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -2193,7 +2154,7 @@ func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 		return fmt.Errorf("failed to get objects for pin: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects)
+	s.sendPinCompleteMessage(ctx, p.Content, p.Size, objects, p.Cid.CID)
 
 	return c.JSON(http.StatusOK, map[string]string{})
 }
@@ -2403,19 +2364,20 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, cc, nil)
 	if err != nil {
 		return err
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, cc)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          cc.String(),
-		RetrievalURL: util.CreateRetrievalURL(cc.String()),
-		EstuaryId:    contid,
-		Providers:    s.addrsForShuttle(),
+		Cid:                 cc.String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(cc.String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(cc.String()),
+		EstuaryId:           contid,
+		Providers:           s.addrsForShuttle(),
 	})
 }
 

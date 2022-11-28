@@ -1,4 +1,4 @@
-package main
+package contentmgr
 
 import (
 	"context"
@@ -43,15 +43,12 @@ func (cm *ContentManager) maybeRemoveObject(ctx context.Context, c cid.Cid) (boo
 		if err := cm.Blockstore.DeleteBlock(ctx, c); err != nil {
 			return false, err
 		}
-
 		return true, nil
 	}
-
 	return false, nil
 }
 
 func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
-
 	cm.inflightCidsLk.Lock()
 	ok := cm.isInflight(c)
 	cm.inflightCidsLk.Unlock()
@@ -67,11 +64,10 @@ func (cm *ContentManager) trackingObject(c cid.Cid) (bool, error) {
 		}
 		return false, err
 	}
-
 	return count > 0, nil
 }
 
-func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bool) error {
+func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bool) error {
 	ctx, span := cm.tracer.Start(ctx, "RemoveContent")
 	defer span.End()
 
@@ -145,7 +141,7 @@ func (cm *ContentManager) removeContent(ctx context.Context, contID uint, now bo
 	return nil
 }
 
-func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
+func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 	var pin util.Content
 	if err := cm.DB.First(&pin, "id = ?", contid).Error; err != nil {
 		return err
@@ -172,6 +168,15 @@ func (cm *ContentManager) unpinContent(ctx context.Context, contid uint) error {
 		// TODO: this is safe, but... slow?
 		if _, err := cm.deleteIfNotPinned(ctx, o); err != nil {
 			return err
+		}
+	}
+
+	buckets, ok := cm.Buckets[pin.UserID]
+	if ok {
+		for _, bucket := range buckets {
+			if _, err := cm.tryRemoveContent(bucket, pin); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -224,6 +229,5 @@ func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*util
 		Scan(&objects).Error; err != nil {
 		return nil, err
 	}
-
 	return objects, nil
 }

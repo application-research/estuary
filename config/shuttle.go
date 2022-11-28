@@ -2,9 +2,11 @@ package config
 
 import (
 	"errors"
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"path/filepath"
 
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
+
+	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/node/modules/peering"
 )
 
@@ -83,6 +85,8 @@ func NewShuttle(appVersion string) *Shuttle {
 
 		Content: Content{
 			DisableLocalAdding: false,
+			MaxSize:            constants.MaxDealContentSize,
+			MinSize:            constants.MinDealContentSize,
 		},
 
 		Jaeger: Jaeger{
@@ -156,6 +160,7 @@ func NewShuttle(appVersion string) *Shuttle {
 				LowWater:  2000,
 				HighWater: 3000,
 			},
+			Libp2pThrottleLimit: 100,
 		},
 
 		EstuaryRemote: EstuaryRemote{

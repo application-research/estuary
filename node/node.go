@@ -4,19 +4,20 @@ import (
 	"context"
 	crand "crypto/rand"
 	"fmt"
-	"github.com/ipfs/go-bitswap"
-	"github.com/ipfs/go-cid"
-	"github.com/ipfs/go-datastore"
-	"github.com/libp2p/go-libp2p"
-	"github.com/multiformats/go-multiaddr"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/ipfs/go-bitswap"
+	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	"github.com/libp2p/go-libp2p"
+	"github.com/multiformats/go-multiaddr"
 
 	"github.com/application-research/estuary/autoretrieve"
+	"github.com/application-research/estuary/node/modules/peering"
+
 	"github.com/application-research/estuary/config"
 
 	rcmgr "github.com/application-research/estuary/node/modules/lp2p"
@@ -106,16 +107,16 @@ type Node struct {
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
-	Blockstore      blockstore.Blockstore
+	Blockstore      SanityCheckBlockstore
 	Bitswap         *bitswap.Bitswap
 	NotifBlockstore *NotifyBlockstore
 
 	Wallet *wallet.LocalWallet
 
-	Bwc      *metrics.BandwidthCounter
-	Peering  *peering.EstuaryPeeringService
-	Config   *config.Node
-	ArEngine *autoretrieve.AutoretrieveEngine
+	Bwc                  *metrics.BandwidthCounter
+	Peering              *peering.EstuaryPeeringService
+	Config               *config.Node
+	AutoretrieveProvider *autoretrieve.Provider
 }
 
 func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
@@ -290,7 +291,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
-		Blockstore: mbs,
+		Blockstore: newSanityCheckBlockstoreWrapper(mbs),
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
 		Bitswap:    bswap,
@@ -363,7 +364,9 @@ func parseBsCfg(bscfg string) (string, []string, string, error) {
 	return t, params, bscfg[end+1:], nil
 }
 
-/* format:
+/*
+	format:
+
 :lmdb:/path/to/thing
 */
 func constructBlockstore(bscfg string) (EstuaryBlockstore, string, error) {

@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
+
+	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner"
@@ -13,7 +16,6 @@ import (
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
@@ -35,7 +37,8 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Debugf("handling rpc command: %s", cmd.Op)
+	log.Debugf("handling rpc message:%s, for shuttle:%s", d.shuttleHandle)
+
 	switch cmd.Op {
 	case drpc.CMD_AddPin:
 		return d.handleRpcAddPin(ctx, cmd.Params.AddPin)
@@ -66,11 +69,29 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 	}
 }
 
+func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
+	// send - tell estuary about a bad block on this shuttle
+	if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+		Op: drpc.OP_SanityCheck,
+		Params: drpc.MsgParams{
+			SanityCheck: &drpc.SanityCheck{
+				CID:    cc,
+				ErrMsg: errMsg,
+			},
+		},
+	}); err != nil {
+		log.Errorf("failed to send sanity check: %s", err)
+	}
+
+	//mark shuttle content?
+}
+
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Debugf("sending rpc message: %s", msg.Op)
+	log.Debugf("sending rpc message: %s, from shuttle:%s", msg.Op, msg.Handle)
+
 	select {
 	case d.outgoing <- msg:
 		return nil
@@ -176,7 +197,7 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 		return fmt.Errorf("failed to get objects for pin: %s", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects)
+	s.sendPinCompleteMessage(ctx, pin.Content, pin.Size, objects, pin.Cid.CID)
 	return nil
 }
 
@@ -243,7 +264,7 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
 	}
 }
 
-func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size int64, objects []*Object) {
+func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
 
@@ -259,13 +280,14 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, cont uint, size in
 		Op: drpc.OP_PinComplete,
 		Params: drpc.MsgParams{
 			PinComplete: &drpc.PinComplete{
-				DBID:    cont,
+				DBID:    contID,
 				Size:    size,
 				Objects: objs,
+				CID:     contCID,
 			},
 		},
 	}); err != nil {
-		log.Errorf("failed to send pin complete message for content %d: %s", cont, err)
+		log.Errorf("failed to send pin complete message for content %d: %s", contID, err)
 	}
 }
 
@@ -298,52 +320,89 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	return nil
 }
 
-func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc.AggregateContent) error {
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate *drpc.AggregateContents) error {
 	// only progress if aggr is not allready in progress
-	if !s.markStartAggr(cmd.DBID) {
+	if !s.markStartAggr(aggregate.DBID) {
 		return nil
 	}
-	defer s.finishAggr(cmd.DBID)
+	defer s.finishAggr(aggregate.DBID)
 
 	ctx, span := s.Tracer.Start(ctx, "handleAggregateContent", trace.WithAttributes(
-		attribute.Int64("dbID", int64(cmd.DBID)),
-		attribute.Int64("userId", int64(cmd.UserID)),
-		attribute.String("root", cmd.Root.String()),
+		attribute.Int64("dbID", int64(aggregate.DBID)),
+		attribute.Int64("userId", int64(aggregate.UserID)),
 	))
 	defer span.End()
 
 	var p Pin
-	err := s.DB.First(&p, "content = ?", cmd.DBID).Error
+	err := s.DB.First(&p, "content = ?", aggregate.DBID).Error
 	switch err {
 	default:
 		return err
 	case nil:
-		// exists already
+		// if it was aggregated successfully but estuary was not notified,, resend message
+		if p.Active {
+			return s.resendPinComplete(ctx, p)
+		}
+		log.Warnf("failed to aggregate staging zone:%d, aggregate exist but not active", aggregate.DBID)
+		// TODO, handle this case
 		return nil
 	case gorm.ErrRecordNotFound:
 		// normal case
 	}
 
-	totalSize := int64(len(cmd.ObjData))
-	for _, c := range cmd.Contents {
-		var aggr Pin
-		if err := s.DB.First(&aggr, "content = ?", c).Error; err != nil {
+	for _, c := range aggregate.Contents {
+		var cont Pin
+		if err := s.DB.First(&cont, "content = ?", c.ID).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
 		}
 
-		if !aggr.Active || aggr.Failed {
-			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c)
+		if !cont.Active || cont.Failed {
+			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c.ID)
 		}
-		totalSize += aggr.Size
+	}
+
+	bserv := blockservice.New(&s.Node.Blockstore, s.Node.Bitswap)
+	dserv := merkledag.NewDAGService(bserv)
+
+	sort.Slice(aggregate.Contents, func(i, j int) bool {
+		return aggregate.Contents[i].ID < aggregate.Contents[j].ID
+	})
+
+	dir := uio.NewDirectory(dserv)
+	for _, c := range aggregate.Contents {
+		nd, err := dserv.Get(ctx, c.CID)
+		if err != nil {
+			return err
+		}
+
+		// TODO: consider removing the "<cid>-" prefix on the content name
+		err = dir.AddChild(ctx, fmt.Sprintf("%d-%s", c.ID, c.Name), nd)
+		if err != nil {
+			return err
+		}
+	}
+
+	dirNd, err := dir.GetNode()
+	if err != nil {
+		return err
+	}
+
+	size, err := dirNd.Size()
+	if err != nil {
+		return err
+	}
+
+	if err := s.Node.Blockstore.Put(ctx, dirNd); err != nil {
+		return err
 	}
 
 	pin := &Pin{
-		Content:   cmd.DBID,
-		Cid:       util.DbCID{CID: cmd.Root},
-		UserID:    cmd.UserID,
-		Size:      totalSize,
+		Content:   aggregate.DBID,
+		Cid:       util.DbCID{CID: dirNd.Cid()},
+		UserID:    aggregate.UserID,
+		Size:      int64(size),
 		Active:    false,
 		Pinning:   true,
 		Aggregate: true,
@@ -352,27 +411,11 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 		return err
 	}
 
-	blk, err := blocks.NewBlockWithCid(cmd.ObjData, cmd.Root)
-	if err != nil {
-		return err
-	}
-
-	if err := s.Node.Blockstore.Put(ctx, blk); err != nil {
-		return err
-	}
-
 	// since aggregates only needs put the containing box in the blockstore (no need to pull blocks),
 	// mark it as active and change pinning status
-	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{
-		"active":  true,
-		"pinning": false,
-	}).Error; err != nil {
-		return err
-	}
-
 	obj := &Object{
-		Cid:  util.DbCID{CID: blk.Cid()},
-		Size: len(blk.RawData()),
+		Cid:  util.DbCID{CID: dirNd.Cid()},
+		Size: len(dirNd.RawData()),
 	}
 	if err := s.DB.Create(obj).Error; err != nil {
 		return err
@@ -392,8 +435,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, cmd *drpc
 	}).Error; err != nil {
 		return err
 	}
-
-	s.sendPinCompleteMessage(ctx, cmd.DBID, totalSize, []*Object{obj})
+	s.sendPinCompleteMessage(ctx, aggregate.DBID, int64(size), []*Object{obj}, dirNd.Cid())
 	return nil
 }
 
@@ -612,13 +654,13 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 		return nil
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(req.Size), 0)
 	if err := b.Pack(ctx, pin.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(s.Node.Blockstore)
+	cst := cbor.NewCborStore(&s.Node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {
@@ -651,11 +693,11 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, c, func(int64) {})
 		if err != nil {
 			return err
 		}
-		s.sendPinCompleteMessage(ctx, contid, totalSize, objects)
+		s.sendPinCompleteMessage(ctx, contid, totalSize, objects, c)
 	}
 
 	if err := s.DB.Model(Pin{}).Where("id = ?", pin.ID).UpdateColumns(map[string]interface{}{

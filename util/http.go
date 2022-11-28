@@ -18,40 +18,48 @@ var log = logging.Logger("util")
 
 //#nosec G101 -- This is a false positive
 const (
-	ERR_INVALID_TOKEN              = "ERR_INVALID_TOKEN"
-	ERR_TOKEN_EXPIRED              = "ERR_TOKEN_EXPIRED"
-	ERR_AUTH_MISSING               = "ERR_AUTH_MISSING"
-	ERR_WRONG_AUTH_FORMAT          = "ERR_WRONG_AUTH_FORMAT"
-	ERR_INVALID_AUTH               = "ERR_INVALID_AUTH"
-	ERR_AUTH_MISSING_BEARER        = "ERR_AUTH_MISSING_BEARER"
-	ERR_NOT_AUTHORIZED             = "ERR_NOT_AUTHORIZED"
-	ERR_MINER_NOT_OWNED            = "ERR_MINER_NOT_OWNED"
-	ERR_INVALID_INVITE             = "ERR_INVALID_INVITE"
-	ERR_USERNAME_TAKEN             = "ERR_USERNAME_TAKEN"
-	ERR_USER_CREATION_FAILED       = "ERR_USER_CREATION_FAILED"
-	ERR_USER_NOT_FOUND             = "ERR_USER_NOT_FOUND"
-	ERR_INVALID_PASSWORD           = "ERR_INVALID_PASSWORD"
-	ERR_INVALID_FILTER             = "ERR_INVALID_FILTER"
-	ERR_INVITE_ALREADY_USED        = "ERR_INVITE_ALREADY_USED"
-	ERR_CONTENT_ADDING_DISABLED    = "ERR_CONTENT_ADDING_DISABLED"
-	ERR_INVALID_INPUT              = "ERR_INVALID_INPUT"
-	ERR_CONTENT_SIZE_OVER_LIMIT    = "ERR_CONTENT_SIZE_OVER_LIMIT"
-	ERR_PEERING_PEERS_ADD_ERROR    = "ERR_PEERING_PEERS_ADD_ERROR"
-	ERR_PEERING_PEERS_REMOVE_ERROR = "ERR_PEERING_PEERS_REMOVE_ERROR"
-	ERR_PEERING_PEERS_START_ERROR  = "ERR_PEERING_PEERS_START_ERROR"
-	ERR_PEERING_PEERS_STOP_ERROR   = "ERR_PEERING_PEERS_STOP_ERROR"
-	ERR_CONTENT_NOT_FOUND          = "ERR_CONTENT_NOT_FOUND"
-	ERR_RECORD_NOT_FOUND           = "ERR_RECORD_NOT_FOUND"
-	ERR_INVALID_PINNING_STATUS     = "ERR_INVALID_PINNING_STATUS"
-	ERR_INVALID_QUERY_PARAM_VALUE  = "ERR_INVALID_QUERY_PARAM_VALUE"
-	ERR_CONTENT_LENGTH_REQUIRED    = "ERR_CONTENT_LENGTH_REQUIRED"
-	ERR_UNSUPPORTED_CONTENT_TYPE   = "ERR_UNSUPPORTED_CONTENT_TYPE"
-	ERR_VALUE_REQUIRED             = "ERR_VALUE_REQUIRED"
+	ERR_INVALID_TOKEN                                      = "ERR_INVALID_TOKEN"
+	ERR_TOKEN_EXPIRED                                      = "ERR_TOKEN_EXPIRED"
+	ERR_AUTH_MISSING                                       = "ERR_AUTH_MISSING"
+	ERR_WRONG_AUTH_FORMAT                                  = "ERR_WRONG_AUTH_FORMAT"
+	ERR_INVALID_AUTH                                       = "ERR_INVALID_AUTH"
+	ERR_AUTH_MISSING_BEARER                                = "ERR_AUTH_MISSING_BEARER"
+	ERR_NOT_AUTHORIZED                                     = "ERR_NOT_AUTHORIZED"
+	ERR_MINER_NOT_OWNED                                    = "ERR_MINER_NOT_OWNED"
+	ERR_INVALID_INVITE                                     = "ERR_INVALID_INVITE"
+	ERR_USERNAME_TAKEN                                     = "ERR_USERNAME_TAKEN"
+	ERR_USER_CREATION_FAILED                               = "ERR_USER_CREATION_FAILED"
+	ERR_USER_NOT_FOUND                                     = "ERR_USER_NOT_FOUND"
+	ERR_INVALID_PASSWORD                                   = "ERR_INVALID_PASSWORD"
+	ERR_INVALID_FILTER                                     = "ERR_INVALID_FILTER"
+	ERR_INVITE_ALREADY_USED                                = "ERR_INVITE_ALREADY_USED"
+	ERR_CONTENT_ADDING_DISABLED                            = "ERR_CONTENT_ADDING_DISABLED"
+	ERR_INVALID_INPUT                                      = "ERR_INVALID_INPUT"
+	ERR_CONTENT_SIZE_OVER_LIMIT                            = "ERR_CONTENT_SIZE_OVER_LIMIT"
+	ERR_PEERING_PEERS_ADD_ERROR                            = "ERR_PEERING_PEERS_ADD_ERROR"
+	ERR_PEERING_PEERS_REMOVE_ERROR                         = "ERR_PEERING_PEERS_REMOVE_ERROR"
+	ERR_PEERING_PEERS_START_ERROR                          = "ERR_PEERING_PEERS_START_ERROR"
+	ERR_PEERING_PEERS_STOP_ERROR                           = "ERR_PEERING_PEERS_STOP_ERROR"
+	ERR_CONTENT_NOT_FOUND                                  = "ERR_CONTENT_NOT_FOUND"
+	ERR_RECORD_NOT_FOUND                                   = "ERR_RECORD_NOT_FOUND"
+	ERR_INVALID_PINNING_STATUS                             = "ERR_INVALID_PINNING_STATUS"
+	ERR_INVALID_QUERY_PARAM_VALUE                          = "ERR_INVALID_QUERY_PARAM_VALUE"
+	ERR_CONTENT_LENGTH_REQUIRED                            = "ERR_CONTENT_LENGTH_REQUIRED"
+	ERR_UNSUPPORTED_CONTENT_TYPE                           = "ERR_UNSUPPORTED_CONTENT_TYPE"
+	ERR_VALUE_REQUIRED                                     = "ERR_VALUE_REQUIRED"
+	ERR_INVALID_MINER_CLAIM_SIG                            = "ERR_INVALID_MINER_CLAIM_SIG"
+	ERR_INVALID_MINER_SETUP                                = "ERR_INVALID_MINER_SETUP"
+	ERR_INVALID_MINER_CLAIM_NO_PEER_ID                     = "ERR_INVALID_MINER_CLAIM_NO_PEER_ID"
+	ERR_INVALID_MINER_CLAIM_NO_MULTI_ADDR                  = "ERR_INVALID_MINER_CLAIM_NO_MULTI_ADDR"
+	ERR_INVALID_MINER_CLAIM_NO_POWER                       = "ERR_INVALID_MINER_CLAIM_NO_POWER"
+	ERR_INVALID_MINER_CLAIM_POWER_BELOW_1TIB               = "ERR_INVALID_MINER_CLAIM_POWER_BELOW_1TIB"
+	ERR_INVALID_MINER_CLAIM_NO_ASK                         = "ERR_INVALID_MINER_CLAIM_NO_ASK"
+	ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO = "ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO"
 )
 
 const (
 	ERR_AUTH_MISSING_DETAILS        = "no api key was specified"
-	ERR_AUTH_MISSING_BEARER_DETAILS = "Unsupported authorization scheme: Bearer is a required prefix. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\"."  //#nosec G101 -- This is a false positive and example API KEY
+	ERR_AUTH_MISSING_BEARER_DETAILS = "Unsupported authorization scheme: Bearer is a required prefix. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\"."                                                   //#nosec G101 -- This is a false positive and example API KEY
 	ERR_INVALID_AUTH_DETAILS        = "Invalid Auth: An Invalid API Key was specified. The Authorization HTTP Header should be in the format \"Authorization: Bearer ESTxxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxxARY\". You have the Bearer prefix but your API Key is empty or missing." //#nosec G101 -- This is a false positive and example API KEY
 )
 
@@ -136,7 +144,6 @@ type UserSettings struct {
 	Replication           int            `json:"replication"`
 	Verified              bool           `json:"verified"`
 	DealDuration          abi.ChainEpoch `json:"dealDuration"`
-	MaxStagingWait        time.Duration  `json:"maxStagingWait"`
 	FileStagingThreshold  int64          `json:"fileStagingThreshold"`
 	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
 	DealMakingDisabled    bool           `json:"dealMakingDisabled"`

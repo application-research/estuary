@@ -38,10 +38,11 @@ type ContentAddIpfsBody struct {
 }
 
 type ContentAddResponse struct {
-	Cid          string   `json:"cid"`
-	RetrievalURL string   `json:"retrieval_url"`
-	EstuaryId    uint     `json:"estuaryId"`
-	Providers    []string `json:"providers"`
+	Cid                 string   `json:"cid"`
+	RetrievalURL        string   `json:"retrieval_url"`
+	EstuaryRetrievalURL string   `json:"estuary_retrieval_url"`
+	EstuaryId           uint     `json:"estuaryId"`
+	Providers           []string `json:"providers"`
 }
 
 type ContentCreateBody struct {
@@ -188,8 +189,12 @@ func EnsurePathIsLinked(dirs []string, rootNode *merkledag.ProtoNode, ds format.
 	return lookupNode, nil
 }
 
-func CreateRetrievalURL(cid string) string {
+func CreateDwebRetrievalURL(cid string) string {
 	return fmt.Sprintf("https://dweb.link/ipfs/%s", cid)
+}
+
+func CreateEstuaryRetrievalURL(cid string) string {
+	return fmt.Sprintf("https://api.estuary.tech/gw/ipfs/%s", cid)
 }
 
 func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {

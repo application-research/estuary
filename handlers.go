@@ -11,6 +11,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"net/http/httputil"
 	httpprof "net/http/pprof"
 	"net/url"
 	"path/filepath"
@@ -25,6 +26,9 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/contentmgr"
+	"github.com/application-research/estuary/miner"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/libp2p/go-libp2p/core/network"
 
@@ -38,13 +42,9 @@ import (
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-padreader"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/go-state-types/big"
-	"github.com/filecoin-project/go-state-types/crypto"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/filecoin-project/lotus/lib/sigs"
 	"github.com/filecoin-project/specs-actors/v6/actors/builtin/market"
 	"github.com/google/uuid"
-	blocks "github.com/ipfs/go-block-format"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -99,6 +99,7 @@ import (
 func (s *Server) ServeAPI() error {
 	e := echo.New()
 	e.Binder = new(util.Binder)
+	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.cfg.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
@@ -124,6 +125,7 @@ func (s *Server) ServeAPI() error {
 	})
 
 	e.Use(middleware.CORS())
+	e.Use(middleware.Recover())
 
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
@@ -131,6 +133,10 @@ func (s *Server) ServeAPI() error {
 	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 	e.GET("/gw/:path", s.handleGateway)
+
+	e.POST("/put", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
+	e.GET("/get/:cid", s.handleGetFullContentbyCid)
+	// e.HEAD("/get/:cid", s.handleGetContentByCid)
 
 	user := e.Group("/user")
 	user.Use(s.AuthRequired(util.PermLevelUser))
@@ -192,8 +198,8 @@ func (s *Server) ServeAPI() error {
 	cols := e.Group("/collections")
 	cols.Use(s.AuthRequired(util.PermLevelUser))
 
-	cols.GET("/", withUser(s.handleListCollections))
-	cols.POST("/", withUser(s.handleCreateCollection))
+	cols.GET("", withUser(s.handleListCollections))
+	cols.POST("", withUser(s.handleCreateCollection))
 
 	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
 	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
@@ -702,7 +708,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -714,7 +720,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
 // @Tags         content
 // @Produce      json
-// @Success      200           {object}  string
+// @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Param        body          body      string  true   "Car"
@@ -727,7 +733,8 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
-	if s.CM.localContentAddingDisabled {
+
+	if s.cfg.Content.DisableLocalAdding {
 		return s.redirectContentAdding(c, u)
 	}
 
@@ -742,11 +749,11 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	// 		return err
 	// 	}
 
-	// 	if bdSize > util.DefaultContentSizeLimit {
+	// 	if bdSize > util.MaxDealContentSize {
 	// 		return &util.HttpError{
 	// 			Code:    http.StatusBadRequest,
 	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.DefaultContentSizeLimit),
+	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.MaxDealContentSize),
 	// 		}
 	// 	}
 
@@ -794,18 +801,18 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	bserv := blockservice.New(sbs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	cont, err := s.CM.addDatabaseTracking(ctx, u, dserv, rootCID, filename, s.CM.Replication)
+	cont, err := s.CM.AddDatabaseTracking(ctx, u, dserv, rootCID, filename, s.cfg.Replication)
 	if err != nil {
 		return err
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, sbs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	go func() {
 		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.toCheck(cont.ID)
+		s.CM.ToCheck(cont.ID)
 	}()
 
 	go func() {
@@ -815,10 +822,11 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          rootCID.String(),
-		RetrievalURL: util.CreateRetrievalURL(rootCID.String()),
-		EstuaryId:    cont.ID,
-		Providers:    s.CM.pinDelegatesForContent(*cont),
+		Cid:                 rootCID.String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
+		EstuaryId:           cont.ID,
+		Providers:           s.CM.PinDelegatesForContent(*cont),
 	})
 }
 
@@ -836,7 +844,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param        data          formData  file    true   "File to upload"
-// @Param        filename      formData  string  false  "Filenam to use for upload"
+// @Param        filename      formData  string  false  "Filename to use for upload"
 // @Param        coluuid       query     string  false  "Collection UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
@@ -854,7 +862,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if s.CM.localContentAddingDisabled {
+	if s.cfg.Content.DisableLocalAdding {
 		return s.redirectContentAdding(c, u)
 	}
 
@@ -871,11 +879,11 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > s.CM.contentSizeLimit {
+	if !u.FlagSplitContent() && mpf.Size > s.cfg.Content.MaxSize {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.CM.contentSizeLimit),
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.cfg.Content.MaxSize),
 		}
 	}
 
@@ -891,7 +899,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 
 	defer fi.Close()
 
-	replication := s.CM.Replication
+	replication := s.cfg.Replication
 	replVal := c.FormValue("replication")
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
@@ -913,15 +921,9 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		col = &srchCol
 	}
 
-	defaultPath := "/"
-	path := defaultPath
-	if cp := c.QueryParam(ColDir); cp != "" {
-		sp, err := sanitizePath(cp)
-		if err != nil {
-			return err
-		}
-
-		path = sp
+	path, err := constructDirectoryPath(c.QueryParam(ColDir))
+	if err != nil {
+		return err
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -952,7 +954,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	content, err := s.CM.addDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	content, err := s.CM.AddDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
@@ -969,12 +971,12 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := s.dumpBlockstoreTo(ctx, bs, s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, &s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	go func() {
-		s.CM.toCheck(content.ID)
+		s.CM.ToCheck(content.ID)
 	}()
 
 	if c.QueryParam("lazy-provide") != "true" {
@@ -993,11 +995,26 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:          nd.Cid().String(),
-		RetrievalURL: util.CreateRetrievalURL(nd.Cid().String()),
-		EstuaryId:    content.ID,
-		Providers:    s.CM.pinDelegatesForContent(*content),
+		Cid:                 nd.Cid().String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
+		EstuaryId:           content.ID,
+		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
+}
+
+func constructDirectoryPath(dir string) (string, error) {
+	defaultPath := "/"
+	path := defaultPath
+	if cp := dir; cp != "" {
+		sp, err := sanitizePath(cp)
+		if err != nil {
+			return "", err
+		}
+
+		path = sp
+	}
+	return path, nil
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -1014,27 +1031,18 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 			Details: "uploading content to this node is not allowed at the moment",
 		}
 	}
-	// propagate any query params
+
 	//#nosec G404: ignore weak random number generator
-	req, err := http.NewRequest("POST", uep[rand.Intn(len(uep))], c.Request().Body)
+	shURL, err := url.Parse(uep[rand.Intn(len(uep))])
 	if err != nil {
 		return err
 	}
-	req.Header = c.Request().Header.Clone()
-	req.URL.RawQuery = c.Request().URL.Query().Encode()
+	shURL.Path = ""
+	shURL.RawQuery = ""
+	shURL.Fragment = ""
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-
-	c.Response().WriteHeader(resp.StatusCode)
-
-	_, err = io.Copy(c.Response().Writer, resp.Body)
-	if err != nil {
-		return err
-	}
-
+	proxy := httputil.NewSingleHostReverseProxy(shURL)
+	proxy.ServeHTTP(c.Response(), c.Request())
 	return nil
 }
 
@@ -1043,151 +1051,6 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 	defer span.End()
 
 	return util.ImportFile(dserv, fi)
-}
-
-var noDataTimeout = time.Minute * 10
-
-func (cm *ContentManager) addDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
-	defer span.End()
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	gotData := make(chan struct{}, 1)
-	go func() {
-		nodata := time.NewTimer(noDataTimeout)
-		defer nodata.Stop()
-
-		for {
-			select {
-			case <-nodata.C:
-				cancel()
-			case <-gotData:
-				nodata.Reset(noDataTimeout)
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
-
-	var objlk sync.Mutex
-	var objects []*util.Object
-	cset := cid.NewSet()
-
-	defer func() {
-		cm.inflightCidsLk.Lock()
-		_ = cset.ForEach(func(c cid.Cid) error {
-			v, ok := cm.inflightCids[c]
-			if !ok || v <= 0 {
-				log.Errorf("cid should be inflight but isn't: %s", c)
-			}
-
-			cm.inflightCids[c]--
-			if cm.inflightCids[c] == 0 {
-				delete(cm.inflightCids, c)
-			}
-			return nil
-		})
-		cm.inflightCidsLk.Unlock()
-	}()
-
-	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		// cset.Visit gets called first, so if we reach here we should immediately track the CID
-		cm.inflightCidsLk.Lock()
-		cm.inflightCids[c]++
-		cm.inflightCidsLk.Unlock()
-
-		node, err := dserv.Get(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		cb(int64(len(node.RawData())))
-
-		select {
-		case gotData <- struct{}{}:
-		case <-ctx.Done():
-		}
-
-		objlk.Lock()
-		objects = append(objects, &util.Object{
-			Cid:  util.DbCID{CID: c},
-			Size: len(node.RawData()),
-		})
-		objlk.Unlock()
-
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
-		return util.FilterUnwalkableLinks(node.Links()), nil
-	}, root, cset.Visit, merkledag.Concurrent())
-
-	if err != nil {
-		return err
-	}
-	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
-}
-
-func (cm *ContentManager) addDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
-	defer span.End()
-
-	content := &util.Content{
-		Cid:         util.DbCID{CID: root},
-		Name:        filename,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: replication,
-		Location:    constants.ContentLocationLocal,
-	}
-
-	if err := cm.DB.Create(content).Error; err != nil {
-		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	if err := cm.addDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
-		return nil, err
-	}
-	return content, nil
-}
-
-func (s *Server) dumpBlockstoreTo(ctx context.Context, from, to blockstore.Blockstore) error {
-	ctx, span := s.tracer.Start(ctx, "blockstoreCopy")
-	defer span.End()
-
-	// TODO: smarter batching... im sure ive written this logic before, just gotta go find it
-	keys, err := from.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	var batch []blocks.Block
-
-	for k := range keys {
-		blk, err := from.Get(ctx, k)
-		if err != nil {
-			return err
-		}
-
-		batch = append(batch, blk)
-
-		if len(batch) > 500 {
-			if err := to.PutMany(ctx, batch); err != nil {
-				return err
-			}
-			batch = batch[:0]
-		}
-	}
-
-	if len(batch) > 0 {
-		if err := to.PutMany(ctx, batch); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // handleEnsureReplication godoc
@@ -1213,7 +1076,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.toCheck(content.ID)
+	s.CM.ToCheck(content.ID)
 	return nil
 }
 
@@ -1309,7 +1172,7 @@ type onChainDealState struct {
 }
 
 type dealStatus struct {
-	Deal           contentDeal             `json:"deal"`
+	Deal           model.ContentDeal       `json:"deal"`
 	TransferStatus *filclient.ChannelState `json:"transfer"`
 	OnChainState   *onChainDealState       `json:"onChainState"`
 }
@@ -1382,7 +1245,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var deals []contentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ?", content.ID).Error; err != nil {
 		return err
 	}
@@ -1440,7 +1303,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	})
 
 	var failCount int64
-	if err := s.DB.Model(&dfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
 		return err
 	}
 
@@ -1495,7 +1358,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "prop_cid = ?", propcid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1516,7 +1379,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 }
 
 func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
@@ -1570,10 +1433,10 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 }
 
 type getContentResponse struct {
-	Content      *util.Content  `json:"content"`
-	AggregatedIn *util.Content  `json:"aggregatedIn,omitempty"`
-	Selector     string         `json:"selector,omitempty"`
-	Deals        []*contentDeal `json:"deals"`
+	Content      *util.Content        `json:"content"`
+	AggregatedIn *util.Content        `json:"aggregatedIn,omitempty"`
+	Selector     string               `json:"selector,omitempty"`
+	Deals        []*model.ContentDeal `json:"deals"`
 }
 
 func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
@@ -1599,7 +1462,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 
 // handleGetContentByCid godoc
 // @Summary      Get Content by Cid
-// @Description  This endpoint returns the content associated with a CID
+// @Description  This endpoint returns the content record associated with a CID
 // @Tags         public
 // @Produce      json
 // @Success      200      {object}  string
@@ -1651,7 +1514,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 			id = cont.AggregatedIn
 		}
 
-		var deals []*contentDeal
+		var deals []*model.ContentDeal
 		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
 			return err
 		}
@@ -1662,6 +1525,25 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, out)
+}
+
+// handleGetFullContentbyCid godoc
+// @Summary      Get Full Content by Cid
+// @Description  This endpoint returns the content associated with a CID
+// @Tags         public
+// @Produce      json
+// @Success      307      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        cid  path      string  true  "Cid"
+// @Router       /get/{cid} [get]
+func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
+	obj, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return errors.Wrapf(err, "invalid cid")
+	}
+	cidStr := cid.NewCidV1(obj.Prefix().Codec, obj.Hash()).String()
+	return c.Redirect(http.StatusTemporaryRedirect, "/gw/ipfs/"+cidStr)
 }
 
 // handleQueryAsk godoc
@@ -1681,7 +1563,7 @@ func (s *Server) handleQueryAsk(c echo.Context) error {
 		return err
 	}
 
-	ask, err := s.CM.getAsk(c.Request().Context(), addr, 0)
+	ask, err := s.minerManager.GetAsk(c.Request().Context(), addr, 0)
 	if err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
@@ -1744,7 +1626,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	id, err := s.CM.makeDealWithMiner(ctx, cont, addr)
+	id, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
@@ -1754,8 +1636,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
@@ -1778,7 +1660,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", chanid.ID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1806,7 +1688,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 func (s *Server) handleTransferStatusByID(c echo.Context) error {
 	transferID := c.Param("id")
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "dt_chan = ?", transferID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1872,7 +1754,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	var deal contentDeal
+	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1936,7 +1818,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 		return err
 	}
 
-	var d contentDeal
+	var d model.ContentDeal
 	if err := s.DB.First(&d, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -1982,7 +1864,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 		return err
 	}
 
-	var proprec proposalRecord
+	var proprec model.ProposalRecord
 	if err := s.DB.First(&proprec, "prop_cid = ?", propCid.Bytes()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -2033,6 +1915,15 @@ type getInvitesResp struct {
 	CreatedAt string `json:"createdAt"`
 }
 
+// handleAdminGetInvites godoc
+// @Summary      Get Estuary invites
+// @Description  This endpoint is used to list all estuary invites.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Router       /admin/invites [get]
 func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
@@ -2047,6 +1938,16 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 	return c.JSON(http.StatusOK, invites)
 }
 
+// handleAdminCreateInvite godoc
+// @Summary      Create an Estuary invite
+// @Description  This endpoint is used to create an estuary invite.
+// @Tags         content
+// @Produce      json
+// @Success      200           {object}  string
+// @Failure      400           {object}  util.HttpError
+// @Failure      500           {object}  util.HttpError
+// @Param        code  path      string  false  "Invite code to be created"
+// @Router       /admin/invites [post]
 func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
 	invite := &util.InviteCode{
@@ -2108,22 +2009,22 @@ type adminStatsResponse struct {
 func (s *Server) handleAdminStats(c echo.Context) error {
 
 	var dealsTotal int64
-	if err := s.DB.Model(&contentDeal{}).Count(&dealsTotal).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Count(&dealsTotal).Error; err != nil {
 		return err
 	}
 
 	var dealsSuccessful int64
-	if err := s.DB.Model(&contentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("deal_id > 0").Count(&dealsSuccessful).Error; err != nil {
 		return err
 	}
 
 	var dealsFailed int64
-	if err := s.DB.Model(&contentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("failed").Count(&dealsFailed).Error; err != nil {
 		return err
 	}
 
 	var numMiners int64
-	if err := s.DB.Model(&storageMiner{}).Count(&numMiners).Error; err != nil {
+	if err := s.DB.Model(&model.StorageMiner{}).Count(&numMiners).Error; err != nil {
 		return err
 	}
 
@@ -2138,7 +2039,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numRetrievals int64
-	if err := s.DB.Model(&retrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
+	if err := s.DB.Model(&model.RetrievalSuccessRecord{}).Count(&numRetrievals).Error; err != nil {
 		return err
 	}
 
@@ -2148,7 +2049,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 	}
 
 	var numStorageFailures int64
-	if err := s.DB.Model(&dfeRecord{}).Count(&numStorageFailures).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Count(&numStorageFailures).Error; err != nil {
 		return err
 	}
 
@@ -2162,7 +2063,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		NumRetrievals:        numRetrievals,
 		NumRetrFailures:      numRetrievalFailures,
 		NumStorageFailures:   numStorageFailures,
-		PinQueueSize:         s.CM.pinMgr.PinQueueSize(),
+		PinQueueSize:         s.CM.PinMgr.PinQueueSize(),
 	})
 }
 
@@ -2177,13 +2078,13 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // @Router       /admin/system/config [get]
 func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
-	for _, sh := range s.CM.shuttles {
-		if sh.hostname == "" {
-			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.handle)
+	for _, sh := range s.CM.Shuttles {
+		if sh.Hostname == "" {
+			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
 			continue
 		}
 
-		out, err := s.getShuttleConfig(sh.hostname, u.AuthToken.Token)
+		out, err := s.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
 		if err != nil {
 			log.Warnf("failed to get shuttle config: %s", err)
 			continue
@@ -2218,7 +2119,7 @@ type minerResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /public/miners [get]
 func (s *Server) handleAdminGetMiners(c echo.Context) error {
-	var miners []storageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
@@ -2236,62 +2137,47 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 }
 
 func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
-	_, stats, err := s.CM.sortedMinerList()
+	_, stats, err := s.minerManager.SortedMinerList()
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, stats)
 }
 
 func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
-	sml, err := s.CM.computeSortedMinerList()
+	sml, err := s.minerManager.ComputeSortedMinerList()
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, sml)
 }
 
-type minerSetInfoParams struct {
-	Name string `json:"name"`
-}
-
+// handleMinersSetInfo godoc
+// @Summary      Set Miner Info
+// @Description  This endpoint lets a user set miner info.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        params           body      miner.MinerSetInfoParams  true   "Miner set info params"
+// @Param        miner           path      string  true   "Miner to set info for"
+// @Router       /miner/set-info/{miner} [put]
 func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
-		return err
-	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	var params minerSetInfoParams
+	var params miner.MinerSetInfoParams
 	if err := c.Bind(&params); err != nil {
 		return err
 	}
 
-	if err := s.DB.Model(storageMiner{}).Where("address = ?", m.String()).Update("name", params.Name).Error; err != nil {
+	if err := s.minerManager.SetMinerInfo(m, params, u); err != nil {
 		return err
 	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
@@ -2300,87 +2186,62 @@ func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&storageMiner{}).Error; err != nil {
+	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-type suspendMinerBody struct {
-	Reason string `json:"reason"`
-}
+type emptyResp struct{}
 
+// handleSuspendMiner godoc
+// @Summary      Suspend Miner
+// @Description  This endpoint lets a user suspend a miner.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      miner.SuspendMinerBody  true   "Suspend Miner Body"
+// @Param        miner           path      string  true   "Miner to suspend"
+// @Router       /miner/suspend/{miner} [post]
 func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
+	var body miner.SuspendMinerBody
+	if err := c.Bind(&body); err != nil {
+		return err
+	}
+
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
+	if err := s.minerManager.SuspendMiner(m, body, u); err != nil {
 		return err
 	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	var body suspendMinerBody
-	if err := c.Bind(&body); err != nil {
-		return err
-	}
-
-	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Updates(map[string]interface{}{
-		"suspended":        true,
-		"suspended_reason": body.Reason,
-	}).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
+// handleUnsuspendMiner godoc
+// @Summary      Unuspend Miner
+// @Description  This endpoint lets a user unsuspend a miner.
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  emptyResp
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner           path      string  true   "Miner to unsuspend"
+// @Router       /miner/unsuspend/{miner} [put]
 func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	var sm storageMiner
-	if err := s.DB.First(&sm, "address = ?", m.String()).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %s was not found", m),
-			}
-		}
+	if err := s.minerManager.UnSuspendMiner(m, u); err != nil {
 		return err
 	}
-
-	if !(u.Perm >= util.PermLevelAdmin || sm.Owner == u.ID) {
-		return &util.HttpError{
-			Code:   http.StatusUnauthorized,
-			Reason: util.ERR_MINER_NOT_OWNED,
-		}
-	}
-
-	if err := s.DB.Model(&storageMiner{}).Where("address = ?", m.String()).Update("suspended", false).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, map[string]string{})
+	return c.JSON(http.StatusOK, emptyResp{})
 }
 
 func (s *Server) handleAdminAddMiner(c echo.Context) error {
@@ -2390,8 +2251,7 @@ func (s *Server) handleAdminAddMiner(c echo.Context) error {
 	}
 
 	name := c.QueryParam("name")
-
-	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&storageMiner{
+	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
@@ -2414,7 +2274,7 @@ func (s *Server) handleDealStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleDealStats")
 	defer span.End()
 
-	var alldeals []contentDeal
+	var alldeals []model.ContentDeal
 	if err := s.DB.Find(&alldeals).Error; err != nil {
 		return err
 	}
@@ -2524,7 +2384,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 }
 
 func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
-	var infos []retrievalSuccessRecord
+	var infos []model.RetrievalSuccessRecord
 	if err := s.DB.Find(&infos).Error; err != nil {
 		return err
 	}
@@ -2564,7 +2424,7 @@ type estimateDealBody struct {
 type priceEstimateResponse struct {
 	TotalStr string `json:"totalFil"`
 	Total    string `json:"totalAttoFil"`
-	Asks     []*minerStorageAsk
+	Asks     []*model.MinerStorageAsk
 }
 
 // handleEstimateDealCost godoc
@@ -2587,7 +2447,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 
 	pieceSize := padreader.PaddedSize(body.Size)
 
-	estimate, err := s.CM.estimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
+	estimate, err := s.minerManager.EstimatePrice(ctx, body.Replication, pieceSize.Padded(), abi.ChainEpoch(body.DurationBlks), body.Verified)
 	if err != nil {
 		return err
 	}
@@ -2615,11 +2475,10 @@ func (s *Server) handleGetMinerFailures(c echo.Context) error {
 		return err
 	}
 
-	var merrs []dfeRecord
+	var merrs []model.DfeRecord
 	if err := s.DB.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, merrs)
 }
 
@@ -2684,7 +2543,7 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
-	var m storageMiner
+	var m model.StorageMiner
 	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return c.JSON(http.StatusOK, &minerStatsResp{
@@ -2696,12 +2555,12 @@ func (s *Server) handleGetMinerStats(c echo.Context) error {
 	}
 
 	var dealscount int64
-	if err := s.DB.Model(&contentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+	if err := s.DB.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
 		return err
 	}
 
 	var errorcount int64
-	if err := s.DB.Model(&dfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
+	if err := s.DB.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
 		return err
 	}
 
@@ -2754,7 +2613,7 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 		return err
 	}
 
-	q := s.DB.Model(contentDeal{}).Order("created_at desc").
+	q := s.DB.Model(model.ContentDeal{}).Order("created_at desc").
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("miner = ?", maddr.String())
 
@@ -2876,7 +2735,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var errs []dfeRecord
+	var errs []model.DfeRecord
 	if err := s.DB.Find(&errs, "content = ?", cont).Error; err != nil {
 		return err
 	}
@@ -2885,18 +2744,17 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.bucketLk.Lock()
-	defer s.CM.bucketLk.Unlock()
+	s.CM.BucketLk.Lock()
+	defer s.CM.BucketLk.Unlock()
 
-	return c.JSON(http.StatusOK, s.CM.buckets)
+	return c.JSON(http.StatusOK, s.CM.Buckets)
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
-	conts, err := s.CM.getRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
+	conts, err := s.CM.GetRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
 		return err
 	}
-
 	return c.JSON(http.StatusOK, conts)
 }
 
@@ -2957,12 +2815,12 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 		log.Warnf("got back fewer contents than requested: %d != %d", len(contents), len(body.Contents))
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "handle = ?", body.Destination).Error; err != nil {
 		return err
 	}
 
-	if err := s.CM.sendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+	if err := s.CM.SendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
 		return err
 	}
 
@@ -2978,7 +2836,6 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 	if err := s.CM.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
-
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -3000,7 +2857,7 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 		return err
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -3314,8 +3171,8 @@ type userStatsResponse struct {
 }
 
 // handleGetUserStats godoc
-// @Summary      Create API keys for a user
-// @Description  This endpoint is used to create API keys for a user.
+// @Summary      Get stats for the current user
+// @Description  This endpoint is used to geet stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
@@ -3380,13 +3237,12 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 		Address:  u.Address.Addr.String(),
 		Miners:   s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
-			Replication:           s.CM.Replication,
+			Replication:           s.cfg.Replication,
 			Verified:              s.cfg.Deal.IsVerified,
 			DealDuration:          s.cfg.Deal.Duration,
-			MaxStagingWait:        s.cfg.StagingBucket.MaxLifeTime,
-			FileStagingThreshold:  s.cfg.StagingBucket.IndividualDealThreshold,
+			FileStagingThreshold:  s.cfg.Content.MinSize,
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
-			DealMakingDisabled:    s.CM.dealMakingDisabled(),
+			DealMakingDisabled:    s.CM.DealMakingDisabled(),
 			UploadEndpoints:       uep,
 			Flags:                 u.Flags,
 		},
@@ -3395,7 +3251,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) getMinersOwnedByUser(u *util.User) []string {
-	var miners []storageMiner
+	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
 		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
 		return nil
@@ -3410,23 +3266,22 @@ func (s *Server) getMinersOwnedByUser(u *util.User) []string {
 }
 
 func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
-
 	// TODO: this should be a lotttttt smarter
-	s.CM.shuttlesLk.Lock()
-	defer s.CM.shuttlesLk.Unlock()
-	var shuttles []Shuttle
-	for hnd, sh := range s.CM.shuttles {
+	s.CM.ShuttlesLk.Lock()
+	defer s.CM.ShuttlesLk.Unlock()
+	var shuttles []model.Shuttle
+	for hnd, sh := range s.CM.Shuttles {
 		if sh.ContentAddingDisabled {
 			log.Debugf("shuttle %+v content adding is disabled", sh)
 			continue
 		}
 
-		if sh.hostname == "" {
+		if sh.Hostname == "" {
 			log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
 		}
 
-		var shuttle Shuttle
+		var shuttle model.Shuttle
 		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
 			log.Errorf("failed to look up shuttle by handle: %s", err)
 			continue
@@ -3452,10 +3307,10 @@ func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 		}
 		out = append(out, host+"/content/add")
 	}
-	if !s.CM.localContentAddingDisabled {
-		out = append(out, s.CM.hostname+"/content/add")
-	}
 
+	if !s.cfg.Content.DisableLocalAdding {
+		out = append(out, s.cfg.Hostname+"/content/add")
+	}
 	return out, nil
 }
 
@@ -3484,7 +3339,9 @@ type getApiKeysResp struct {
 // @Router       /user/api-keys/{key_or_hash} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key_or_hash")
-	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ?)", u.ID, kval, kval).Error; err != nil {
+	// need to check the kvalHash in case someone is revoking their token by the token itself, but only its hash is stored
+	kvalHash := util.GetTokenHash(kval)
+	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ? OR token_hash = ?)", u.ID, kval, kval, kvalHash).Error; err != nil {
 		return err
 	}
 
@@ -3542,7 +3399,7 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.
 // @Tags         User
 // @Produce      json
-// @Success      200  {array}   []getApiKeysResp
+// @Success      200  {array}   getApiKeysResp
 // @Failure      400  {object}  util.HttpError
 // @Failure      404   {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3607,7 +3464,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to list all collections. Whenever a user logs on estuary, it will list all collections that the user has access to. This endpoint provides a way to list all collections to the user.
 // @Tags         collections
 // @Produce      json
-// @Success      200  {array}   []collections.Collection
+// @Success      200  {array}   collections.Collection
 // @Failure      400  {object}  util.HttpError
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3633,6 +3490,7 @@ type addContentsToCollectionBody struct {
 // @Produce      json
 // @Param        coluuid     path      string  true  "Collection UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
+// @Param		 dir		 query	   string  false  "Directory"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3702,13 +3560,14 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	defaultPath := "/"
+	path, err := constructDirectoryPath(c.QueryParam(ColDir))
 	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
+		fullPath := filepath.Join(path, cont.Name)
 		colrefs = append(colrefs, collections.CollectionRef{
 			Collection: col.ID,
 			Content:    cont.ID,
-			Path:       &defaultPath,
+			Path:       &fullPath,
 		})
 	}
 
@@ -3779,7 +3638,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 		origins = append(origins, ai)
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, nil)
+	bserv := blockservice.New(&s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
 	// create DAG respecting directory structure
@@ -3816,7 +3675,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.pinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -3828,7 +3687,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get contents in a collection. If no colpath query param is passed
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  []collectionListResponse
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        coluuid  path      string  true   "coluuid"
@@ -4217,7 +4076,7 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 		return nil, err
 	}
 
-	if err := s.DB.Model(contentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
+	if err := s.DB.Model(model.ContentDeal{}).Where("not failed and deal_id > 0").Count(&stats.DealsOnChain.Int64).Error; err != nil {
 		return nil, err
 	}
 
@@ -4248,7 +4107,7 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 }
 
 func (s *Server) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.getStagingZoneSnapshot(c.Request().Context()))
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 // handleGetStagingZoneForUser godoc
@@ -4261,7 +4120,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	return c.JSON(http.StatusOK, s.CM.getStagingZonesForUser(c.Request().Context(), u.ID))
+	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
 // handleUserExportData godoc
@@ -4363,7 +4222,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 
 func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
 	var deals []*metricsDealJoin
-	if err := s.DB.Model(contentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("content_deals.failed as failed, failed_at, deal_id, size, transfer_started, transfer_finished, on_chain_at, sealed_at").
 		Scan(&deals).Error; err != nil {
@@ -4513,7 +4372,7 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 	all := c.QueryParam("all") != ""
 
 	var deals []dealQuery
-	if err := s.DB.Model(contentDeal{}).
+	if err := s.DB.Model(model.ContentDeal{}).
 		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND user_id = ?", all, begin, begin.Add(duration), u.ID).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("deal_id, contents.id as contentid, cid, aggregate").
@@ -4561,7 +4420,7 @@ func (s *Server) handleSetDealMaking(c echo.Context) error {
 		return err
 	}
 
-	s.CM.setDealMakingEnabled(body.Enabled)
+	s.CM.SetDealMakingEnabled(body.Enabled)
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
@@ -4589,43 +4448,55 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var deals []contentDeal
+	var deals []model.ContentDeal
 	if err := s.DB.Find(&deals, "content = ? and not failed", cont.ID).Error; err != nil {
 		return err
 	}
 
+	var aggr []util.Content
+	if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
+		return err
+	}
+
+	var aggrLocs map[string]string
+	for _, child := range aggr {
+		aggrLocs[child.Location] = child.Location
+	}
+
 	var fixedAggregateSize bool
-	if cont.Aggregate && cont.Size == 0 {
-		// if this is an aggregate and its size is zero, then that means we
+	if cont.Aggregate && cont.Size == 0 && cont.Active {
+		// if this is an active aggregate and its size is zero, then that means we
 		// failed at some point while updating the aggregate, we can fix that
-		var children []util.Content
-		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
 
-		nd, err := s.CM.createAggregate(ctx, children)
-		if err != nil {
-			return fmt.Errorf("failed to create aggregate: %w", err)
-		}
+		switch len(aggrLocs) {
+		case 0:
+			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+		case 1:
+			var zSize int64
+			for _, zc := range aggr {
+				zSize += zc.Size
+			}
 
-		// just to be safe, put it into the blockstore again
-		if err := s.Node.Blockstore.Put(ctx, nd); err != nil {
-			return err
-		}
+			z := &contentmgr.ContentStagingZone{
+				ZoneOpened: cont.CreatedAt,
+				Contents:   aggr,
+				MinSize:    s.cfg.Content.MinSize,
+				MaxSize:    s.cfg.Content.MaxSize,
+				CurSize:    zSize,
+				User:       cont.UserID,
+				ContID:     cont.ID,
+				Location:   cont.Location,
+			}
 
-		size, err := nd.Size()
-		if err != nil {
-			return err
-		}
+			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+				return err
+			}
+			fixedAggregateSize = true
 
-		// now, update size and cid
-		if err := s.DB.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"cid":  util.DbCID{CID: nd.Cid()},
-			"size": size,
-		}).Error; err != nil {
-			return err
+		default:
+			// well that sucks, this will need migration
+			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
-		fixedAggregateSize = true
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
@@ -4644,12 +4515,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	if cont.Aggregate && rootFetchErr != nil {
 		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
-		var children []util.Content
-		if err := s.DB.Find(&children, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
-
-		nd, err := s.CM.createAggregate(ctx, children)
+		nd, err := s.CM.CreateAggregate(ctx, aggr)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
@@ -4663,46 +4529,28 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 	}
 
-	var aggrLocs map[string]int
 	var fixedAggregateLocation bool
 	if c.QueryParam("check-locations") != "" && cont.Aggregate {
 		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
-		var aggr []util.Content
-		if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
-			return err
-		}
-
-		aggrLocs = make(map[string]int)
-		for _, child := range aggr {
-			aggrLocs[child.Location]++
-		}
-
 		switch len(aggrLocs) {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
 			loc := aggr[0].Location
-
 			if loc != cont.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
-				var ids []uint
+				var aggrConts []drpc.AggregateContent
 				for _, c := range aggr {
-					ids = append(ids, c.ID)
+					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
 				}
 
-				dir, err := s.CM.createAggregate(ctx, aggr)
-				if err != nil {
+				if err := s.CM.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
 					return err
 				}
-
-				if err := s.CM.sendAggregateCmd(ctx, loc, cont, ids, dir.RawData()); err != nil {
-					return err
-				}
-
 				fixedAggregateLocation = true
 			}
 		default:
-			// well that sucks
+			// well that sucks, this will need migration
 			log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
 	}
@@ -4712,7 +4560,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -4785,7 +4633,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(s.Node.Blockstore, exch)
+	bserv := blockservice.New(&s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -4823,7 +4671,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 }
 
 func (s *Server) handleShuttleInit(c echo.Context) error {
-	shuttle := &Shuttle{
+	shuttle := &model.Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
 		Open:   false,
@@ -4839,7 +4687,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 }
 
 func (s *Server) handleShuttleList(c echo.Context) error {
-	var shuttles []Shuttle
+	var shuttles []model.Shuttle
 	if err := s.DB.Find(&shuttles).Error; err != nil {
 		return err
 	}
@@ -4850,13 +4698,12 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.CM.shuttleIsOnline(d.Handle),
-			AddrInfo:       s.CM.shuttleAddrInfo(d.Handle),
-			Hostname:       s.CM.shuttleHostName(d.Handle),
-			StorageStats:   s.CM.shuttleStorageStats(d.Handle),
+			Online:         s.CM.ShuttleIsOnline(d.Handle),
+			AddrInfo:       s.CM.ShuttleAddrInfo(d.Handle),
+			Hostname:       s.CM.ShuttleHostName(d.Handle),
+			StorageStats:   s.CM.ShuttleStorageStats(d.Handle),
 		})
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -4866,7 +4713,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
 		return err
 	}
@@ -4883,7 +4730,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			return
 		}
 
-		outgoingRpcQueue, unreg, err := s.CM.registerShuttleConnection(shuttle.Handle, &hello)
+		outgoingRpcQueue, unreg, err := s.CM.RegisterShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
 			log.Errorf("failed to register shuttle: %s", err)
 			return
@@ -4936,32 +4783,48 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/init [post]
 func (s *Server) handleAutoretrieveInit(c echo.Context) error {
-	// validate peerid and peer multi addresses
-	addresses := strings.Split(c.FormValue("addresses"), ",")
-	addrInfo, err := autoretrieve.ValidatePeerInfo(c.FormValue("pubKey"), addresses)
+
+	err := func() error {
+		// If there's already an Autoretrieve database entry under the requested pub
+		// key, delete it first
+		if err := s.DB.Unscoped().Delete(&autoretrieve.Autoretrieve{}, "pub_key = ?", c.FormValue("pubKey")).Error; err != nil {
+			return err
+		}
+
+		// Initialize Autoretrieve database entry
+		ar := &autoretrieve.Autoretrieve{
+			Handle:            "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
+			Token:             "SECRET" + uuid.New().String() + "SECRET",
+			LastConnection:    time.Now(),
+			LastAdvertisement: time.Time{},
+			PubKey:            c.FormValue("pubKey"),
+			Addresses:         c.FormValue("addresses"),
+		}
+		if err := s.DB.Create(ar).Error; err != nil {
+			return err
+		}
+
+		addrInfo, err := ar.AddrInfo()
+		if err != nil {
+			return err
+		}
+
+		log.Infof("Added autoretrieve with addr info %s", addrInfo)
+
+		return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
+			Handle:            ar.Handle,
+			Token:             ar.Token,
+			LastConnection:    ar.LastConnection,
+			AddrInfo:          addrInfo,
+			AdvertiseInterval: s.Node.Config.IndexerAdvertisementInterval.String(),
+		})
+	}()
+
 	if err != nil {
-		return err
+		log.Errorf("Failed to register estuary: %v", err)
 	}
 
-	ar := &autoretrieve.Autoretrieve{
-		Handle:            "AUTORETRIEVE" + uuid.New().String() + "HANDLE",
-		Token:             "SECRET" + uuid.New().String() + "SECRET",
-		LastConnection:    time.Now(),
-		LastAdvertisement: time.Time{},
-		PubKey:            c.FormValue("pubKey"),
-		Addresses:         c.FormValue("addresses"), // cant store []string in gorm
-	}
-	if err := s.DB.Create(ar).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
-		Handle:            ar.Handle,
-		Token:             ar.Token,
-		LastConnection:    ar.LastConnection,
-		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
-	})
+	return err
 }
 
 // handleAutoretrieveList godoc
@@ -4982,10 +4845,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 	var out []autoretrieve.AutoretrieveListResponse
 
 	for _, ar := range autoretrieves {
-		// any of the multiaddresses of the peer should work to get addrInfo
-		// we get the first one
-		addresses := strings.Split(ar.Addresses, ",")
-		addrInfo, err := peer.AddrInfoFromString(addresses[0])
+		addrInfo, err := ar.AddrInfo()
 		if err != nil {
 			return err
 		}
@@ -4997,7 +4857,6 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 			AddrInfo:          addrInfo,
 		})
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -5027,10 +4886,7 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		return err
 	}
 
-	// any of the multiaddresses of the peer should work to get addrInfo
-	// we get the first one
-	addresses := strings.Split(ar.Addresses, ",")
-	addrInfo, err := peer.AddrInfoFromString(addresses[0])
+	addrInfo, err := ar.AddrInfo()
 	if err != nil {
 		return err
 	}
@@ -5040,9 +4896,8 @@ func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
 		LastConnection:    ar.LastConnection,
 		LastAdvertisement: ar.LastAdvertisement,
 		AddrInfo:          addrInfo,
-		AdvertiseInterval: s.Node.ArEngine.TickInterval.String(),
+		AdvertiseInterval: s.Node.Config.IndexerAdvertisementInterval.String(),
 	}
-
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -5054,7 +4909,7 @@ type allDealsQuery struct {
 
 func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
-	if err := s.DB.Model(contentDeal{}).Where("deal_id > 0 and not content_deals.failed").
+	if err := s.DB.Model(model.ContentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("miner, contents.cid as cid, deal_id").
 		Scan(&out).
@@ -5115,7 +4970,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, recs)
 }
 
-func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, error) {
+func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -5125,7 +4980,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 		limit = nlim
 	}
 
-	q := s.DB.Model(dfeRecord{}).Limit(limit).Order("created_at desc")
+	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
 		q = q.Where("user_id=?", u.ID)
 	}
@@ -5138,7 +4993,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]dfeRecord, e
 		q = q.Where("created_at <= ?", beftime)
 	}
 
-	var recs []dfeRecord
+	var recs []model.DfeRecord
 	if err := q.Scan(&recs).Error; err != nil {
 		return nil, err
 	}
@@ -5191,7 +5046,7 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 		Active:      false,
 		Pinning:     true,
 		UserID:      u.ID,
-		Replication: s.CM.Replication,
+		Replication: s.cfg.Replication,
 		Location:    req.Location,
 	}
 
@@ -5224,134 +5079,57 @@ func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
 	})
 }
 
-type claimMinerBody struct {
-	Miner address.Address `json:"miner"`
-	Claim string          `json:"claim"`
-	Name  string          `json:"name"`
+type claimResponse struct {
+	Success bool `json:"success"`
 }
 
+// handleUserClaimMiner godoc
+// @Summary      Claim Miner
+// @Description  This endpoint lets a user claim a miner
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  claimResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      miner.ClaimMinerBody  true   "Claim Miner Body"
+// @Router       /miner/claim [post]
 func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
-	var cmb claimMinerBody
+	var cmb miner.ClaimMinerBody
 	if err := c.Bind(&cmb); err != nil {
 		return err
 	}
 
-	var sm []storageMiner
-	if err := s.DB.Find(&sm, "address = ?", cmb.Miner.String()).Error; err != nil {
+	if err := s.minerManager.ClaimMiner(ctx, cmb, u); err != nil {
 		return err
 	}
-
-	minfo, err := s.Api.StateMinerInfo(ctx, cmb.Miner, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
-	acckey, err := s.Api.StateAccountKey(ctx, minfo.Worker, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
-	sigb, err := hex.DecodeString(cmb.Claim)
-	if err != nil {
-		return err
-	}
-
-	if len(sigb) < 2 {
-		return &util.HttpError{
-			Code:   http.StatusBadRequest,
-			Reason: util.ERR_INVALID_INPUT,
-		}
-	}
-
-	sig := &crypto.Signature{
-		Type: crypto.SigType(sigb[0]),
-		Data: sigb[1:],
-	}
-
-	msg := s.msgForMinerClaim(cmb.Miner, u.ID)
-
-	if err := sigs.Verify(sig, acckey, msg); err != nil {
-		return err
-	}
-
-	if len(sm) == 0 {
-		// This is a new miner, need to run some checks first
-		if err := s.checkNewMiner(ctx, cmb.Miner); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]interface{}{
-				"success": false,
-				"error":   err.Error(),
-			})
-		}
-
-		if err := s.DB.Create(&storageMiner{
-			Address: util.DbAddr{Addr: cmb.Miner},
-			Name:    cmb.Name,
-			Owner:   u.ID,
-		}).Error; err != nil {
-			return err
-		}
-
-	} else {
-		if err := s.DB.Model(storageMiner{}).Where("id = ?", sm[0].ID).UpdateColumn("owner", u.ID).Error; err != nil {
-			return err
-		}
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"success": true,
-	})
+	return c.JSON(http.StatusOK, claimResponse{Success: true})
 }
 
-func (s *Server) checkNewMiner(ctx context.Context, addr address.Address) error {
-	minfo, err := s.Api.StateMinerInfo(ctx, addr, types.EmptyTSK)
-	if err != nil {
-		return err
-	}
-
-	if minfo.PeerId == nil {
-		return fmt.Errorf("miner has no peer ID set")
-	}
-
-	if len(minfo.Multiaddrs) == 0 {
-		return fmt.Errorf("miner has no addresses set on chain")
-	}
-
-	pow, err := s.Api.StateMinerPower(ctx, addr, types.EmptyTSK)
-	if err != nil {
-		return fmt.Errorf("could not check miners power: %w", err)
-	}
-
-	if types.BigCmp(pow.MinerPower.QualityAdjPower, types.NewInt(1<<40)) < 0 {
-		return fmt.Errorf("miner must have at least 1TiB of power to be considered by estuary")
-	}
-
-	ask, err := s.FilClient.GetAsk(ctx, addr)
-	if err != nil {
-		return fmt.Errorf("failed to get ask from miner: %w", err)
-	}
-
-	if !ask.Ask.Ask.VerifiedPrice.Equals(big.NewInt(0)) {
-		return fmt.Errorf("miners verified deal price is not zero")
-	}
-
-	return nil
+type claimMsgResponse struct {
+	Hexmsg string `json:"hexmsg"`
 }
 
+// handleUserGetClaimMinerMsg godoc
+// @Summary      Get Claim Miner Message
+// @Description  This endpoint lets a user get the message in order to claim a miner
+// @Tags         miner
+// @Produce      json
+// @Success      200  {object}  claimMsgResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        miner           param      miner  true   "Miner claim message"
+// @Router       /miner/claim/{miner} [get]
 func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]string{
-		"hexmsg": hex.EncodeToString(s.msgForMinerClaim(m, u.ID)),
+	return c.JSON(http.StatusOK, claimMsgResponse{
+		Hexmsg: hex.EncodeToString(s.minerManager.GetMsgForMinerClaim(m, u.ID)),
 	})
-}
-
-func (s *Server) msgForMinerClaim(miner address.Address, uid uint) []byte {
-	return []byte(fmt.Sprintf("---- user %d owns miner %s ----", uid, miner))
 }
 
 type progressResponse struct {
@@ -5381,7 +5159,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	var conts []contCheck
 	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 and active").
 		Select("id, (?) as num_deals",
-			s.DB.Model(contentDeal{}).
+			s.DB.Model(model.ContentDeal{}).
 				Where("content = contents.id and deal_id > 0 and not failed").
 				Select("count(1)"),
 		).Scan(&conts).Error; err != nil {
@@ -5389,7 +5167,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	}
 
 	for _, c := range conts {
-		if c.NumDeals >= s.CM.Replication {
+		if c.NumDeals >= s.cfg.Replication {
 			out.GoodContents = append(out.GoodContents, c.ID)
 		} else if c.NumDeals > 0 {
 			out.InProgress = append(out.InProgress, c.ID)
@@ -5431,7 +5209,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 
 	if c.QueryParam("check-missing-children") != "" {
 		var childRes []map[string]interface{}
-		bserv := blockservice.New(s.Node.Blockstore, nil)
+		bserv := blockservice.New(&s.Node.Blockstore, nil)
 		dserv := merkledag.NewDAGService(bserv)
 
 		for _, c := range children {
@@ -5488,7 +5266,7 @@ type publicNodeInfo struct {
 // @Description  This endpoint returns information about the node
 // @Tags         public
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  publicNodeInfo
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/info [get]
@@ -5573,7 +5351,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 		Active:      false,
 		Pinning:     true,
 		UserID:      req.User,
-		Replication: s.CM.Replication,
+		Replication: s.cfg.Replication,
 		Location:    req.Location,
 	}
 
@@ -5624,7 +5402,7 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 				return err
 			}
 
-			var sh Shuttle
+			var sh model.Shuttle
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
 				log.Warnw("Shuttle not authorized", "token", auth)
 				if xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -5661,7 +5439,7 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
-		if err := s.CM.sendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
+		if err := s.CM.SendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
 			Op: drpc.CMD_AddPin,
 			Params: drpc.CmdParams{
 				AddPin: &drpc.AddPin{
@@ -5720,8 +5498,6 @@ func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 type CidType string
 
 const (
-	Raw    CidType = "raw"
-	File   CidType = "file"
 	Dir    CidType = "directory"
 	ColDir string  = "dir"
 )
@@ -5872,15 +5648,14 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", nil
 	}
 
-	if !s.CM.shuttleIsOnline(cont.Location) {
+	if !s.CM.ShuttleIsOnline(cont.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
-	var shuttle Shuttle
+	var shuttle model.Shuttle
 	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
 		return "", err
 	}
-
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
 
@@ -5930,5 +5705,92 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 }
 
 func (s *Server) isContentAddingDisabled(u *util.User) bool {
-	return (s.CM.globalContentAddingDisabled && s.CM.localContentAddingDisabled) || u.StorageDisabled
+	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
+}
+
+func (s *Server) handleFixupDeals(c echo.Context) error {
+	ctx := context.Background()
+	var deals []model.ContentDeal
+	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
+		return err
+	}
+
+	gentime, err := time.Parse("2006-01-02 15:04:05", "2020-08-24 15:00:00")
+	if err != nil {
+		return err
+	}
+
+	head, err := s.Api.ChainHead(ctx)
+	if err != nil {
+		return err
+	}
+
+	sem := make(chan struct{}, 50)
+	for _, dll := range deals {
+		sem <- struct{}{}
+		go func(d model.ContentDeal) {
+			defer func() {
+				<-sem
+			}()
+			miner, err := d.MinerAddr()
+			if err != nil {
+				log.Error(err)
+				return
+			}
+
+			subctx, cancel := context.WithTimeout(ctx, time.Second*5)
+			defer cancel()
+
+			// Get deal UUID, if there is one for the deal.
+			// (There should be a UUID for deals made with deal protocol v1.2.0)
+			var dealUUID *uuid.UUID
+			if d.DealUUID != "" {
+				parsed, err := uuid.Parse(d.DealUUID)
+				if err != nil {
+					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+						d.DealUUID, d.ID, miner, err)
+					return
+				}
+				dealUUID = &parsed
+			}
+
+			provds, _, err := s.CM.GetProviderDealStatus(subctx, &d, miner, dealUUID)
+			if err != nil {
+				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+				return
+			}
+
+			// this should not happen, but be safe
+			if provds == nil {
+				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
+				return
+			}
+
+			if provds.PublishCid == nil {
+				log.Errorf("no publish cid for deal: %d", d.DealID)
+				return
+			}
+
+			subctx2, cancel2 := context.WithTimeout(ctx, time.Second*20)
+			defer cancel2()
+			wait, err := s.Api.StateSearchMsg(subctx2, head.Key(), *provds.PublishCid, 100000, true)
+			if err != nil {
+				log.Errorf("failed to search message: %s", err)
+				return
+			}
+
+			if wait == nil {
+				log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+				return
+			}
+
+			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
+			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			if err := s.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
+				log.Error(err)
+				return
+			}
+		}(dll)
+	}
+	return nil
 }
