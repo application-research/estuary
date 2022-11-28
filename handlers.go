@@ -229,7 +229,6 @@ func (s *Server) ServeAPI() error {
 	public.GET("/deals/failures", s.handlePublicStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
 	public.GET("/miners", s.handlePublicGetMinerStats)
-	public.GET("/storage-providers", s.handleStorageProviders)
 
 	metrics := public.Group("/metrics")
 	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
@@ -242,8 +241,12 @@ func (s *Server) ServeAPI() error {
 	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
 	miners.GET("/deals/:miner", s.handleGetMinerDeals)
-	miners.GET("/stats/:miner", s.handleGetMinerStats)
 	miners.GET("/storage/query/:miner", s.handleQueryAsk)
+
+	storageProviders := e.Group("/storage-providers")
+	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpGetDeals)
+	storageProviders.GET("/storage-providers/:sp/deals", s.handleSpQueryAsk)
+	storageProviders.GET("/storage-providers/:sp/stats", s.handleGetSpStats)
 
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
@@ -2542,21 +2545,21 @@ type minerChainInfo struct {
 	Worker string `json:"worker"`
 }
 
-// handleGetMinerStats godoc
-// @Summary      Get miner stats
-// @Description  This endpoint returns miner stats
-// @Tags         public,miner
+// handleGetSpStats godoc
+// @Summary      Get storage provider stats
+// @Description  This endpoint returns storage provider stats
+// @Tags         storage-provider
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
-// @Router       /public/miners/stats/{miner} [get]
-func (s *Server) handleGetMinerStats(c echo.Context) error {
-	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
+// @Param        sp  path      string  false  "Filter by SP"
+// @Router       /storage-providers/{sp}/stats [get]
+func (s *Server) handleGetSpStats(c echo.Context) error {
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetSpStats")
 	defer span.End()
 
-	maddr, err := address.NewFromString(c.Param("miner"))
+	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
