@@ -1883,33 +1883,6 @@ paths:
       tags:
         - public
         - net
-  /public/miners/stats/{miner}:
-    get:
-      description: This endpoint returns miner stats
-      parameters:
-        - description: Filter by miner
-          in: path
-          name: miner
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get miner stats
-      tags:
-        - public
-        - miner
   /public/miners/storage/query/{miner}:
     get:
       description: This endpoint returns the ask for a given CID
@@ -1998,6 +1971,32 @@ paths:
       summary: Public stats
       tags:
         - public
+  /storage-providers/{sp}/stats:
+    get:
+      description: This endpoint returns storage provider stats
+      parameters:
+        - description: Filter by SP
+          in: path
+          name: sp
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get storage provider stats
+      tags:
+        - storage-provider
   /user/api-keys:
     get:
       description: This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.

@@ -2600,47 +2600,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/public/miners/stats/{miner}": {
-            "get": {
-                "description": "This endpoint returns miner stats",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "miner"
-                ],
-                "summary": "Get miner stats",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by miner",
-                        "name": "miner",
-                        "in": "path"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/public/miners/storage/query/{miner}": {
             "get": {
                 "description": "This endpoint returns the ask for a given CID",
@@ -2752,6 +2711,46 @@ const docTemplate = `{
                     "public"
                 ],
                 "summary": "Public stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/storage-providers/{sp}/stats": {
+            "get": {
+                "description": "This endpoint returns storage provider stats",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "storage-provider"
+                ],
+                "summary": "Get storage provider stats",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by SP",
+                        "name": "sp",
+                        "in": "path"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
