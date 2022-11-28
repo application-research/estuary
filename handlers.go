@@ -49,7 +49,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
-	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -57,7 +56,6 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
-	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -157,26 +155,25 @@ func (s *Server) ServeAPI() error {
 	userMiner.PUT("/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
 	userMiner.PUT("/set-info/:miner", withUser(s.handleMinersSetInfo))
 
-	contmeta := e.Group("/content")
-	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
-	uploads.POST("/add", withUser(s.handleAdd))
-	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
-	uploads.POST("/create", withUser(s.handleCreateContent))
+	// to upload contents you only need an upload key
+	// to see info about contents you need a user-level key (see contents group)
+	contentsUpload := e.Group("/contents", s.AuthRequired(util.PermLevelUpload))
+	contentsUpload.POST("/", withUser(s.handleAdd))
+	contentsUpload.POST("/create", withUser(s.handleCreateContent))
 
-	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
-	content.GET("/by-cid/:cid", s.handleGetContentByCid)
-	content.GET("/:cont_id", withUser(s.handleGetContent))
-	content.GET("/stats", withUser(s.handleStats))
-	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
-	content.GET("/status/:id", withUser(s.handleContentStatus))
-	content.GET("/list", withUser(s.handleListContent))
-	content.GET("/deals", withUser(s.handleListContentWithDeals))
-	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
-	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
-	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
-	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
-	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
+	contents := e.Group("/contents", s.AuthRequired(util.PermLevelUser))
+	contents.GET("/by-cid/:cid", s.handleGetContentByCid)
+	contents.GET("/:cont_id", withUser(s.handleGetContent))
+	contents.GET("/stats", withUser(s.handleStats))
+	contents.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
+	contents.GET("/status/:id", withUser(s.handleContentStatus))
+	contents.GET("/list", withUser(s.handleListContent))
+	contents.GET("/deals", withUser(s.handleListContentWithDeals))
+	contents.GET("/failures/:content", withUser(s.handleGetContentFailures))
+	contents.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
+	contents.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
+	contents.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
+	contents.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
@@ -619,232 +616,18 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, StateResponse{State: ""})
 }
 
-// handleAddIpfs godoc
-// @Summary      Add IPFS object
-// @Description  This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
-// @Tags         content
-// @Produce      json
-// @Success      200           {object}  string
-// @Failure      400           {object}  util.HttpError
-// @Failure      500           {object}  util.HttpError
-// @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
-// @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
-// @Router       /content/add-ipfs [post]
-func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
-	ctx := c.Request().Context()
-
-	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
-		return err
-	}
-
-	var params util.ContentAddIpfsBody
-	if err := c.Bind(&params); err != nil {
-		return err
-	}
-
-	filename := params.Name
-	if filename == "" {
-		filename = params.Root
-	}
-
-	var bucks []*buckets.BucketRef
-	if params.BucketID != "" {
-		var srchbucket buckets.Bucket
-		if err := s.DB.First(&srchbucket, "uuid = ? and user_id = ?", params.BucketID, u.ID).Error; err != nil {
-			return err
-		}
-
-		// if dir is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + filename
-		bucketp := defaultPath
-		if params.BucketDir != "" {
-			p, err := sanitizePath(params.BucketDir)
-			if err != nil {
-				return err
-			}
-			bucketp = p
-		}
-
-		// default: bucketp ends in / (does not include filename e.g. /hello/)
-		path := bucketp + filename
-
-		// if path does not end in /, it includes the filename
-		if !strings.HasSuffix(bucketp, "/") {
-			path = bucketp
-			filename = filepath.Base(bucketp)
-		}
-
-		bucks = []*buckets.BucketRef{
-			{
-				Bucket: srchbucket.ID,
-				Path:   &path,
-			},
-		}
-	}
-
-	var origins []*peer.AddrInfo
-	for _, p := range params.Peers {
-		ai, err := peer.AddrInfoFromString(p)
-		if err != nil {
-			return err
-		}
-		origins = append(origins, ai)
-	}
-
-	rcid, err := cid.Decode(params.Root)
-	if err != nil {
-		return err
-	}
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		var count int64
-		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
-		}
-	}
-
-	makeDeal := true
-	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, bucks, origins, 0, nil, makeDeal)
-	if err != nil {
-		return err
-	}
-	return c.JSON(http.StatusAccepted, pinstatus)
-}
-
-// handleAddCar godoc
-// @Summary      Add Car object
-// @Description  This endpoint is used to add a car object to the network. The object can be a file or a directory.
-// @Tags         content
-// @Produce      json
-// @Success      200           {object}  util.ContentAddResponse
-// @Failure      400           {object}  util.HttpError
-// @Failure      500           {object}  util.HttpError
-// @Param        body          body      string  true   "Car"
-// @Param        ignore-dupes  query     string  false  "Ignore Dupes"
-// @Param        filename      query     string  false  "Filename"
-// @Router       /content/add-car [post]
-func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
-	ctx := c.Request().Context()
-
-	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
-		return err
-	}
-
-	if s.cfg.Content.DisableLocalAdding {
-		return s.redirectContentAdding(c, u)
-	}
-
-	// if splitting is disabled and uploaded content size is greater than content size limit
-	// reject the upload, as it will only get stuck and deals will never be made for it
-	// if !u.FlagSplitContent() {
-	// 	bdWriter := &bytes.Buffer{}
-	// 	bdReader := io.TeeReader(c.Request().Body, bdWriter)
-
-	// 	bdSize, err := io.Copy(ioutil.Discard, bdReader)
-	// 	if err != nil {
-	// 		return err
-	// 	}
-
-	// 	if bdSize > util.MaxDealContentSize {
-	// 		return &util.HttpError{
-	// 			Code:    http.StatusBadRequest,
-	// 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-	// 			Details: fmt.Sprintf("content size %d bytes, is over upload size of limit %d bytes, and content splitting is not enabled, please reduce the content size", bdSize, util.MaxDealContentSize),
-	// 		}
-	// 	}
-
-	// 	c.Request().Body = ioutil.NopCloser(bdWriter)
-	// }
-
-	bsid, sbs, err := s.StagingMgr.AllocNew()
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		go func() {
-			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
-			}
-		}()
-	}()
-
-	defer c.Request().Body.Close()
-	header, err := s.loadCar(ctx, sbs, c.Request().Body)
-	if err != nil {
-		return err
-	}
-
-	if len(header.Roots) != 1 {
-		// if someone wants this feature, let me know
-		return c.JSON(400, map[string]string{"error": "cannot handle uploading car files with multiple roots"})
-	}
-	rootCID := header.Roots[0]
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		isDup, err := s.isDupCIDContent(c, rootCID, u)
-		if err != nil || isDup {
-			return err
-		}
-	}
-
-	// TODO: how to specify filename?
-	filename := rootCID.String()
-	if qpname := c.QueryParam("filename"); qpname != "" {
-		filename = qpname
-	}
-
-	bserv := blockservice.New(sbs, nil)
-	dserv := merkledag.NewDAGService(bserv)
-
-	cont, err := s.CM.AddDatabaseTracking(ctx, u, dserv, rootCID, filename, s.cfg.Replication)
-	if err != nil {
-		return err
-	}
-
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
-	go func() {
-		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck(cont.ID)
-	}()
-
-	go func() {
-		if err := s.Node.Provider.Provide(rootCID); err != nil {
-			log.Warnf("failed to announce providers: %s", err)
-		}
-	}()
-
-	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:                 rootCID.String(),
-		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
-		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
-		EstuaryId:           cont.ID,
-		Providers:           s.CM.PinDelegatesForContent(*cont),
-	})
-}
-
-func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
-	_, span := s.tracer.Start(ctx, "loadCar")
-	defer span.End()
-
-	return car.LoadCar(ctx, bs, r)
-}
-
 // handleAdd godoc
 // @Summary      Add new content
 // @Description  This endpoint is used to upload new content.
 // @Tags         content
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param        data          formData  file    true   "File to upload"
-// @Param        filename      formData  string  false  "Filename to use for upload"
-// @Param        uuid       query     string  false  "Bucket UUID"
+// @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid' or 'file'). Defaults to 'file'"
+// @Param        car           body      string  false   "Car file to upload"
+// @Param        body          body      util.ContentAddIpfsBody  false   "IPFS Body"
+// @Param        data          formData  file    false   "File to upload"
+// @Param        filename      formData  string  false   "Filename to use for upload"
+// @Param        uuid		   query     string  false  "Bucket UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
@@ -852,7 +635,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /content/add [post]
+// @Router       /contents [post]
 func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
@@ -865,41 +648,9 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return s.redirectContentAdding(c, u)
 	}
 
-	form, err := c.MultipartForm()
-	if err != nil {
-		return err
-	}
-	defer form.RemoveAll()
-
-	mpf, err := c.FormFile("data")
-	if err != nil {
-		return err
-	}
-
-	// if splitting is disabled and uploaded content size is greater than content size limit
-	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > s.cfg.Content.MaxSize {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", mpf.Size, s.cfg.Content.MaxSize),
-		}
-	}
-
-	filename := mpf.Filename
-	if fvname := c.FormValue("filename"); fvname != "" {
-		filename = fvname
-	}
-
-	fi, err := mpf.Open()
-	if err != nil {
-		return err
-	}
-
-	defer fi.Close()
-
+	// replication from query params
 	replication := s.cfg.Replication
-	replVal := c.FormValue("replication")
+	replVal := c.QueryParam("replication")
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
 		if err != nil {
@@ -909,11 +660,12 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	uuid := c.QueryParam("uuid")
+	// bucket uuid from query params
+	bucketuuid := c.QueryParam("uuid")
 	var bucket *buckets.Bucket
-	if uuid != "" {
+	if bucketuuid != "" {
 		var srchbucket buckets.Bucket
-		if err := s.DB.First(&srchbucket, "uuid = ? and user_id = ?", uuid, u.ID).Error; err != nil {
+		if err := s.DB.First(&srchbucket, "uuid = ? and user_id = ?", bucketuuid, u.ID).Error; err != nil {
 			return err
 		}
 
@@ -923,6 +675,11 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	path, err := constructDirectoryPath(c.QueryParam(BucketDir))
 	if err != nil {
 		return err
+	}
+
+	uploadType := c.QueryParam("type")
+	if uploadType == "" {
+		uploadType = "file"
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -941,24 +698,50 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
-	nd, err := s.importFile(ctx, dserv, fi)
-	if err != nil {
-		return err
+	uploadedContent, err := util.LoadContentFromRequest(c, ctx, uploadType, bs, dserv)
+
+	// if splitting is disabled and uploaded content size is greater than content size limit
+	// reject the upload, as it will only get stuck and deals will never be made for it
+	if !u.FlagSplitContent() && uploadedContent.Length > s.cfg.Content.MaxSize {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("content size %d bytes, is over upload size limit of %d bytes, and content splitting is not enabled, please reduce the content size", uploadedContent.Length, s.cfg.Content.MaxSize),
+		}
 	}
 
 	if c.QueryParam("ignore-dupes") == "true" {
-		isDup, err := s.isDupCIDContent(c, nd.Cid(), u)
+		isDup, err := s.isDupCIDContent(c, uploadedContent.CID, u)
 		if err != nil || isDup {
 			return err
 		}
 	}
 
-	content, err := s.CM.AddDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	// when pinning a CID we need to add a file to handle the special case
+	// of calling PinContent on the content manager
+	// TODO(gabe): PinContent adds to database tracking. decouple logic from that
+	if uploadType == "cid" {
+		makeDeal := true
+		bucks := []*buckets.BucketRef{
+			{
+				Bucket: bucket.ID,
+				Path:   &path,
+			},
+		}
+		pinstatus, err := s.CM.PinContent(ctx, u.ID, uploadedContent.CID, uploadedContent.Filename, bucks, uploadedContent.Origins, 0, nil, makeDeal)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusAccepted, pinstatus)
+	}
+
+	content, err := s.CM.AddDatabaseTracking(ctx, u, dserv, uploadedContent.CID, uploadedContent.Filename, replication)
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 	fullPath := filepath.Join(path, content.Name)
 
+	// create bucket if need be
 	if bucket != nil {
 		log.Infof("BUCKET CREATION: %d, %d", bucket.ID, content.ID)
 		if err := s.DB.Create(&buckets.BucketRef{
@@ -981,22 +764,22 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	if c.QueryParam("lazy-provide") != "true" {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
 		defer cancel()
-		if err := s.Node.FullRT.Provide(subctx, nd.Cid(), true); err != nil {
+		if err := s.Node.FullRT.Provide(subctx, uploadedContent.CID, true); err != nil {
 			span.RecordError(fmt.Errorf("provide error: %w", err))
 			log.Errorf("fullrt provide call errored: %s", err)
 		}
 	}
 
 	go func() {
-		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
+		if err := s.Node.Provider.Provide(uploadedContent.CID); err != nil {
 			log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
-		Cid:                 nd.Cid().String(),
-		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
-		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
+		Cid:                 uploadedContent.CID.String(),
+		RetrievalURL:        util.CreateDwebRetrievalURL(uploadedContent.CID.String()),
+		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(uploadedContent.CID.String()),
 		EstuaryId:           content.ID,
 		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
@@ -1043,13 +826,6 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	proxy := httputil.NewSingleHostReverseProxy(shURL)
 	proxy.ServeHTTP(c.Response(), c.Request())
 	return nil
-}
-
-func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
-	_, span := s.tracer.Start(ctx, "importFile")
-	defer span.End()
-
-	return util.ImportFile(dserv, fi)
 }
 
 // handleEnsureReplication godoc
@@ -3712,7 +3488,6 @@ func (s *Server) handleCommitBucket(c echo.Context, u *util.User) error {
 
 	ctx := c.Request().Context()
 	makeDeal := false
-
 	pinstatus, err := s.CM.PinContent(ctx, u.ID, bucketNode.Cid(), bucketNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err

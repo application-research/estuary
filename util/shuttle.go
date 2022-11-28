@@ -34,7 +34,7 @@ type ShuttleListResponse struct {
 
 type ShuttleCreateContentBody struct {
 	ContentCreateBody
-	Buckets  []string `json:"buckets"`
+	Buckets      []string `json:"buckets"`
 	DagSplitRoot uint     `json:"dagSplitRoot"`
 	User         uint     `json:"user"`
 }
