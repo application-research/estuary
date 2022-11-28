@@ -1631,7 +1631,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		log.Warnf("failed to provide - contID(%d), cid(%s), err: %w", op.ContId, op.Obj.String(), ctx.Err())
 	}
 	return nil
 }
@@ -1756,8 +1756,9 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Debugf("updating pin status: %d %s", cont, status)
 	if status == types.PinningStatusFailed {
+		log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
+
 		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
@@ -1765,21 +1766,21 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 		}).Error; err != nil {
 			log.Errorf("failed to mark pin as failed in database: %s", err)
 		}
-	}
 
-	go func() {
-		if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-			Op: drpc.OP_UpdatePinStatus,
-			Params: drpc.MsgParams{
-				UpdatePinStatus: &drpc.UpdatePinStatus{
-					DBID:   cont,
-					Status: status,
+		go func() {
+			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
+				Op: drpc.OP_UpdatePinStatus,
+				Params: drpc.MsgParams{
+					UpdatePinStatus: &drpc.UpdatePinStatus{
+						DBID:   cont,
+						Status: status,
+					},
 				},
-			},
-		}); err != nil {
-			log.Errorf("failed to send pin status update: %s", err)
-		}
-	}()
+			}); err != nil {
+				log.Errorf("failed to send pin status update: %s", err)
+			}
+		}()
+	}
 	return nil
 }
 
