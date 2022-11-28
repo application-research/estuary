@@ -292,6 +292,7 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 		case <-timer.C:
 			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
 
+			// TODO: fetch ready zones via a DB query and remove from DB after processing
 			zones := cm.popReadyStagingZone()
 			for _, z := range zones {
 				if err := cm.processStagingZone(ctx, z); err != nil {
@@ -550,6 +551,7 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, b *ContentStag
 		}
 
 		// put the staging zone back in the list
+		// can be removed after replacing popReadyStagingZone
 		cm.Buckets[b.User] = append(cm.Buckets[b.User], b)
 		cm.BucketLk.Unlock()
 		return nil
@@ -663,6 +665,7 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 	return dirNd, nil
 }
 
+// rebuildStagingBuckets can be removed when all references to in-memory buckets are removed
 func (cm *ContentManager) rebuildStagingBuckets() error {
 	cm.log.Info("rebuilding staging buckets.......")
 
@@ -756,6 +759,7 @@ func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, 
 	return nil
 }
 
+// GetStagingZonesForUser either requires a staging zones DB table or removing readiness state to remove in-memory buckets
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
@@ -772,6 +776,7 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 	return out
 }
 
+// GetStagingZoneSnapshot either requires a staging zones DB table or removing readiness state to remove in-memory buckets
 func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*ContentStagingZone {
 	cm.BucketLk.Lock()
 	defer cm.BucketLk.Unlock()
@@ -788,6 +793,7 @@ func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][
 	return out
 }
 
+// addContentToStagingZone after replacing popReadyStagingZone, refs to in-memory buckets can be removed
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {
 	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
