@@ -81,7 +81,6 @@ type ContentManager struct {
 	contentLk            sync.RWMutex
 	// deal bucketing stuff
 	BucketLk sync.Mutex
-	Buckets  map[uint][]*ContentStagingZone
 	// some behavior flags
 	FailDealOnTransferFailure bool
 	dealDisabledLk            sync.Mutex
@@ -214,7 +213,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		Tracker:                   tbs,
 		toCheck:                   make(chan uint, 100000),
 		retrievalsInProgress:      make(map[uint]*util.RetrievalProgress),
-		Buckets:                   make(map[uint][]*ContentStagingZone),
 		PinMgr:                    pinmgr,
 		remoteTransferStatus:      cache,
 		Shuttles:                  make(map[string]*ShuttleConnection),
@@ -241,6 +239,34 @@ func (cm *ContentManager) ToCheck(contID uint) {
 	}
 }
 
+func (cm *ContentManager) getReadyStagingZones() ([]util.Content, error) {
+	var zoneIDs []uint
+	if err := cm.DB.Model(&util.Content{}).
+		Where("not active and pinning and aggregate").
+		Select("id").
+		Find(&zoneIDs).Error; err != nil {
+		return nil, err
+	}
+
+	// TODO: dont do a group by, track size incrementally
+	var readyZoneIDs []uint
+	if err := cm.DB.Model(&util.Content{}).
+		Where("aggregated_in IN ?", zoneIDs).
+		Select("aggregated_in, sum(size) as total").
+		Group("aggregated_in").
+		Having("sum(size) >= ?", constants.MinDealContentSize).
+		Select("aggregated_in").
+		Find(&readyZoneIDs).Error; err != nil {
+		return nil, err
+	}
+
+	var readyZones []util.Content
+	if err := cm.DB.Find(&readyZones, "id IN ?", readyZoneIDs).Error; err != nil {
+		return nil, err
+	}
+	return readyZones, nil
+}
+
 func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 	timer := time.NewTicker(cm.cfg.StagingBucket.AggregateInterval)
 	for {
@@ -248,21 +274,13 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 		case <-timer.C:
 			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
 
-			var zoneIDs []uint
-			if err := cm.DB.Find(&zoneIDs, "not active and pinning and aggregate").Select("id").Error; err != nil {
-				continue
+			cm.log.Infof("checking for ready staging zones")
+			readyZones, err := cm.getReadyStagingZones()
+			if err != nil {
+				cm.log.Errorf("failed to get ready staging zones: %s", err)
 			}
 
-			var readyZoneIDs []uint
-			if err := cm.DB.Model(&util.Content{}).Where("aggregated_in IN ?", zoneIDs).Select("aggregated_in, sum(size) as total").Group("aggregated_in").Having("total >= ?", constants.MinDealContentSize).Find(&readyZoneIDs).Error; err != nil {
-				continue
-			}
-
-			var readyZones []util.Content
-			if err := cm.DB.Find(&readyZones, "id IN ?", readyZoneIDs).Error; err != nil {
-				continue
-			}
-
+			cm.log.Infof("found ready staging zones: %d", len(readyZones))
 			for _, z := range readyZones {
 				if err := cm.processStagingZone(ctx, z); err != nil {
 					cm.log.Errorf("content aggregation failed (zone %d): %s", z.ID, err)
@@ -298,11 +316,11 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 }
 
 func (cm *ContentManager) Run(ctx context.Context) {
-	// if staging buckets are enabled, rebuild the buckets, and run the bucket aggregate worker
+	// if staging buckets are enabled, run the bucket aggregate worker
 	if cm.cfg.StagingBucket.Enabled {
 		// run the staging bucket aggregator worker
 		go cm.runStagingBucketWorker(ctx)
-		cm.log.Infof("rebuilt staging buckets and spun up staging bucket worker")
+		cm.log.Infof("spun up staging bucket worker")
 	}
 
 	// if FilecoinStorage is enabled, check content deals or make content deals
@@ -432,7 +450,7 @@ func (qm *queueManager) processQueue() {
 
 func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneID uint) (map[string][]util.Content, error) {
 	var conts []util.Content
-	if err := cm.DB.Find(&conts, "aggregated_id = ?", zoneID).Error; err != nil {
+	if err := cm.DB.Find(&conts, "aggregated_in = ?", zoneID).Error; err != nil {
 		return nil, err
 	}
 
@@ -739,7 +757,6 @@ func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][
 	return out
 }
 
-// addContentToStagingZone after replacing popReadyStagingZone, refs to in-memory buckets can be removed
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {
 	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
@@ -773,29 +790,34 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	for _, zone := range zones {
 		zoneIDs = append(zoneIDs, zone.ID)
 	}
-	var viableZoneIDs []uint
+	// find zones with not enough capacity and exclude them as zone options
+	// TODO: dont do a group by on (almost) every add, track size incrementally
+	var inviableZoneIDs []uint
 	if err := cm.DB.Model(&util.Content{}).
 		Where("aggregated_in IN ?", zoneIDs).
 		Select("aggregated_in, sum(size) as total").
 		Group("aggregated_in").
-		Having("total < ?", constants.MaxDealContentSize-content.Size).
-		Find(&viableZoneIDs).Error; err != nil {
+		Having("sum(size) >= ?", constants.MaxDealContentSize-content.Size).
+		Select("aggregated_in").
+		Find(&inviableZoneIDs).Error; err != nil {
 		return err
 	}
 
-	var viableZones []util.Content
-	if err := cm.DB.Find(&viableZones, "id IN ?", viableZoneIDs).Error; err != nil {
-		return err
+	var excludedZoneIds map[uint]bool
+	for _, inviableZoneID := range inviableZoneIDs {
+		excludedZoneIds[inviableZoneID] = true
 	}
 
-	for _, zone := range viableZones {
-		ok, err := cm.tryAddContent(&zone, content)
-		if err != nil {
-			return err
-		}
+	for _, zone := range zones {
+		if !excludedZoneIds[zone.ID] {
+			ok, err := cm.tryAddContent(&zone, content)
+			if err != nil {
+				return err
+			}
 
-		if ok {
-			return nil
+			if ok {
+				return nil
+			}
 		}
 	}
 
