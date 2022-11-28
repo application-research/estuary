@@ -456,5 +456,10 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *pinning_op.PinningO
 }
 
 func (cm *ContentManager) PinStatusFunc(contID uint, location string, status types.PinningStatus) error {
-	return cm.UpdatePinStatus(location, contID, status)
+	if status == types.PinningStatusFailed {
+		cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
+
+		return cm.UpdatePinStatus(location, contID, status)
+	}
+	return nil
 }
