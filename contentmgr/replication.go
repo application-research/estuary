@@ -181,7 +181,7 @@ func (cb *ContentStagingZone) updateReadiness() {
 		cb.MinSize)
 }
 
-func (cm *ContentManager) tryAddContent(zone *util.Content, c util.Content) (bool, error) {
+func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
 	// if this bucket is being consolidated, do not add anymore content
 	if cm.ZonesConsolidating[zone.ID] {
 		return false, nil
@@ -779,7 +779,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 			return fmt.Errorf("failed to create new staging zone content: %w", err)
 		}
 
-		_, err = cm.tryAddContent(zone, content)
+		_, err = cm.tryAddContent(*zone, content)
 		if err != nil {
 			return fmt.Errorf("failed to add content to staging zone: %w", err)
 		}
@@ -812,7 +812,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 		if excludedZoneIds[zone.ID] {
 			continue
 		}
-		ok, err := cm.tryAddContent(&zone, content)
+		ok, err := cm.tryAddContent(zone, content)
 		if err != nil {
 			return err
 		}
@@ -827,7 +827,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 		return err
 	}
 
-	_, err = cm.tryAddContent(zone, content)
+	_, err = cm.tryAddContent(*zone, content)
 	if err != nil {
 		return err
 	}
