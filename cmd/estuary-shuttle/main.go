@@ -1144,6 +1144,9 @@ func (s *Shuttle) ServeAPI() error {
 	contents.GET("/:cid/read/", withUser(s.handleReadContent))
 	//contents.POST("/add-ipfs", withUser(d.handleAddIpfs))
 
+	deals := e.Group("/deals")
+	deals.GET("/import", withUser(s.handleImportDeal))
+
 	admin := e.Group("/admin")
 	admin.Use(s.AuthRequired(util.PermLevelAdmin))
 	admin.GET("/health/:cid", s.handleContentHealthCheck)
@@ -2140,7 +2143,7 @@ type importDealBody struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        body  body      main.importDealBody  true  "Import a deal"
-// @Router       /content/importdeal [post]
+// @Router       /deals/import [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	ctx, span := s.Tracer.Start(c.Request().Context(), "importDeal")
 	defer span.End()
