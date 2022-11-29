@@ -160,23 +160,25 @@ func (s *Server) ServeAPI() error {
 	e.POST("/contents", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
 
 	contents := e.Group("", s.AuthRequired(util.PermLevelUser))
-	contents.GET("/", withUser(s.handleListContent))
-	contents.GET("/by-cid/:cid", s.handleGetContentByCid)
-	contents.GET("/:cont_id", withUser(s.handleGetContent))
-	contents.GET("/stats", withUser(s.handleStats))
-	contents.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
-	contents.GET("/status/:id", withUser(s.handleContentStatus))
-	contents.GET("/failures/:content", withUser(s.handleGetContentFailures))
-	contents.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
-	contents.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
-	contents.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
-	contents.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
+
+	contents.GET("/contents", withUser(s.handleListContent))
+	contents.GET("/contents/by-cid/:cid", s.handleGetContentByCid)
+	contents.GET("/contents/:contentid", withUser(s.handleGetContent))
+	contents.GET("/contents/stats", withUser(s.handleStats))
+	contents.GET("/contents/ensure-replication/:cid", s.handleEnsureReplication)
+	contents.GET("/contents/:contentid/status", withUser(s.handleContentStatus))
+	contents.GET("/contents/:contentid/failures", withUser(s.handleGetContentFailures))
+	contents.GET("/contents/:contentid/bw-usage", withUser(s.handleGetContentBandwidth))
+	contents.GET("/contents/:contentid/aggregated", withUser(s.handleGetAggregatedForContent))
+
+	stagingBuckets := e.Group("/staging-buckets", s.AuthRequired(util.PermLevelUser))
+	stagingBuckets.GET("", withUser(s.handleGetStagingZoneForUser))
 
 	// TODO: the commented out routes here are still fairly useful, but maybe
 	// need to have some sort of 'super user' permission level in order to use
 	// them? Can easily cause harm using them
-	deals := e.Group("/deals")
-	deals.Use(s.AuthRequired(util.PermLevelUser))
+	deals := e.Group("/deals", s.AuthRequired(util.PermLevelUser))
+	deals.GET("", withUser(s.handleGetAllDealsForUser))
 	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
 	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
 	deals.GET("/query/:miner", s.handleQueryAsk)
@@ -367,7 +369,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // handleStats godoc
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
-// @Tags         content
+// @Tags         contents
 // @Param        limit   query  string  true  "limit"
 // @Param        offset  query  string  true  "offset"
 // @Produce      json
@@ -616,7 +618,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // handleAdd godoc
 // @Summary      Add new content
 // @Description  This endpoint is used to upload new content.
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Accept       multipart/form-data
 // @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid' or 'file'). Defaults to 'file'"
@@ -828,25 +830,25 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 // handleEnsureReplication godoc
 // @Summary      Ensure Replication
 // @Description  This endpoint ensures that the content is replicated to the specified number of providers
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
-// @Param        datacid  path      string  true  "Data CID"
-// @Router       /content/ensure-replication/{datacid} [get]
+// @Param        cid  path      string  true  "CID"
+// @Router       /content/ensure-replication/{cid} [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
-	data, err := cid.Decode(c.Param("datacid"))
+	cid, err := cid.Decode(c.Param("cid"))
 	if err != nil {
 		return err
 	}
 
 	var content util.Content
-	if err := s.DB.Find(&content, "cid = ?", data.Bytes()).Error; err != nil {
+	if err := s.DB.Find(&content, "cid = ?", cid.Bytes()).Error; err != nil {
 		return err
 	}
 
-	fmt.Println("Content: ", content.Cid.CID, data)
+	fmt.Println("Content: ", content.Cid.CID, cid)
 
 	s.CM.ToCheck(content.ID)
 	return nil
@@ -855,7 +857,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // handleListContent godoc
 // @Summary      List all pinned content
 // @Description  This endpoint lists all content
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
@@ -882,7 +884,7 @@ type expandedContent struct {
 // handleListContentWithDeals godoc
 // @Summary      Content with deals
 // @Description  This endpoint lists all content with deals
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
@@ -956,15 +958,15 @@ type dealStatus struct {
 // handleGetContent godoc
 // @Summary      Content
 // @Description  This endpoint returns a content by its ID
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
-// @Param        id   path      int  true  "Content ID"
-// @Router       /content/{id} [get]
+// @Param        contentid   path      int  true  "Content ID"
+// @Router       /contents/{contentid} [get]
 func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("cont_id"))
+	contID, err := strconv.Atoi(c.Param("contentid"))
 	if err != nil {
 		return err
 	}
@@ -991,16 +993,16 @@ func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
 // handleContentStatus godoc
 // @Summary      Content Status
 // @Description  This endpoint returns the status of a content
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200            {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
-// @Param        id   path      int  true  "Content ID"
-// @Router       /content/status/{id} [get]
+// @Param        contentid   path      int  true  "Content ID"
+// @Router       /contents/{contentid}/status [get]
 func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
-	contID, err := strconv.Atoi(c.Param("id"))
+	contID, err := strconv.Atoi(c.Param("contentid"))
 	if err != nil {
 		return err
 	}
@@ -1694,7 +1696,7 @@ type getInvitesResp struct {
 // handleAdminGetInvites godoc
 // @Summary      Get Estuary invites
 // @Description  This endpoint is used to list all estuary invites.
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
@@ -1717,7 +1719,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 // handleAdminCreateInvite godoc
 // @Summary      Create an Estuary invite
 // @Description  This endpoint is used to create an estuary invite.
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
@@ -2451,15 +2453,15 @@ type bandwidthResponse struct {
 // handleGetContentBandwidth godoc
 // @Summary      Get content bandwidth
 // @Description  This endpoint returns content bandwidth
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        content  path      string  true  "Content ID"
-// @Router       /content/bw-usage/{content} [get]
+// @Param        contentid  path      string  true  "Content ID"
+// @Router       /contents/{contentid}/bw-usage [get]
 func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("contentid"))
 	if err != nil {
 		return err
 	}
@@ -2498,15 +2500,15 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 // handleGetAggregatedForContent godoc
 // @Summary      Get aggregated content stats
 // @Description  This endpoint returns aggregated content stats
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        content  path      string  true  "Content ID"
-// @Router       /content/aggregated/{content} [get]
+// @Param        contentid  path      string  true  "Content ID"
+// @Router       /contents/{contentid}/aggregated [get]
 func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("content"))
+	contID, err := strconv.Atoi(c.Param("contentid"))
 	if err != nil {
 		return err
 	}
@@ -2537,15 +2539,15 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) err
 // handleGetContentFailures godoc
 // @Summary      List all failures for a content
 // @Description  This endpoint returns all failures for a content
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        content  path      string  true  "Content ID"
-// @Router       /content/failures/{content} [get]
+// @Param        contentid  path      string  true  "Content ID"
+// @Router       /contents/{contentid}/failures [get]
 func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	cont, err := strconv.Atoi(c.Param("contentid"))
 	if err != nil {
 		return err
 	}
@@ -3927,7 +3929,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // handleGetStagingZoneForUser godoc
 // @Summary      Get staging zone for user
 // @Description  This endpoint is used to get staging zone for user.
-// @Tags         content
+// @Tags         contents
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -4152,7 +4154,7 @@ type dealPairs struct {
 // handleGetAllDealsForUser godoc
 // @Summary      Get all deals for a user
 // @Description  This endpoint is used to get all deals for a user
-// @Tags         content
+// @Tags         deals
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -4160,7 +4162,7 @@ type dealPairs struct {
 // @Param        begin     query     string  true  "Begin"
 // @Param        duration  query     string  true  "Duration"
 // @Param        all       query     string  true  "All"
-// @Router       /content/all-deals [get]
+// @Router       /deals [get]
 func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	begin := time.Now().Add(time.Hour * 24)
