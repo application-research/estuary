@@ -650,24 +650,24 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 	cm.log.Info("recomputing staging zone sizes .......")
 
 	var storedZoneSizes []struct {
-		id   uint
-		size int64
+		ID   uint
+		Size int64
 	}
 	if err := cm.DB.Model(&util.Content{}).
 		Where("not active and pinning and aggregate").
 		Select("id, size").
 		Find(&storedZoneSizes).Error; err != nil {
-		return nil
+		return err
 	}
 
 	var zoneIDs []uint
 	for _, zone := range storedZoneSizes {
-		zoneIDs = append(zoneIDs, zone.id)
+		zoneIDs = append(zoneIDs, zone.ID)
 	}
 
 	var actualZoneSizes []struct {
-		id   uint
-		size int64
+		ID   uint
+		Size int64
 	}
 	if err := cm.DB.Model(&util.Content{}).
 		Where("aggregated_in IN ?", zoneIDs).
@@ -678,22 +678,22 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 		return err
 	}
 
-	var zoneToStoredSize map[uint]int64
-	var toUpdate map[uint]int64
+	var zoneToStoredSize = make(map[uint]int64)
+	var toUpdate = make(map[uint]int64)
 	for _, zone := range storedZoneSizes {
-		zoneToStoredSize[zone.id] = zone.size
+		zoneToStoredSize[zone.ID] = zone.Size
 	}
 	for _, zone := range actualZoneSizes {
-		storedSize := zoneToStoredSize[zone.id]
-		if zone.size != storedSize {
-			toUpdate[zone.id] = zone.size
+		storedSize := zoneToStoredSize[zone.ID]
+		if zone.Size != storedSize {
+			toUpdate[zone.ID] = zone.Size
 		}
 	}
 
 	for id, size := range toUpdate {
 		if err := cm.DB.Model(util.Content{}).
 			Where("id = ?", id).
-			UpdateColumn("size", gorm.Expr("size - ?", size)).Error; err != nil {
+			UpdateColumn("size", size).Error; err != nil {
 			return err
 		}
 	}
