@@ -24,6 +24,7 @@ peer.key
 wallet/
 duplicateGuard/
 pinQueue/
+stagingdata/
 
 cidlistsdir/*
 
