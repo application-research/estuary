@@ -160,13 +160,12 @@ func (s *Server) ServeAPI() error {
 	e.POST("/contents", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
 
 	contents := e.Group("", s.AuthRequired(util.PermLevelUser))
+	contents.GET("/", withUser(s.handleListContent))
 	contents.GET("/by-cid/:cid", s.handleGetContentByCid)
 	contents.GET("/:cont_id", withUser(s.handleGetContent))
 	contents.GET("/stats", withUser(s.handleStats))
 	contents.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	contents.GET("/status/:id", withUser(s.handleContentStatus))
-	contents.GET("/list", withUser(s.handleListContent))
-	contents.GET("/deals", withUser(s.handleListContentWithDeals))
 	contents.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	contents.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	contents.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
@@ -861,8 +860,12 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Router       /content/list [get]
+// @Param        deals   query     bool  false  "Only list content with deals made"
+// @Router       /content [get]
 func (s *Server) handleListContent(c echo.Context, u *util.User) error {
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		return s.handleListContentWithDeals(c, u)
+	}
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
