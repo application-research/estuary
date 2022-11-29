@@ -235,13 +235,12 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
 	//	peering
-	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers", s.handlePeeringPeersList)
-	adminPeering.POST("/start", s.handlePeeringStart)
-	adminPeering.POST("/stop", s.handlePeeringStop)
-	adminPeering.GET("/status", s.handlePeeringStatus)
+	admin.POST("/peering/peers", s.handlePeeringPeersAdd)
+	admin.DELETE("/peering/peers", s.handlePeeringPeersRemove)
+	admin.GET("/peering/peers", s.handlePeeringPeersList)
+	admin.POST("/peering/start", s.handlePeeringStart)
+	admin.POST("/peering/stop", s.handlePeeringStop)
+	admin.GET("/peering/status", s.handlePeeringStatus)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)

@@ -201,7 +201,7 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
@@ -264,7 +264,7 @@ type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
@@ -290,7 +290,7 @@ func (s *apiV1) handlePeeringPeersRemove(c echo.Context) error {
 // handlePeeringPeersList godoc
 // @Summary      List all Peering peers
 // @Description  This endpoint can be used to list all peers on Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
@@ -316,7 +316,7 @@ func (s *apiV1) handlePeeringPeersList(c echo.Context) error {
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -336,7 +336,7 @@ func (s *apiV1) handlePeeringStart(c echo.Context) error {
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -356,7 +356,7 @@ func (s *apiV1) handlePeeringStop(c echo.Context) error {
 // handlePeeringStatus godoc
 // @Summary      Check Peering Status
 // @Description  This endpoint can be used to check the Peering status
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400            {object}  util.HttpError
@@ -2219,7 +2219,7 @@ func (s *apiV1) handleEstimateDealCost(c echo.Context) error {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *apiV1) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2263,7 +2263,7 @@ type minerChainInfo struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
@@ -3622,7 +3622,6 @@ type deleteContentFromCollectionBody struct {
 // @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
 // @Tags         collections
 // @Param        coluuid    path  string                           true  "Collection ID"
-// @Param        contentid  path  string                           true  "Content ID"
 // @Param        body       body  deleteContentFromCollectionBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
