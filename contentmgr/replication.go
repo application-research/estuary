@@ -312,6 +312,10 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 func (cm *ContentManager) Run(ctx context.Context) {
 	// if staging buckets are enabled, run the bucket aggregate worker
 	if cm.cfg.StagingBucket.Enabled {
+		// recomputing staging zone sizes
+		if err := cm.recomputeStagingZoneSizes(); err != nil {
+			cm.log.Errorf("failed to recompute staging zone sizes: %s", err)
+		}
 		// run the staging bucket aggregator worker
 		go cm.runStagingBucketWorker(ctx)
 		cm.log.Infof("spun up staging bucket worker")
@@ -640,6 +644,61 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 		return nil, err
 	}
 	return dirNd, nil
+}
+
+func (cm *ContentManager) recomputeStagingZoneSizes() error {
+	cm.log.Info("recomputing staging zone sizes .......")
+
+	var storedZoneSizes []struct {
+		id   uint
+		size int64
+	}
+	if err := cm.DB.Model(&util.Content{}).
+		Where("not active and pinning and aggregate").
+		Select("id, size").
+		Find(&storedZoneSizes).Error; err != nil {
+		return nil
+	}
+
+	var zoneIDs []uint
+	for _, zone := range storedZoneSizes {
+		zoneIDs = append(zoneIDs, zone.id)
+	}
+
+	var actualZoneSizes []struct {
+		id   uint
+		size int64
+	}
+	if err := cm.DB.Model(&util.Content{}).
+		Where("aggregated_in IN ?", zoneIDs).
+		Select("aggregated_in, sum(size) as zoneSize").
+		Group("aggregated_in").
+		Select("aggregated_in as id, sum(size) as size").
+		Find(&actualZoneSizes).Error; err != nil {
+		return err
+	}
+
+	var zoneToStoredSize map[uint]int64
+	var toUpdate map[uint]int64
+	for _, zone := range storedZoneSizes {
+		zoneToStoredSize[zone.id] = zone.size
+	}
+	for _, zone := range actualZoneSizes {
+		storedSize := zoneToStoredSize[zone.id]
+		if zone.size != storedSize {
+			toUpdate[zone.id] = zone.size
+		}
+	}
+
+	for id, size := range toUpdate {
+		if err := cm.DB.Model(util.Content{}).
+			Where("id = ?", id).
+			UpdateColumn("size", gorm.Expr("size - ?", size)).Error; err != nil {
+			return err
+		}
+	}
+	cm.log.Infof("completed recomputing staging zone sizes, %d updates made", len(toUpdate))
+	return nil
 }
 
 func (cm *ContentManager) rebuildToCheckQueue() error {
