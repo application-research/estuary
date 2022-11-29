@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"sync"
 	"time"
@@ -253,7 +254,17 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 	}
 	// Assert type of the response to an Item pointer so we can work with it
 	var next *PinningOperation
-	err = item.ToObject(&next)
+	var dequeObjectNotPinningOperationErr = "dequeued object is not a PinningOperation"
+	if reflect.TypeOf(item).String() != "*goque.Item" {
+		err = item.ToObject(&next) // this should be a *PinningOperation type
+		if err != nil {
+			log.Errorf(dequeObjectNotPinningOperationErr)
+			return nil
+		}
+	} else { // we'll definitely have to return an error if it's *goque.Item (we're expecting *PinningOperation)
+		log.Errorf(dequeObjectNotPinningOperationErr)
+		return nil
+	}
 
 	if err != nil {
 		log.Errorf("Dequeued object is not a PinningOperation pointer")
