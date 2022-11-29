@@ -646,13 +646,15 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 	return dirNd, nil
 }
 
+type zoneSize struct {
+	ID   uint
+	Size int64
+}
+
 func (cm *ContentManager) recomputeStagingZoneSizes() error {
 	cm.log.Info("recomputing staging zone sizes .......")
 
-	var storedZoneSizes []struct {
-		ID   uint
-		Size int64
-	}
+	var storedZoneSizes []zoneSize
 	if err := cm.DB.Model(&util.Content{}).
 		Where("not active and pinning and aggregate").
 		Select("id, size").
@@ -665,10 +667,7 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 		zoneIDs = append(zoneIDs, zone.ID)
 	}
 
-	var actualZoneSizes []struct {
-		ID   uint
-		Size int64
-	}
+	var actualZoneSizes []zoneSize
 	if err := cm.DB.Model(&util.Content{}).
 		Where("aggregated_in IN ?", zoneIDs).
 		Select("aggregated_in, sum(size) as zoneSize").
