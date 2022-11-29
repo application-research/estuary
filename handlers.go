@@ -284,13 +284,12 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
 	//	peering
-	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers", s.handlePeeringPeersList)
-	adminPeering.POST("/start", s.handlePeeringStart)
-	adminPeering.POST("/stop", s.handlePeeringStop)
-	adminPeering.GET("/status", s.handlePeeringStatus)
+	admin.POST("/peering/peers", s.handlePeeringPeersAdd)
+	admin.DELETE("/peering/peers", s.handlePeeringPeersRemove)
+	admin.GET("/peering/peers", s.handlePeeringPeersList)
+	admin.POST("/peering/start", s.handlePeeringStart)
+	admin.POST("/peering/stop", s.handlePeeringStop)
+	admin.GET("/peering/status", s.handlePeeringStatus)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -452,7 +451,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
@@ -515,7 +514,7 @@ type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
@@ -541,7 +540,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // handlePeeringPeersList godoc
 // @Summary      List all Peering peers
 // @Description  This endpoint can be used to list all peers on Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
@@ -567,7 +566,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -587,7 +586,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -607,7 +606,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // handlePeeringStatus godoc
 // @Summary      Check Peering Status
 // @Description  This endpoint can be used to check the Peering status
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400            {object}  util.HttpError
@@ -2467,7 +2466,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2511,7 +2510,7 @@ type minerChainInfo struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
@@ -3870,7 +3869,6 @@ type deleteContentFromCollectionBody struct {
 // @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
 // @Tags         collections
 // @Param        coluuid    path  string                           true  "Collection ID"
-// @Param        contentid  path  string                           true  "Content ID"
 // @Param        body       body  deleteContentFromCollectionBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
