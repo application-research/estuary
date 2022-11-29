@@ -157,10 +157,9 @@ func (s *Server) ServeAPI() error {
 
 	// to upload contents you only need an upload key
 	// to see info about contents you need a user-level key (see contents group)
-	contentsUpload := e.Group("/contents", s.AuthRequired(util.PermLevelUpload))
-	contentsUpload.POST("/", withUser(s.handleAdd))
+	e.POST("/contents", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
 
-	contents := e.Group("/contents", s.AuthRequired(util.PermLevelUser))
+	contents := e.Group("", s.AuthRequired(util.PermLevelUser))
 	contents.GET("/by-cid/:cid", s.handleGetContentByCid)
 	contents.GET("/:cont_id", withUser(s.handleGetContent))
 	contents.GET("/stats", withUser(s.handleStats))
