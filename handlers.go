@@ -630,7 +630,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
-// @Param        dir           query     string  false  "Directory"
+// @Param        dir           query     string  false  "Directory in collection"
 // @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
