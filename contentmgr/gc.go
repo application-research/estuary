@@ -3,7 +3,6 @@ package contentmgr
 import (
 	"context"
 	"fmt"
-
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	"golang.org/x/xerrors"
@@ -150,6 +149,17 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 	objs, err := cm.objectsForPin(ctx, pin.ID)
 	if err != nil {
 		return err
+	}
+
+	if pin.AggregatedIn > 0 {
+		if cm.ZonesConsolidating[pin.AggregatedIn] {
+			return fmt.Errorf("unable to unpin content while zone is consolidating (pin: %d, zone: %d)", pin.ID, pin.AggregatedIn)
+		}
+		if err := cm.DB.Model(util.Content{}).
+			Where("id = ?", pin.AggregatedIn).
+			UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
+			return err
+		}
 	}
 
 	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {

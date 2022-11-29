@@ -187,9 +187,21 @@ func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool
 		return false, nil
 	}
 
-	if err := cm.DB.Model(util.Content{}).
-		Where("id = ?", c.ID).
-		UpdateColumn("aggregated_in", zone.ID).Error; err != nil {
+	err := cm.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(util.Content{}).
+			Where("id = ?", c.ID).
+			UpdateColumn("aggregated_in", zone.ID).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Model(util.Content{}).
+			Where("id = ?", zone.ID).
+			UpdateColumn("size", gorm.Expr("size + ?", c.Size)).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
 		return false, err
 	}
 
@@ -240,28 +252,10 @@ func (cm *ContentManager) ToCheck(contID uint) {
 }
 
 func (cm *ContentManager) getReadyStagingZones() ([]util.Content, error) {
-	var zoneIDs []uint
-	if err := cm.DB.Model(&util.Content{}).
-		Where("not active and pinning and aggregate").
-		Select("id").
-		Find(&zoneIDs).Error; err != nil {
-		return nil, err
-	}
-
-	// TODO: dont do a group by, track size incrementally
-	var readyZoneIDs []uint
-	if err := cm.DB.Model(&util.Content{}).
-		Where("aggregated_in IN ?", zoneIDs).
-		Select("aggregated_in, sum(size) as total").
-		Group("aggregated_in").
-		Having("sum(size) >= ?", constants.MinDealContentSize).
-		Select("aggregated_in").
-		Find(&readyZoneIDs).Error; err != nil {
-		return nil, err
-	}
-
 	var readyZones []util.Content
-	if err := cm.DB.Find(&readyZones, "id IN ?", readyZoneIDs).Error; err != nil {
+	if err := cm.DB.Model(&util.Content{}).
+		Where("not active and pinning and aggregate and size >= ?", constants.MinDealContentSize).
+		Find(&readyZones).Error; err != nil {
 		return nil, err
 	}
 	return readyZones, nil
@@ -786,19 +780,11 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 		return nil
 	}
 
-	var zoneIDs []uint
-	for _, zone := range zones {
-		zoneIDs = append(zoneIDs, zone.ID)
-	}
-	// find zones with not enough capacity and exclude them as zone options
-	// TODO: dont do a group by on (almost) every add, track size incrementally
+	// find zones without enough capacity and exclude them as zone options
 	var inviableZoneIDs []uint
 	if err := cm.DB.Model(&util.Content{}).
-		Where("aggregated_in IN ?", zoneIDs).
-		Select("aggregated_in, sum(size) as total").
-		Group("aggregated_in").
-		Having("sum(size) >= ?", constants.MaxDealContentSize-content.Size).
-		Select("aggregated_in").
+		Where("not active and pinning and aggregate and size >= ?", constants.MaxDealContentSize-content.Size).
+		Select("id").
 		Find(&inviableZoneIDs).Error; err != nil {
 		return err
 	}
