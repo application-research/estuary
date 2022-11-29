@@ -159,7 +159,6 @@ func (s *Server) ServeAPI() error {
 	// to see info about contents you need a user-level key (see contents group)
 	contentsUpload := e.Group("/contents", s.AuthRequired(util.PermLevelUpload))
 	contentsUpload.POST("/", withUser(s.handleAdd))
-	contentsUpload.POST("/create", withUser(s.handleCreateContent))
 
 	contents := e.Group("/contents", s.AuthRequired(util.PermLevelUser))
 	contents.GET("/by-cid/:cid", s.handleGetContentByCid)
@@ -4801,85 +4800,6 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRec
 		return nil, err
 	}
 	return recs, nil
-}
-
-// handleCreateContent godoc
-// @Summary      Add a new content
-// @Description  This endpoint adds a new content
-// @Tags         content
-// @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
-// @Failure      500  {object}  util.HttpError
-// @Param        req           body      util.ContentCreateBody  true   "Content"
-// @Param        ignore-dupes  query     string                  false  "Ignore Dupes"
-// @Router       /content/create [post]
-func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
-	var req util.ContentCreateBody
-	if err := c.Bind(&req); err != nil {
-		return err
-	}
-
-	rootCID, err := cid.Decode(req.Root)
-	if err != nil {
-		return err
-	}
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		isDup, err := s.isDupCIDContent(c, rootCID, u)
-		if err != nil || isDup {
-			return err
-		}
-	}
-
-	var bucket buckets.Bucket
-	if req.BucketID != "" {
-		if err := s.DB.First(&bucket, "uuid = ?", req.BucketID).Error; err != nil {
-			return err
-		}
-
-		if err := util.IsBucketOwner(u.ID, bucket.UserID); err != nil {
-			return err
-		}
-	}
-
-	content := &util.Content{
-		Cid:         util.DbCID{CID: rootCID},
-		Name:        req.Name,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: s.cfg.Replication,
-		Location:    req.Location,
-	}
-
-	if err := s.DB.Create(content).Error; err != nil {
-		return err
-	}
-
-	if req.BucketID != "" {
-		if req.BucketDir == "" {
-			req.BucketDir = "/"
-		}
-
-		sp, err := sanitizePath(req.BucketDir)
-		if err != nil {
-			return err
-		}
-
-		path := &sp
-		if err := s.DB.Create(&buckets.BucketRef{
-			Bucket:  bucket.ID,
-			Content: content.ID,
-			Path:    path,
-		}).Error; err != nil {
-			return err
-		}
-	}
-
-	return c.JSON(http.StatusOK, util.ContentCreateResponse{
-		ID: content.ID,
-	})
 }
 
 type claimMinerBody struct {
