@@ -160,16 +160,11 @@ func (s *Server) ServeAPI() error {
 	e.POST("/contents", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
 
 	contents := e.Group("", s.AuthRequired(util.PermLevelUser))
-
 	contents.GET("/contents", withUser(s.handleListContent))
 	contents.GET("/contents/by-cid/:cid", s.handleGetContentByCid)
 	contents.GET("/contents/:contentid", withUser(s.handleGetContent))
-	contents.GET("/contents/stats", withUser(s.handleStats))
 	contents.GET("/contents/ensure-replication/:cid", s.handleEnsureReplication)
 	contents.GET("/contents/:contentid/status", withUser(s.handleContentStatus))
-	contents.GET("/contents/:contentid/failures", withUser(s.handleGetContentFailures))
-	contents.GET("/contents/:contentid/bw-usage", withUser(s.handleGetContentBandwidth))
-	contents.GET("/contents/:contentid/aggregated", withUser(s.handleGetAggregatedForContent))
 
 	stagingBuckets := e.Group("/staging-buckets", s.AuthRequired(util.PermLevelUser))
 	stagingBuckets.GET("", withUser(s.handleGetStagingZoneForUser))
@@ -862,10 +857,10 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Param        deals   query     bool  false  "Only list content with deals made"
+// @Param        deals   query     bool  false  "If 'true', only list content with deals made"
 // @Router       /content [get]
 func (s *Server) handleListContent(c echo.Context, u *util.User) error {
-	if limstr := c.QueryParam("limit"); limstr != "" {
+	if deals := c.QueryParam("deals"); deals == "true" {
 		return s.handleListContentWithDeals(c, u)
 	}
 	var contents []util.Content
@@ -990,12 +985,22 @@ func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, content)
 }
 
+type ContentStatusResponse struct {
+	Content       util.Content      `json:"content"`
+	Deals         []dealStatus      `json:"deals"`
+	FailuresCount int64             `json:"failuresCount"`
+	Failures      []model.DfeRecord `json:"failures"`
+	TotalOutBw    int64             `json:"totalOutBw"`
+	Aggregated    []util.Content    `json:"aggregated"`
+	Offloaded     bool              `json:"offloaded"` // TODO(gabe): this needs to be set on handleContentStatus, but we're not offloading data as of now
+}
+
 // handleContentStatus godoc
 // @Summary      Content Status
 // @Description  This endpoint returns the status of a content
 // @Tags         contents
 // @Produce      json
-// @Success      200            {object}  string
+// @Success      200            {object} ContentStatusResponse
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
 // @Param        contentid   path      int  true  "Content ID"
@@ -1081,14 +1086,32 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 	})
 
 	var failCount int64
-	if err := s.DB.Model(&model.DfeRecord{}).Where("content = ?", content.ID).Count(&failCount).Error; err != nil {
+	var errs []model.DfeRecord
+	if err := s.DB.Model(&model.DfeRecord{}).Where("content = ?", content.ID).Find(&errs).Count(&failCount).Error; err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"content":       content,
-		"deals":         ds,
-		"failuresCount": failCount,
+	var bw int64
+	if err := s.DB.Model(util.ObjRef{}).
+		Select("SUM(size * reads)").
+		Where("obj_refs.content = ?", content.ID).
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&bw).Error; err != nil {
+		return err
+	}
+
+	var sub []util.Content
+	if err := s.DB.Find(&sub, "aggregated_in = ?", content.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, ContentStatusResponse{
+		Content:       content,
+		Deals:         ds,
+		FailuresCount: failCount,
+		Failures:      errs,
+		TotalOutBw:    bw,
+		Aggregated:    sub,
 	})
 }
 
@@ -2444,120 +2467,6 @@ func (s *Server) handleGetMinerDeals(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, deals)
-}
-
-type bandwidthResponse struct {
-	TotalOut int64 `json:"totalOut"`
-}
-
-// handleGetContentBandwidth godoc
-// @Summary      Get content bandwidth
-// @Description  This endpoint returns content bandwidth
-// @Tags         contents
-// @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
-// @Failure      500  {object}  util.HttpError
-// @Param        contentid  path      string  true  "Content ID"
-// @Router       /contents/{contentid}/bw-usage [get]
-func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("contentid"))
-	if err != nil {
-		return err
-	}
-
-	var content util.Content
-	if err := s.DB.First(&content, contID).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("content: %d was not found", contID),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-		return err
-	}
-
-	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
-	var bw int64
-	if err := s.DB.Model(util.ObjRef{}).
-		Select("SUM(size * reads)").
-		Where("obj_refs.content = ?", content.ID).
-		Joins("left join objects on obj_refs.object = objects.id").
-		Scan(&bw).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, &bandwidthResponse{
-		TotalOut: bw,
-	})
-}
-
-// handleGetAggregatedForContent godoc
-// @Summary      Get aggregated content stats
-// @Description  This endpoint returns aggregated content stats
-// @Tags         contents
-// @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
-// @Failure      500  {object}  util.HttpError
-// @Param        contentid  path      string  true  "Content ID"
-// @Router       /contents/{contentid}/aggregated [get]
-func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
-	contID, err := strconv.Atoi(c.Param("contentid"))
-	if err != nil {
-		return err
-	}
-
-	var content util.Content
-	if err := s.DB.First(&content, "id = ?", contID).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("miner: %d was not found", contID),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-		return err
-	}
-
-	var sub []util.Content
-	if err := s.DB.Find(&sub, "aggregated_in = ?", contID).Error; err != nil {
-		return err
-	}
-	return c.JSON(http.StatusOK, sub)
-}
-
-// handleGetContentFailures godoc
-// @Summary      List all failures for a content
-// @Description  This endpoint returns all failures for a content
-// @Tags         contents
-// @Produce      json
-// @Success      200  {object}  string
-// @Failure      400  {object}  util.HttpError
-// @Failure      500  {object}  util.HttpError
-// @Param        contentid  path      string  true  "Content ID"
-// @Router       /contents/{contentid}/failures [get]
-func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
-	cont, err := strconv.Atoi(c.Param("contentid"))
-	if err != nil {
-		return err
-	}
-
-	var errs []model.DfeRecord
-	if err := s.DB.Find(&errs, "content = ?", cont).Error; err != nil {
-		return err
-	}
-
-	return c.JSON(http.StatusOK, errs)
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
