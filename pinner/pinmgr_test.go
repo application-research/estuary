@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/libp2p/go-libp2p-core/peer"
+
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -51,8 +54,10 @@ func newManagerNoDelete(count *int) *PinManager {
 }
 
 func newPinData(name string, userid int, contid int) PinningOperation {
+	peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
 	return PinningOperation{
 		Name:   name,
+		Peers:  peers,
 		UserId: uint(userid),
 		lk:     sync.Mutex{},
 		ContId: uint(contid),
