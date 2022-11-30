@@ -291,9 +291,9 @@ func (s *Server) ServeAPI() error {
 	// peering endpoints that manage peers connected to the service
 	adminPeers := e.Group("/peering-peers")
 	adminPeers.Use(s.AuthRequired(util.PermLevelAdmin))
+	adminPeers.GET("", s.handlePeeringPeersList)
 	adminPeers.POST("", s.handlePeeringPeersAdd)
 	adminPeers.DELETE("", s.handlePeeringPeersRemove)
-	adminPeers.GET("", s.handlePeeringPeersList)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
