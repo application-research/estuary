@@ -151,7 +151,7 @@ func (s *Server) ServeAPI() error {
 	//move resources to plural users <-- (notice the s!!)
 	users := e.Group("/users")
 	users.Use(s.AuthRequired(util.PermLevelUser))
-	users.GET("/stats", withUser(s.handleGetUserStats))
+	users.GET("/stats", withUser(s.handleUserGetStats))
 	users.GET("/export", withUser(s.handleUserExportData))
 
 	userMiner := user.Group("/miner")
@@ -3212,7 +3212,7 @@ type userStatsResponse struct {
 	NumPins   int64 `json:"numPins"`
 }
 
-// handleGetUserStats godoc
+// handleUserGetStats godoc
 // @Summary      Get stats for the current user
 // @Description  This endpoint is used to geet stats for the current user.
 // @Tags         User
@@ -3221,7 +3221,7 @@ type userStatsResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /users/stats [get]
-func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
+func (s *Server) handleUserGetStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
 						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
