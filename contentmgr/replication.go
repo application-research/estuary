@@ -163,24 +163,6 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 	return content, nil
 }
 
-func (cb *ContentStagingZone) updateReadiness() {
-	// if it's above the size requirement, go right ahead
-	if cb.CurSize > cb.MinSize {
-		cb.Readiness.IsReady = true
-		cb.Readiness.ReadinessReason = fmt.Sprintf(
-			"Current deal size of %d bytes is above minimum size requirement of %d bytes",
-			cb.CurSize,
-			cb.MinSize)
-		return
-	}
-
-	cb.Readiness.IsReady = false
-	cb.Readiness.ReadinessReason = fmt.Sprintf(
-		"Minimum size requirement not met (current: %d bytes, minimum: %d bytes)\n",
-		cb.CurSize,
-		cb.MinSize)
-}
-
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
 	// if this bucket is being consolidated, do not add anymore content
 	if cm.ZonesConsolidating[zone.ID] {
@@ -268,13 +250,13 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 		case <-timer.C:
 			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
 
-			cm.log.Infof("checking for ready staging zones")
+			cm.log.Debugf("checking for ready staging zones")
 			readyZones, err := cm.getReadyStagingZones()
 			if err != nil {
 				cm.log.Errorf("failed to get ready staging zones: %s", err)
 			}
 
-			cm.log.Infof("found ready staging zones: %d", len(readyZones))
+			cm.log.Debugf("found ready staging zones: %d", len(readyZones))
 			for _, z := range readyZones {
 				if err := cm.processStagingZone(ctx, z); err != nil {
 					cm.log.Errorf("content aggregation failed (zone %d): %s", z.ID, err)
@@ -656,47 +638,53 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 
 	var storedZoneSizes []zoneSize
 	if err := cm.DB.Model(&util.Content{}).
-		Where("not active and pinning and aggregate").
+		Where("not active and pinning and aggregate and size = 0").
 		Select("id, size").
 		Find(&storedZoneSizes).Error; err != nil {
 		return err
 	}
 
-	var zoneIDs []uint
-	for _, zone := range storedZoneSizes {
-		zoneIDs = append(zoneIDs, zone.ID)
-	}
-
-	var actualZoneSizes []zoneSize
-	if err := cm.DB.Model(&util.Content{}).
-		Where("aggregated_in IN ?", zoneIDs).
-		Select("aggregated_in, sum(size) as zoneSize").
-		Group("aggregated_in").
-		Select("aggregated_in as id, sum(size) as size").
-		Find(&actualZoneSizes).Error; err != nil {
-		return err
-	}
-
-	var zoneToStoredSize = make(map[uint]int64)
-	var toUpdate = make(map[uint]int64)
-	for _, zone := range storedZoneSizes {
-		zoneToStoredSize[zone.ID] = zone.Size
-	}
-	for _, zone := range actualZoneSizes {
-		storedSize := zoneToStoredSize[zone.ID]
-		if zone.Size != storedSize {
-			toUpdate[zone.ID] = zone.Size
+	if len(storedZoneSizes) > 0 {
+		var zoneIDs []uint
+		for _, zone := range storedZoneSizes {
+			zoneIDs = append(zoneIDs, zone.ID)
 		}
-	}
 
-	for id, size := range toUpdate {
-		if err := cm.DB.Model(util.Content{}).
-			Where("id = ?", id).
-			UpdateColumn("size", size).Error; err != nil {
+		var actualZoneSizes []zoneSize
+		if err := cm.DB.Model(&util.Content{}).
+			Where("aggregated_in IN ?", zoneIDs).
+			Select("aggregated_in, sum(size) as zoneSize").
+			Group("aggregated_in").
+			Select("aggregated_in as id, sum(size) as size").
+			Find(&actualZoneSizes).Error; err != nil {
 			return err
 		}
+
+		var zoneToStoredSize = make(map[uint]int64)
+		var toUpdate = make(map[uint]int64)
+		for _, zone := range storedZoneSizes {
+			zoneToStoredSize[zone.ID] = zone.Size
+		}
+		for _, zone := range actualZoneSizes {
+			storedSize := zoneToStoredSize[zone.ID]
+			if zone.Size != storedSize {
+				toUpdate[zone.ID] = zone.Size
+			}
+		}
+
+		for id, size := range toUpdate {
+			if err := cm.DB.Model(util.Content{}).
+				Where("id = ?", id).
+				UpdateColumn("size", size).Error; err != nil {
+				return err
+			}
+		}
+
+		cm.log.Infof("completed recomputing staging zone sizes, %d updates made", len(toUpdate))
+	} else {
+		cm.log.Infof("no staging zones to recompute")
 	}
-	cm.log.Infof("completed recomputing staging zone sizes, %d updates made", len(toUpdate))
+
 	return nil
 }
 
