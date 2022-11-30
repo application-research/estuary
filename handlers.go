@@ -282,14 +282,18 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
-	//	peering
+	// peering endpoints that manage the service itself
 	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers", s.handlePeeringPeersList)
 	adminPeering.POST("/start", s.handlePeeringStart)
 	adminPeering.POST("/stop", s.handlePeeringStop)
 	adminPeering.GET("/status", s.handlePeeringStatus)
+
+	// peering endpoints that manage peers connected to the service
+	adminPeers := e.Group("/peering-peers")
+	adminPeers.Use(s.AuthRequired(util.PermLevelAdmin))
+	adminPeers.POST("", s.handlePeeringPeersAdd)
+	adminPeers.DELETE("", s.handlePeeringPeersRemove)
+	adminPeers.GET("", s.handlePeeringPeersList)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -1635,8 +1639,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
