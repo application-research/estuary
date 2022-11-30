@@ -811,7 +811,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	defer cm.BucketLk.Unlock()
 
 	var zones []util.Content
-	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size < ?", content.UserID, constants.MaxDealContentSize-content.Size).Error; err != nil {
+	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
 		return nil
 	}
 	if len(zones) == 0 {
