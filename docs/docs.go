@@ -2906,7 +2906,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/user/export": {
+        "/users/export": {
             "get": {
                 "description": "This endpoint is used to get API keys for a user.",
                 "produces": [
@@ -2938,7 +2938,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/user/stats": {
+        "/users/stats": {
             "get": {
                 "description": "This endpoint is used to geet stats for the current user.",
                 "produces": [

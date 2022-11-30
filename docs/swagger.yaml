@@ -2085,7 +2085,7 @@ paths:
       summary: Revoke a User API Key.
       tags:
         - User
-  /user/export:
+  /users/export:
     get:
       description: This endpoint is used to get API keys for a user.
       produces:
@@ -2106,7 +2106,7 @@ paths:
       summary: Export user data
       tags:
         - User
-  /user/stats:
+  /users/stats:
     get:
       description: This endpoint is used to geet stats for the current user.
       produces:

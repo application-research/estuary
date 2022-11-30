@@ -145,10 +145,14 @@ func (s *Server) ServeAPI() error {
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key_or_hash", withUser(s.handleUserRevokeApiKey))
-	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
-	user.GET("/stats", withUser(s.handleGetUserStats))
+
+	//move resources to plural users <-- (notice the s!!)
+	users := e.Group("/users")
+	users.Use(s.AuthRequired(util.PermLevelUser))
+	users.GET("/stats", withUser(s.handleUserGetStats))
+	users.GET("/export", withUser(s.handleUserExportData))
 
 	userMiner := user.Group("/miner")
 	userMiner.POST("/claim", withUser(s.handleUserClaimMiner))
@@ -1635,8 +1639,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
@@ -3208,7 +3212,7 @@ type userStatsResponse struct {
 	NumPins   int64 `json:"numPins"`
 }
 
-// handleGetUserStats godoc
+// handleUserGetStats godoc
 // @Summary      Get stats for the current user
 // @Description  This endpoint is used to geet stats for the current user.
 // @Tags         User
@@ -3216,8 +3220,8 @@ type userStatsResponse struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/stats [get]
-func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
+// @Router       /users/stats [get]
+func (s *Server) handleUserGetStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
 						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
@@ -4169,7 +4173,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/export [get]
+// @Router       /users/export [get]
 func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
