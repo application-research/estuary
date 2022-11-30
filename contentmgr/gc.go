@@ -146,20 +146,27 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	objs, err := cm.objectsForPin(ctx, pin.ID)
-	if err != nil {
-		return err
-	}
-
 	if pin.AggregatedIn > 0 {
 		if cm.ZonesConsolidating[pin.AggregatedIn] {
 			return fmt.Errorf("unable to unpin content while zone is consolidating (pin: %d, zone: %d)", pin.ID, pin.AggregatedIn)
+		}
+		var zone util.Content
+		if err := cm.DB.First(&zone, "id = ?", pin.AggregatedIn).Error; err != nil {
+			return err
+		}
+		if zone.Active {
+			return fmt.Errorf("unable to unpin content belonging to a pinned aggregate (pin: %d, zone: %d)", pin.ID, pin.AggregatedIn)
 		}
 		if err := cm.DB.Model(util.Content{}).
 			Where("id = ?", pin.AggregatedIn).
 			UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
 			return err
 		}
+	}
+
+	objs, err := cm.objectsForPin(ctx, pin.ID)
+	if err != nil {
+		return err
 	}
 
 	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
