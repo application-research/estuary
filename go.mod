@@ -57,7 +57,7 @@ require (
 	github.com/ipld/go-codec-dagpb v1.4.0
 	github.com/ipld/go-ipld-prime v0.18.0
 	github.com/jinzhu/gorm v1.9.16
-	github.com/labstack/echo/v4 v4.6.1
+	github.com/labstack/echo/v4 v4.9.0
 	github.com/labstack/gommon v0.3.1
 	github.com/libp2p/go-libp2p v0.23.4
 	github.com/libp2p/go-libp2p-core v0.20.0
