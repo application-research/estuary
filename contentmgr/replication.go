@@ -811,7 +811,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	defer cm.BucketLk.Unlock()
 
 	var zones []util.Content
-	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ?", content.UserID).Error; err != nil {
+	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size < ?", content.UserID, constants.MaxDealContentSize-content.Size).Error; err != nil {
 		return nil
 	}
 	if len(zones) == 0 {
@@ -827,24 +827,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 		return nil
 	}
 
-	// find zones without enough capacity and exclude them as zone options
-	var inviableZoneIDs []uint
-	if err := cm.DB.Model(&util.Content{}).
-		Where("not active and pinning and aggregate and size >= ?", constants.MaxDealContentSize-content.Size).
-		Select("id").
-		Find(&inviableZoneIDs).Error; err != nil {
-		return err
-	}
-
-	var excludedZoneIds map[uint]bool
-	for _, inviableZoneID := range inviableZoneIDs {
-		excludedZoneIds[inviableZoneID] = true
-	}
-
 	for _, zone := range zones {
-		if excludedZoneIds[zone.ID] {
-			continue
-		}
 		ok, err := cm.tryAddContent(zone, content)
 		if err != nil {
 			return err

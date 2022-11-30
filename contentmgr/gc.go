@@ -148,6 +148,7 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 
 	if pin.AggregatedIn > 0 {
 		cm.BucketLk.Lock()
+		defer cm.BucketLk.Unlock()
 		if cm.ZonesConsolidating[pin.AggregatedIn] {
 			return fmt.Errorf("unable to unpin content while zone is consolidating (pin: %d, zone: %d)", pin.ID, pin.AggregatedIn)
 		}
@@ -164,7 +165,6 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 			UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
 			return err
 		}
-		cm.BucketLk.Unlock()
 	}
 
 	objs, err := cm.objectsForPin(ctx, pin.ID)
