@@ -3378,9 +3378,9 @@ type getApiKeysResp struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        key_or_hash path string true "Key or Hash"
-// @Router       /user/api-keys/{key_or_hash} [delete]
+// @Router       /keys/{keyid} [delete]
 func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
-	kval := c.Param("key_or_hash")
+	kval := c.Param("keyid")
 	// need to check the kvalHash in case someone is revoking their token by the token itself, but only its hash is stored
 	kvalHash := util.GetTokenHash(kval)
 	if err := s.DB.Delete(&util.AuthToken{}, "\"user\" = ? AND (token = ? OR token_hash = ? OR token_hash = ?)", u.ID, kval, kval, kvalHash).Error; err != nil {
@@ -3401,7 +3401,7 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404     {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/api-keys [post]
+// @Router       /keys [post]
 func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 	expiry := time.Now().Add(constants.TokenExpiryDurationDefault)
 	if exp := c.QueryParam("expiry"); exp != "" {
@@ -3445,7 +3445,7 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      404   {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/api-keys [get]
+// @Router       /keys [get]
 func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 	var keys []util.AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
