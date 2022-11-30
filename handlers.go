@@ -197,7 +197,7 @@ func (s *Server) ServeAPI() error {
 	buckets.POST("/:uuid", withUser(s.handleAddContentsToBucket))
 	buckets.GET("/:uuid", withUser(s.handleGetBucketContents))
 
-	buckets.DELETE("/:bucketuuid/contents", withUser(s.handleDeleteContentFromBucket))
+	buckets.DELETE("/:uuid/contents", withUser(s.handleDeleteContentFromBucket))
 
 	buckets.POST("/:uuid/commit", withUser(s.handleCommitBucket))
 
