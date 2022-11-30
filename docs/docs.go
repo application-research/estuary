@@ -174,118 +174,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/peering/peers": {
-            "get": {
-                "description": "This endpoint can be used to list all peers on Peering Service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
-                ],
-                "summary": "List all Peering peers",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            },
-            "post": {
-                "description": "This endpoint can be used to add a Peer from the Peering Service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
-                ],
-                "summary": "Add peers on Peering Service",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            },
-            "delete": {
-                "description": "This endpoint can be used to remove a Peer from the Peering Service",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin",
-                    "peering",
-                    "peers"
-                ],
-                "summary": "Remove peers on Peering Service",
-                "parameters": [
-                    {
-                        "description": "Peer ids",
-                        "name": "peerIds",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "array",
-                            "items": {
-                                "type": "boolean"
-                            }
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/admin/peering/start": {
             "post": {
                 "description": "This endpoint can be used to start the Peering Service",
@@ -2102,6 +1990,118 @@ const docTemplate = `{
                     "net"
                 ],
                 "summary": "Net Addrs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/peering-peers": {
+            "get": {
+                "description": "This endpoint can be used to list all peers on Peering Service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "peering",
+                    "peers"
+                ],
+                "summary": "List all Peering peers",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "This endpoint can be used to add a Peer from the Peering Service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "peering",
+                    "peers"
+                ],
+                "summary": "Add peers on Peering Service",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "This endpoint can be used to remove a Peer from the Peering Service",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin",
+                    "peering",
+                    "peers"
+                ],
+                "summary": "Remove peers on Peering Service",
+                "parameters": [
+                    {
+                        "description": "Peer ids",
+                        "name": "peerIds",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
