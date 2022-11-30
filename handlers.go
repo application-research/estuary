@@ -145,10 +145,14 @@ func (s *Server) ServeAPI() error {
 	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
 	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
 	user.DELETE("/api-keys/:key_or_hash", withUser(s.handleUserRevokeApiKey))
-	user.GET("/export", withUser(s.handleUserExportData))
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
-	user.GET("/stats", withUser(s.handleGetUserStats))
+
+	//move resources to plural users <-- (notice the s!!)
+	users := e.Group("/users")
+	users.Use(s.AuthRequired(util.PermLevelUser))
+	users.GET("/stats", withUser(s.handleGetUserStats))
+	users.GET("/export", withUser(s.handleUserExportData))
 
 	userMiner := user.Group("/miner")
 	userMiner.POST("/claim", withUser(s.handleUserClaimMiner))
@@ -1635,8 +1639,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 	})
 }
 
-//from datatransfer.ChannelID and used for swagger docs
-//if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
+// from datatransfer.ChannelID and used for swagger docs
+// if we don't redefine this here, we'll need to enable parse dependences for swagger and it will take a really long time
 type ChannelIDParam struct {
 	Initiator string
 	Responder string
