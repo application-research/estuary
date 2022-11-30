@@ -52,9 +52,9 @@ require (
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-path v0.3.0
 	github.com/ipfs/go-unixfs v0.3.1
-	github.com/ipfs/go-unixfsnode v1.4.0
+	github.com/ipfs/go-unixfsnode v1.5.0
 	github.com/ipld/go-car v0.5.0
-	github.com/ipld/go-codec-dagpb v1.4.0
+	github.com/ipld/go-codec-dagpb v1.4.1
 	github.com/ipld/go-ipld-prime v0.18.0
 	github.com/jinzhu/gorm v1.9.16
 	github.com/labstack/echo/v4 v4.6.1
@@ -111,7 +111,6 @@ require (
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
-	github.com/Stebalien/go-bitfield v0.0.1 // indirect
 	github.com/VividCortex/ewma v1.1.1 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/akavel/rsrc v0.8.0 // indirect
