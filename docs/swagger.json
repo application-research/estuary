@@ -2085,6 +2085,138 @@
         }
       }
     },
+    "/keys": {
+      "get": {
+        "description": "This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Get API keys for a user",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/main.getApiKeysResp"
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      },
+      "post": {
+        "description": "This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Create API keys for a user",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Expiration - Expiration - Valid time units are ns, us (or µs),  ms,  s,  m,  h.  for  example  300h",
+            "name": "expiry",
+            "in": "query"
+          },
+          {
+            "type": "string",
+            "description": "Permissions -- currently unused",
+            "name": "perms",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/main.getApiKeysResp"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/keys/{keyid}": {
+      "delete": {
+        "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "User"
+        ],
+        "summary": "Revoke a User API Key.",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "Key or Hash",
+            "name": "key_or_hash",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
     "/net/addrs": {
       "get": {
         "description": "This endpoint is used to get net addrs",
@@ -2745,138 +2877,6 @@
           "public"
         ],
         "summary": "Public stats",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/user/api-keys": {
-      "get": {
-        "description": "This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "User"
-        ],
-        "summary": "Get API keys for a user",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/main.getApiKeysResp"
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      },
-      "post": {
-        "description": "This endpoint is used to create API keys for a user. In estuary, each user is given an API key to access all features.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "User"
-        ],
-        "summary": "Create API keys for a user",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Expiration - Expiration - Valid time units are ns, us (or µs),  ms,  s,  m,  h.  for  example  300h",
-            "name": "expiry",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "Permissions -- currently unused",
-            "name": "perms",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/main.getApiKeysResp"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/user/api-keys/{key_or_hash}": {
-      "delete": {
-        "description": "This endpoint is used to revoke a user API key. In estuary, every user is assigned with an API key, this API key is generated and issued for each user and is primarily used to access all estuary features. This endpoint can be used to revoke the API key that's assigned to the user. Revoked API keys are completely deleted and are not recoverable.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "User"
-        ],
-        "summary": "Revoke a User API Key.",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Key or Hash",
-            "name": "key_or_hash",
-            "in": "path",
-            "required": true
-          }
-        ],
         "responses": {
           "200": {
             "description": "OK",
