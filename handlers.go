@@ -3220,7 +3220,7 @@ type userStatsResponse struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/stats [get]
+// @Router       /users/stats [get]
 func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
@@ -4173,7 +4173,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Router       /user/export [get]
+// @Router       /users/export [get]
 func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
