@@ -460,7 +460,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
-// @Router       /admin/peering/peers [post]
+// @Router       /peering-peers [post]
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
@@ -524,7 +524,7 @@ type peerIDs []peerID // used for swagger
 // @Failure      400     {object}  util.HttpError
 // @Failure      500     {object}  util.HttpError
 // @Param        peerIds  body      peerIDs  true  "Peer ids"
-// @Router       /admin/peering/peers [delete]
+// @Router       /peering-peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
@@ -549,7 +549,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Router       /admin/peering/peers [get]
+// @Router       /peering-peers [get]
 func (s *Server) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
 	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
