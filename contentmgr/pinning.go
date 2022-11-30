@@ -428,7 +428,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}
 
 		// if the content is a consolidated aggregate, it means all its children have been moved and the content pinned, so remove consolidation flag
+		cm.BucketLk.Lock()
 		delete(cm.ZonesConsolidating, cont.ID)
+		cm.BucketLk.Unlock()
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)
 		return nil

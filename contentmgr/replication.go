@@ -163,6 +163,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 	return content, nil
 }
 
+// tryAddContent assumes that the cm.BucketLk is locked
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
 	// if this bucket is being consolidated, do not add anymore content
 	if cm.ZonesConsolidating[zone.ID] {
@@ -2521,7 +2522,9 @@ func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont ut
 		return err
 	}
 
+	cm.BucketLk.Lock()
 	delete(cm.ZonesConsolidating, cont.ID)
+	cm.BucketLk.Unlock()
 	// TODO: send unpin command to where the content was migrated from
 
 	return nil
