@@ -146,12 +146,12 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType stri
 		// get file from formData
 		form, err := c.MultipartForm()
 		if err != nil {
-			return UploadedContent{}, err
+			return UploadedContent{}, xerrors.Errorf("invalid formData for 'file' upload option: %w", err)
 		}
 		defer form.RemoveAll()
 		mpf, err := c.FormFile("data")
 		if err != nil {
-			return UploadedContent{}, err
+			return UploadedContent{}, xerrors.Errorf("invalid formData for 'file' upload option: %w", err)
 		}
 
 		// Get len
