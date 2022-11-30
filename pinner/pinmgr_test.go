@@ -14,8 +14,8 @@ import (
 
 var countLock sync.Mutex
 
-func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	//fmt.Println("onPinStatusUpdate", status, cont)
+func onPinStatusUpdate(content uint, location string, status types.PinningStatus) error {
+	//fmt.Println("onPinStatusUpdate", status, content)
 	return nil
 }
 func newManager(count *int) *PinManager {
@@ -55,7 +55,7 @@ func newPinData(name string, userid int, contid int) PinningOperation {
 		Name:   name,
 		UserId: uint(userid),
 		lk:     sync.Mutex{},
-		ContId: uint(contid),
+		ContentID: uint(contid),
 	}
 }
 

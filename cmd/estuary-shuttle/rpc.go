@@ -163,7 +163,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 
 	op := &pinner.PinningOperation{
 		Obj:         data,
-		ContId:      contid,
+		ContentID:   contid,
 		UserId:      user,
 		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
@@ -234,12 +234,12 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 	})
 }
 
-func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
+func (s *Shuttle) sendSplitContentComplete(ctx context.Context, content uint) {
 	if err := s.sendRpcMessage(ctx, &drpc.Message{
 		Op: drpc.OP_SplitComplete,
 		Params: drpc.MsgParams{
 			SplitComplete: &drpc.SplitComplete{
-				ID: cont,
+				ID: content,
 			},
 		},
 	}); err != nil {
@@ -334,14 +334,14 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 	}
 
 	for _, c := range aggregate.Contents {
-		var cont Pin
-		if err := s.DB.First(&cont, "content = ?", c.ID).Error; err != nil {
+		var content Pin
+		if err := s.DB.First(&content, "content = ?", c.ID).Error; err != nil {
 			// TODO: implies we dont have all the content locally we are being
 			// asked to aggregate, this is an important error to handle
 			return err
 		}
 
-		if !cont.Active || cont.Failed {
+		if !content.Active || content.Failed {
 			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c.ID)
 		}
 	}
@@ -548,58 +548,58 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinCont
 	return nil
 }
 
-func (s *Shuttle) markStartUnpin(cont uint) bool {
+func (s *Shuttle) markStartUnpin(content uint) bool {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
 
-	if s.unpinInProgress[cont] {
+	if s.unpinInProgress[content] {
 		return false
 	}
 
-	s.unpinInProgress[cont] = true
+	s.unpinInProgress[content] = true
 	return true
 }
 
-func (s *Shuttle) finishUnpin(cont uint) {
+func (s *Shuttle) finishUnpin(content uint) {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
-	delete(s.unpinInProgress, cont)
+	delete(s.unpinInProgress, content)
 }
 
-func (s *Shuttle) markStartAggr(cont uint) bool {
+func (s *Shuttle) markStartAggr(content uint) bool {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
 
-	if s.aggrInProgress[cont] {
+	if s.aggrInProgress[content] {
 		return false
 	}
 
-	s.aggrInProgress[cont] = true
+	s.aggrInProgress[content] = true
 	return true
 }
 
-func (s *Shuttle) finishAggr(cont uint) {
+func (s *Shuttle) finishAggr(content uint) {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
-	delete(s.aggrInProgress, cont)
+	delete(s.aggrInProgress, content)
 }
 
-func (s *Shuttle) markStartSplit(cont uint) bool {
+func (s *Shuttle) markStartSplit(content uint) bool {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 
-	if s.splitsInProgress[cont] {
+	if s.splitsInProgress[content] {
 		return false
 	}
 
-	s.splitsInProgress[cont] = true
+	s.splitsInProgress[content] = true
 	return true
 }
 
-func (s *Shuttle) finishSplit(cont uint) {
+func (s *Shuttle) finishSplit(content uint) {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
-	delete(s.splitsInProgress, cont)
+	delete(s.splitsInProgress, content)
 }
 
 func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {

@@ -113,9 +113,9 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 
 // TODO: this is only looking at the root, maybe we could find an efficient way to check more of the objects?
 // additionally, for aggregates, we should check each aggregated item under the root
-func (cm *ContentManager) getLastAccessForContent(cont util.Content) (time.Time, error) {
+func (cm *ContentManager) getLastAccessForContent(content util.Content) (time.Time, error) {
 	var obj util.Object
-	if err := cm.DB.First(&obj, "cid = ?", cont.Cid).Error; err != nil {
+	if err := cm.DB.First(&obj, "cid = ?", content.Cid).Error; err != nil {
 		return time.Time{}, err
 	}
 
@@ -133,18 +133,18 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
 	for _, c := range conts {
-		var cont util.Content
-		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		var content util.Content
+		if err := cm.DB.First(&content, "id = ?", c).Error; err != nil {
 			return 0, err
 		}
 
-		if cont.Location == constants.ContentLocationLocal {
-			local = append(local, cont.ID)
+		if content.Location == constants.ContentLocationLocal {
+			local = append(local, content.ID)
 		} else {
-			remote[cont.Location] = append(remote[cont.Location], cont.ID)
+			remote[content.Location] = append(remote[content.Location], content.ID)
 		}
 
-		if cont.AggregatedIn > 0 {
+		if content.AggregatedIn > 0 {
 			return 0, fmt.Errorf("cannot offload aggregated content")
 		}
 
@@ -156,7 +156,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			return 0, err
 		}
 
-		if cont.Aggregate {
+		if content.Aggregate {
 			if err := cm.DB.Model(&util.Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
 				return 0, err
 			}
@@ -176,10 +176,10 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			}
 
 			for _, c := range children {
-				if cont.Location == constants.ContentLocationLocal {
+				if content.Location == constants.ContentLocationLocal {
 					local = append(local, c.ID)
 				} else {
-					remote[cont.Location] = append(remote[cont.Location], c.ID)
+					remote[content.Location] = append(remote[content.Location], c.ID)
 				}
 			}
 		}
@@ -233,13 +233,13 @@ func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, lo
 		q = q.Where("user_id in ?", users)
 	}
 
-	var conts []util.Content
-	if err := q.Scan(&conts).Error; err != nil {
+	var contents []util.Content
+	if err := q.Scan(&contents).Error; err != nil {
 		return nil, fmt.Errorf("scanning removal candidates failed: %w", err)
 	}
 
 	var toOffload []removalCandidateInfo
-	for _, c := range conts {
+	for _, c := range contents {
 		good, progress, failed, err := cm.contentIsProperlyReplicated(ctx, c.ID)
 		if err != nil {
 			return nil, xerrors.Errorf("failed to check replication of %d: %w", c.ID, err)

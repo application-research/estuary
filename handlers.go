@@ -928,12 +928,12 @@ func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error 
 	}
 
 	out := make([]expandedContent, 0, len(contents))
-	for _, cont := range contents {
+	for _, content := range contents {
 		ec := expandedContent{
-			Content: cont,
+			Content: content,
 		}
-		if cont.Aggregate {
-			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+		if content.Aggregate {
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", content.ID).Count(&ec.AggregatedFiles).Error; err != nil {
 				return err
 			}
 
@@ -1288,27 +1288,27 @@ func (s *Server) getContentByCid(cidStr string) ([]getContentResponse, error) {
 	}
 
 	out := make([]getContentResponse, 0)
-	for i, cont := range contents {
+	for i, content := range contents {
 		resp := getContentResponse{
 			Content: &contents[i],
 		}
 
-		id := cont.ID
+		id := content.ID
 
-		if cont.AggregatedIn > 0 {
+		if content.AggregatedIn > 0 {
 			var aggr util.Content
-			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
+			if err := s.DB.First(&aggr, "id = ?", content.AggregatedIn).Error; err != nil {
 				return []getContentResponse{}, err
 			}
 
 			resp.AggregatedIn = &aggr
 
 			// no need to early return here, the selector is mostly cosmetic atm
-			if selector, err := s.calcSelector(cont.AggregatedIn, cont.ID); err == nil {
+			if selector, err := s.calcSelector(content.AggregatedIn, content.ID); err == nil {
 				resp.Selector = selector
 			}
 
-			id = cont.AggregatedIn
+			id = content.AggregatedIn
 		}
 
 		var deals []*model.ContentDeal
@@ -1430,8 +1430,8 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 		}
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", req.ContentID).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", req.ContentID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -1442,7 +1442,7 @@ func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	id, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
+	id, err := s.CM.MakeDealWithMiner(ctx, content, addr)
 	if err != nil {
 		return err
 	}
@@ -1488,12 +1488,12 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		return err
 	}
@@ -1516,12 +1516,12 @@ func (s *Server) handleTransferStatusByID(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		return err
 	}
@@ -1582,8 +1582,8 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", deal.Content).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", deal.Content).Error; err != nil {
 		return err
 	}
 
@@ -1604,7 +1604,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
+	if err := s.CM.RestartTransfer(ctx, content.Location, chanid, deal); err != nil {
 		return err
 	}
 	return nil
@@ -2520,12 +2520,12 @@ func (s *Server) handleRunOffloadingBucket(c echo.Context) error {
 }
 
 func (s *Server) handleOffloadContent(c echo.Context) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	content, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
-	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint{uint(cont)})
+	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint{uint(content)})
 	if err != nil {
 		return err
 	}
@@ -2569,30 +2569,30 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 }
 
 func (s *Server) handleRefreshContent(c echo.Context) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	content, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
-	if err := s.CM.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
+	if err := s.CM.RefreshContent(c.Request().Context(), uint(content)); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *Server) handleReadLocalContent(c echo.Context) error {
-	cont, err := strconv.Atoi(c.Param("content"))
+	contentid, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ?", cont).Error; err != nil {
+	if err := s.DB.First(&content, "id = ?", contentid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("content: %d was not found", cont),
+				Details: fmt.Sprintf("content: %d was not found", content),
 			}
 		}
 		return err
@@ -3303,11 +3303,11 @@ func (s *Server) handleAddContentsToBucket(c echo.Context, u *util.User) error {
 
 	path, err := constructDirectoryPath(c.QueryParam(BucketDir))
 	var bucketrefs []buckets.BucketRef
-	for _, cont := range contents {
-		fullPath := filepath.Join(path, cont.Name)
+	for _, content := range contents {
+		fullPath := filepath.Join(path, content.Name)
 		bucketrefs = append(bucketrefs, buckets.BucketRef{
 			Bucket:  bucket.ID,
-			Content: cont.ID,
+			Content: content.ID,
 			Path:    &fullPath,
 		})
 	}
@@ -3496,7 +3496,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 			out = append(out, bucketListResponse{
 				Name:      r.Name,
 				Size:      r.Size,
-				ContID:    r.ID,
+				ContentID: r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
 				Dir:       queryDir,
 				uuid:      uuid,
@@ -3512,7 +3512,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 			//			Name:    relp,
 			//			Type:    Dir,
 			//			Size:    r.Size,
-			//			ContID:  r.ID,
+			//			ContentID:  r.ID,
 			//			Cid:     &r.Cid,
 			//			Dir:     queryDir,
 			//			uuid: uuid,
@@ -3551,7 +3551,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		//	Name:    r.Name,
 		//	Type:    contentType,
 		//	Size:    r.Size,
-		//	ContID:  r.ID,
+		//	ContentID:  r.ID,
 		//	Cid:     &util.DbCID{CID: r.Cid.CID},
 		//	Dir:     queryDir,
 		//	uuid: uuid,
@@ -4065,7 +4065,7 @@ func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
 
 type dealQuery struct {
 	DealID    int64
-	Contentid uint
+	ContentID uint
 	Cid       util.DbCID
 	Aggregate bool
 }
@@ -4122,19 +4122,19 @@ func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	contmap := make(map[uint][]dealQuery)
 	for _, d := range deals {
-		contmap[d.Contentid] = append(contmap[d.Contentid], d)
+		contmap[d.ContentID] = append(contmap[d.ContentID], d)
 	}
 
 	var out []dealPairs
-	for cont, deals := range contmap {
+	for content, deals := range contmap {
 		var dp dealPairs
 		if deals[0].Aggregate {
-			var conts []util.Content
-			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", cont).Select("cid").Scan(&conts).Error; err != nil {
+			var contents []util.Content
+			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", content).Select("cid").Scan(&contents).Error; err != nil {
 				return err
 			}
 
-			for _, c := range conts {
+			for _, c := range contents {
 				dp.Cids = append(dp.Cids, c.Cid.CID)
 			}
 		} else {
@@ -4171,8 +4171,8 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", val).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", val).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -4184,17 +4184,17 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	var u util.User
-	if err := s.DB.First(&u, "id = ?", cont.UserID).Error; err != nil {
+	if err := s.DB.First(&u, "id = ?", content.UserID).Error; err != nil {
 		return err
 	}
 
 	var deals []model.ContentDeal
-	if err := s.DB.Find(&deals, "content = ? and not failed", cont.ID).Error; err != nil {
+	if err := s.DB.Find(&deals, "content = ? and not failed", content.ID).Error; err != nil {
 		return err
 	}
 
 	var aggr []util.Content
-	if err := s.DB.Find(&aggr, "aggregated_in = ?", cont.ID).Error; err != nil {
+	if err := s.DB.Find(&aggr, "aggregated_in = ?", content.ID).Error; err != nil {
 		return err
 	}
 
@@ -4204,13 +4204,13 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	var fixedAggregateSize bool
-	if cont.Aggregate && cont.Size == 0 && cont.Active {
+	if content.Aggregate && content.Size == 0 && content.Active {
 		// if this is an active aggregate and its size is zero, then that means we
 		// failed at some point while updating the aggregate, we can fix that
 
 		switch len(aggrLocs) {
 		case 0:
-			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+			log.Warnf("content %d has nothing aggregated in it", content.ID)
 		case 1:
 			var zSize int64
 			for _, zc := range aggr {
@@ -4218,14 +4218,14 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			}
 
 			z := &contentmgr.ContentStagingZone{
-				ZoneOpened: cont.CreatedAt,
+				ZoneOpened: content.CreatedAt,
 				Contents:   aggr,
 				MinSize:    s.cfg.Content.MinSize,
 				MaxSize:    s.cfg.Content.MaxSize,
 				CurSize:    zSize,
-				User:       cont.UserID,
-				ContID:     cont.ID,
-				Location:   cont.Location,
+				User:       content.UserID,
+				ContentID:  content.ID,
+				Location:   content.Location,
 			}
 
 			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
@@ -4235,33 +4235,33 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		default:
 			// well that sucks, this will need migration
-			log.Warnf("content %d has messed up aggregation", cont.ID)
+			log.Warnf("content %d has messed up aggregation", content.ID)
 		}
 	}
 
-	if cont.Location != constants.ContentLocationLocal {
+	if content.Location != constants.ContentLocationLocal {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"deals":              deals,
-			"content":            cont,
+			"content":            content,
 			"error":              "requested content was not local to this instance, cannot check health right now",
 			"fixedAggregateSize": fixedAggregateSize,
 		})
 	}
 
-	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cont.Cid.CID)
+	_, rootFetchErr := s.Node.Blockstore.Get(ctx, content.Cid.CID)
 	if rootFetchErr != nil {
 		log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}
 
-	if cont.Aggregate && rootFetchErr != nil {
+	if content.Aggregate && rootFetchErr != nil {
 		// if this is an aggregate and we dont have the root, thats funky, but we can regenerate the root
 		nd, err := s.CM.CreateAggregate(ctx, aggr)
 		if err != nil {
 			return fmt.Errorf("failed to create aggregate: %w", err)
 		}
 
-		if nd.Cid() != cont.Cid.CID {
-			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), cont.Cid.CID)
+		if nd.Cid() != content.Cid.CID {
+			return fmt.Errorf("recreated aggregate cid does not match one recorded in db: %s != %s", nd.Cid(), content.Cid.CID)
 		}
 
 		if err := s.Node.Blockstore.Put(ctx, nd); err != nil {
@@ -4270,28 +4270,28 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	}
 
 	var fixedAggregateLocation bool
-	if c.QueryParam("check-locations") != "" && cont.Aggregate {
+	if c.QueryParam("check-locations") != "" && content.Aggregate {
 		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
 		switch len(aggrLocs) {
 		case 0:
-			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+			log.Warnf("content %d has nothing aggregated in it", content.ID)
 		case 1:
 			loc := aggr[0].Location
-			if loc != cont.Location {
+			if loc != content.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
 				var aggrConts []drpc.AggregateContent
 				for _, c := range aggr {
 					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
 				}
 
-				if err := s.CM.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
+				if err := s.CM.SendAggregateCmd(ctx, loc, content, aggrConts); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true
 			}
 		default:
 			// well that sucks, this will need migration
-			log.Warnf("content %d has messed up aggregation", cont.ID)
+			log.Warnf("content %d has messed up aggregation", content.ID)
 		}
 	}
 
@@ -4315,7 +4315,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		}
 
 		return util.FilterUnwalkableLinks(node.Links()), nil
-	}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
+	}, content.Cid.CID, cset.Visit, merkledag.Concurrent())
 
 	errstr := ""
 	if err != nil {
@@ -4324,7 +4324,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	out := map[string]interface{}{
 		"user":               u.Username,
-		"content":            cont,
+		"content":            content,
 		"deals":              deals,
 		"traverseError":      errstr,
 		"foundBlocks":        cset.Len(),
@@ -4884,17 +4884,17 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 		return err
 	}
 
-	var conts []contCheck
+	var contents []contCheck
 	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 and active").
 		Select("id, (?) as num_deals",
 			s.DB.Model(model.ContentDeal{}).
 				Where("content = contents.id and deal_id > 0 and not failed").
 				Select("count(1)"),
-		).Scan(&conts).Error; err != nil {
+		).Scan(&contents).Error; err != nil {
 		return err
 	}
 
-	for _, c := range conts {
+	for _, c := range contents {
 		if c.NumDeals >= s.cfg.Replication {
 			out.GoodContents = append(out.GoodContents, c.ID)
 		} else if c.NumDeals > 0 {
@@ -4914,8 +4914,8 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "id = ?", aggr).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "id = ?", aggr).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -4926,7 +4926,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 		return err
 	}
 
-	if !cont.Aggregate {
+	if !content.Aggregate {
 		return fmt.Errorf("content %d is not an aggregate", aggr)
 	}
 
@@ -4954,7 +4954,7 @@ func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
 				}
 
 				return util.FilterUnwalkableLinks(node.Links()), nil
-			}, cont.Cid.CID, cset.Visit, merkledag.Concurrent())
+			}, content.Cid.CID, cset.Visit, merkledag.Concurrent())
 			res := map[string]interface{}{
 				"content":     c,
 				"foundBlocks": cset.Len(),
@@ -5156,24 +5156,24 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 
 	defer rows.Close()
 	for rows.Next() {
-		var cont util.Content
-		if err := s.DB.ScanRows(rows, &cont); err != nil {
+		var content util.Content
+		if err := s.DB.ScanRows(rows, &content); err != nil {
 			return err
 		}
 
 		var origins []*peer.AddrInfo
 		// when refreshing pinning queue, use content origins if available
-		if cont.Origins != "" {
-			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
+		if content.Origins != "" {
+			_ = json.Unmarshal([]byte(content.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
 		if err := s.CM.SendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
 			Op: drpc.CMD_AddPin,
 			Params: drpc.CmdParams{
 				AddPin: &drpc.AddPin{
-					DBID:   cont.ID,
-					UserId: cont.UserID,
-					Cid:    cont.Cid.CID,
+					DBID:   content.ID,
+					UserId: content.UserID,
+					Cid:    content.Cid.CID,
 					Peers:  origins,
 				},
 			},
@@ -5234,7 +5234,7 @@ type bucketListResponse struct {
 	Name      string      `json:"name"`
 	Type      CidType     `json:"type"`
 	Size      int64       `json:"size"`
-	ContID    uint        `json:"contId"`
+	ContentID uint        `json:"contentid"`
 	Cid       *util.DbCID `json:"cid,omitempty"`
 	Dir       string      `json:"dir"`
 	uuid      string      `json:"uuid"`
@@ -5299,8 +5299,8 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
-	var cont util.Content
-	if err := s.DB.First(&cont, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
+	var content util.Content
+	if err := s.DB.First(&content, "cid = ? and active and not offloaded", &util.DbCID{CID: cc}).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			// if not pinned on any shuttle or local, check dweb
 			return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
@@ -5308,16 +5308,16 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 		return "", err
 	}
 
-	if cont.Location == constants.ContentLocationLocal {
+	if content.Location == constants.ContentLocationLocal {
 		return "", nil
 	}
 
-	if !s.CM.ShuttleIsOnline(cont.Location) {
+	if !s.CM.ShuttleIsOnline(content.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
 	var shuttle model.Shuttle
-	if err := s.DB.First(&shuttle, "handle = ?", cont.Location).Error; err != nil {
+	if err := s.DB.First(&shuttle, "handle = ?", content.Location).Error; err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil

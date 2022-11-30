@@ -1482,15 +1482,15 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContentID, dsess, d.Node.Blockstore, op.Obj, cb)
 	if err != nil {
-		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContentID, op.Obj.String())
 	}
 
-	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
+	d.sendPinCompleteMessage(ctx, op.ContentID, totalSize, objects, op.Obj)
 
 	if err := d.Provide(ctx, op.Obj); err != nil {
-		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		return errors.Wrapf(err, "failed to provide - contID(%d), cid(%s)", op.ContentID, op.Obj.String())
 	}
 	return nil
 }
@@ -1614,10 +1614,10 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	return totalSize, objects, nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	log.Debugf("updating pin status: %d %s", cont, status)
+func (d *Shuttle) onPinStatusUpdate(content uint, location string, status types.PinningStatus) error {
+	log.Debugf("updating pin status: %d %s", content, status)
 	if status == types.PinningStatusFailed {
-		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
+		if err := d.DB.Model(Pin{}).Where("content = ?", content).UpdateColumns(map[string]interface{}{
 			"pinning": false,
 			"active":  false,
 			"failed":  true,
@@ -1631,7 +1631,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 			Op: drpc.OP_UpdatePinStatus,
 			Params: drpc.MsgParams{
 				UpdatePinStatus: &drpc.UpdatePinStatus{
-					DBID:   cont,
+					DBID:   content,
 					Status: status,
 				},
 			},
@@ -1666,7 +1666,7 @@ func (s *Shuttle) refreshPinQueue() error {
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 	op := &pinner.PinningOperation{
-		ContId:  p.Content,
+		ContentID:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
 		Peers:   peers,
@@ -1679,7 +1679,7 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 
 		s.pinLk.Lock()
 		// TODO: check if we are overwriting anything here
-		s.pinJobs[cont.ID] = op
+		s.pinJobs[content.ID] = op
 		s.pinLk.Unlock()
 	*/
 
@@ -1880,18 +1880,18 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 // @Param        cid  path      string  true  "CID to be read"
 // @Router       /content/{cid}/read [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
-	cont, err := strconv.Atoi(c.Param("cid"))
+	content, err := strconv.Atoi(c.Param("cid"))
 	if err != nil {
 		return err
 	}
 
 	var pin Pin
-	if err := s.DB.First(&pin, "content = ?", cont).Error; err != nil {
+	if err := s.DB.First(&pin, "content = ?", content).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("content: %d record not found in database", cont),
+				Details: fmt.Sprintf("content: %d record not found in database", content),
 			}
 		}
 		return err
@@ -1990,18 +1990,18 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 
 func (s *Shuttle) handleResendPinComplete(c echo.Context) error {
 	ctx := c.Request().Context()
-	cont, err := strconv.Atoi(c.Param("content"))
+	content, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
 	}
 
 	var p Pin
-	if err := s.DB.First(&p, "content = ?", cont).Error; err != nil {
+	if err := s.DB.First(&p, "content = ?", content).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
 				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("content: %d record not found in database", cont),
+				Details: fmt.Sprintf("content: %d record not found in database", content),
 			}
 		}
 		return err

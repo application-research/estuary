@@ -35,7 +35,7 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	if op.Replace > 0 {
 		go func() {
 			if err := s.CM.RemoveContent(ctx, op.Replace, true); err != nil {
-				log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
+				log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContentID)
 			}
 		}()
 	}
@@ -50,12 +50,12 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := s.CM.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
+	if err := s.CM.AddDatabaseTrackingToContent(ctx, op.ContentID, dsess, op.Obj, cb); err != nil {
 		return err
 	}
 
 	if op.MakeDeal {
-		s.CM.ToCheck(op.ContId)
+		s.CM.ToCheck(op.ContentID)
 	}
 
 	// this provide call goes out immediately

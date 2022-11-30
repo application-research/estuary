@@ -222,9 +222,9 @@ func (cm *ContentManager) clearUnreferencedObjects(ctx context.Context, objs []*
 	return nil
 }
 
-func (cm *ContentManager) objectsForPin(ctx context.Context, cont uint) ([]*util.Object, error) {
+func (cm *ContentManager) objectsForPin(ctx context.Context, content uint) ([]*util.Object, error) {
 	var objects []*util.Object
-	if err := cm.DB.Model(util.ObjRef{}).Where("content = ?", cont).
+	if err := cm.DB.Model(util.ObjRef{}).Where("content = ?", content).
 		Joins("left join objects on obj_refs.object = objects.id").
 		Scan(&objects).Error; err != nil {
 		return nil, err

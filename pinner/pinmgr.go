@@ -98,7 +98,7 @@ type PinningOperation struct {
 	Status types.PinningStatus
 
 	UserId  uint
-	ContId  uint
+	ContentID  uint
 	Replace uint
 
 	LastUpdate time.Time
@@ -119,12 +119,12 @@ type PinningOperation struct {
 }
 
 type PinningOperationData struct {
-	ContId uint
+	ContentID uint
 }
 
 func getPinningData(po *PinningOperation) PinningOperationData {
 	return PinningOperationData{
-		ContId: po.ContId,
+		ContentID: po.ContentID,
 	}
 }
 
@@ -195,7 +195,7 @@ func (pm *PinManager) doPinning(op *PinningOperation) error {
 		op.SizeFetched += size
 	}); err != nil {
 		op.fail(err)
-		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusFailed); err2 != nil {
+		if err2 := pm.StatusChangeFunc(op.ContentID, op.Location, types.PinningStatusFailed); err2 != nil {
 			return err2
 		}
 		return errors.Wrap(err, "shuttle RunPinFunc failed")
@@ -279,7 +279,7 @@ func (pm *PinManager) closeQueueDataStructures() {
 func createLevelDBKey(value PinningOperationData) []byte {
 	var buffer bytes.Buffer
 	enc := gob.NewEncoder(&buffer)
-	if err := enc.Encode(value.ContId); err != nil {
+	if err := enc.Encode(value.ContentID); err != nil {
 		log.Fatal("Unable to encode value")
 	}
 	return buffer.Bytes()

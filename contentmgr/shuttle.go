@@ -417,8 +417,8 @@ func (cm *ContentManager) handleRpcShuttleUpdate(ctx context.Context, handle str
 func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle string, param *drpc.GarbageCheck) error {
 	var tounpin []uint
 	for _, c := range param.Contents {
-		var cont util.Content
-		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		var content util.Content
+		if err := cm.DB.First(&content, "id = ?", c).Error; err != nil {
 			if xerrors.Is(err, gorm.ErrRecordNotFound) {
 				tounpin = append(tounpin, c)
 			} else {
@@ -426,7 +426,7 @@ func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle stri
 			}
 		}
 
-		if cont.Location != handle || cont.Offloaded {
+		if content.Location != handle || content.Offloaded {
 			tounpin = append(tounpin, c)
 		}
 	}
