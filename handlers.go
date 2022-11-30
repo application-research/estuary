@@ -161,9 +161,8 @@ func (s *Server) ServeAPI() error {
 
 	contents := e.Group("", s.AuthRequired(util.PermLevelUser))
 	contents.GET("/contents", withUser(s.handleListContent))
-	contents.GET("/contents/by-cid/:cid", s.handleGetContentByCid)
 	contents.GET("/contents/:contentid", withUser(s.handleGetContent))
-	contents.GET("/contents/ensure-replication/:cid", s.handleEnsureReplication)
+	contents.GET("/contents/:cid/ensure-replication", s.handleEnsureReplication)
 	contents.GET("/contents/:contentid/status", withUser(s.handleContentStatus))
 
 	stagingBuckets := e.Group("/staging-buckets", s.AuthRequired(util.PermLevelUser))
@@ -215,7 +214,6 @@ func (s *Server) ServeAPI() error {
 	// explicitly public, for now
 	public := e.Group("/public")
 
-	public.GET("/stats", s.handlePublicStats)
 	public.GET("/by-cid/:cid", s.handleGetContentByCid)
 	public.GET("/deals/failures", s.handlePublicStorageFailures)
 	public.GET("/info", s.handleGetPublicNodeInfo)
@@ -831,7 +829,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Param        cid  path      string  true  "CID"
-// @Router       /content/ensure-replication/{cid} [get]
+// @Router       /content/{cid}/ensure-replication [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
 	cid, err := cid.Decode(c.Param("cid"))
 	if err != nil {
@@ -858,8 +856,16 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param        deals   query     bool  false  "If 'true', only list content with deals made"
+// @Param        cid   query     string  false  "CID of content to look for"
 // @Router       /content [get]
 func (s *Server) handleListContent(c echo.Context, u *util.User) error {
+	if cidStr := c.QueryParam("cid"); cidStr != "" {
+		out, err := s.getContentByCid(cidStr)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, out)
+	}
 	if deals := c.QueryParam("deals"); deals == "true" {
 		return s.handleListContentWithDeals(c, u)
 	}
@@ -1261,20 +1267,10 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
 }
 
-// handleGetContentByCid godoc
-// @Summary      Get Content by Cid
-// @Description  This endpoint returns the content record associated with a CID
-// @Tags         public
-// @Produce      json
-// @Success      200      {object}  string
-// @Failure      400     {object}  util.HttpError
-// @Failure      500     {object}  util.HttpError
-// @Param        cid  path      string  true  "Cid"
-// @Router       /public/by-cid/{cid} [get]
-func (s *Server) handleGetContentByCid(c echo.Context) error {
-	obj, err := cid.Decode(c.Param("cid"))
+func (s *Server) getContentByCid(cidStr string) ([]getContentResponse, error) {
+	obj, err := cid.Decode(cidStr)
 	if err != nil {
-		return errors.Wrapf(err, "invalid cid")
+		return []getContentResponse{}, errors.Wrapf(err, "invalid cid")
 	}
 
 	v0 := cid.Undef
@@ -1288,7 +1284,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
-		return err
+		return []getContentResponse{}, err
 	}
 
 	out := make([]getContentResponse, 0)
@@ -1302,7 +1298,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		if cont.AggregatedIn > 0 {
 			var aggr util.Content
 			if err := s.DB.First(&aggr, "id = ?", cont.AggregatedIn).Error; err != nil {
-				return err
+				return []getContentResponse{}, err
 			}
 
 			resp.AggregatedIn = &aggr
@@ -1317,7 +1313,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 
 		var deals []*model.ContentDeal
 		if err := s.DB.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
-			return err
+			return []getContentResponse{}, err
 		}
 
 		resp.Deals = deals
@@ -1325,6 +1321,25 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 		out = append(out, resp)
 	}
 
+	return out, nil
+}
+
+// handleGetContentByCid godoc
+// @Summary      Get Content by Cid
+// @Description  This endpoint returns the content record associated with a CID
+// @Tags         public
+// @Produce      json
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        cid  path      string  true  "Cid"
+// @Router       /public/by-cid/{cid} [get]
+func (s *Server) handleGetContentByCid(c echo.Context) error {
+	cidStr := c.Param("cid")
+	out, err := s.getContentByCid(cidStr)
+	if err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, out)
 }
 
