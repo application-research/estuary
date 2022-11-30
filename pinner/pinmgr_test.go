@@ -24,7 +24,7 @@ func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) e
 func newManager(count *int) *PinManager {
 
 	_ = os.RemoveAll("/tmp/duplicateGuard")
-	_ = os.RemoveAll("/tmp/pinQueue")
+	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
