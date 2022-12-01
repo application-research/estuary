@@ -12,6 +12,7 @@ import (
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
+	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -252,11 +253,11 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
-	var next *PinningOperation
-	err = item.ToObject(&next)
+
+	next, err := decode_msgpack(item.Value)
 
 	if err != nil {
-		log.Errorf("Dequeued object is not a PinningOperation pointer")
+		log.Errorf("Cannot decode PinningOperation pointer")
 		return nil
 	}
 	return next
@@ -325,7 +326,7 @@ func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
 
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
-	dname := filepath.Join(QueueDataDir, "pinQueue")
+	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
 	err := os.MkdirAll(dname, os.ModePerm)
 	if err != nil {
 		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
@@ -339,6 +340,15 @@ func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
 func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
+}
+
+func encode_msgpack(po *PinningOperation) ([]byte, error) {
+	return msgpack.Marshal(&po)
+}
+func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
+	var next *PinningOperation
+	err := msgpack.Unmarshal(po_bytes, &next)
+	return next, err
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
@@ -356,8 +366,11 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 	if po.SkipLimiter {
 		u = 0
 	}
-
-	_, err = pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
+	po_bytes, err := encode_msgpack(po)
+	if err != nil {
+		log.Fatal("Unable to encode data to add to queue.")
+	}
+	_, err = pm.pinQueue.Enqueue(getUserForQueue(u), po_bytes)
 	pm.pinQueueCount[u]++
 	if err != nil {
 		log.Fatal("Unable to add pin to queue.")
