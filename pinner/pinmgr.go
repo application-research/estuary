@@ -12,6 +12,7 @@ import (
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/ipfs/go-cid"
@@ -177,6 +178,7 @@ func (pm *PinManager) PinQueueSize() int {
 
 func (pm *PinManager) Add(op *PinningOperation) {
 	go func() {
+		sanitizePeers(op.Peers)
 		pm.pinQueueIn <- op
 	}()
 }
@@ -340,6 +342,18 @@ func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
 func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
+}
+
+func sanitizePeers(peers []*peer.AddrInfo) {
+	for _, peer := range peers {
+		addrs := []ma.Multiaddr{}
+		for _, addr := range peer.Addrs {
+			if addr != nil {
+				addrs = append(addrs, addr)
+			}
+		}
+		peer.Addrs = addrs
+	}
 }
 
 func encode_msgpack(po *PinningOperation) ([]byte, error) {
