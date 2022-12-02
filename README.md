@@ -138,7 +138,7 @@ The Portable Hardware Locality (hwloc) software package provides a portable abst
 For M1 Macs, here's the following steps needed
 
 - Step 1: `brew install go bzr jq pkg-config rustup hwloc` - Uninstall rust as it would clash with rustup in case you have installed.
-- Step 2: export LIBRARY_PATH=/opt/homebrew/lib
+- Step 2: `export LIBRARY_PATH=/opt/homebrew/lib`
 - Step 3: Follow the steps as per the docs.
 
 On Ubuntu, install `libhwloc-dev`.
