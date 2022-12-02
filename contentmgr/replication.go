@@ -79,8 +79,11 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-	// deal bucketing stuff
+	// bucketLk is used to serialize reads and writes to processingZones
 	bucketLk sync.Mutex
+	// addStagingContentLk is used to serialize content adds to staging zones
+	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
+	addStagingContentLk sync.Mutex
 	// some behavior flags
 	FailDealOnTransferFailure bool
 	dealDisabledLk            sync.Mutex
@@ -218,6 +221,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		IncomingRPCMessages:       make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:              minerManager,
 		log:                       log,
+		processingZones:           make(map[uint]bool),
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
@@ -831,6 +835,10 @@ func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {
 	_, span := cm.tracer.Start(ctx, "stageContent")
 	defer span.End()
+
+	cm.addStagingContentLk.Lock()
+	defer cm.addStagingContentLk.Unlock()
+
 	if content.AggregatedIn > 0 {
 		cm.log.Warnf("attempted to add content to staging zone that was already staged: %d (is in %d)", content.ID, content.AggregatedIn)
 		return nil
@@ -838,6 +846,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 
 	cm.log.Debugf("adding content to staging zone: %d", content.ID)
 
+	// TODO: move processing state into DB, use FirstOrInit here, also filter for not processing
 	var zones []util.Content
 	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
 		return nil
