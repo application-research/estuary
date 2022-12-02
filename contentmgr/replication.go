@@ -80,7 +80,7 @@ type ContentManager struct {
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
 	// deal bucketing stuff
-	BucketLk sync.Mutex
+	bucketLk sync.Mutex
 	// some behavior flags
 	FailDealOnTransferFailure bool
 	dealDisabledLk            sync.Mutex
@@ -95,7 +95,7 @@ type ContentManager struct {
 	IncomingRPCMessages       chan *drpc.Message
 	minerManager              miner.IMinerManager
 	log                       *zap.SugaredLogger
-	ZonesConsolidating        map[uint]bool
+	processingZones           map[uint]bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -163,10 +163,9 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 	return content, nil
 }
 
-// tryAddContent assumes that the cm.BucketLk is locked
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
 	// if this bucket is being consolidated, do not add anymore content
-	if cm.ZonesConsolidating[zone.ID] {
+	if cm.IsZoneProcessing(zone.ID) {
 		return false, nil
 	}
 
@@ -488,9 +487,37 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 	}
 }
 
+func (cm *ContentManager) IsZoneProcessing(zoneID uint) bool {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+	return cm.processingZones[zoneID]
+}
+
+func (cm *ContentManager) MarkStartedProcessing(zone util.Content) bool {
+	cm.bucketLk.Lock()
+	if cm.processingZones[zone.ID] {
+		// skip since it is already processing
+		return false
+	}
+	cm.processingZones[zone.ID] = true
+	cm.bucketLk.Unlock()
+	return true
+}
+
+func (cm *ContentManager) MarkFinishedProcessing(zone util.Content) {
+	cm.bucketLk.Lock()
+	delete(cm.processingZones, zone.ID)
+	cm.bucketLk.Unlock()
+}
+
 func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Content) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
+
+	if !cm.MarkStartedProcessing(zone) {
+		// skip since it is already processing
+		return nil
+	}
 
 	grpLocs, err := cm.getStagedContentsGroupedByLocation(ctx, zone.ID)
 	if err != nil {
@@ -501,18 +528,16 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	// Need to migrate/consolidate the contents to the same location
 	// TODO - we should avoid doing this, best we have staging by location - this process is just to expensive
 	if len(grpLocs) > 1 {
-		cm.BucketLk.Lock()
 		// Need to migrate content all to the same shuttle
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
-		if !cm.ZonesConsolidating[zone.ID] {
-			cm.ZonesConsolidating[zone.ID] = true
-			go func() {
-				if err := cm.consolidateStagedContent(ctx, zone); err != nil {
-					cm.log.Errorf("failed to consolidate staged content: %s", err)
-				}
-			}()
-		}
-		cm.BucketLk.Unlock()
+		go func() {
+			// sometimes this call just ends in sending the take content cmd
+			// TODO: figure out how to defer finish processing until after consolidation is complete
+			defer cm.MarkFinishedProcessing(zone)
+			if err := cm.consolidateStagedContent(ctx, zone); err != nil {
+				cm.log.Errorf("failed to consolidate staged content: %s", err)
+			}
+		}()
 		return nil
 	}
 	var loc string
@@ -520,10 +545,12 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		loc = grpLoc
 		break
 	}
+
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, loc)
 }
 
+// AggregateStagingZone assumes zone is already in processingZones
 func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Content, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateStagingZone")
 	defer span.End()
@@ -583,6 +610,9 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 		go func() {
 			cm.ToCheck(zone.ID)
 		}()
+
+		cm.MarkFinishedProcessing(zone)
+
 		return nil
 	}
 
@@ -807,8 +837,8 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	}
 
 	cm.log.Debugf("adding content to staging zone: %d", content.ID)
-	cm.BucketLk.Lock()
-	defer cm.BucketLk.Unlock()
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
 
 	var zones []util.Content
 	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
@@ -2505,9 +2535,6 @@ func (cm *ContentManager) migrateContentToLocalNode(ctx context.Context, cont ut
 		return err
 	}
 
-	cm.BucketLk.Lock()
-	delete(cm.ZonesConsolidating, cont.ID)
-	cm.BucketLk.Unlock()
 	// TODO: send unpin command to where the content was migrated from
 
 	return nil

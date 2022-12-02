@@ -4474,6 +4474,10 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 				break
 			}
 
+			if !s.CM.MarkStartedProcessing(cont) {
+				// skip since it is already processing
+				return nil
+			}
 			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
 				return err
 			}

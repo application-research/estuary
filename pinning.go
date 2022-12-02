@@ -498,6 +498,14 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 		return err
 	}
 
+	if content.AggregatedIn > 0 {
+		if s.CM.IsZoneProcessing(content.AggregatedIn) {
+			return fmt.Errorf("unable to unpin content while zone is consolidating (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
+		}
+		// even if the zone is pinned (active), we can allow the content to be unpinned
+		// since users shouldn't care about the aggregate content
+	}
+
 	// mark as replace since it will removed and so it should not be fetched anymore
 	if err := s.DB.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
 		return err
