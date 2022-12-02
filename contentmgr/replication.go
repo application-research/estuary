@@ -558,8 +558,9 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		// Need to migrate content all to the same shuttle
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
 
-		if !cm.MarkStartedConsolidating(zone) {
-			// skip since it is already consolidating
+		// should never be aggregating here but check anyways
+		if cm.IsZoneAggregating(zone.ID) || !cm.MarkStartedConsolidating(zone) {
+			// skip if it is aggregating or already consolidating
 			return nil
 		}
 
@@ -577,8 +578,10 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		break
 	}
 
+	// if we reached here, consolidation is done and we can move to aggregating
+	cm.MarkFinishedConsolidating(zone)
 	if !cm.MarkStartedAggregating(zone) {
-		// skip since zone is already aggregating
+		// skip if zone is consolidating or already aggregating
 		return nil
 	}
 	// if all contents are already in one location, proceed to aggregate them
