@@ -79,8 +79,10 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-	// bucketLk is used to serialize reads and writes to consolidatingZones
-	bucketLk sync.Mutex
+	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
+	consolidatingZonesLk sync.Mutex
+	// aggregatingZonesLk is used to serialize reads and writes to aggregatingZones
+	aggregatingZonesLk sync.Mutex
 	// addStagingContentLk is used to serialize content adds to staging zones
 	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
 	addStagingContentLk sync.Mutex
@@ -168,8 +170,8 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 }
 
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
-	// if this bucket is being consolidated, do not add anymore content
-	if cm.IsZoneConsolidating(zone.ID) {
+	// if this bucket is being consolidated or aggregated, do not add anymore content
+	if cm.IsZoneConsolidating(zone.ID) || cm.IsZoneAggregating(zone.ID) {
 		return false, nil
 	}
 
@@ -495,49 +497,49 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 }
 
 func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+	cm.consolidatingZonesLk.Lock()
+	defer cm.consolidatingZonesLk.Unlock()
 	return cm.consolidatingZones[zoneID]
 }
 
 func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) bool {
-	cm.bucketLk.Lock()
+	cm.consolidatingZonesLk.Lock()
 	if cm.consolidatingZones[zone.ID] {
 		// skip since it is already processing
 		return false
 	}
 	cm.consolidatingZones[zone.ID] = true
-	cm.bucketLk.Unlock()
+	cm.consolidatingZonesLk.Unlock()
 	return true
 }
 
 func (cm *ContentManager) MarkFinishedConsolidating(zone util.Content) {
-	cm.bucketLk.Lock()
+	cm.consolidatingZonesLk.Lock()
 	delete(cm.consolidatingZones, zone.ID)
-	cm.bucketLk.Unlock()
+	cm.consolidatingZonesLk.Unlock()
 }
 
 func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
-	cm.bucketLk.Lock()
-	defer cm.bucketLk.Unlock()
+	cm.aggregatingZonesLk.Lock()
+	defer cm.aggregatingZonesLk.Unlock()
 	return cm.aggregatingZones[zoneID]
 }
 
 func (cm *ContentManager) MarkStartedAggregating(zone util.Content) bool {
-	cm.bucketLk.Lock()
+	cm.aggregatingZonesLk.Lock()
 	if cm.aggregatingZones[zone.ID] {
 		// skip since it is already processing
 		return false
 	}
 	cm.aggregatingZones[zone.ID] = true
-	cm.bucketLk.Unlock()
+	cm.aggregatingZonesLk.Unlock()
 	return true
 }
 
 func (cm *ContentManager) MarkFinishedAggregating(zone util.Content) {
-	cm.bucketLk.Lock()
+	cm.aggregatingZonesLk.Lock()
 	delete(cm.aggregatingZones, zone.ID)
-	cm.bucketLk.Unlock()
+	cm.aggregatingZonesLk.Unlock()
 }
 
 func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Content) error {
