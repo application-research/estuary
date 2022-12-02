@@ -847,6 +847,7 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	cm.log.Debugf("adding content to staging zone: %d", content.ID)
 
 	// TODO: move processing state into DB, use FirstOrInit here, also filter for not processing
+	// theoretically any user only needs to have up to one non-processing zone at a time
 	var zones []util.Content
 	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
 		return nil
