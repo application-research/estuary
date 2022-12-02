@@ -3535,39 +3535,36 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 
 			// if relative contentPath has a /, the file is in a subdirectory
 			// print the directory the file is in if we haven't already
-			var subDir string
 			if strings.Contains(relp, "/") {
 				parts := strings.Split(relp, "/")
-				subDir = parts[0]
-			} else {
-				subDir = relp
-			}
-			if !dirs[subDir] {
-				dirs[subDir] = true
-				out = append(out, collectionListResponse{
-					Name:    subDir,
-					Type:    Dir,
-					Dir:     queryDir,
-					ColUuid: coluuid,
-				})
-				continue
+				subDir := parts[0]
+				if !dirs[subDir] {
+					dirs[subDir] = true
+					out = append(out, collectionListResponse{
+						Name:    subDir,
+						Type:    Dir,
+						Dir:     queryDir,
+						ColUuid: coluuid,
+					})
+					continue
+				}
 			}
 		}
 
 		//var contentType CidType
-		//contentType = File
-		//if r.Type == util.Directory {
-		//	contentType = Dir
-		//}
-		//out = append(out, collectionListResponse{
-		//	Name:    r.Name,
-		//	Type:    contentType,
-		//	Size:    r.Size,
-		//	ContID:  r.ID,
-		//	Cid:     &util.DbCID{CID: r.Cid.CID},
-		//	Dir:     queryDir,
-		//	ColUuid: coluuid,
-		//})
+		contentType := File
+		if r.Type == util.Directory {
+			contentType = Dir
+		}
+		out = append(out, collectionListResponse{
+			Name:    r.Name,
+			Type:    contentType,
+			Size:    r.Size,
+			ContID:  r.ID,
+			Cid:     &util.DbCID{CID: r.Cid.CID},
+			Dir:     queryDir,
+			ColUuid: coluuid,
+		})
 	}
 	return c.JSON(http.StatusOK, out)
 }
@@ -5211,6 +5208,7 @@ type CidType string
 
 const (
 	Dir    CidType = "directory"
+	File   CidType = "file"
 	ColDir string  = "dir"
 )
 

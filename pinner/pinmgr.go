@@ -14,6 +14,9 @@ import (
 	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
+	"github.com/libp2p/go-libp2p/core/peer"
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/vmihailenco/msgpack/v5"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/pkg/errors"
@@ -122,6 +125,7 @@ func (pm *PinManager) PinQueueSize() int {
 func (pm *PinManager) Add(op *pinning_op.PinningOperation) {
 	if op != nil {
 		go func() {
+			sanitizePeers(op.Peers)
 			pm.pinQueueIn <- op
 		}()
 	}
@@ -196,11 +200,9 @@ func (pm *PinManager) popNextPinOp() *pinning_op.PinningOperation {
 		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
-	var next *pinning_op.PinningOperation
-	err = item.ToObject(&next)
-
+	next, err := decodeMsgPack(item.Value)
 	if err != nil {
-		log.Errorf("Dequeued object is not a PinningOperation pointer")
+		log.Errorf("Cannot decode PinningOperation pointer")
 		return nil
 	}
 	return next
@@ -267,12 +269,11 @@ func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
 }
 
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
-
-	dname := filepath.Join(QueueDataDir, "pinQueue")
-	err := os.MkdirAll(dname, os.ModePerm)
-	if err != nil {
+	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
+	if err := os.MkdirAll(dname, os.ModePerm); err != nil {
 		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
 	}
+
 	q, err := goque.OpenPrefixQueue(dname)
 	if err != nil {
 		log.Fatal("Unable to create Queue. Out of disk? Too many open files? try ulimit -n 50000")
@@ -284,11 +285,30 @@ func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
 }
 
-func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
-	opdata := getPinningData(po)
+func sanitizePeers(peers []*peer.AddrInfo) {
+	for _, peer := range peers {
+		addrs := []ma.Multiaddr{}
+		for _, addr := range peer.Addrs {
+			if addr != nil {
+				addrs = append(addrs, addr)
+			}
+		}
+		peer.Addrs = addrs
+	}
+}
 
-	_, err := pm.duplicateGuard.Get(createLevelDBKey(opdata), nil)
-	if err != leveldb.ErrNotFound {
+func encodeMsgPack(po *pinning_op.PinningOperation) ([]byte, error) {
+	return msgpack.Marshal(&po)
+}
+
+func decodeMsgPack(poBytes []byte) (*pinning_op.PinningOperation, error) {
+	var next *pinning_op.PinningOperation
+	return next, msgpack.Unmarshal(poBytes, &next)
+}
+
+func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
+	poData := getPinningData(po)
+	if _, err := pm.duplicateGuard.Get(createLevelDBKey(poData), nil); err != leveldb.ErrNotFound {
 		//work already exists in the queue not adding duplicate
 		return
 	}
@@ -298,17 +318,23 @@ func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
 		u = 0
 	}
 
-	_, err = pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
-	pm.pinQueueCount[u]++
+	opBytes, err := encodeMsgPack(po)
+	if err != nil {
+		log.Fatal("Unable to encode data to add to queue.")
+	}
+
+	// Add it to the queue.
+	_, err = pm.pinQueue.Enqueue(getUserForQueue(u), opBytes)
 	if err != nil {
 		log.Fatal("Unable to add pin to queue.", err)
 	}
 
-	err = pm.duplicateGuard.Put(createLevelDBKey(opdata), []byte{255}, nil)
-	// Add it to the queue.
+	err = pm.duplicateGuard.Put(createLevelDBKey(poData), []byte{255}, nil)
 	if err != nil {
 		log.Fatal("Unable to add to duplicate guard.")
 	}
+
+	pm.pinQueueCount[u]++
 }
 
 func (pm *PinManager) Run(workers int) {
