@@ -556,9 +556,6 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	// if already processing, consolidation was needed but is now completed.
 	// we can keep this mark set and jump right into aggregation
 
-	// once aggregation is done, mark as finished processing
-	defer cm.MarkFinishedProcessing(zone)
-
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, loc)
 }
