@@ -48,13 +48,13 @@ require (
 	github.com/ipfs/go-ipld-cbor v0.0.6
 	github.com/ipfs/go-ipld-format v0.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
-	github.com/ipfs/go-merkledag v0.8.0
+	github.com/ipfs/go-merkledag v0.8.1
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-path v0.3.0
-	github.com/ipfs/go-unixfs v0.3.1
+	github.com/ipfs/go-unixfs v0.4.1
 	github.com/ipfs/go-unixfsnode v1.5.0
 	github.com/ipld/go-car v0.5.0
-	github.com/ipld/go-codec-dagpb v1.4.1
+	github.com/ipld/go-codec-dagpb v1.5.0
 	github.com/ipld/go-ipld-prime v0.18.0
 	github.com/jinzhu/gorm v1.9.16
 	github.com/labstack/echo/v4 v4.9.1
@@ -201,6 +201,8 @@ require (
 	github.com/hannahhoward/go-pubsub v0.0.0-20200423002714-8d62886cc36e // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hsanjuan/go-ipfs-geoip v0.0.0-20220322232401-8a8f947cb977 // indirect
+	github.com/hsanjuan/ipfs-lite v1.5.0
 	github.com/huin/goupnp v1.0.3 // indirect
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
