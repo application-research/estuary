@@ -584,6 +584,7 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		// skip if zone is consolidating or already aggregating
 		return nil
 	}
+
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, loc)
 }
