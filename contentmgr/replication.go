@@ -518,11 +518,6 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
-	if !cm.MarkStartedProcessing(zone) {
-		// skip since it is already processing
-		return nil
-	}
-
 	grpLocs, err := cm.getStagedContentsGroupedByLocation(ctx, zone.ID)
 	if err != nil {
 		return err
@@ -534,10 +529,14 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	if len(grpLocs) > 1 {
 		// Need to migrate content all to the same shuttle
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
+
+		if !cm.MarkStartedProcessing(zone) {
+			// skip since it is already consolidating
+			return nil
+		}
+
 		go func() {
 			// sometimes this call just ends in sending the take content cmd
-			// TODO: figure out how to defer finish processing until after consolidation is complete
-			defer cm.MarkFinishedProcessing(zone)
 			if err := cm.consolidateStagedContent(ctx, zone); err != nil {
 				cm.log.Errorf("failed to consolidate staged content: %s", err)
 			}
@@ -549,6 +548,16 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		loc = grpLoc
 		break
 	}
+
+	// if not already processing, consolidation wasn't needed
+	if !cm.IsZoneProcessing(zone.ID) {
+		cm.MarkStartedProcessing(zone)
+	}
+	// if already processing, consolidation was needed but is now completed.
+	// we can keep this mark set and jump right into aggregation
+
+	// once aggregation is done, mark as finished processing
+	defer cm.MarkFinishedProcessing(zone)
 
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, loc)
