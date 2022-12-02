@@ -146,20 +146,27 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if pin.AggregatedIn > 0 {
-		if err := cm.DB.Model(util.Content{}).
-			Where("id = ?", pin.AggregatedIn).
-			UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
-			return err
-		}
-	}
-
 	objs, err := cm.objectsForPin(ctx, pin.ID)
 	if err != nil {
 		return err
 	}
 
-	if err := cm.DB.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
+	// delete from contents table and adjust aggregate size, if applicable, in one tx
+	err = cm.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(util.Content{}).Delete(&util.Content{ID: pin.ID}).Error; err != nil {
+			return err
+		}
+
+		if pin.AggregatedIn > 0 {
+			if err := tx.Model(util.Content{}).
+				Where("id = ?", pin.AggregatedIn).
+				UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
