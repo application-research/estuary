@@ -79,7 +79,7 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-	// bucketLk is used to serialize reads and writes to processingZones
+	// bucketLk is used to serialize reads and writes to consolidatingZones
 	bucketLk sync.Mutex
 	// addStagingContentLk is used to serialize content adds to staging zones
 	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
@@ -98,7 +98,8 @@ type ContentManager struct {
 	IncomingRPCMessages       chan *drpc.Message
 	minerManager              miner.IMinerManager
 	log                       *zap.SugaredLogger
-	processingZones           map[uint]bool
+	consolidatingZones        map[uint]bool
+	aggregatingZones          map[uint]bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -168,7 +169,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
 	// if this bucket is being consolidated, do not add anymore content
-	if cm.IsZoneProcessing(zone.ID) {
+	if cm.IsZoneConsolidating(zone.ID) {
 		return false, nil
 	}
 
@@ -221,7 +222,8 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		IncomingRPCMessages:       make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:              minerManager,
 		log:                       log,
-		processingZones:           make(map[uint]bool),
+		consolidatingZones:        make(map[uint]bool),
+		aggregatingZones:          make(map[uint]bool),
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
@@ -485,32 +487,56 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zone.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
 	if dstLocation == constants.ContentLocationLocal {
+		defer cm.MarkFinishedConsolidating(zone)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else {
 		return cm.SendConsolidateContentCmd(ctx, dstLocation, toMove)
 	}
 }
 
-func (cm *ContentManager) IsZoneProcessing(zoneID uint) bool {
+func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
 	cm.bucketLk.Lock()
 	defer cm.bucketLk.Unlock()
-	return cm.processingZones[zoneID]
+	return cm.consolidatingZones[zoneID]
 }
 
-func (cm *ContentManager) MarkStartedProcessing(zone util.Content) bool {
+func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) bool {
 	cm.bucketLk.Lock()
-	if cm.processingZones[zone.ID] {
+	if cm.consolidatingZones[zone.ID] {
 		// skip since it is already processing
 		return false
 	}
-	cm.processingZones[zone.ID] = true
+	cm.consolidatingZones[zone.ID] = true
 	cm.bucketLk.Unlock()
 	return true
 }
 
-func (cm *ContentManager) MarkFinishedProcessing(zone util.Content) {
+func (cm *ContentManager) MarkFinishedConsolidating(zone util.Content) {
 	cm.bucketLk.Lock()
-	delete(cm.processingZones, zone.ID)
+	delete(cm.consolidatingZones, zone.ID)
+	cm.bucketLk.Unlock()
+}
+
+func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
+	cm.bucketLk.Lock()
+	defer cm.bucketLk.Unlock()
+	return cm.aggregatingZones[zoneID]
+}
+
+func (cm *ContentManager) MarkStartedAggregating(zone util.Content) bool {
+	cm.bucketLk.Lock()
+	if cm.aggregatingZones[zone.ID] {
+		// skip since it is already processing
+		return false
+	}
+	cm.aggregatingZones[zone.ID] = true
+	cm.bucketLk.Unlock()
+	return true
+}
+
+func (cm *ContentManager) MarkFinishedAggregating(zone util.Content) {
+	cm.bucketLk.Lock()
+	delete(cm.aggregatingZones, zone.ID)
 	cm.bucketLk.Unlock()
 }
 
@@ -530,7 +556,7 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		// Need to migrate content all to the same shuttle
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
 
-		if !cm.MarkStartedProcessing(zone) {
+		if !cm.MarkStartedConsolidating(zone) {
 			// skip since it is already consolidating
 			return nil
 		}
@@ -549,18 +575,15 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		break
 	}
 
-	// if not already processing, consolidation wasn't needed
-	if !cm.IsZoneProcessing(zone.ID) {
-		cm.MarkStartedProcessing(zone)
+	if !cm.MarkStartedAggregating(zone) {
+		// skip since zone is already aggregating
+		return nil
 	}
-	// if already processing, consolidation was needed but is now completed.
-	// we can keep this mark set and jump right into aggregation
-
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, loc)
 }
 
-// AggregateStagingZone assumes zone is already in processingZones
+// AggregateStagingZone assumes zone is already in consolidatingZones
 func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Content, loc string) error {
 	ctx, span := cm.tracer.Start(ctx, "aggregateStagingZone")
 	defer span.End()
@@ -621,7 +644,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 			cm.ToCheck(zone.ID)
 		}()
 
-		cm.MarkFinishedProcessing(zone)
+		cm.MarkFinishedAggregating(zone)
 
 		return nil
 	}
