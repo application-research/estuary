@@ -55,10 +55,8 @@ func (mm *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piece
 			continue
 		}
 
-		if filterByPrice {
-			if ask.PriceIsTooHigh(mm.cfg.Deal.IsVerified) {
-				continue
-			}
+		if filterByPrice && ask.PriceIsTooHigh(mm.cfg) {
+			continue
 		}
 
 		if ask.SizeIsCloseEnough(pieceSize) {
