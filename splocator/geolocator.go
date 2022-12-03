@@ -1,4 +1,4 @@
-package spselection
+package splocator
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	ipfsgeoip "github.com/hsanjuan/go-ipfs-geoip"
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	"github.com/libp2p/go-libp2p-core/crypto"
+	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	madns "github.com/multiformats/go-multiaddr-dns"
 )
@@ -82,7 +82,7 @@ func lookup(ctx context.Context, loc *ipfsgeoip.IPLocator, ip string) (ipfsgeoip
 	return loc.Lookup(ctx, ip)
 }
 
-func getLocator(ctx context.Context) (*ipfsgeoip.IPLocator, error) {
+func getIpfsLocator(ctx context.Context) (*ipfsgeoip.IPLocator, error) {
 	ds := ipfslite.NewInMemoryDatastore()
 	priv, _, err := crypto.GenerateKeyPair(crypto.RSA, 2048)
 	if err != nil {

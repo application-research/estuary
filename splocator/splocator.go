@@ -1,4 +1,4 @@
-package spselection
+package splocator
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type SpSelection struct {
+type SpLocator struct {
 	DB  *gorm.DB
 	Api api.Gateway
 }
@@ -32,8 +32,8 @@ type LocatedSP struct {
 	Longitude      float64               `json:"longitude"`
 }
 
-func NewSpSelection(db *gorm.DB, api api.Gateway) (*SpSelection, error) {
-	ss := &SpSelection{
+func NewSpLocator(db *gorm.DB, api api.Gateway) (*SpLocator, error) {
+	ss := &SpLocator{
 		DB:  db,
 		Api: api,
 	}
@@ -42,7 +42,7 @@ func NewSpSelection(db *gorm.DB, api api.Gateway) (*SpSelection, error) {
 }
 
 // Get SPs in a country. Returns all if country is empty string
-func (ss *SpSelection) Query(country string) ([]LocatedSP, error) {
+func (ss *SpLocator) Query(country string) ([]LocatedSP, error) {
 	var sps []LocatedSP
 	if country != "" {
 		// Query DB for all SP statistics in a given country code
@@ -60,10 +60,10 @@ func (ss *SpSelection) Query(country string) ([]LocatedSP, error) {
 }
 
 // Creates or updates Storage Provider Selection records associated with the provided SP ids
-func (ss *SpSelection) PostSP(ctx context.Context, spIDs []address.Address) {
+func (ss *SpLocator) PostSP(ctx context.Context, spIDs []address.Address) {
 	var sps []SP
 
-	loc, err := GetLocator(ctx)
+	loc, err := getIpfsLocator(ctx)
 	if err != nil {
 		log.Println("error setting up ipfs-geoip lookups")
 		return
@@ -102,7 +102,7 @@ func (ss *SpSelection) PostSP(ctx context.Context, spIDs []address.Address) {
 }
 
 // Return a single Storage Provider's information
-func (ss *SpSelection) GetSP(spid address.Address) (*LocatedSP, error) {
+func (ss *SpLocator) GetSP(spid address.Address) (*LocatedSP, error) {
 
 	var sp LocatedSP
 	if err := ss.DB.Find(&sp, "ID = ?", spid).Error; err != nil {
