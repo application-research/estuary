@@ -26,21 +26,11 @@ type LocatedSP struct {
 	gorm.Model
 	ID             address.Address       `json:"id" gorm:"index"`
 	MultiAddresses []multiaddr.Multiaddr `json:"address"`
-	GeoLocation    GeoLocation           `json:"geolocation" gorm:"embedded;embeddedPrefix:geolocation__"`
-	// shuttleReachablity []ShuttleReachablity
+	CountryName    string                `json:"country_name"`
+	CountryCode    string                `json:"country_code"`
+	Latitude       float64               `json:"latitude"`
+	Longitude      float64               `json:"longitude"`
 }
-
-type GeoLocation struct {
-	CountryName string  `json:"country_name"`
-	CountryCode string  `json:"country_code"`
-	Latitude    float64 `json:"latitude"`
-	Longitude   float64 `json:"longitude"`
-}
-
-// type ShuttleReachablity struct {
-// 	shuttleId string
-// 	ping      float32
-// }
 
 func NewSpSelection(db *gorm.DB, api api.Gateway) (*SpSelection, error) {
 	ss := &SpSelection{
@@ -56,8 +46,7 @@ func (ss *SpSelection) Query(country string) ([]LocatedSP, error) {
 	var sps []LocatedSP
 	if country != "" {
 		// Query DB for all SP statistics in a given country code
-		// ? How to select on embedded field in GORM?
-		if err := ss.DB.Find(&sps, "geolocation_countryname = ?", country).Error; err != nil {
+		if err := ss.DB.Find(&sps, "country_code = ?", country).Error; err != nil {
 			return nil, err
 		}
 	} else {
@@ -74,7 +63,7 @@ func (ss *SpSelection) Query(country string) ([]LocatedSP, error) {
 func (ss *SpSelection) PostSP(ctx context.Context, spIDs []address.Address) {
 	var sps []SP
 
-	loc, err := getLocator(ctx)
+	loc, err := GetLocator(ctx)
 	if err != nil {
 		log.Println("error setting up ipfs-geoip lookups")
 		return
@@ -84,7 +73,7 @@ func (ss *SpSelection) PostSP(ctx context.Context, spIDs []address.Address) {
 		sp := SP{
 			ID: spID,
 		}
-		// ! This queries information from the chain - unsure of performance implications
+
 		minfo, err := ss.Api.StateMinerInfo(ctx, spID, types.EmptyTSK)
 		if err != nil {
 			continue

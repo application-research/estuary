@@ -14,17 +14,18 @@ import (
 )
 
 // Look up the locations associated with a list of Storage Providers
+// If an SP's location cannot be determined, it will not be returned in the resulting list
+//
 // We make the assumption that it does not make sense if a miner reports IPs
 // in multiple locations. Therefore, we take the first "resolved" location as
 // the valid one.
 func LookupLocations(ctx context.Context, loc *ipfsgeoip.IPLocator, sps []SP) ([]LocatedSP, error) {
-	var locatedSP []LocatedSP
+	var locatedSPs []LocatedSP
 
 	for i, sp := range sps {
 		for _, addr := range sp.MultiAddresses {
 			resolved, err := resolveMultiaddr(ctx, addr)
 			if err != nil {
-				//log.Println("error resolving ", ma, info.MinerID)
 				continue
 			}
 
@@ -33,13 +34,11 @@ func LookupLocations(ctx context.Context, loc *ipfsgeoip.IPLocator, sps []SP) ([
 			for _, r := range resolved {
 				ipv4, errIP4 := r.ValueForProtocol(multiaddr.P_IP4)
 				if errIP4 != nil {
-					//log.Println("no ip4s found for ", info.MinerID)
 					continue
 				}
 
 				geo, err := lookup(ctx, loc, ipv4)
 				if err != nil {
-					//log.Println("error looking up country for ", info.MinerID, err, ipv4)
 					continue
 				}
 				if geo.CountryName == "" {
@@ -50,27 +49,25 @@ func LookupLocations(ctx context.Context, loc *ipfsgeoip.IPLocator, sps []SP) ([
 				lSP = LocatedSP{
 					ID:             sp.ID,
 					MultiAddresses: sp.MultiAddresses,
-					GeoLocation: GeoLocation{
-						CountryName: geo.CountryName,
-						CountryCode: geo.CountryCode,
-						Latitude:    geo.Latitude,
-						Longitude:   geo.Longitude,
-					},
+					CountryName:    geo.CountryName,
+					CountryCode:    geo.CountryCode,
+					Latitude:       geo.Latitude,
+					Longitude:      geo.Longitude,
 				}
 
-				locatedSP = append(locatedSP, lSP)
+				locatedSPs = append(locatedSPs, lSP)
 				break
 			}
 			// We found a country. Move to next SP.
-			if lSP.GeoLocation.CountryName != "" {
+			if lSP.CountryName != "" {
 				break // Break multiaddresses loop. Back to SPs loop
 			}
 		}
 		if i%100 == 0 {
-			log.Printf("Completed geo-lookup for %d out of %d (success on %d)", i+1, len(sps), len(locatedSP))
+			log.Printf("Completed geo-lookup for %d out of %d (success on %d)", i+1, len(sps), len(locatedSPs))
 		}
 	}
-	return locatedSP, nil
+	return locatedSPs, nil
 }
 
 func resolveMultiaddr(ctx context.Context, ma multiaddr.Multiaddr) ([]multiaddr.Multiaddr, error) {
