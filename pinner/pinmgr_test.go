@@ -96,6 +96,35 @@ func TestPeerSanitizeValuesNil(t *testing.T) {
 
 	})
 }
+
+func TestConstructMultiAddr(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		_, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
+		if err != nil {
+			fmt.Println(err)
+			panic(err)
+		}
+	})
+}
+
+func TestEncodeDecode(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		addr, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
+		if err != nil {
+			fmt.Println(err)
+		}
+		peer := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		po := &PinningOperation{Peers: peer}
+		bytes, err := encode_msgpack(po)
+		if err != nil {
+			fmt.Println(err)
+		}
+		po, err = decode_msgpack(bytes)
+		if err != nil {
+			fmt.Println(err)
+		}
+	})
+}
 func newPinData(name string, userid int, contid int) PinningOperation {
 	peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
 	return PinningOperation{
