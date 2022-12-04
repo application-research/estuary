@@ -378,7 +378,9 @@ func encode_msgpack(po *PinningOperation) ([]byte, error) {
 		serialPeers = append(serialPeers, newpeer)
 	}
 	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
-	return msgpack.Marshal(&savedObject)
+	bytes, err := msgpack.Marshal(&savedObject)
+	po.Peers = peers
+	return bytes, err
 }
 func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
 	var next *PinningOperationSerialize

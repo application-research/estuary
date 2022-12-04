@@ -119,10 +119,14 @@ func TestEncodeDecode(t *testing.T) {
 		if err != nil {
 			fmt.Println(err)
 		}
-		po, err = decode_msgpack(bytes)
+		newpo, err := decode_msgpack(bytes)
 		if err != nil {
 			fmt.Println(err)
 		}
+		assert.Equal(t, newpo.Name, po.Name, "name doesnt match")
+		assert.Equal(t, newpo.Peers[0].Addrs[0].String(), po.Peers[0].Addrs[0].String(), "addr doesnt match")
+		assert.Equal(t, newpo.Peers[0].ID, po.Peers[0].ID, "ID doesnt match")
+
 	})
 }
 func newPinData(name string, userid int, contid int) PinningOperation {
