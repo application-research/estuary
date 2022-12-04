@@ -114,7 +114,7 @@ func TestEncodeDecode(t *testing.T) {
 			fmt.Println(err)
 		}
 		peer := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
-		po := &PinningOperation{Peers: peer}
+		po := &PinningOperation{Peers: peer, Name: "pinning operation name"}
 		bytes, err := encode_msgpack(po)
 		if err != nil {
 			fmt.Println(err)

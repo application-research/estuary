@@ -361,8 +361,8 @@ type AddrInfoString struct {
 	Addrs []string
 }
 type PinningOperationSerialize struct {
-	po    PinningOperation
-	peers []AddrInfoString
+	Po    PinningOperation
+	Peers []AddrInfoString
 }
 
 func encode_msgpack(po *PinningOperation) ([]byte, error) {
@@ -377,7 +377,7 @@ func encode_msgpack(po *PinningOperation) ([]byte, error) {
 		newpeer := AddrInfoString{ID: peers[i].ID, Addrs: newaddrs}
 		serialPeers = append(serialPeers, newpeer)
 	}
-	savedObject := PinningOperationSerialize{po: *po, peers: serialPeers}
+	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
 	return msgpack.Marshal(&savedObject)
 }
 func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
@@ -386,9 +386,9 @@ func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	po := next.po
+	po := next.Po
 	newPeers := []*peer.AddrInfo{}
-	peers := next.peers
+	peers := next.Peers
 	for i := 0; i < len(peers); i++ {
 		newaddrs := []ma.Multiaddr{}
 		for j := 0; j < len(peers[i].Addrs); j++ {
