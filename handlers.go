@@ -857,8 +857,8 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if c.Request().Header.Get("Content-Type") != "multipart/form-data" {
-		return errors.New("request Content-Type isn't multipart/form-data")
+	if err := util.CheckContentTypeIsMultipartFormData(c.Request().Header); err != nil {
+		return err
 	}
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
