@@ -8,7 +8,7 @@ Questions? Reach out! [![slack](https://img.shields.io/badge/slack-filecoin-blue
 
 Requirements:
 
-- go (1.15 >= and <= 1.18)
+- go 1.18
 - [jq](https://stedolan.github.io/jq/)
 - [hwloc](https://www.open-mpi.org/projects/hwloc/)
 - opencl
