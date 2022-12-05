@@ -491,8 +491,13 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 	if dstLocation == constants.ContentLocationLocal {
 		defer cm.MarkFinishedConsolidating(zone)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
-	} else {
+	} else if dstLocation != "" {
 		return cm.SendConsolidateContentCmd(ctx, dstLocation, toMove)
+	} else {
+		// unable to find a destination location, unmark as consolidating and let it retry later
+		cm.log.Warnf("unable to find a destination location for consolidating zone: %d", zone.ID)
+		cm.MarkFinishedConsolidating(zone)
+		return nil
 	}
 }
 
@@ -504,12 +509,12 @@ func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
 
 func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) bool {
 	cm.consolidatingZonesLk.Lock()
+	defer cm.consolidatingZonesLk.Unlock()
 	if cm.consolidatingZones[zone.ID] {
 		// skip since it is already processing
 		return false
 	}
 	cm.consolidatingZones[zone.ID] = true
-	cm.consolidatingZonesLk.Unlock()
 	return true
 }
 
@@ -527,12 +532,12 @@ func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
 
 func (cm *ContentManager) MarkStartedAggregating(zone util.Content) bool {
 	cm.aggregatingZonesLk.Lock()
+	defer cm.aggregatingZonesLk.Unlock()
 	if cm.aggregatingZones[zone.ID] {
 		// skip since it is already processing
 		return false
 	}
 	cm.aggregatingZones[zone.ID] = true
-	cm.aggregatingZonesLk.Unlock()
 	return true
 }
 
@@ -2716,6 +2721,7 @@ func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, c
 }
 
 func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
+	cm.log.Debugf("attempting to send consolidate content cmd to %s", loc)
 	tc := &drpc.TakeContent{}
 	for _, c := range contents {
 		prs := make([]*peer.AddrInfo, 0)
