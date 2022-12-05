@@ -26,7 +26,6 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -2743,10 +2742,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.BucketLk.Lock()
-	defer s.CM.BucketLk.Unlock()
-
-	return c.JSON(http.StatusOK, s.CM.Buckets)
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
@@ -4467,23 +4463,17 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
-			var zSize int64
-			for _, zc := range aggr {
-				zSize += zc.Size
+			var aggrLoc string
+			for loc := range aggrLocs {
+				aggrLoc = loc
+				break
 			}
 
-			z := &contentmgr.ContentStagingZone{
-				ZoneOpened: cont.CreatedAt,
-				Contents:   aggr,
-				MinSize:    s.cfg.Content.MinSize,
-				MaxSize:    s.cfg.Content.MaxSize,
-				CurSize:    zSize,
-				User:       cont.UserID,
-				ContID:     cont.ID,
-				Location:   cont.Location,
+			if !s.CM.MarkStartedAggregating(cont) {
+				// skip since it is already aggregating
+				return nil
 			}
-
-			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true

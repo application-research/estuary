@@ -336,10 +336,8 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 }
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	cm.BucketLk.Lock()
-	defer cm.BucketLk.Unlock()
-	zones, ok := cm.Buckets[uid]
-	if !ok {
+	var zones []util.Content
+	if err := cm.DB.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
 		return ""
 	}
 
@@ -428,6 +426,10 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+
+		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
+		cm.MarkFinishedAggregating(cont)
+
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)
 		return nil
