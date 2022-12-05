@@ -1898,12 +1898,8 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
 	}
 
-	price := ask.PriceBigInt
-	if cm.cfg.Deal.IsVerified {
-		price = ask.VerifiedPriceBigInt
-	}
-
-	if ask.PriceIsTooHigh(cm.cfg.Deal.IsVerified) {
+	price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+	if ask.PriceIsTooHigh(cm.cfg) {
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
