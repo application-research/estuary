@@ -51,7 +51,7 @@ require (
 	github.com/ipfs/go-merkledag v0.8.0
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-path v0.3.0
-	github.com/ipfs/go-unixfs v0.3.1
+	github.com/ipfs/go-unixfs v0.4.1
 	github.com/ipfs/go-unixfsnode v1.5.0
 	github.com/ipld/go-car v0.5.0
 	github.com/ipld/go-codec-dagpb v1.4.1
