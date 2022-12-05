@@ -7,7 +7,7 @@ require (
 	github.com/application-research/filclient v0.4.0
 	github.com/application-research/goque v1.0.3-0.20221024210042-22e2e2c1a730
 	github.com/cenkalti/backoff/v4 v4.1.3
-	github.com/cheggaaa/pb/v3 v3.0.8
+	github.com/cheggaaa/pb/v3 v3.1.0
 	github.com/docker/go-units v0.5.0
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5
