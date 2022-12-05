@@ -33,7 +33,7 @@ func (msa *MinerStorageAsk) GetPrice(isVerifiedDeal bool) types.BigInt {
 }
 
 func (msa *MinerStorageAsk) SizeIsCloseEnough(pieceSize abi.PaddedPieceSize) bool {
-	if pieceSize > msa.MinPieceSize && pieceSize < msa.MaxPieceSize {
+	if pieceSize >= msa.MinPieceSize && pieceSize <= msa.MaxPieceSize {
 		return true
 	}
 	return false
