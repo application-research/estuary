@@ -346,13 +346,15 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint    `json:"id"`
-	Cid             cid.Cid `json:"cid"`
-	Filename        string  `json:"name"`
-	BWUsed          int64   `json:"bwUsed"`
-	TotalRequests   int64   `json:"totalRequests"`
-	Offloaded       bool    `json:"offloaded"`
-	AggregatedFiles int64   `json:"aggregatedFiles"`
+	ID              uint      `json:"id"`
+	Cid             cid.Cid   `json:"cid"`
+	Filename        string    `json:"name"`
+	Size            int64     `json:"size"`
+	CreatedAt       time.Time `json:"createdAt"`
+	BWUsed          int64     `json:"bwUsed"`
+	TotalRequests   int64     `json:"totalRequests"`
+	Offloaded       bool      `json:"offloaded"`
+	AggregatedFiles int64     `json:"aggregatedFiles"`
 }
 
 func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
@@ -371,7 +373,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 
 // handleStats godoc
 // @Summary      Get content statistics
-// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
 // @Tags         content
 // @Param        limit   query  string  true  "limit"
 // @Param        offset  query  string  true  "offset"
@@ -406,34 +408,18 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate and active", u.ID).Error; err != nil {
 		return err
 	}
 
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
-			ID:       c.ID,
-			Cid:      c.Cid.CID,
-			Filename: c.Name,
-		}
-
-		if false {
-			var res struct {
-				Bw         int64
-				TotalReads int64
-			}
-
-			if err := s.DB.Model(util.ObjRef{}).
-				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
-				Where("obj_refs.content = ?", c.ID).
-				Joins("left join objects on obj_refs.object = objects.id").
-				Scan(&res).Error; err != nil {
-				return err
-			}
-
-			st.TotalRequests = res.TotalReads
-			st.BWUsed = res.Bw
+			ID:        c.ID,
+			Cid:       c.Cid.CID,
+			Filename:  c.Name,
+			Size:      c.Size,
+			CreatedAt: c.CreatedAt,
 		}
 
 		if c.Aggregate {
@@ -3167,7 +3153,7 @@ type userStatsResponse struct {
 
 // handleGetUserStats godoc
 // @Summary      Get stats for the current user
-// @Description  This endpoint is used to geet stats for the current user.
+// @Description  This endpoint is used to get stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
@@ -3177,8 +3163,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
