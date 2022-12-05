@@ -3219,6 +3219,14 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 	return authToken, nil
 }
 
+// handleGetViewer godoc
+// @Summary Fetch viewer details
+// @Description This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.
+// @Produce json
+// @Success 200 {object} util.ViewerResponse
+// @Failure 401 {object} util.HttpError
+// @Failure 500 {object} util.HttpError
+// @Router /viewer [get]
 func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
