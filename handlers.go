@@ -863,7 +863,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > s.cfg.Content.MaxSize {
+	if !u.SplitContent && mpf.Size > s.cfg.Content.MaxSize {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
@@ -3233,7 +3233,7 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 			ContentAddingDisabled: s.isContentAddingDisabled(u),
 			DealMakingDisabled:    s.CM.DealMakingDisabled(),
 			UploadEndpoints:       uep,
-			Flags:                 u.Flags,
+			Flags:                 u.SplitContent,
 		},
 		AuthExpiry: u.AuthToken.Expiry,
 	})

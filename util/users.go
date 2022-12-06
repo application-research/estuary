@@ -16,16 +16,12 @@ type User struct {
 
 	UserEmail string
 
-	Address   DbAddr
-	AuthToken AuthToken `gorm:"-"`
-	Perm      int
-	Flags     int
+	Address      DbAddr
+	AuthToken    AuthToken `gorm:"-"`
+	Perm         int
+	SplitContent bool
 
 	StorageDisabled bool
-}
-
-func (u *User) FlagSplitContent() bool {
-	return u.Flags&8 != 0
 }
 
 type AuthToken struct {

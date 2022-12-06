@@ -1147,7 +1147,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 		return fmt.Errorf("failed to load contents user from db: %w", err)
 	}
 
-	if !u.FlagSplitContent() {
+	if !u.SplitContent {
 		return fmt.Errorf("user does not have content splitting enabled")
 	}
 
