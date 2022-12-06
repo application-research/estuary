@@ -16,4 +16,5 @@ type Shuttle struct {
 	Private        bool
 	Open           bool
 	Priority       int
+	PreferenceList ShuttleSPPreference
 }
