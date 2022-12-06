@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	blocks "github.com/ipfs/go-block-format"
@@ -15,6 +13,9 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/multiformats/go-multihash"
 	"go.opentelemetry.io/otel/trace"
+	"net/http"
+	"net/textproto"
+	"strings"
 )
 
 func CanRestartTransfer(st *filclient.ChannelState) bool {
@@ -126,11 +127,12 @@ func WithMultipartFormDataChecker(next echo.HandlerFunc) echo.HandlerFunc {
 }
 
 func checkContentType(header http.Header, expectedContentType string) error {
-	if header.Get("Content-Type") != expectedContentType {
+	contentType := textproto.MIMEHeader(header).Get("Content-Type")
+	if !strings.HasPrefix(contentType, expectedContentType) {
 		return &HttpError{
 			Code:    http.StatusUnsupportedMediaType,
 			Reason:  ERR_UNSUPPORTED_CONTENT_TYPE,
-			Details: fmt.Sprintf("this endpoint only supports %s paylods", expectedContentType),
+			Details: fmt.Sprintf("this endpoint only supports %s payloads. Found %s.", expectedContentType, contentType),
 		}
 	}
 	return nil
