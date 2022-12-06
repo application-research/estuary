@@ -24,6 +24,7 @@ peer.key
 wallet/
 duplicateGuard/
 pinQueue/
+pinQueue*/
 stagingdata/
 
 cidlistsdir/*
@@ -34,3 +35,5 @@ build/.*
 .envrc
 
 .idea
+
+**/.DS_Store

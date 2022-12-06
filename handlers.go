@@ -26,7 +26,6 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -347,13 +346,15 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint    `json:"id"`
-	Cid             cid.Cid `json:"cid"`
-	Filename        string  `json:"name"`
-	BWUsed          int64   `json:"bwUsed"`
-	TotalRequests   int64   `json:"totalRequests"`
-	Offloaded       bool    `json:"offloaded"`
-	AggregatedFiles int64   `json:"aggregatedFiles"`
+	ID              uint      `json:"id"`
+	Cid             cid.Cid   `json:"cid"`
+	Filename        string    `json:"name"`
+	Size            int64     `json:"size"`
+	CreatedAt       time.Time `json:"createdAt"`
+	BWUsed          int64     `json:"bwUsed"`
+	TotalRequests   int64     `json:"totalRequests"`
+	Offloaded       bool      `json:"offloaded"`
+	AggregatedFiles int64     `json:"aggregatedFiles"`
 }
 
 func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
@@ -372,7 +373,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 
 // handleStats godoc
 // @Summary      Get content statistics
-// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
 // @Tags         content
 // @Param        limit   query  string  true  "limit"
 // @Param        offset  query  string  true  "offset"
@@ -407,34 +408,18 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate and active", u.ID).Error; err != nil {
 		return err
 	}
 
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
-			ID:       c.ID,
-			Cid:      c.Cid.CID,
-			Filename: c.Name,
-		}
-
-		if false {
-			var res struct {
-				Bw         int64
-				TotalReads int64
-			}
-
-			if err := s.DB.Model(util.ObjRef{}).
-				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
-				Where("obj_refs.content = ?", c.ID).
-				Joins("left join objects on obj_refs.object = objects.id").
-				Scan(&res).Error; err != nil {
-				return err
-			}
-
-			st.TotalRequests = res.TotalReads
-			st.BWUsed = res.Bw
+			ID:        c.ID,
+			Cid:       c.Cid.CID,
+			Filename:  c.Name,
+			Size:      c.Size,
+			CreatedAt: c.CreatedAt,
 		}
 
 		if c.Aggregate {
@@ -2743,10 +2728,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.BucketLk.Lock()
-	defer s.CM.BucketLk.Unlock()
-
-	return c.JSON(http.StatusOK, s.CM.Buckets)
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
@@ -3171,7 +3153,7 @@ type userStatsResponse struct {
 
 // handleGetUserStats godoc
 // @Summary      Get stats for the current user
-// @Description  This endpoint is used to geet stats for the current user.
+// @Description  This endpoint is used to get stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
@@ -3181,8 +3163,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
@@ -3223,6 +3205,14 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 	return authToken, nil
 }
 
+// handleGetViewer godoc
+// @Summary Fetch viewer details
+// @Description This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.
+// @Produce json
+// @Success 200 {object} util.ViewerResponse
+// @Failure 401 {object} util.HttpError
+// @Failure 500 {object} util.HttpError
+// @Router /viewer [get]
 func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
@@ -4467,23 +4457,17 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
-			var zSize int64
-			for _, zc := range aggr {
-				zSize += zc.Size
+			var aggrLoc string
+			for loc := range aggrLocs {
+				aggrLoc = loc
+				break
 			}
 
-			z := &contentmgr.ContentStagingZone{
-				ZoneOpened: cont.CreatedAt,
-				Contents:   aggr,
-				MinSize:    s.cfg.Content.MinSize,
-				MaxSize:    s.cfg.Content.MaxSize,
-				CurSize:    zSize,
-				User:       cont.UserID,
-				ContID:     cont.ID,
-				Location:   cont.Location,
+			if !s.CM.MarkStartedAggregating(cont.ID) {
+				// skip since it is already aggregating
+				return nil
 			}
-
-			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
