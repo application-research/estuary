@@ -16,7 +16,7 @@ import (
 
 var log = logging.Logger("util")
 
-//#nosec G101 -- This is a false positive
+// #nosec G101 -- This is a false positive
 const (
 	ERR_INVALID_TOKEN                                      = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED                                      = "ERR_TOKEN_EXPIRED"
@@ -148,7 +148,7 @@ type UserSettings struct {
 	ContentAddingDisabled bool           `json:"contentAddingDisabled"`
 	DealMakingDisabled    bool           `json:"dealMakingDisabled"`
 	UploadEndpoints       []string       `json:"uploadEndpoints"`
-	Flags                 int            `json:"flags"`
+	Flags                 bool           `json:"flags"`
 }
 
 type ViewerResponse struct {
