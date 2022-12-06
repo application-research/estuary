@@ -1145,7 +1145,7 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
+	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
