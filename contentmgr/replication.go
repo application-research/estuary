@@ -118,7 +118,7 @@ type ContentStagingZone struct {
 	MaxSize         int64                `json:"maxSize"`
 	CurSize         int64                `json:"curSize"`
 	User            uint                 `json:"user"`
-	ContentID          uint                 `json:"contentID"`
+	ContentID       uint                 `json:"contentID"`
 	Location        string               `json:"location"`
 	IsConsolidating bool                 `json:"isConsolidating"`
 	Readiness       stagingZoneReadiness `json:"readiness"`
@@ -136,7 +136,7 @@ func (cb *ContentStagingZone) DeepCopy() *ContentStagingZone {
 		MaxSize:    cb.MaxSize,
 		CurSize:    cb.CurSize,
 		User:       cb.User,
-		ContentID:     cb.ContentID,
+		ContentID:  cb.ContentID,
 		Location:   cb.Location,
 		Readiness:  cb.Readiness,
 	}
@@ -165,7 +165,7 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*Content
 		MinSize:    cm.cfg.Content.MinSize,
 		MaxSize:    cm.cfg.Content.MaxSize,
 		User:       user,
-		ContentID:     content.ID,
+		ContentID:  content.ID,
 		Location:   content.Location,
 		Readiness:  stagingZoneReadiness{false, "Readiness not yet evaluated"},
 	}, nil
@@ -716,7 +716,7 @@ func (cm *ContentManager) rebuildStagingBuckets() error {
 			MaxSize:    cm.cfg.Content.MaxSize,
 			CurSize:    zSize,
 			User:       c.UserID,
-			ContentID:     c.ID,
+			ContentID:  c.ID,
 			Location:   c.Location,
 		}
 		z.updateReadiness()
@@ -1374,7 +1374,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *model.ContentDeal, c
 	}
 
 	if provds.PublishCid != nil {
-		cm.log.Debugw("checking publish CID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
+		cm.log.Debugw("checking publish UploadTypeCID", "content", d.Content, "miner", d.Miner, "propcid", d.PropCid.CID, "publishCid", *provds.PublishCid)
 		id, err := cm.getDealID(ctx, *provds.PublishCid, d)
 		if err != nil {
 			cm.log.Debugf("failed to find message on chain: %s", *provds.PublishCid)
@@ -2347,7 +2347,7 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 			Params: drpc.CmdParams{
 				RetrieveContent: &drpc.RetrieveContent{
 					Content: content.ID,
-					Cid:     content.Cid.CID,
+					Cid:     content.Cid.UploadTypeCID,
 					Deals:   deals,
 				},
 			},
@@ -2480,8 +2480,8 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint)
 	return fmt.Errorf("failed to retrieve with any miner we have deals with")
 }
 
-// addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
-// These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
+// addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned UploadTypeCID (`root`)
+// These entries are saved on the `objects` table, while metadata about the `root` UploadTypeCID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
 func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
@@ -2850,7 +2850,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 	}()
 
 	err := merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		// cset.Visit gets called first, so if we reach here we should immediately track the CID
+		// cset.Visit gets called first, so if we reach here we should immediately track the UploadTypeCID
 		cm.inflightCidsLk.Lock()
 		cm.inflightCids[c]++
 		cm.inflightCidsLk.Unlock()

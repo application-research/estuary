@@ -326,7 +326,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 		cols = []*buckets.BucketRef{
 			{
 				Bucket: srchCol.ID,
-				Path:       colpath,
+				Path:   colpath,
 			},
 		}
 	}
@@ -403,7 +403,7 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Failure      404	{object}	util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid		path      string  true  "Pin ID"
-// @Param        cid		body      string  true  "CID of new pin"
+// @Param        cid		body      string  true  "UploadTypeCID of new pin"
 // @Param        name		body      string  false  "Name (filename) of new pin"
 // @Param        origins	body      string  false  "Origins of new pin"
 // @Param        meta		body      string  false  "Meta information of new pin"

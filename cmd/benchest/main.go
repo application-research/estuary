@@ -196,7 +196,7 @@ var benchFetchFileCmd = &cli.Command{
 		&cli.StringFlag{
 			Name:  "file",
 			Value: "QmducxoYHKULWXeq5wtKoeMzie2QggYphNCVwuFuou9eWE",
-			Usage: "CID for file - defaults to NYC Public Data: QmducxoYHKULWXeq5wtKoeMzie2QggYphNCVwuFuou9eWE",
+			Usage: "UploadTypeCID for file - defaults to NYC Public Data: QmducxoYHKULWXeq5wtKoeMzie2QggYphNCVwuFuou9eWE",
 		},
 		&cli.StringFlag{
 			Name:  "runner",
