@@ -173,20 +173,20 @@ func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
 	return cm.consolidatingZones[zoneID]
 }
 
-func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) bool {
+func (cm *ContentManager) MarkStartedConsolidating(zoneID uint) bool {
 	cm.consolidatingZonesLk.Lock()
 	defer cm.consolidatingZonesLk.Unlock()
-	if cm.consolidatingZones[zone.ID] {
+	if cm.consolidatingZones[zoneID] {
 		// skip since it is already processing
 		return false
 	}
-	cm.consolidatingZones[zone.ID] = true
+	cm.consolidatingZones[zoneID] = true
 	return true
 }
 
-func (cm *ContentManager) MarkFinishedConsolidating(zone util.Content) {
+func (cm *ContentManager) MarkFinishedConsolidating(zoneID uint) {
 	cm.consolidatingZonesLk.Lock()
-	delete(cm.consolidatingZones, zone.ID)
+	delete(cm.consolidatingZones, zoneID)
 	cm.consolidatingZonesLk.Unlock()
 }
 
@@ -196,20 +196,20 @@ func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
 	return cm.aggregatingZones[zoneID]
 }
 
-func (cm *ContentManager) MarkStartedAggregating(zone util.Content) bool {
+func (cm *ContentManager) MarkStartedAggregating(zoneID uint) bool {
 	cm.aggregatingZonesLk.Lock()
 	defer cm.aggregatingZonesLk.Unlock()
-	if cm.aggregatingZones[zone.ID] {
+	if cm.aggregatingZones[zoneID] {
 		// skip since it is already processing
 		return false
 	}
-	cm.aggregatingZones[zone.ID] = true
+	cm.aggregatingZones[zoneID] = true
 	return true
 }
 
-func (cm *ContentManager) MarkFinishedAggregating(zone util.Content) {
+func (cm *ContentManager) MarkFinishedAggregating(zoneID uint) {
 	cm.aggregatingZonesLk.Lock()
-	delete(cm.aggregatingZones, zone.ID)
+	delete(cm.aggregatingZones, zoneID)
 	cm.aggregatingZonesLk.Unlock()
 }
 
@@ -230,7 +230,7 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
 
 		// should never be aggregating here but check anyways
-		if cm.IsZoneAggregating(zone.ID) || !cm.MarkStartedConsolidating(zone) {
+		if cm.IsZoneAggregating(zone.ID) || !cm.MarkStartedConsolidating(zone.ID) {
 			// skip if it is aggregating or already consolidating
 			return nil
 		}
@@ -251,8 +251,8 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	}
 
 	// if we reached here, consolidation is done and we can move to aggregating
-	cm.MarkFinishedConsolidating(zone)
-	if !cm.MarkStartedAggregating(zone) {
+	cm.MarkFinishedConsolidating(zone.ID)
+	if !cm.MarkStartedAggregating(zone.ID) {
 		// skip if zone is consolidating or already aggregating
 		return nil
 	}
@@ -297,14 +297,19 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zone.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
 	if dstLocation == constants.ContentLocationLocal {
-		defer cm.MarkFinishedConsolidating(zone)
+		defer cm.MarkFinishedConsolidating(zone.ID)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else if dstLocation != "" {
-		return cm.SendConsolidateContentCmd(ctx, dstLocation, toMove)
+		if err := cm.SendConsolidateContentCmd(ctx, dstLocation, toMove); err != nil {
+			// unmark as consolidating and retry later if failed to send consolidate cmd
+			cm.MarkFinishedConsolidating(zone.ID)
+			return err
+		}
+		return nil
 	} else {
 		// unable to find a destination location, unmark as consolidating and let it retry later
 		cm.log.Warnf("unable to find a destination location for consolidating zone: %d", zone.ID)
-		cm.MarkFinishedConsolidating(zone)
+		cm.MarkFinishedConsolidating(zone.ID)
 		return nil
 	}
 }
@@ -370,7 +375,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 			cm.ToCheck(zone.ID)
 		}()
 
-		cm.MarkFinishedAggregating(zone)
+		cm.MarkFinishedAggregating(zone.ID)
 		return nil
 	}
 

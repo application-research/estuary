@@ -4219,7 +4219,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 				break
 			}
 
-			if !s.CM.MarkStartedAggregating(cont) {
+			if !s.CM.MarkStartedAggregating(cont.ID) {
 				// skip since it is already aggregating
 				return nil
 			}

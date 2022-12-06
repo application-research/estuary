@@ -329,10 +329,17 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
 		}
 
+		if c.AggregatedIn > 0 {
+			// unmark zone as consolidating if a staged content fails to pin
+			cm.MarkFinishedConsolidating(c.AggregatedIn)
+		}
+
 		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"active":  false,
 			"pinning": false,
 			"failed":  true,
+			// TODO: consider if we should not clear aggregated_in, but instead filter for not failed contents when aggregating
+			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
 		}
@@ -393,7 +400,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}
 
 		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
-		cm.MarkFinishedAggregating(cont)
+		cm.MarkFinishedAggregating(cont.ID)
 
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)
