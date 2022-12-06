@@ -367,13 +367,13 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 		if c.AggregatedIn > 0 {
 			// unmark zone as consolidating if a staged content fails to pin
 			cm.MarkFinishedConsolidating(c.AggregatedIn)
-			// TODO: call the content failed and remove it from the zone, so it can retry and succeed without this content
 		}
 
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":  false,
-			"pinning": false,
-			"failed":  true,
+			"active":        false,
+			"pinning":       false,
+			"failed":        true,
+			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
 		}
