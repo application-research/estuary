@@ -144,6 +144,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			}); err != nil {
 				log.Errorf("failed to send pin status update: %s", err)
 			}
+			return nil
 		}
 
 		if !existing.Pinning && existing.Active {
