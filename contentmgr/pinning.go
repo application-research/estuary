@@ -216,7 +216,7 @@ func (cm *ContentManager) addPinToQueue(content util.Content, peers []*peer.Addr
 func (cm *ContentManager) pinContentOnShuttle(ctx context.Context, content util.Content, peers []*peer.AddrInfo, replaceID uint, handle string, makeDeal bool) error {
 	ctx, span := cm.tracer.Start(ctx, "pinContentOnShuttle", trace.WithAttributes(
 		attribute.String("handle", handle),
-		attribute.String("UploadTypeCID", content.Cid.CID.String()),
+		attribute.String("CID", content.Cid.CID.String()),
 	))
 	defer span.End()
 

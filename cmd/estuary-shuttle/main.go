@@ -1877,7 +1877,7 @@ func (s *Shuttle) GarbageCollect(ctx context.Context) error {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        cid  path      string  true  "UploadTypeCID to be read"
+// @Param        cid  path      string  true  "CID to be read"
 // @Router       /content/{cid}/read [get]
 func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 	content, err := strconv.Atoi(c.Param("cid"))

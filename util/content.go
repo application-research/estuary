@@ -144,7 +144,7 @@ type UploadedContent struct {
 }
 
 // LoadContentFromRequest reads a POST /contents request and loads the content from it
-// It treats every different case of content upload: file (formData, UploadTypeCID or CAR)
+// It treats every different case of content upload: file (formData, CID, CAR or URL)
 // Returns (UploadedContent, contentLen, filename, error)
 func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType UploadType, bs blockstore.Blockstore, dserv ipld.DAGService) (UploadedContent, error) {
 	// for all three upload types
@@ -285,7 +285,7 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType Uplo
 	return content, nil
 }
 
-// FindCIDType checks if a pinned UploadTypeCID (root) is a file, a dir or unknown
+// FindCIDType checks if a pinned CID (root) is a file, a dir or unknown
 // Returns dbmgr.ContentTypeFile or dbmgr.ContentTypeDirectory on success
 // Returns dbmgr.ContentTypeUnknown otherwise
 func FindCIDType(ctx context.Context, root cid.Cid, dserv ipld.NodeGetter) (contentType ContentType) {

@@ -614,16 +614,16 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Tags         contents
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid' or 'file'). Defaults to 'file'"
-// @Param        car           body      string  false   "UploadTypeCar file to upload"
+// @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid', 'file' or 'url'). Defaults to 'file'"
+// @Param        car           body      string  false   "Car file to upload"
 // @Param        body          body      util.ContentAddIpfsBody  false   "IPFS Body"
-// @Param        data          formData  file    false   "ContentTypeFile to upload"
+// @Param        data          formData  file    false   "File to upload"
 // @Param        filename      formData  string  false   "Filename to use for upload"
 // @Param        uuid		   query     string  false  "Bucket UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
-// @Param        dir           query     string  false  "ContentTypeDirectory in collection"
+// @Param        dir           query     string  false  "Directory in collection"
 // @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
@@ -709,7 +709,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	// when pinning a UploadTypeCID we need to add a file to handle the special case
+	// when pinning a CID we need to add a file to handle the special case
 	// of calling PinContent on the content manager
 	// TODO(gabe): PinContent adds to database tracking. decouple logic from that
 	if uploadType == util.UploadTypeCID {
@@ -828,7 +828,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
-// @Param        cid  path      string  true  "UploadTypeCID"
+// @Param        cid  path      string  true  "CID"
 // @Router       /content/{cid}/ensure-replication [get]
 func (s *Server) handleEnsureReplication(c echo.Context) error {
 	cid, err := cid.Decode(c.Param("cid"))
@@ -856,7 +856,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param        deals   query     bool  false  "If 'true', only list content with deals made"
-// @Param        cid   query     string  false  "UploadTypeCID of content to look for"
+// @Param        cid   query     string  false  "CID of content to look for"
 // @Router       /content [get]
 func (s *Server) handleListContent(c echo.Context, u *util.User) error {
 	if cidStr := c.QueryParam("cid"); cidStr != "" {
@@ -1326,7 +1326,7 @@ func (s *Server) getContentByCid(cidStr string) ([]getContentResponse, error) {
 
 // handleGetContentByCid godoc
 // @Summary      Get Content by Cid
-// @Description  This endpoint returns the content record associated with a UploadTypeCID
+// @Description  This endpoint returns the content record associated with a CID
 // @Tags         public
 // @Produce      json
 // @Success      200      {object}  string
@@ -1345,7 +1345,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 
 // handleGetFullContentbyCid godoc
 // @Summary      Get Full Content by Cid
-// @Description  This endpoint returns the content associated with a UploadTypeCID
+// @Description  This endpoint returns the content associated with a CID
 // @Tags         public
 // @Produce      json
 // @Success      307      {object}  string
@@ -1364,13 +1364,13 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 
 // handleQueryAsk godoc
 // @Summary      Query Ask
-// @Description  This endpoint returns the ask for a given UploadTypeCID
+// @Description  This endpoint returns the ask for a given CID
 // @Tags         deals
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Param        miner  path      string  true  "UploadTypeCID"
+// @Param        miner  path      string  true  "CID"
 // @Router       /deal/query/{miner} [get]
 // @router       /public/miners/storage/query/{miner} [get]
 func (s *Server) handleQueryAsk(c echo.Context) error {
@@ -1619,7 +1619,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param        miner    path      string  true  "Miner"
-// @Param        propcid  path      string  true  "Proposal UploadTypeCID"
+// @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/status/{miner}/{propcid} [get]
 func (s *Server) handleDealStatus(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -1672,7 +1672,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 // @Success      200           {object}  string
 // @Failure      400         {object}  util.HttpError
 // @Failure      500         {object}  util.HttpError
-// @Param        propcid  path      string  true  "Proposal UploadTypeCID"
+// @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/proposal/{propcid} [get]
 func (s *Server) handleGetProposal(c echo.Context) error {
 	propCid, err := cid.Decode(c.Param("propcid"))
@@ -3231,7 +3231,7 @@ type addContentsToBucketBody struct {
 // @Produce      json
 // @Param        uuid     path      string  true  "Bucket UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to bucket"
-// @Param		 dir		 query	   string  false  "ContentTypeDirectory"
+// @Param		 dir		 query	   string  false  "Directory"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3320,8 +3320,8 @@ func (s *Server) handleAddContentsToBucket(c echo.Context, u *util.User) error {
 }
 
 // handleCommitBucket godoc
-// @Summary      Produce a UploadTypeCID of the bucket contents
-// @Description  This endpoint is used to save the contents in a bucket, producing a top-level UploadTypeCID that references all the current CIDs in the bucket.
+// @Summary      Produce a CID of the bucket contents
+// @Description  This endpoint is used to save the contents in a bucket, producing a top-level CID that references all the current CIDs in the bucket.
 // @Param        uuid  path  string  true  "uuid"
 // @Tags         buckets
 // @Produce      json
@@ -3405,9 +3405,9 @@ func (s *Server) handleCommitBucket(c echo.Context, u *util.User) error {
 
 	if err := dserv.Add(context.Background(), bucketNode); err != nil {
 		return err
-	} // add new UploadTypeCID to local blockstore
+	} // add new CID to local blockstore
 
-	// update DB with new bucket UploadTypeCID
+	// update DB with new bucket CID
 	bucket.CID = bucketNode.Cid().String()
 	if err := s.DB.Model(buckets.Bucket{}).Where("id = ?", bucket.ID).UpdateColumn("c_id", bucketNode.Cid().String()).Error; err != nil {
 		return err
@@ -3431,7 +3431,7 @@ func (s *Server) handleCommitBucket(c echo.Context, u *util.User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        uuid  path      string  true   "uuid"
-// @Param        dir      query     string  false  "ContentTypeDirectory"
+// @Param        dir      query     string  false  "Directory"
 // @Router       /buckets/{uuid} [get]
 func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 	uuid := c.Param("uuid")
@@ -3488,9 +3488,9 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		}
 
 		if relp == "." { // Query directory is the complete path containing the content.
-			// trying to list a UploadTypeCID queryDir, not allowed
+			// trying to list a CID queryDir, not allowed
 			if r.Type == util.ContentTypeDirectory {
-				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing UploadTypeCID directories is not allowed"))
+				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
 
 			out = append(out, bucketListResponse{
@@ -3504,8 +3504,8 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
 
-			// if UploadTypeCID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
-			//if r.Type == util.ContentTypeDirectory {
+			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
+			//if r.Type == util.Directory {
 			//	if !dirs[relp] {
 			//		dirs[relp] = true
 			//		out = append(out, bucketListResponse{
@@ -3544,7 +3544,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 
 		//var contentType CidType
 		//contentType = ContentTypeFile
-		//if r.Type == util.ContentTypeDirectory {
+		//if r.Type == util.Directory {
 		//	contentType = Dir
 		//}
 		//out = append(out, bucketListResponse{
@@ -3552,7 +3552,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		//	Type:    contentType,
 		//	Size:    r.Size,
 		//	ContentID:  r.ID,
-		//	Cid:     &util.DbCID{UploadTypeCID: r.Cid.UploadTypeCID},
+		//	Cid:     &util.DbCID{CID: r.Cid.CID},
 		//	Dir:     queryDir,
 		//	uuid: uuid,
 		//})
