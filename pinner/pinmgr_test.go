@@ -23,11 +23,11 @@ func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) e
 	return nil
 }
 
-func newManager(count *int) PinManager {
+func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/duplicateGuard")
 	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
-	return *NewPinManager(
+	return NewPinManager(
 		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
@@ -40,8 +40,8 @@ func newManager(count *int) PinManager {
 		})
 }
 
-func newManagerNoDelete(count *int) PinManager {
-	return *NewPinManager(
+func newManagerNoDelete(count *int) *PinManager {
+	return NewPinManager(
 		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
@@ -358,7 +358,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	})
 }
 
-func sleepWhileWork(mgr PinManager, SIZE int) {
+func sleepWhileWork(mgr *PinManager, SIZE int) {
 	var N = 20
 	for i := 0; i < N; i++ {
 		time.Sleep(sleeptime * time.Millisecond)
