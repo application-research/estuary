@@ -97,8 +97,6 @@ require (
 	github.com/ipfs/go-ipfs-provider v0.8.1
 	github.com/ipfs/go-metrics-prometheus v0.0.2
 	github.com/nsqio/go-nsq v1.1.0
-	github.com/onsi/ginkgo/v2 v2.1.3
-	github.com/onsi/gomega v1.19.0
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
 	golang.org/x/time v0.3.0
