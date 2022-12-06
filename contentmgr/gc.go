@@ -160,18 +160,17 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		return err
 	}
 
-	if err := cm.db.Delete(&util.Content{ID: pin.ID}).Error; err != nil {
-		return err
-	}
-
+	// delete object refs rows for deleted content
 	if err := cm.db.Where("content = ?", pin.ID).Delete(&util.ObjRef{}).Error; err != nil {
 		return err
 	}
 
+	// delete objects that no longer have obj refs
 	if err := cm.clearUnreferencedObjects(ctx, objs); err != nil {
 		return err
 	}
 
+	// delete objects from blockstore that are no longer present in db
 	for _, o := range objs {
 		// TODO: this is safe, but... slow?
 		if _, err := cm.deleteIfNotPinned(ctx, o); err != nil {
@@ -179,15 +178,23 @@ func (cm *ContentManager) UnpinContent(ctx context.Context, contid uint) error {
 		}
 	}
 
-	buckets, ok := cm.buckets[pin.UserID]
-	if ok {
-		for _, bucket := range buckets {
-			if _, err := cm.tryRemoveContent(bucket, pin); err != nil {
+	// delete from contents table and adjust aggregate size, if applicable, in one tx
+	return cm.db.Transaction(func(tx *gorm.DB) error {
+		// delete contid row from contents table
+		if err := tx.Model(util.Content{}).Delete(&util.Content{ID: pin.ID}).Error; err != nil {
+			return err
+		}
+
+		if pin.AggregatedIn > 0 {
+			// decrease aggregate's size by cont's size in contents table
+			if err := tx.Model(util.Content{}).
+				Where("id = ?", pin.AggregatedIn).
+				UpdateColumn("size", gorm.Expr("size - ?", pin.Size)).Error; err != nil {
 				return err
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (cm *ContentManager) deleteIfNotPinned(ctx context.Context, o *util.Object) (bool, error) {

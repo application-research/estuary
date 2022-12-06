@@ -33,8 +33,7 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-	bucketLk             sync.Mutex
-	buckets              map[uint][]*ContentStagingZone
+
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
 	ShuttlesLk           sync.Mutex
@@ -45,6 +44,17 @@ type ContentManager struct {
 	IncomingRPCMessages  chan *drpc.Message
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
+
+	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
+	consolidatingZonesLk sync.Mutex
+	// aggregatingZonesLk is used to serialize reads and writes to aggregatingZones
+	aggregatingZonesLk sync.Mutex
+	// addStagingContentLk is used to serialize content adds to staging zones
+	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
+	addStagingContentLk sync.Mutex
+
+	consolidatingZones map[uint]bool
+	aggregatingZones   map[uint]bool
 
 	// TODO move out to filc package
 	TcLk             sync.Mutex
@@ -67,7 +77,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		notifyBlockstore:     nd.NotifBlockstore,
 		toCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
-		buckets:              make(map[uint][]*ContentStagingZone),
 		remoteTransferStatus: cache,
 		Shuttles:             make(map[string]*ShuttleConnection),
 		inflightCids:         make(map[cid.Cid]uint),
@@ -76,6 +85,8 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		IncomingRPCMessages:  make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:         minerManager,
 		log:                  log,
+		consolidatingZones:   make(map[uint]bool),
+		aggregatingZones:     make(map[uint]bool),
 
 		// TODO move out to filc package
 		TrackingChannels: make(map[string]*util.ChanTrack),

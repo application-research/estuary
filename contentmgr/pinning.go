@@ -391,6 +391,10 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+
+		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
+		cm.MarkFinishedAggregating(cont)
+
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)
 		return nil

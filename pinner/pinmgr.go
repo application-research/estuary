@@ -297,13 +297,57 @@ func sanitizePeers(peers []*peer.AddrInfo) {
 	}
 }
 
-func encodeMsgPack(po *pinning_op.PinningOperation) ([]byte, error) {
-	return msgpack.Marshal(&po)
+type AddrInfoString struct {
+	ID    peer.ID
+	Addrs []string
 }
 
-func decodeMsgPack(poBytes []byte) (*pinning_op.PinningOperation, error) {
-	var next *pinning_op.PinningOperation
-	return next, msgpack.Unmarshal(poBytes, &next)
+type PinningOperationSerialize struct {
+	Po    pinning_op.PinningOperation
+	Peers []AddrInfoString
+}
+
+func encodeMsgPack(po *pinning_op.PinningOperation) ([]byte, error) {
+	peers := po.Peers
+	po.Peers = []*peer.AddrInfo{}
+	serialPeers := []AddrInfoString{}
+	for i := 0; i < len(peers); i++ {
+		newaddrs := []string{}
+		for j := 0; j < len(peers[i].Addrs); j++ {
+			newaddrs = append(newaddrs, peers[i].Addrs[j].String())
+		}
+		newpeer := AddrInfoString{ID: peers[i].ID, Addrs: newaddrs}
+		serialPeers = append(serialPeers, newpeer)
+	}
+	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
+	bytes, err := msgpack.Marshal(&savedObject)
+	po.Peers = peers
+	return bytes, err
+}
+
+func decodeMsgPack(po_bytes []byte) (*pinning_op.PinningOperation, error) {
+	var next *PinningOperationSerialize
+	err := msgpack.Unmarshal(po_bytes, &next)
+	if err != nil {
+		log.Fatal(err)
+	}
+	po := next.Po
+	newPeers := []*peer.AddrInfo{}
+	peers := next.Peers
+	for i := 0; i < len(peers); i++ {
+		newaddrs := []ma.Multiaddr{}
+		for j := 0; j < len(peers[i].Addrs); j++ {
+			newma, err := ma.NewMultiaddr(peers[i].Addrs[j])
+			if err != nil {
+				log.Fatal(err)
+			}
+			newaddrs = append(newaddrs, newma)
+		}
+		newpeer := peer.AddrInfo{ID: peers[i].ID, Addrs: newaddrs}
+		newPeers = append(newPeers, &newpeer)
+	}
+	po.Peers = newPeers
+	return &po, err
 }
 
 func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {

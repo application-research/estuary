@@ -321,7 +321,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 }
 
 func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate *drpc.AggregateContents) error {
-	// only progress if aggr is not allready in progress
+	// only progress if aggr is not already in progress
 	if !s.markStartAggr(aggregate.DBID) {
 		return nil
 	}

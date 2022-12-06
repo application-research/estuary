@@ -1,28 +1,19 @@
 package model
 
 import (
+	"github.com/application-research/estuary/config"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/lotus/chain/types"
 	"gorm.io/gorm"
 )
 
-var priceMax abi.TokenAmount
-
-func init() {
-	max, err := types.ParseFIL("0.00000003")
-	if err != nil {
-		panic(err)
+func (msa *MinerStorageAsk) PriceIsTooHigh(cfg *config.Estuary) bool {
+	price := msa.GetPrice(cfg.Deal.IsVerified)
+	if cfg.Deal.IsVerified {
+		return types.BigCmp(price, cfg.Deal.MaxVerifiedPrice) > 0
 	}
-	priceMax = abi.TokenAmount(max)
-}
-
-func (msa *MinerStorageAsk) PriceIsTooHigh(isVerifiedDeal bool) bool {
-	price := msa.GetPrice(isVerifiedDeal)
-	if isVerifiedDeal {
-		return types.BigCmp(price, abi.NewTokenAmount(0)) > 0
-	}
-	return types.BigCmp(price, priceMax) > 0
+	return types.BigCmp(price, cfg.Deal.MaxPrice) > 0
 }
 
 func (msa *MinerStorageAsk) GetPrice(isVerifiedDeal bool) types.BigInt {
@@ -33,7 +24,7 @@ func (msa *MinerStorageAsk) GetPrice(isVerifiedDeal bool) types.BigInt {
 }
 
 func (msa *MinerStorageAsk) SizeIsCloseEnough(pieceSize abi.PaddedPieceSize) bool {
-	if pieceSize > msa.MinPieceSize && pieceSize < msa.MaxPieceSize {
+	if pieceSize >= msa.MinPieceSize && pieceSize <= msa.MaxPieceSize {
 		return true
 	}
 	return false

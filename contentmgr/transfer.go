@@ -12,6 +12,7 @@ import (
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/google/uuid"
+	"github.com/ipfs/go-cid"
 )
 
 func (cm *ContentManager) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
@@ -109,5 +110,50 @@ func (cm *ContentManager) sendRestartTransferCmd(ctx context.Context, loc string
 				ContentID: d.Content,
 			},
 		},
+	})
+}
+
+type transferStatusRecord struct {
+	State    *filclient.ChannelState
+	Shuttle  string
+	Received time.Time
+}
+
+func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
+	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
+	defer span.End()
+
+	if d.DTChan == "" {
+		return nil, nil
+	}
+
+	if contLoc == constants.ContentLocationLocal {
+		chanst, err := cm.transferStatusByID(ctx, d.DTChan)
+		if err != nil {
+			return nil, err
+		}
+		return chanst, nil
+	}
+
+	val, ok := cm.remoteTransferStatus.Get(d.ID)
+	if !ok {
+		if err := cm.sendRequestTransferStatusCmd(ctx, contLoc, d.ID, d.DTChan); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	tsr, ok := val.(*transferStatusRecord)
+	if !ok {
+		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
+	}
+	return tsr.State, nil
+}
+
+func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {
+	cm.remoteTransferStatus.Add(dealdbid, &transferStatusRecord{
+		State:    st,
+		Shuttle:  loc,
+		Received: time.Now(),
 	})
 }

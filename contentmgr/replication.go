@@ -74,7 +74,6 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 
 func (cm *ContentManager) Run(ctx context.Context) {
 	cm.setUpStaging(ctx)
-
 	// if FilecoinStorage is enabled, check content deals or make content deals
 	if !cm.cfg.DisableFilecoinStorage {
 		go func() {
@@ -87,14 +86,6 @@ func (cm *ContentManager) Run(ctx context.Context) {
 			cm.runDealWorker(ctx)
 		}()
 	}
-}
-
-func (cm *ContentManager) currentLocationForContent(cntId uint) (string, error) {
-	var cont util.Content
-	if err := cm.db.First(&cont, "id = ?", cntId).Error; err != nil {
-		return "", err
-	}
-	return cont.Location, nil
 }
 
 func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
@@ -177,11 +168,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	// If this content is already scheduled to be aggregated and is waiting in a bucket
-	if cm.contentInStagingZone(ctx, content) {
-		return nil
-	}
-
 	// it's too big, need to split it up into chunks, no need to requeue dagsplit root content
 	if content.Size > cm.cfg.Content.MaxSize {
 		return cm.splitContent(ctx, content, cm.cfg.Content.MaxSize)
@@ -200,7 +186,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return cm.addContentToStagingZone(ctx, content)
 	}
 
-	// check on each of the existing deals, see if they any needs fixing
+	// check on each of the existing deals, see if any needs fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
 	var wg sync.WaitGroup
@@ -721,51 +707,6 @@ func (cm *ContentManager) dealHasExpired(ctx context.Context, d *model.ContentDe
 	return false, nil
 }
 
-type transferStatusRecord struct {
-	State    *filclient.ChannelState
-	Shuttle  string
-	Received time.Time
-}
-
-func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
-	ctx, span := cm.tracer.Start(ctx, "getTransferStatus")
-	defer span.End()
-
-	if d.DTChan == "" {
-		return nil, nil
-	}
-
-	if contLoc == constants.ContentLocationLocal {
-		chanst, err := cm.transferStatusByID(ctx, d.DTChan)
-		if err != nil {
-			return nil, err
-		}
-		return chanst, nil
-	}
-
-	val, ok := cm.remoteTransferStatus.Get(d.ID)
-	if !ok {
-		if err := cm.sendRequestTransferStatusCmd(ctx, contLoc, d.ID, d.DTChan); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	}
-
-	tsr, ok := val.(*transferStatusRecord)
-	if !ok {
-		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
-	}
-	return tsr.State, nil
-}
-
-func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {
-	cm.remoteTransferStatus.Add(dealdbid, &transferStatusRecord{
-		State:    st,
-		Shuttle:  loc,
-		Received: time.Now(),
-	})
-}
-
 var ErrNotOnChainYet = fmt.Errorf("message not found on chain")
 
 func (cm *ContentManager) getDealID(ctx context.Context, pubcid cid.Cid, d *model.ContentDeal) (abi.DealID, error) {
@@ -1126,12 +1067,8 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
 	}
 
-	price := ask.PriceBigInt
-	if cm.cfg.Deal.IsVerified {
-		price = ask.VerifiedPriceBigInt
-	}
-
-	if ask.PriceIsTooHigh(cm.cfg.Deal.IsVerified) {
+	price := ask.GetPrice(cm.cfg.Deal.IsVerified)
+	if ask.PriceIsTooHigh(cm.cfg) {
 		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
@@ -1547,6 +1484,7 @@ func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, c
 }
 
 func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
+	cm.log.Debugf("attempting to send consolidate content cmd to %s", loc)
 	tc := &drpc.TakeContent{}
 	for _, c := range contents {
 		prs := make([]*peer.AddrInfo, 0)
