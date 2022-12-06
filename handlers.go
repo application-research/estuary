@@ -614,7 +614,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Tags         contents
 // @Produce      json
 // @Accept       multipart/form-data
-// @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid' or 'file'). Defaults to 'file'"
+// @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid', 'file' or 'url'). Defaults to 'file'"
 // @Param        car           body      string  false   "Car file to upload"
 // @Param        body          body      util.ContentAddIpfsBody  false   "IPFS Body"
 // @Param        data          formData  file    false   "File to upload"
@@ -669,9 +669,9 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	uploadType := c.QueryParam("type")
-	if uploadType == "" {
-		uploadType = "file"
+	uploadType := util.UploadType(c.QueryParam("type"))
+	if uploadType == util.UploadTypeDefault {
+		uploadType = util.UploadTypeFile
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -712,7 +712,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	// when pinning a CID we need to add a file to handle the special case
 	// of calling PinContent on the content manager
 	// TODO(gabe): PinContent adds to database tracking. decouple logic from that
-	if uploadType == "cid" {
+	if uploadType == util.UploadTypeCID {
 		makeDeal := true
 		bucks := []*buckets.BucketRef{
 			{
@@ -3489,7 +3489,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 
 		if relp == "." { // Query directory is the complete path containing the content.
 			// trying to list a CID queryDir, not allowed
-			if r.Type == util.Directory {
+			if r.Type == util.ContentTypeDirectory {
 				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
 
@@ -3543,7 +3543,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		}
 
 		//var contentType CidType
-		//contentType = File
+		//contentType = ContentTypeFile
 		//if r.Type == util.Directory {
 		//	contentType = Dir
 		//}

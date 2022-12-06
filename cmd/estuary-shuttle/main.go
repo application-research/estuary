@@ -1666,13 +1666,13 @@ func (s *Shuttle) refreshPinQueue() error {
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 	op := &pinner.PinningOperation{
-		ContentID:  p.Content,
-		UserId:  p.UserID,
-		Obj:     p.Cid.CID,
-		Peers:   peers,
-		Started: p.CreatedAt,
-		Status:  types.PinningStatusQueued,
-		Replace: replace,
+		ContentID: p.Content,
+		UserId:    p.UserID,
+		Obj:       p.Cid.CID,
+		Peers:     peers,
+		Started:   p.CreatedAt,
+		Status:    types.PinningStatusQueued,
+		Replace:   replace,
 	}
 
 	/*

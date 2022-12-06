@@ -326,7 +326,7 @@ func (s *Server) handleAddPin(e echo.Context, u *util.User) error {
 		cols = []*buckets.BucketRef{
 			{
 				Bucket: srchCol.ID,
-				Path:       colpath,
+				Path:   colpath,
 			},
 		}
 	}
