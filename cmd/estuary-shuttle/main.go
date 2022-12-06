@@ -313,7 +313,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
+			Name: "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -1145,7 +1145,7 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
@@ -1250,7 +1250,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.CheckContentTypeIsMultipartFormData(c.Request().Header); err != nil {
+	if err := util.WithMultipartFormDataChecker(c.Request().Header); err != nil {
 		return err
 	}
 

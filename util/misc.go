@@ -120,6 +120,19 @@ func JSONPayloadMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func WithMultipartFormDataChecker(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if c.Request().Header.Get("Content-Type") != "multipart/form-data" {
+			return &HttpError{
+				Code:    http.StatusUnsupportedMediaType,
+				Reason:  ERR_UNSUPPORTED_CONTENT_TYPE,
+				Details: "this endpoint only supports multipart/form-data payloads",
+			}
+		}
+		return next(c)
+	}
+}
+
 func DumpBlockstoreTo(ctx context.Context, tc trace.Tracer, from, to blockstore.Blockstore) error {
 	ctx, span := tc.Start(ctx, "blockstoreCopy")
 	defer span.End()

@@ -2,7 +2,6 @@ package util
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -213,11 +212,4 @@ func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
 		return Content{}, err
 	}
 	return content, nil
-}
-
-func CheckContentTypeIsMultipartFormData(header http.Header) error {
-	if header.Get("Content-Type") != "multipart/form-data" {
-		return errors.New("request Content-Type isn't multipart/form-data")
-	}
-	return nil
 }

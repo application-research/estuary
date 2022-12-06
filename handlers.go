@@ -157,7 +157,7 @@ func (s *Server) ServeAPI() error {
 
 	contmeta := e.Group("/content")
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
-	uploads.POST("/add", withUser(s.handleAdd))
+	uploads.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
@@ -857,7 +857,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
-	if err := util.CheckContentTypeIsMultipartFormData(c.Request().Header); err != nil {
+	if err := util.WithMultipartFormDataChecker(c.Request().Header); err != nil {
 		return err
 	}
 
