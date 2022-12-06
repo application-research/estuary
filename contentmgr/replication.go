@@ -79,10 +79,6 @@ type ContentManager struct {
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
-	consolidatingZonesLk sync.Mutex
-	// aggregatingZonesLk is used to serialize reads and writes to aggregatingZones
-	aggregatingZonesLk sync.Mutex
 	// addStagingContentLk is used to serialize content adds to staging zones
 	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
 	addStagingContentLk sync.Mutex
@@ -100,8 +96,6 @@ type ContentManager struct {
 	IncomingRPCMessages       chan *drpc.Message
 	minerManager              miner.IMinerManager
 	log                       *zap.SugaredLogger
-	consolidatingZones        map[uint]bool
-	aggregatingZones          map[uint]bool
 }
 
 func (cm *ContentManager) isInflight(c cid.Cid) bool {
@@ -152,14 +146,16 @@ func (cb *ContentStagingZone) DeepCopy() *ContentStagingZone {
 
 func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Content, error) {
 	content := &util.Content{
-		Size:        0,
-		Name:        "aggregate",
-		Active:      false,
-		Pinning:     true,
-		UserID:      user,
-		Replication: cm.cfg.Replication,
-		Aggregate:   true,
-		Location:    loc,
+		Size:          0,
+		Name:          "aggregate",
+		Active:        false,
+		Pinning:       true,
+		UserID:        user,
+		Replication:   cm.cfg.Replication,
+		Aggregate:     true,
+		Location:      loc,
+		Consolidating: false,
+		Aggregating:   false,
 	}
 
 	if err := cm.DB.Create(content).Error; err != nil {
@@ -169,12 +165,8 @@ func (cm *ContentManager) newContentStagingZone(user uint, loc string) (*util.Co
 	return content, nil
 }
 
+// tryAddContent assumes caller already confirmed the zone is not consolidating or aggregating
 func (cm *ContentManager) tryAddContent(zone util.Content, c util.Content) (bool, error) {
-	// if this bucket is being consolidated or aggregated, do not add anymore content
-	if cm.IsZoneConsolidating(zone.ID) || cm.IsZoneAggregating(zone.ID) {
-		return false, nil
-	}
-
 	err := cm.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(util.Content{}).
 			Where("id = ?", c.ID).
@@ -224,8 +216,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		IncomingRPCMessages:       make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:              minerManager,
 		log:                       log,
-		consolidatingZones:        make(map[uint]bool),
-		aggregatingZones:          make(map[uint]bool),
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
@@ -244,7 +234,7 @@ func (cm *ContentManager) ToCheck(contID uint) {
 func (cm *ContentManager) getReadyStagingZones() ([]util.Content, error) {
 	var readyZones []util.Content
 	if err := cm.DB.Model(&util.Content{}).
-		Where("not active and pinning and aggregate and size >= ?", constants.MinDealContentSize).
+		Where("not active and pinning and aggregate and not consolidating and not aggregating and size >= ?", constants.MinDealContentSize).
 		Find(&readyZones).Error; err != nil {
 		return nil, err
 	}
@@ -489,62 +479,80 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zone.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
 	if dstLocation == constants.ContentLocationLocal {
-		defer cm.MarkFinishedConsolidating(zone)
+		defer func() {
+			if err := cm.MarkFinishedConsolidating(zone); err != nil {
+				cm.log.Errorf("unable to mark zone as finished consolidating. zone: %d, err: %s", zone.ID, err)
+			}
+		}()
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else if dstLocation != "" {
 		return cm.SendConsolidateContentCmd(ctx, dstLocation, toMove)
 	} else {
 		// unable to find a destination location, unmark as consolidating and let it retry later
 		cm.log.Warnf("unable to find a destination location for consolidating zone: %d", zone.ID)
-		cm.MarkFinishedConsolidating(zone)
+		if err := cm.MarkFinishedConsolidating(zone); err != nil {
+			return err
+		}
 		return nil
 	}
 }
 
-func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
-	cm.consolidatingZonesLk.Lock()
-	defer cm.consolidatingZonesLk.Unlock()
-	return cm.consolidatingZones[zoneID]
-}
-
-func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) bool {
-	cm.consolidatingZonesLk.Lock()
-	defer cm.consolidatingZonesLk.Unlock()
-	if cm.consolidatingZones[zone.ID] {
-		// skip since it is already processing
-		return false
+func (cm *ContentManager) IsZoneConsolidating(zoneID uint) (bool, error) {
+	var zone util.Content
+	if err := cm.DB.First(&zone).Where("id = ?", zoneID).Error; err != nil {
+		return false, err
 	}
-	cm.consolidatingZones[zone.ID] = true
-	return true
+	return zone.Consolidating, nil
 }
 
-func (cm *ContentManager) MarkFinishedConsolidating(zone util.Content) {
-	cm.consolidatingZonesLk.Lock()
-	delete(cm.consolidatingZones, zone.ID)
-	cm.consolidatingZonesLk.Unlock()
-}
-
-func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
-	cm.aggregatingZonesLk.Lock()
-	defer cm.aggregatingZonesLk.Unlock()
-	return cm.aggregatingZones[zoneID]
-}
-
-func (cm *ContentManager) MarkStartedAggregating(zone util.Content) bool {
-	cm.aggregatingZonesLk.Lock()
-	defer cm.aggregatingZonesLk.Unlock()
-	if cm.aggregatingZones[zone.ID] {
-		// skip since it is already processing
-		return false
+func (cm *ContentManager) MarkStartedConsolidating(zone util.Content) (bool, error) {
+	isConsolidating, err := cm.IsZoneConsolidating(zone.ID)
+	if err != nil {
+		return false, err
 	}
-	cm.aggregatingZones[zone.ID] = true
-	return true
+	if isConsolidating {
+		return false, nil
+	}
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", zone.ID).UpdateColumn("consolidating", true).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
-func (cm *ContentManager) MarkFinishedAggregating(zone util.Content) {
-	cm.aggregatingZonesLk.Lock()
-	delete(cm.aggregatingZones, zone.ID)
-	cm.aggregatingZonesLk.Unlock()
+func (cm *ContentManager) MarkFinishedConsolidating(zone util.Content) error {
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", zone.ID).UpdateColumn("consolidating", false).Error; err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cm *ContentManager) IsZoneAggregating(zoneID uint) (bool, error) {
+	var zone util.Content
+	if err := cm.DB.First(&zone).Where("id = ?", zoneID).Error; err != nil {
+		return false, err
+	}
+	return zone.Aggregating, nil
+}
+
+func (cm *ContentManager) MarkStartedAggregating(zone util.Content) (bool, error) {
+	isAggregating, err := cm.IsZoneAggregating(zone.ID)
+	if err != nil {
+		return false, err
+	}
+	if isAggregating {
+		return false, nil
+	}
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", zone.ID).UpdateColumn("aggregating", true).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (cm *ContentManager) MarkFinishedAggregating(zone util.Content) error {
+	if err := cm.DB.Model(util.Content{}).Where("id = ?", zone.ID).UpdateColumn("aggregating", false).Error; err != nil {
+		return err
+	}
+	return nil
 }
 
 func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Content) error {
@@ -564,7 +572,15 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
 
 		// should never be aggregating here but check anyways
-		if cm.IsZoneAggregating(zone.ID) || !cm.MarkStartedConsolidating(zone) {
+		isAggregating, err := cm.IsZoneAggregating(zone.ID)
+		if err != nil {
+			return err
+		}
+		canConsolidate, err := cm.MarkStartedConsolidating(zone)
+		if err != nil {
+			return err
+		}
+		if isAggregating || !canConsolidate {
 			// skip if it is aggregating or already consolidating
 			return nil
 		}
@@ -584,8 +600,14 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	}
 
 	// if we reached here, consolidation is done and we can move to aggregating
-	cm.MarkFinishedConsolidating(zone)
-	if !cm.MarkStartedAggregating(zone) {
+	if err := cm.MarkFinishedConsolidating(zone); err != nil {
+		return err
+	}
+	canAggregate, err := cm.MarkStartedAggregating(zone)
+	if err != nil {
+		return err
+	}
+	if !canAggregate {
 		// skip if zone is consolidating or already aggregating
 		return nil
 	}
@@ -655,7 +677,9 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 			cm.ToCheck(zone.ID)
 		}()
 
-		cm.MarkFinishedAggregating(zone)
+		if err := cm.MarkFinishedAggregating(zone); err != nil {
+			return err
+		}
 
 		return nil
 	}
@@ -888,44 +912,22 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 
 	// TODO: move processing state into DB, use FirstOrInit here, also filter for not processing
 	// theoretically any user only needs to have up to one non-processing zone at a time
-	var zones []util.Content
-	if err := cm.DB.Find(&zones, "not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
-		return nil
-	}
-	if len(zones) == 0 {
-		zone, err := cm.newContentStagingZone(content.UserID, content.Location)
-		if err != nil {
-			return fmt.Errorf("failed to create new staging zone content: %w", err)
-		}
-
-		_, err = cm.tryAddContent(*zone, content)
-		if err != nil {
-			return fmt.Errorf("failed to add content to staging zone: %w", err)
-		}
-		return nil
-	}
-
-	for _, zone := range zones {
-		ok, err := cm.tryAddContent(zone, content)
-		if err != nil {
+	var zone util.Content
+	if err := cm.DB.First(&zone, "not active and pinning and aggregate and not consolidating and not aggregating and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			newZone, err := cm.newContentStagingZone(content.UserID, content.Location)
+			if err != nil {
+				return fmt.Errorf("failed to create new staging zone content: %w", err)
+			}
+			zone = *newZone
+		} else {
 			return err
 		}
-
-		if ok {
-			return nil
-		}
 	}
-
-	zone, err := cm.newContentStagingZone(content.UserID, content.Location)
+	_, err := cm.tryAddContent(zone, content)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to add content to staging zone: %w", err)
 	}
-
-	_, err = cm.tryAddContent(*zone, content)
-	if err != nil {
-		return err
-	}
-
 	return nil
 }
 

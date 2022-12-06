@@ -496,7 +496,15 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 	}
 
 	if content.AggregatedIn > 0 {
-		if s.CM.IsZoneConsolidating(content.AggregatedIn) || s.CM.IsZoneAggregating(content.AggregatedIn) {
+		isConsolidating, err := s.CM.IsZoneConsolidating(content.AggregatedIn)
+		if err != nil {
+			return err
+		}
+		isAggregating, err := s.CM.IsZoneAggregating(content.AggregatedIn)
+		if err != nil {
+			return err
+		}
+		if isConsolidating || isAggregating {
 			return fmt.Errorf("unable to unpin content while zone is consolidating or aggregating (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
 		}
 		var zone util.Content

@@ -428,7 +428,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}
 
 		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
-		cm.MarkFinishedAggregating(cont)
+		if err := cm.MarkFinishedAggregating(cont); err != nil {
+			return err
+		}
 
 		// after aggregate is done, make deal for it
 		cm.ToCheck(cont.ID)

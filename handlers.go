@@ -4463,7 +4463,11 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 				break
 			}
 
-			if !s.CM.MarkStartedAggregating(cont) {
+			canAggregate, err := s.CM.MarkStartedAggregating(cont)
+			if err != nil {
+				return err
+			}
+			if !canAggregate {
 				// skip since it is already aggregating
 				return nil
 			}

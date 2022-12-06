@@ -79,6 +79,10 @@ type Content struct {
 	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
 	Aggregate    bool `json:"aggregate"`
 
+	// for staging zones, track if they're consolidating or aggregating to prevent concurrent attempts or modifications
+	Consolidating bool `json:"consolidating"`
+	Aggregating   bool `json:"aggregating"`
+
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
 	Replace bool   `json:"replace" gorm:"default:0"`
