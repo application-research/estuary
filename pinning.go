@@ -407,11 +407,8 @@ func (s *Server) handleGetPin(e echo.Context, u *util.User) error {
 // @Success      202	{object}	types.IpfsPinStatusResponse
 // @Failure      404	{object}	util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        pinid		path      string  true  "Pin ID"
-// @Param        cid		body      string  true  "CID of new pin"
-// @Param        name		body      string  false  "Name (filename) of new pin"
-// @Param        origins	body      string  false  "Origins of new pin"
-// @Param        meta		body      string  false  "Meta information of new pin"
+// @Param        pinid		path      string  true  "Pin ID to be replaced"
+// @Param        pin          body      types.IpfsPin  true   "New pin"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *Server) handleReplacePin(e echo.Context, u *util.User) error {
 
@@ -496,6 +493,20 @@ func (s *Server) handleDeletePin(e echo.Context, u *util.User) error {
 
 	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
 		return err
+	}
+
+	if content.AggregatedIn > 0 {
+		if s.CM.IsZoneConsolidating(content.AggregatedIn) || s.CM.IsZoneAggregating(content.AggregatedIn) {
+			return fmt.Errorf("unable to unpin content while zone is consolidating or aggregating (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
+		}
+		var zone util.Content
+		if err := s.DB.Find(&zone).Where("id = ?", content.AggregatedIn).Error; err != nil {
+			return err
+		}
+		if zone.Active {
+			// don't unpin content belonging to a pinned aggregate
+			return fmt.Errorf("unable to unpin content belonging to a pinned aggregate (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
+		}
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore

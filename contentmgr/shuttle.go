@@ -271,7 +271,7 @@ func (cm *ContentManager) ShuttleCanAddContent(handle string) bool {
 	defer cm.ShuttlesLk.Unlock()
 	d, ok := cm.Shuttles[handle]
 	if ok {
-		return d.ContentAddingDisabled
+		return !d.ContentAddingDisabled
 	}
 	return true
 }

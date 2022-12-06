@@ -10,7 +10,7 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/labstack/gommon/log"
-	"github.com/libp2p/go-libp2p-core/protocol"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 type miner struct {
@@ -55,10 +55,8 @@ func (mm *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piece
 			continue
 		}
 
-		if filterByPrice {
-			if ask.PriceIsTooHigh(mm.cfg.Deal.IsVerified) {
-				continue
-			}
+		if filterByPrice && ask.PriceIsTooHigh(mm.cfg) {
+			continue
 		}
 
 		if ask.SizeIsCloseEnough(pieceSize) {

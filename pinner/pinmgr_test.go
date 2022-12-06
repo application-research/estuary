@@ -9,6 +9,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/libp2p/go-libp2p-core/peer"
+
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -21,7 +24,7 @@ func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) e
 func newManager(count *int) *PinManager {
 
 	_ = os.RemoveAll("/tmp/duplicateGuard")
-	_ = os.RemoveAll("/tmp/pinQueue")
+	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
 	return NewPinManager(
 		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
@@ -50,9 +53,87 @@ func newManagerNoDelete(count *int) *PinManager {
 		})
 }
 
+func TestPeerSanitizeNil(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
+		peers_original := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
+		peers_sanitized_expected := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{}}}
+		sanitizePeers(peers)
+		assert.NotEqual(t, peers_original, peers, "sanitized peers does not equal peer with nil value")
+		assert.Equal(t, peers_sanitized_expected, peers, "Sanitized peer does not equal expected value")
+
+	})
+}
+func TestPeerSanitizeValuesNoNil(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		addr, err := ma.NewMultiaddr("/ip4/1.2.3.4/tcp/80")
+		if err != nil {
+			panic(err)
+		}
+
+		peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		peers_original := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		peers_sanitized_expected := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		sanitizePeers(peers)
+		assert.Equal(t, peers_original, peers, "sanitized peers does not equal expected value")
+		assert.Equal(t, peers_sanitized_expected, peers, "Sanitized peer does not equal expected value")
+
+	})
+}
+func TestPeerSanitizeValuesNil(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		addr, err := ma.NewMultiaddr("/ip4/1.2.3.4/tcp/80")
+		if err != nil {
+			panic(err)
+		}
+
+		peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr, nil}}}
+		peers_original := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr, nil}}}
+		peers_sanitized_expected := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		sanitizePeers(peers)
+		assert.NotEqual(t, peers_original, peers, "sanitized peers does not equal peer with nil value")
+		assert.Equal(t, peers_sanitized_expected, peers, "Sanitized peer does not equal expected value")
+
+	})
+}
+
+func TestConstructMultiAddr(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		_, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
+		if err != nil {
+			fmt.Println(err)
+			panic(err)
+		}
+	})
+}
+
+func TestEncodeDecode(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		addr, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
+		if err != nil {
+			fmt.Println(err)
+		}
+		peer := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
+		po := &PinningOperation{Peers: peer, Name: "pinning operation name"}
+		bytes, err := encode_msgpack(po)
+		if err != nil {
+			fmt.Println(err)
+		}
+		newpo, err := decode_msgpack(bytes)
+		if err != nil {
+			fmt.Println(err)
+		}
+		assert.Equal(t, newpo.Name, po.Name, "name doesnt match")
+		assert.Equal(t, newpo.Peers[0].Addrs[0].String(), po.Peers[0].Addrs[0].String(), "addr doesnt match")
+		assert.Equal(t, newpo.Peers[0].ID, po.Peers[0].ID, "ID doesnt match")
+
+	})
+}
 func newPinData(name string, userid int, contid int) PinningOperation {
+	peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
 	return PinningOperation{
 		Name:   name,
+		Peers:  peers,
 		UserId: uint(userid),
 		lk:     sync.Mutex{},
 		ContId: uint(contid),

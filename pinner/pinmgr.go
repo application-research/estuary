@@ -12,6 +12,8 @@ import (
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -176,6 +178,7 @@ func (pm *PinManager) PinQueueSize() int {
 
 func (pm *PinManager) Add(op *PinningOperation) {
 	go func() {
+		sanitizePeers(op.Peers)
 		pm.pinQueueIn <- op
 	}()
 }
@@ -252,11 +255,11 @@ func (pm *PinManager) popNextPinOp() *PinningOperation {
 		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
-	var next *PinningOperation
-	err = item.ToObject(&next)
+
+	next, err := decode_msgpack(item.Value)
 
 	if err != nil {
-		log.Errorf("Dequeued object is not a PinningOperation pointer")
+		log.Errorf("Cannot decode PinningOperation pointer")
 		return nil
 	}
 	return next
@@ -325,7 +328,7 @@ func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
 
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
-	dname := filepath.Join(QueueDataDir, "pinQueue")
+	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
 	err := os.MkdirAll(dname, os.ModePerm)
 	if err != nil {
 		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
@@ -339,6 +342,69 @@ func createDQue(QueueDataDir string) *goque.PrefixQueue {
 
 func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
+}
+
+func sanitizePeers(peers []*peer.AddrInfo) {
+	for _, peer := range peers {
+		addrs := []ma.Multiaddr{}
+		for _, addr := range peer.Addrs {
+			if addr != nil {
+				addrs = append(addrs, addr)
+			}
+		}
+		peer.Addrs = addrs
+	}
+}
+
+type AddrInfoString struct {
+	ID    peer.ID
+	Addrs []string
+}
+type PinningOperationSerialize struct {
+	Po    PinningOperation
+	Peers []AddrInfoString
+}
+
+func encode_msgpack(po *PinningOperation) ([]byte, error) {
+	peers := po.Peers
+	po.Peers = []*peer.AddrInfo{}
+	serialPeers := []AddrInfoString{}
+	for i := 0; i < len(peers); i++ {
+		newaddrs := []string{}
+		for j := 0; j < len(peers[i].Addrs); j++ {
+			newaddrs = append(newaddrs, peers[i].Addrs[j].String())
+		}
+		newpeer := AddrInfoString{ID: peers[i].ID, Addrs: newaddrs}
+		serialPeers = append(serialPeers, newpeer)
+	}
+	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
+	bytes, err := msgpack.Marshal(&savedObject)
+	po.Peers = peers
+	return bytes, err
+}
+func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
+	var next *PinningOperationSerialize
+	err := msgpack.Unmarshal(po_bytes, &next)
+	if err != nil {
+		log.Fatal(err)
+	}
+	po := next.Po
+	newPeers := []*peer.AddrInfo{}
+	peers := next.Peers
+	for i := 0; i < len(peers); i++ {
+		newaddrs := []ma.Multiaddr{}
+		for j := 0; j < len(peers[i].Addrs); j++ {
+			newma, err := ma.NewMultiaddr(peers[i].Addrs[j])
+			if err != nil {
+				log.Fatal(err)
+			}
+			newaddrs = append(newaddrs, newma)
+		}
+		newpeer := peer.AddrInfo{ID: peers[i].ID, Addrs: newaddrs}
+		newPeers = append(newPeers, &newpeer)
+	}
+	po.Peers = newPeers
+	return &po, err
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
@@ -356,8 +422,11 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 	if po.SkipLimiter {
 		u = 0
 	}
-
-	_, err = pm.pinQueue.EnqueueObject(getUserForQueue(u), po)
+	po_bytes, err := encode_msgpack(po)
+	if err != nil {
+		log.Fatal("Unable to encode data to add to queue.")
+	}
+	_, err = pm.pinQueue.Enqueue(getUserForQueue(u), po_bytes)
 	pm.pinQueueCount[u]++
 	if err != nil {
 		log.Fatal("Unable to add pin to queue.")

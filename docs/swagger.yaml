@@ -310,8 +310,6 @@ paths:
       summary: Remove peers on Peering Service
       tags:
         - admin
-        - peering
-        - peers
     get:
       description: This endpoint can be used to list all peers on Peering Service
       produces:
@@ -332,8 +330,6 @@ paths:
       summary: List all Peering peers
       tags:
         - admin
-        - peering
-        - peers
     post:
       description: This endpoint can be used to add a Peer from the Peering Service
       produces:
@@ -354,8 +350,6 @@ paths:
       summary: Add peers on Peering Service
       tags:
         - admin
-        - peering
-        - peers
   /admin/peering/start:
     post:
       description: This endpoint can be used to start the Peering Service
@@ -377,8 +371,6 @@ paths:
       summary: Start Peering
       tags:
         - admin
-        - peering
-        - peers
   /admin/peering/status:
     get:
       description: This endpoint can be used to check the Peering status
@@ -400,8 +392,6 @@ paths:
       summary: Check Peering Status
       tags:
         - admin
-        - peering
-        - peers
   /admin/peering/stop:
     post:
       description: This endpoint can be used to stop the Peering Service
@@ -423,8 +413,6 @@ paths:
       summary: Stop Peering
       tags:
         - admin
-        - peering
-        - peers
   /admin/system/config:
     get:
       description: This endpoint is used to get system configs.
@@ -681,11 +669,6 @@ paths:
         - description: Collection ID
           in: path
           name: coluuid
-          required: true
-          type: string
-        - description: Content ID
-          in: path
-          name: contentid
           required: true
           type: string
         - description: Variable to use when filtering for files (must be either 'path' or 'content_id')
@@ -1704,32 +1687,17 @@ paths:
         - application/json
       description: This endpoint replaces a pinned object.
       parameters:
-        - description: Pin ID
+        - description: Pin ID to be replaced
           in: path
           name: pinid
           required: true
           type: string
-        - description: CID of new pin
+        - description: New pin
           in: body
-          name: cid
+          name: pin
           required: true
           schema:
-            type: string
-        - description: Name (filename) of new pin
-          in: body
-          name: name
-          schema:
-            type: string
-        - description: Origins of new pin
-          in: body
-          name: origins
-          schema:
-            type: string
-        - description: Meta information of new pin
-          in: body
-          name: meta
-          schema:
-            type: string
+            $ref: '#/definitions/types.IpfsPin'
       produces:
         - application/json
       responses:
@@ -1900,6 +1868,7 @@ paths:
         - description: Filter by miner
           in: path
           name: miner
+          required: true
           type: string
       produces:
         - application/json
@@ -1927,6 +1896,7 @@ paths:
         - description: Filter by miner
           in: path
           name: miner
+          required: true
           type: string
       produces:
         - application/json

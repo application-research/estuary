@@ -26,7 +26,6 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -284,13 +283,12 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
 	//	peering
-	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers", s.handlePeeringPeersList)
-	adminPeering.POST("/start", s.handlePeeringStart)
-	adminPeering.POST("/stop", s.handlePeeringStop)
-	adminPeering.GET("/status", s.handlePeeringStatus)
+	admin.POST("/peering/peers", s.handlePeeringPeersAdd)
+	admin.DELETE("/peering/peers", s.handlePeeringPeersRemove)
+	admin.GET("/peering/peers", s.handlePeeringPeersList)
+	admin.POST("/peering/start", s.handlePeeringStart)
+	admin.POST("/peering/stop", s.handlePeeringStop)
+	admin.GET("/peering/status", s.handlePeeringStatus)
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -348,13 +346,15 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint    `json:"id"`
-	Cid             cid.Cid `json:"cid"`
-	Filename        string  `json:"name"`
-	BWUsed          int64   `json:"bwUsed"`
-	TotalRequests   int64   `json:"totalRequests"`
-	Offloaded       bool    `json:"offloaded"`
-	AggregatedFiles int64   `json:"aggregatedFiles"`
+	ID              uint      `json:"id"`
+	Cid             cid.Cid   `json:"cid"`
+	Filename        string    `json:"name"`
+	Size            int64     `json:"size"`
+	CreatedAt       time.Time `json:"createdAt"`
+	BWUsed          int64     `json:"bwUsed"`
+	TotalRequests   int64     `json:"totalRequests"`
+	Offloaded       bool      `json:"offloaded"`
+	AggregatedFiles int64     `json:"aggregatedFiles"`
 }
 
 func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
@@ -373,7 +373,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 
 // handleStats godoc
 // @Summary      Get content statistics
-// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+// @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
 // @Tags         content
 // @Param        limit   query  string  true  "limit"
 // @Param        offset  query  string  true  "offset"
@@ -408,34 +408,18 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ?", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate and active", u.ID).Error; err != nil {
 		return err
 	}
 
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
-			ID:       c.ID,
-			Cid:      c.Cid.CID,
-			Filename: c.Name,
-		}
-
-		if false {
-			var res struct {
-				Bw         int64
-				TotalReads int64
-			}
-
-			if err := s.DB.Model(util.ObjRef{}).
-				Select("SUM(size * reads) as bw, SUM(reads) as total_reads").
-				Where("obj_refs.content = ?", c.ID).
-				Joins("left join objects on obj_refs.object = objects.id").
-				Scan(&res).Error; err != nil {
-				return err
-			}
-
-			st.TotalRequests = res.TotalReads
-			st.BWUsed = res.Bw
+			ID:        c.ID,
+			Cid:       c.Cid.CID,
+			Filename:  c.Name,
+			Size:      c.Size,
+			CreatedAt: c.CreatedAt,
 		}
 
 		if c.Aggregate {
@@ -452,7 +436,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
@@ -515,7 +499,7 @@ type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
@@ -541,7 +525,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // handlePeeringPeersList godoc
 // @Summary      List all Peering peers
 // @Description  This endpoint can be used to list all peers on Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
@@ -567,7 +551,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // handlePeeringStart godoc
 // @Summary      Start Peering
 // @Description  This endpoint can be used to start the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200     {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -587,7 +571,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // handlePeeringStop godoc
 // @Summary      Stop Peering
 // @Description  This endpoint can be used to stop the Peering Service
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200   {object}  string
 // @Failure      400    {object}  util.HttpError
@@ -607,7 +591,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // handlePeeringStatus godoc
 // @Summary      Check Peering Status
 // @Description  This endpoint can be used to check the Peering status
-// @Tags         admin,peering,peers
+// @Tags         admin
 // @Produce      json
 // @Success      200    {object}  string
 // @Failure      400            {object}  util.HttpError
@@ -2467,7 +2451,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
 func (s *Server) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
@@ -2511,7 +2495,7 @@ type minerChainInfo struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner  path      string  false  "Filter by miner"
+// @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
 func (s *Server) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
@@ -2744,10 +2728,7 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
-	s.CM.BucketLk.Lock()
-	defer s.CM.BucketLk.Unlock()
-
-	return c.JSON(http.StatusOK, s.CM.Buckets)
+	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
 func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
@@ -3172,7 +3153,7 @@ type userStatsResponse struct {
 
 // handleGetUserStats godoc
 // @Summary      Get stats for the current user
-// @Description  This endpoint is used to geet stats for the current user.
+// @Description  This endpoint is used to get stats for the current user.
 // @Tags         User
 // @Produce      json
 // @Success      200  {object}  string
@@ -3182,8 +3163,8 @@ type userStatsResponse struct {
 func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
-						(SELECT SUM(size) FROM contents where user_id = ? AND aggregated_in = 0 AND active) as total_size,
-						(SELECT COUNT(1) FROM contents where user_id = ? AND active) as num_pins`,
+						(SELECT SUM(size) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size,
+						(SELECT COUNT(1) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as num_pins`,
 		u.ID, u.ID).Scan(&stats).Error; err != nil {
 		return err
 	}
@@ -3224,6 +3205,14 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 	return authToken, nil
 }
 
+// handleGetViewer godoc
+// @Summary Fetch viewer details
+// @Description This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.
+// @Produce json
+// @Success 200 {object} util.ViewerResponse
+// @Failure 401 {object} util.HttpError
+// @Failure 500 {object} util.HttpError
+// @Router /viewer [get]
 func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
@@ -3783,39 +3772,36 @@ func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error
 
 			// if relative contentPath has a /, the file is in a subdirectory
 			// print the directory the file is in if we haven't already
-			var subDir string
 			if strings.Contains(relp, "/") {
 				parts := strings.Split(relp, "/")
-				subDir = parts[0]
-			} else {
-				subDir = relp
-			}
-			if !dirs[subDir] {
-				dirs[subDir] = true
-				out = append(out, collectionListResponse{
-					Name:    subDir,
-					Type:    Dir,
-					Dir:     queryDir,
-					ColUuid: coluuid,
-				})
-				continue
+				subDir := parts[0]
+				if !dirs[subDir] {
+					dirs[subDir] = true
+					out = append(out, collectionListResponse{
+						Name:    subDir,
+						Type:    Dir,
+						Dir:     queryDir,
+						ColUuid: coluuid,
+					})
+					continue
+				}
 			}
 		}
 
 		//var contentType CidType
-		//contentType = File
-		//if r.Type == util.Directory {
-		//	contentType = Dir
-		//}
-		//out = append(out, collectionListResponse{
-		//	Name:    r.Name,
-		//	Type:    contentType,
-		//	Size:    r.Size,
-		//	ContID:  r.ID,
-		//	Cid:     &util.DbCID{CID: r.Cid.CID},
-		//	Dir:     queryDir,
-		//	ColUuid: coluuid,
-		//})
+		contentType := File
+		if r.Type == util.Directory {
+			contentType = Dir
+		}
+		out = append(out, collectionListResponse{
+			Name:    r.Name,
+			Type:    contentType,
+			Size:    r.Size,
+			ContID:  r.ID,
+			Cid:     &util.DbCID{CID: r.Cid.CID},
+			Dir:     queryDir,
+			ColUuid: coluuid,
+		})
 	}
 	return c.JSON(http.StatusOK, out)
 }
@@ -3870,7 +3856,6 @@ type deleteContentFromCollectionBody struct {
 // @Description  This endpoint is used to delete an existing content from an existing collection. If two or more files with the same contentid exist in the collection, delete the one in the specified path
 // @Tags         collections
 // @Param        coluuid    path  string                           true  "Collection ID"
-// @Param        contentid  path  string                           true  "Content ID"
 // @Param        body       body  deleteContentFromCollectionBody  true  "Variable to use when filtering for files (must be either 'path' or 'content_id')"
 // @Produce      json
 // @Success      200  {object}  string
@@ -4472,23 +4457,17 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		case 0:
 			log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
-			var zSize int64
-			for _, zc := range aggr {
-				zSize += zc.Size
+			var aggrLoc string
+			for loc := range aggrLocs {
+				aggrLoc = loc
+				break
 			}
 
-			z := &contentmgr.ContentStagingZone{
-				ZoneOpened: cont.CreatedAt,
-				Contents:   aggr,
-				MinSize:    s.cfg.Content.MinSize,
-				MaxSize:    s.cfg.Content.MaxSize,
-				CurSize:    zSize,
-				User:       cont.UserID,
-				ContID:     cont.ID,
-				Location:   cont.Location,
+			if !s.CM.MarkStartedAggregating(cont.ID) {
+				// skip since it is already aggregating
+				return nil
 			}
-
-			if err := s.CM.AggregateStagingZone(ctx, z, aggrLocs); err != nil {
+			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
@@ -5499,6 +5478,7 @@ type CidType string
 
 const (
 	Dir    CidType = "directory"
+	File   CidType = "file"
 	ColDir string  = "dir"
 )
 
