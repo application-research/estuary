@@ -370,9 +370,10 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 		}
 
 		if err := cm.DB.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":        false,
-			"pinning":       false,
-			"failed":        true,
+			"active":  false,
+			"pinning": false,
+			"failed":  true,
+			// TODO: consider if we should not clear aggregated_in, but instead filter for not failed contents when aggregating
 			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
