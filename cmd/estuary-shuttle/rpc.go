@@ -184,7 +184,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		UserId:      user,
 		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
-		Peers:       peers,
+		Peers:       pinner.SerializePeers(peers),
 	}
 
 	d.PinMgr.Add(op)
