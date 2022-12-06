@@ -313,7 +313,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name: "announce-addr",
+			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -992,11 +992,7 @@ type User struct {
 	StorageDisabled bool
 	AuthExpiry      time.Time
 
-	Flags int
-}
-
-func (u *User) FlagSplitContent() bool {
-	return u.Flags&8 != 0
+	SplitContent bool
 }
 
 func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
@@ -1267,7 +1263,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
-	if !u.FlagSplitContent() && mpf.Size > s.shuttleConfig.Content.MaxSize {
+	if !u.SplitContent && mpf.Size > s.shuttleConfig.Content.MaxSize {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
