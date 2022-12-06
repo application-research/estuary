@@ -617,13 +617,13 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Param		 type		   query     type	 false	 "Type of content to upload ('car', 'cid' or 'file'). Defaults to 'file'"
 // @Param        car           body      string  false   "Car file to upload"
 // @Param        body          body      util.ContentAddIpfsBody  false   "IPFS Body"
-// @Param        data          formData  file    false   "File to upload"
+// @Param        data          formData  file    false   "FileContent to upload"
 // @Param        filename      formData  string  false   "Filename to use for upload"
 // @Param        uuid		   query     string  false  "Bucket UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
-// @Param        dir           query     string  false  "Directory in collection"
+// @Param        dir           query     string  false  "DirectoryContent in collection"
 // @Success      200           {object}  util.ContentAddResponse
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
@@ -669,9 +669,9 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	uploadType := c.QueryParam("type")
-	if uploadType == "" {
-		uploadType = "file"
+	uploadType := util.UploadType(c.QueryParam("type"))
+	if uploadType == util.Default {
+		uploadType = util.File
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -712,7 +712,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	// when pinning a CID we need to add a file to handle the special case
 	// of calling PinContent on the content manager
 	// TODO(gabe): PinContent adds to database tracking. decouple logic from that
-	if uploadType == "cid" {
+	if uploadType == util.CID {
 		makeDeal := true
 		bucks := []*buckets.BucketRef{
 			{
@@ -3231,7 +3231,7 @@ type addContentsToBucketBody struct {
 // @Produce      json
 // @Param        uuid     path      string  true  "Bucket UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to bucket"
-// @Param		 dir		 query	   string  false  "Directory"
+// @Param		 dir		 query	   string  false  "DirectoryContent"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
@@ -3431,7 +3431,7 @@ func (s *Server) handleCommitBucket(c echo.Context, u *util.User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        uuid  path      string  true   "uuid"
-// @Param        dir      query     string  false  "Directory"
+// @Param        dir      query     string  false  "DirectoryContent"
 // @Router       /buckets/{uuid} [get]
 func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 	uuid := c.Param("uuid")
@@ -3489,7 +3489,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 
 		if relp == "." { // Query directory is the complete path containing the content.
 			// trying to list a CID queryDir, not allowed
-			if r.Type == util.Directory {
+			if r.Type == util.DirectoryContent {
 				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
 			}
 
@@ -3505,7 +3505,7 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		} else { // Query directory has a subdirectory, which contains the actual content.
 
 			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
-			//if r.Type == util.Directory {
+			//if r.Type == util.DirectoryContent {
 			//	if !dirs[relp] {
 			//		dirs[relp] = true
 			//		out = append(out, bucketListResponse{
@@ -3543,8 +3543,8 @@ func (s *Server) handleGetBucketContents(c echo.Context, u *util.User) error {
 		}
 
 		//var contentType CidType
-		//contentType = File
-		//if r.Type == util.Directory {
+		//contentType = FileContent
+		//if r.Type == util.DirectoryContent {
 		//	contentType = Dir
 		//}
 		//out = append(out, bucketListResponse{

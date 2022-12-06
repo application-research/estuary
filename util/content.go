@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,8 +26,18 @@ type ContentType int64
 
 const (
 	Unknown ContentType = iota
-	File
-	Directory
+	FileContent
+	DirectoryContent
+)
+
+type UploadType string
+
+const (
+	Default UploadType = ""
+	File    UploadType = "file"
+	CID     UploadType = "cid"
+	Car     UploadType = "car"
+	Url     UploadType = "url"
 )
 
 type ContentInBucket struct {
@@ -135,14 +146,14 @@ type UploadedContent struct {
 // LoadContentFromRequest reads a POST /contents request and loads the content from it
 // It treats every different case of content upload: file (formData, CID or CAR)
 // Returns (UploadedContent, contentLen, filename, error)
-func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType string, bs blockstore.Blockstore, dserv ipld.DAGService) (UploadedContent, error) {
+func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType UploadType, bs blockstore.Blockstore, dserv ipld.DAGService) (UploadedContent, error) {
 	// for all three upload types
 	// get len
 	// get filename
 	// import file and get cid
 	content := UploadedContent{}
 	switch uploadType {
-	case "file":
+	case File:
 		// get file from formData
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -175,7 +186,7 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType stri
 		}
 		content.CID = nd.Cid()
 
-	case "car":
+	case Car:
 		// get CAR file from request body
 		// import file and get CID
 		defer c.Request().Body.Close()
@@ -217,7 +228,7 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType stri
 		// 	c.Request().Body = ioutil.NopCloser(bdWriter)
 		content.Length = 0 // zero since we're not checking the length of this content so it doesn't break the limit check (bad)
 
-	case "cid":
+	case CID:
 		// get CID from POST body
 		var params ContentAddIpfsBody
 		if err := c.Bind(&params); err != nil {
@@ -251,6 +262,23 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType stri
 		}
 		content.Origins = origins
 
+	case Url:
+		url := string(Url)
+		filename := path.Base(url)
+		content.Filename = filename
+
+		resp, err := http.Get(url)
+		if err != nil {
+			return UploadedContent{}, err
+		}
+		defer resp.Body.Close()
+
+		nd, err := ImportFile(dserv, resp.Body)
+		if err != nil {
+			return UploadedContent{}, err
+		}
+		content.CID = nd.Cid()
+
 	default:
 		return UploadedContent{}, xerrors.Errorf("invalid type, need 'file', 'cid' or 'car'. Got %s", uploadType)
 	}
@@ -258,7 +286,7 @@ func LoadContentFromRequest(c echo.Context, ctx context.Context, uploadType stri
 }
 
 // FindCIDType checks if a pinned CID (root) is a file, a dir or unknown
-// Returns dbmgr.File or dbmgr.Directory on success
+// Returns dbmgr.FileContent or dbmgr.DirectoryContent on success
 // Returns dbmgr.Unknown otherwise
 func FindCIDType(ctx context.Context, root cid.Cid, dserv ipld.NodeGetter) (contentType ContentType) {
 	contentType = Unknown
@@ -272,14 +300,14 @@ func FindCIDType(ctx context.Context, root cid.Cid, dserv ipld.NodeGetter) (cont
 		return
 	}
 
-	contentType = File
+	contentType = FileContent
 	fsNode, err := TryExtractFSNode(nd)
 	if err != nil {
 		return
 	}
 
 	if fsNode.IsDir() {
-		contentType = Directory
+		contentType = DirectoryContent
 	}
 	return
 }

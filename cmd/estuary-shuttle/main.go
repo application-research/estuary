@@ -1245,7 +1245,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Param		 type		   query     type	 false	 "Type of content to upload ('car' or 'file'). Defaults to 'file'"
 // @Param        car           body      string  false   "Car file to upload"
 // @Param        filename      formData  string  false   "Filename to use for upload"
-// @Param        data          formData  file    false   "File to upload"
+// @Param        data          formData  file    false   "FileContent to upload"
 // @Router       /content [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1666,13 +1666,13 @@ func (s *Shuttle) refreshPinQueue() error {
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 	op := &pinner.PinningOperation{
-		ContentID:  p.Content,
-		UserId:  p.UserID,
-		Obj:     p.Cid.CID,
-		Peers:   peers,
-		Started: p.CreatedAt,
-		Status:  types.PinningStatusQueued,
-		Replace: replace,
+		ContentID: p.Content,
+		UserId:    p.UserID,
+		Obj:       p.Cid.CID,
+		Peers:     peers,
+		Started:   p.CreatedAt,
+		Status:    types.PinningStatusQueued,
+		Replace:   replace,
 	}
 
 	/*
