@@ -34,5 +34,3 @@ build/.*
 .envrc
 
 .idea
-
-test
