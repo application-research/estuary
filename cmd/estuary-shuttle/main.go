@@ -1250,10 +1250,6 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
-	if err := util.WithMultipartFormDataChecker(c.Request().Header); err != nil {
-		return err
-	}
-
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
