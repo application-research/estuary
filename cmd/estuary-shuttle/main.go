@@ -1243,9 +1243,9 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param		 type		   query     type	 false	 "Type of content to upload ('car' or 'file'). Defaults to 'file'"
-// @Param        car           body      string  false   "UploadTypeCar file to upload"
+// @Param        car           body      string  false   "Car file to upload"
 // @Param        filename      formData  string  false   "Filename to use for upload"
-// @Param        data          formData  file    false   "ContentTypeFile to upload"
+// @Param        data          formData  file    false   "File to upload"
 // @Router       /content [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1556,7 +1556,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to Get UploadTypeCID node")
+			return nil, errors.Wrap(err, "failed to Get CID node")
 		}
 
 		cb(int64(len(node.RawData())))
