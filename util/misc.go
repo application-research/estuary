@@ -114,7 +114,6 @@ func JSONPayloadMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		return next(c)
 	}
-	}
 }
 
 func WithMultipartFormDataChecker(next echo.HandlerFunc) echo.HandlerFunc {
@@ -129,8 +128,8 @@ func WithMultipartFormDataChecker(next echo.HandlerFunc) echo.HandlerFunc {
 func checkContentType(header http.Header, expectedContentType string) error {
 	if header.Get("Content-Type") != expectedContentType {
 		return &HttpError{
-			Code: http.StatusUnsupportedMediaType,
-			Reason: ERR_UNSUPPORTED_CONTENT_TYPE,
+			Code:    http.StatusUnsupportedMediaType,
+			Reason:  ERR_UNSUPPORTED_CONTENT_TYPE,
 			Details: fmt.Sprintf("this endpoint only supports %s paylods", expectedContentType),
 		}
 	}
