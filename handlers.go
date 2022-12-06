@@ -133,7 +133,7 @@ func (s *Server) ServeAPI() error {
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 	e.GET("/gw/:path", s.handleGateway)
 
-	e.POST("/put", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
+	e.POST("/put", util.WithMultipartFormDataChecker(withUser(s.handleAdd)), s.AuthRequired(util.PermLevelUpload))
 	e.GET("/get/:cid", s.handleGetFullContentbyCid)
 	// e.HEAD("/get/:cid", s.handleGetContentByCid)
 
