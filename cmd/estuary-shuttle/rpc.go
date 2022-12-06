@@ -129,18 +129,21 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		existing := search[0]
 
 		if existing.Failed {
-			// retry a failed existing pin
-			op := &pinner.PinningOperation{
-				Obj:         data,
-				ContId:      contid,
-				UserId:      user,
-				Status:      types.PinningStatusQueued,
-				SkipLimiter: skipLimiter,
-				Peers:       peers,
-			}
+			// being asked to pin a thing we have marked as failed means the
+			// primary node isnt aware that this pin failed, we need to resend
+			// that notification
 
-			d.PinMgr.Add(op)
-			return nil
+			if err := d.sendRpcMessage(ctx, &drpc.Message{
+				Op: drpc.OP_UpdatePinStatus,
+				Params: drpc.MsgParams{
+					UpdatePinStatus: &drpc.UpdatePinStatus{
+						DBID:   contid,
+						Status: types.PinningStatusFailed,
+					},
+				},
+			}); err != nil {
+				log.Errorf("failed to send pin status update: %s", err)
+			}
 		}
 
 		if !existing.Pinning && existing.Active {
@@ -313,18 +316,10 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		}
 
 		if pin.Active {
-			// if this content is already in this shuttle, resend pin complete
+			// if this content is already in this shuttle, resend pin complete to ensure location tracking is updated
 			if err := d.resendPinComplete(ctx, pin); err != nil {
 				log.Error(err)
 			}
-		}
-		if pin.Failed {
-			// retry addPin if failed
-			go func(c drpc.ContentFetch) {
-				if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
-					log.Errorf("failed to pin takeContent: %d", c.ID)
-				}
-			}(c)
 		}
 	}
 	return nil
@@ -368,7 +363,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 			return err
 		}
 
-		if !cont.Active {
+		if !cont.Active || cont.Failed {
 			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c.ID)
 		}
 	}
