@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -128,21 +129,17 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		existing := search[0]
 
 		if existing.Failed {
-			// being asked to pin a thing we have marked as failed means the
-			// primary node isnt aware that this pin failed, we need to resend
-			// that notification
-
-			if err := d.sendRpcMessage(ctx, &drpc.Message{
-				Op: drpc.OP_UpdatePinStatus,
-				Params: drpc.MsgParams{
-					UpdatePinStatus: &drpc.UpdatePinStatus{
-						DBID:   contid,
-						Status: types.PinningStatusFailed,
-					},
-				},
-			}); err != nil {
-				log.Errorf("failed to send pin status update: %s", err)
+			// retry a failed existing pin
+			op := &pinner.PinningOperation{
+				Obj:         data,
+				ContId:      contid,
+				UserId:      user,
+				Status:      types.PinningStatusQueued,
+				SkipLimiter: skipLimiter,
+				Peers:       peers,
 			}
+
+			d.PinMgr.Add(op)
 			return nil
 		}
 
@@ -300,22 +297,35 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	defer d.addPinLk.Unlock()
 
 	for _, c := range cmd.Contents {
-		var count int64
-		err := d.DB.Model(Pin{}).Where("content = ?", c.ID).Limit(1).Count(&count).Error
+		var pin Pin
+		err := d.DB.First(&pin, "content = ?", c.ID).Error
 		if err != nil {
-			return err
-		}
-
-		// if this content is already in this shuttle, ignore pinning it
-		if count > 0 {
-			continue
-		}
-
-		go func(c drpc.ContentFetch) {
-			if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
-				log.Errorf("failed to pin takeContent: %d", c.ID)
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				go func(c drpc.ContentFetch) {
+					if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
+						log.Errorf("failed to pin takeContent: %d", c.ID)
+					}
+				}(c)
+			} else {
+				log.Errorf("error finding pin: %s", err)
+				return err
 			}
-		}(c)
+		}
+
+		if pin.Active {
+			// if this content is already in this shuttle, resend pin complete
+			if err := d.resendPinComplete(ctx, pin); err != nil {
+				log.Error(err)
+			}
+		}
+		if pin.Failed {
+			// retry addPin if failed
+			go func(c drpc.ContentFetch) {
+				if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
+					log.Errorf("failed to pin takeContent: %d", c.ID)
+				}
+			}(c)
+		}
 	}
 	return nil
 }
@@ -358,7 +368,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 			return err
 		}
 
-		if !cont.Active || cont.Failed {
+		if !cont.Active {
 			return fmt.Errorf("content i am being asked to aggregate is not pinned: %d", c.ID)
 		}
 	}

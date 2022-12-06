@@ -34,3 +34,5 @@ build/.*
 .envrc
 
 .idea
+
+**/.DS_Store

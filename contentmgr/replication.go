@@ -492,7 +492,12 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 		defer cm.MarkFinishedConsolidating(zone)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else if dstLocation != "" {
-		return cm.SendConsolidateContentCmd(ctx, dstLocation, toMove)
+		if err := cm.SendConsolidateContentCmd(ctx, dstLocation, toMove); err != nil {
+			// unmark as consolidating and retry later if failed to send consolidate cmd
+			cm.MarkFinishedConsolidating(zone)
+			return err
+		}
+		return nil
 	} else {
 		// unable to find a destination location, unmark as consolidating and let it retry later
 		cm.log.Warnf("unable to find a destination location for consolidating zone: %d", zone.ID)
