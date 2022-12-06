@@ -8,6 +8,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
+// this is required as ipfs pinning spec has strong requirements on response format
 func OpenApiMiddleware(log *zap.SugaredLogger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

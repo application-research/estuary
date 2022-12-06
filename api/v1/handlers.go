@@ -66,8 +66,6 @@ import (
 	"gorm.io/gorm/clause"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
 
 	_ "github.com/application-research/estuary/docs"
@@ -3673,51 +3671,6 @@ func (s *apiV1) handleDeleteContentFromCollection(c echo.Context, u *util.User) 
 		return err
 	}
 	return c.NoContent(http.StatusOK)
-}
-
-func (s *apiV1) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-
-		r := c.Request()
-
-		attrs := []attribute.KeyValue{
-			semconv.HTTPMethodKey.String(r.Method),
-			semconv.HTTPRouteKey.String(r.URL.Path),
-			semconv.HTTPClientIPKey.String(r.RemoteAddr),
-			semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
-		}
-
-		if reqid := r.Header.Get("EstClientReqID"); reqid != "" {
-			if len(reqid) > 64 {
-				reqid = reqid[:64]
-			}
-			attrs = append(attrs, attribute.String("ClientReqID", reqid))
-		}
-
-		tctx, span := s.tracer.Start(context.Background(),
-			"HTTP "+r.Method+" "+c.Path(),
-			trace.WithAttributes(attrs...),
-		)
-		defer span.End()
-
-		r = r.WithContext(tctx)
-		c.SetRequest(r)
-
-		err := next(c)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			span.RecordError(err)
-		} else {
-			span.SetStatus(codes.Ok, "")
-		}
-
-		span.SetAttributes(
-			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
-			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
-		)
-
-		return err
-	}
 }
 
 type adminUserResponse struct {
