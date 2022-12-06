@@ -354,7 +354,9 @@ func SerializePeers(peers []*peer.AddrInfo) []AddrInfoString {
 		id, _ := p.ID.Marshal()
 		adInfo := AddrInfoString{ID: id}
 		for _, a := range p.Addrs {
-			adInfo.Addrs = append(adInfo.Addrs, a.String())
+			if a != nil {
+				adInfo.Addrs = append(adInfo.Addrs, a.String())
+			}
 		}
 		adInfos = append(adInfos, adInfo)
 	}
