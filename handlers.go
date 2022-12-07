@@ -133,7 +133,7 @@ func (s *Server) ServeAPI() error {
 	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
 	e.GET("/gw/:path", s.handleGateway)
 
-	e.POST("/put", withUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
+	e.POST("/put", util.WithMultipartFormDataChecker(withUser(s.handleAdd)), s.AuthRequired(util.PermLevelUpload))
 	e.GET("/get/:cid", s.handleGetFullContentbyCid)
 	// e.HEAD("/get/:cid", s.handleGetContentByCid)
 
@@ -156,7 +156,7 @@ func (s *Server) ServeAPI() error {
 
 	contmeta := e.Group("/content")
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
-	uploads.POST("/add", withUser(s.handleAdd))
+	uploads.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
 	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
 	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
