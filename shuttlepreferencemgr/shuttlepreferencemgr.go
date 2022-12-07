@@ -1,4 +1,4 @@
-package shuttlepreference
+package shuttlepreferencemgr
 
 import (
 	"context"
@@ -9,27 +9,9 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type SPPreferenceManager struct {
-	DB *gorm.DB
-}
-
-func NewSPPreferenceManager(db *gorm.DB) (*SPPreferenceManager, error) {
-	spref := &SPPreferenceManager{
-		DB: db,
-	}
-
-	return spref, nil
-}
-
-// Get SPs and priority in reference to a given shuttle
-func (spm *SPPreferenceManager) Query(sourceShuttle string) ([]model.ShuttlePreference, error) {
-	var spl []model.ShuttlePreference
-
-	if err := spm.DB.Find(&spl, "ShuttleID = ?", sourceShuttle).Error; err != nil {
-		return nil, err
-	}
-
-	return spl, nil
+type ShuttlePreferenceManager struct {
+	DB          *gorm.DB
+	MaxPriority int
 }
 
 type StorageProviderShuttlePing struct {
@@ -42,18 +24,36 @@ type ShuttlePing struct {
 	ping      float64
 }
 
+func NewShuttlePreferenceManager(db *gorm.DB, maxPriority int) (*ShuttlePreferenceManager, error) {
+	spref := &ShuttlePreferenceManager{
+		DB:          db,
+		MaxPriority: maxPriority,
+	}
+
+	return spref, nil
+}
+
+// Get SPs and priority in reference to a given shuttle
+func (spm *ShuttlePreferenceManager) Query(sourceShuttle string) ([]model.ShuttlePreference, error) {
+	var spl []model.ShuttlePreference
+
+	if err := spm.DB.Find(&spl, "ShuttleID = ?", sourceShuttle).Error; err != nil {
+		return nil, err
+	}
+
+	return spl, nil
+}
+
 // Creates or update SP/Shuttle preference records associated with the provided SP ids
-func (spm *SPPreferenceManager) PostSP(ctx context.Context, pings StorageProviderShuttlePing) error {
-	// Only create records for this max priority #
-	// TODO: Extract to config
-	maxPriorityToConsider := 2
+func (spm *ShuttlePreferenceManager) PostSP(ctx context.Context, pings StorageProviderShuttlePing) error {
 
 	var toCreate []model.ShuttlePreference
 	sorted := sortShuttles(pings.pings)
 
 	// Create entries for each SP/Shuttle Priority mapping
 	for pri, shuttle := range sorted {
-		if pri == maxPriorityToConsider {
+		// Only create records for this max priority #
+		if pri == spm.MaxPriority {
 			break
 		}
 		toCreate = append(toCreate, model.ShuttlePreference{
