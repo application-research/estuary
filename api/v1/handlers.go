@@ -104,20 +104,6 @@ type statsResp struct {
 	PinningStatus   pinningtypes.PinningStatus `json:"pinningStatus"`
 }
 
-func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
-	return func(c echo.Context) error {
-		u, ok := c.Get("user").(*util.User)
-		if !ok {
-			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Reason:  util.ERR_INVALID_AUTH,
-				Details: "endpoint not called with proper authentication",
-			}
-		}
-		return f(c, u)
-	}
-}
-
 // handleStats godoc
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
@@ -584,7 +570,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		col = &srchCol
 	}
 
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
+	path, err := util.ConstructDirectoryPath(c.QueryParam(ColDir))
 	if err != nil {
 		return err
 	}
@@ -662,20 +648,6 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		EstuaryId:           content.ID,
 		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
-}
-
-func constructDirectoryPath(dir string) (string, error) {
-	defaultPath := "/"
-	path := defaultPath
-	if cp := dir; cp != "" {
-		sp, err := sanitizePath(cp)
-		if err != nil {
-			return "", err
-		}
-
-		path = sp
-	}
-	return path, nil
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -3187,7 +3159,7 @@ func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) erro
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
+	path, err := util.ConstructDirectoryPath(c.QueryParam(ColDir))
 	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
 		fullPath := filepath.Join(path, cont.Name)
@@ -4579,7 +4551,7 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 			req.CollectionDir = "/"
 		}
 
-		sp, err := sanitizePath(req.CollectionDir)
+		sp, err := util.SanitizePath(req.CollectionDir)
 		if err != nil {
 			return err
 		}
@@ -4974,25 +4946,15 @@ const (
 	ColDir string = "dir"
 )
 
-func sanitizePath(p string) (string, error) {
-	if len(p) == 0 {
-		return "", fmt.Errorf("can't sanitize empty path")
-	}
-
-	if p[0] != '/' {
-		return "", fmt.Errorf("paths must start with /")
-	}
-
-	// TODO: prevent use of special weird characters
-
-	cleanPath := filepath.Clean(p)
-
-	// if original path ends in /, append / to cleaned path
-	// needed for full path vs dir+filename magic to work in handleAddIpfs
-	if strings.HasSuffix(p, "/") {
-		cleanPath = cleanPath + "/"
-	}
-	return cleanPath, nil
+type collectionListResponse struct {
+	Name      string      `json:"name"`
+	Type      CidType     `json:"type"`
+	Size      int64       `json:"size"`
+	ContID    uint        `json:"contId"`
+	Cid       *util.DbCID `json:"cid,omitempty"`
+	Dir       string      `json:"dir"`
+	ColUuid   string      `json:"coluuid"`
+	UpdatedAt time.Time   `json:"updatedAt"`
 }
 
 // handleColfsAdd godoc
@@ -5046,7 +5008,7 @@ func (s *apiV1) handleColfsAdd(c echo.Context, u *util.User) error {
 
 	var path *string
 	if npath != "" {
-		p, err := sanitizePath(npath)
+		p, err := util.SanitizePath(npath)
 		if err != nil {
 			return err
 		}
