@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"bytes"
@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
+
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
@@ -33,7 +35,6 @@ import (
 
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/drpc"
-	esmetrics "github.com/application-research/estuary/metrics"
 	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -51,17 +52,14 @@ import (
 	exchange "github.com/ipfs/go-ipfs-exchange-interface"
 	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
-	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-unixfs"
 	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
@@ -69,261 +67,11 @@ import (
 	"gorm.io/gorm/clause"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
-	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
-
-	echoSwagger "github.com/swaggo/echo-swagger"
 
 	_ "github.com/application-research/estuary/docs"
 	"github.com/multiformats/go-multihash"
 )
-
-// @title Estuary API
-// @version 0.0.0
-// @description This is the API for the Estuary application.
-// @termsOfService http://estuary.tech
-
-// @contact.name API Support
-// @contact.url https://docs.estuary.tech/feedback
-
-// @license.name Apache 2.0 Apache-2.0 OR MIT
-// @license.url https://github.com/application-research/estuary/blob/master/LICENSE.md
-
-// @host api.estuary.tech
-// @BasePath  /
-// @securityDefinitions.Bearer
-// @securityDefinitions.Bearer.type apiKey
-// @securityDefinitions.Bearer.in header
-// @securityDefinitions.Bearer.name Authorization
-func (s *Server) ServeAPI() error {
-	e := echo.New()
-	e.Binder = new(util.Binder)
-	e.Pre(middleware.RemoveTrailingSlash())
-
-	if s.cfg.Logging.ApiEndpointLogging {
-		e.Use(middleware.Logger())
-	}
-
-	e.Use(s.tracingMiddleware)
-	e.Use(util.AppVersionMiddleware(s.cfg.AppVersion))
-	e.HTTPErrorHandler = util.ErrorHandler
-
-	e.GET("/debug/pprof/:prof", serveProfile)
-	e.GET("/debug/cpuprofile", serveCpuProfile)
-
-	phandle := promhttp.Handler()
-	e.GET("/debug/metrics/prometheus", func(e echo.Context) error {
-		phandle.ServeHTTP(e.Response().Writer, e.Request())
-		return nil
-	})
-
-	exporter := esmetrics.Exporter()
-	e.GET("/debug/metrics/opencensus", func(e echo.Context) error {
-		exporter.ServeHTTP(e.Response().Writer, e.Request())
-		return nil
-	})
-
-	e.Use(middleware.CORS())
-	e.Use(middleware.Recover())
-
-	e.POST("/register", s.handleRegisterUser)
-	e.POST("/login", s.handleLoginUser)
-	e.GET("/health", s.handleHealth)
-	e.GET("/viewer", withUser(s.handleGetViewer), s.AuthRequired(util.PermLevelUpload))
-	e.GET("/retrieval-candidates/:cid", s.handleGetRetrievalCandidates)
-	e.GET("/gw/:path", s.handleGateway)
-
-	e.POST("/put", util.WithMultipartFormDataChecker(withUser(s.handleAdd)), s.AuthRequired(util.PermLevelUpload))
-	e.GET("/get/:cid", s.handleGetFullContentbyCid)
-	// e.HEAD("/get/:cid", s.handleGetContentByCid)
-
-	user := e.Group("/user")
-	user.Use(s.AuthRequired(util.PermLevelUser))
-	user.GET("/api-keys", withUser(s.handleUserGetApiKeys))
-	user.POST("/api-keys", withUser(s.handleUserCreateApiKey))
-	user.DELETE("/api-keys/:key_or_hash", withUser(s.handleUserRevokeApiKey))
-	user.GET("/export", withUser(s.handleUserExportData))
-	user.PUT("/password", withUser(s.handleUserChangePassword))
-	user.PUT("/address", withUser(s.handleUserChangeAddress))
-	user.GET("/stats", withUser(s.handleGetUserStats))
-
-	userMiner := user.Group("/miner")
-	userMiner.POST("/claim", withUser(s.handleUserClaimMiner))
-	userMiner.GET("/claim/:miner", withUser(s.handleUserGetClaimMinerMsg))
-	userMiner.POST("/suspend/:miner", withUser(s.handleSuspendMiner))
-	userMiner.PUT("/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
-	userMiner.PUT("/set-info/:miner", withUser(s.handleMinersSetInfo))
-
-	contmeta := e.Group("/content")
-	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
-	uploads.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
-	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
-	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
-	uploads.POST("/create", withUser(s.handleCreateContent))
-
-	content := contmeta.Group("", s.AuthRequired(util.PermLevelUser))
-	content.GET("/by-cid/:cid", s.handleGetContentByCid)
-	content.GET("/:cont_id", withUser(s.handleGetContent))
-	content.GET("/stats", withUser(s.handleStats))
-	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
-	content.GET("/status/:id", withUser(s.handleContentStatus))
-	content.GET("/list", withUser(s.handleListContent))
-	content.GET("/deals", withUser(s.handleListContentWithDeals))
-	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
-	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
-	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
-	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
-	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
-
-	// TODO: the commented out routes here are still fairly useful, but maybe
-	// need to have some sort of 'super user' permission level in order to use
-	// them? Can easily cause harm using them
-	deals := e.Group("/deals")
-	deals.Use(s.AuthRequired(util.PermLevelUser))
-	deals.GET("/status/:deal", withUser(s.handleGetDealStatus))
-	deals.GET("/status-by-proposal/:propcid", withUser(s.handleGetDealStatusByPropCid))
-	deals.GET("/query/:miner", s.handleQueryAsk)
-	deals.POST("/make/:miner", withUser(s.handleMakeDeal))
-	//deals.POST("/transfer/start/:miner/:propcid/:datacid", s.handleTransferStart)
-	deals.GET("/transfer/status/:id", s.handleTransferStatusByID)
-	deals.POST("/transfer/status", s.handleTransferStatus)
-	deals.GET("/transfer/in-progress", s.handleTransferInProgress)
-	deals.GET("/status/:miner/:propcid", s.handleDealStatus)
-	deals.POST("/estimate", s.handleEstimateDealCost)
-	deals.GET("/proposal/:propcid", s.handleGetProposal)
-	deals.GET("/info/:dealid", s.handleGetDealInfo)
-	deals.GET("/failures", withUser(s.handleStorageFailures))
-
-	cols := e.Group("/collections")
-	cols.Use(s.AuthRequired(util.PermLevelUser))
-
-	cols.GET("", withUser(s.handleListCollections))
-	cols.POST("", withUser(s.handleCreateCollection))
-
-	cols.DELETE("/:coluuid", withUser(s.handleDeleteCollection))
-	cols.POST("/:coluuid", withUser(s.handleAddContentsToCollection))
-	cols.GET("/:coluuid", withUser(s.handleGetCollectionContents))
-
-	cols.DELETE("/:coluuid/contents", withUser(s.handleDeleteContentFromCollection))
-
-	cols.POST("/:coluuid/commit", withUser(s.handleCommitCollection))
-
-	colfs := cols.Group("/fs")
-	colfs.POST("/add", withUser(s.handleColfsAdd))
-
-	pinning := e.Group("/pinning")
-	pinning.Use(openApiMiddleware)
-	pinning.Use(s.AuthRequired(util.PermLevelUser))
-	pinning.GET("/pins", withUser(s.handleListPins))
-	pinning.GET("/pins/:pinid", withUser(s.handleGetPin))
-	pinning.DELETE("/pins/:pinid", withUser(s.handleDeletePin))
-	pinning.Use(util.JSONPayloadMiddleware)
-	pinning.POST("/pins", withUser(s.handleAddPin))
-	pinning.POST("/pins/:pinid", withUser(s.handleReplacePin))
-
-	// explicitly public, for now
-	public := e.Group("/public")
-
-	public.GET("/stats", s.handlePublicStats)
-	public.GET("/by-cid/:cid", s.handleGetContentByCid)
-	public.GET("/deals/failures", s.handlePublicStorageFailures)
-	public.GET("/info", s.handleGetPublicNodeInfo)
-	public.GET("/miners", s.handlePublicGetMinerStats)
-
-	metrics := public.Group("/metrics")
-	metrics.GET("/deals-on-chain", s.handleMetricsDealOnChain)
-
-	netw := public.Group("/net")
-	netw.GET("/peers", s.handleNetPeers)
-	netw.GET("/addrs", s.handleNetAddrs)
-
-	miners := public.Group("/miners")
-	miners.GET("", s.handleAdminGetMiners)
-	miners.GET("/failures/:miner", s.handleGetMinerFailures)
-	miners.GET("/deals/:miner", s.handleGetMinerDeals)
-	miners.GET("/stats/:miner", s.handleGetMinerStats)
-	miners.GET("/storage/query/:miner", s.handleQueryAsk)
-
-	admin := e.Group("/admin")
-	admin.Use(s.AuthRequired(util.PermLevelAdmin))
-	admin.GET("/fil-address", s.handleAdminFilAddress)
-	admin.GET("/balance", s.handleAdminBalance)
-	admin.POST("/add-escrow/:amt", s.handleAdminAddEscrow)
-	admin.GET("/dealstats", s.handleDealStats)
-	admin.GET("/disk-info", s.handleDiskSpaceCheck)
-	admin.GET("/stats", s.handleAdminStats)
-	admin.GET("/system/config", withUser(s.handleGetSystemConfig))
-
-	// miners
-	admin.POST("/miners/add/:miner", s.handleAdminAddMiner)
-	admin.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
-	admin.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
-	admin.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
-	admin.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
-	admin.GET("/miners", s.handleAdminGetMiners)
-	admin.GET("/miners/stats", s.handleAdminGetMinerStats)
-	admin.GET("/miners/transfers/:miner", s.handleMinerTransferDiagnostics)
-
-	admin.GET("/cm/progress", s.handleAdminGetProgress)
-	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
-	admin.GET("/cm/read/:content", s.handleReadLocalContent)
-	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
-	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
-	admin.POST("/cm/offload/:content", s.handleOffloadContent)
-	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
-	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
-	admin.POST("/cm/gc", s.handleRunGc)
-	admin.POST("/cm/move", s.handleMoveContent)
-	admin.GET("/cm/buckets", s.handleGetBucketDiag)
-	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
-	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
-	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
-	admin.POST("/cm/break-aggregate/:content", s.handleAdminBreakAggregate)
-	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
-	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
-
-	//	peering
-	admin.POST("/peering/peers", s.handlePeeringPeersAdd)
-	admin.DELETE("/peering/peers", s.handlePeeringPeersRemove)
-	admin.GET("/peering/peers", s.handlePeeringPeersList)
-	admin.POST("/peering/start", s.handlePeeringStart)
-	admin.POST("/peering/stop", s.handlePeeringStop)
-	admin.GET("/peering/status", s.handlePeeringStatus)
-
-	admnetw := admin.Group("/net")
-	admnetw.GET("/peers", s.handleNetPeers)
-
-	admin.GET("/retrieval/querytest/:content", s.handleRetrievalCheck)
-	admin.GET("/retrieval/stats", s.handleGetRetrievalInfo)
-
-	admin.POST("/invite/:code", withUser(s.handleAdminCreateInvite))
-	admin.GET("/invites", s.handleAdminGetInvites)
-
-	admin.GET("/fixdeals", s.handleFixupDeals)
-	admin.POST("/loglevel", s.handleLogLevel)
-
-	users := admin.Group("/users")
-	users.GET("", s.handleAdminGetUsers)
-
-	shuttle := admin.Group("/shuttle")
-	shuttle.POST("/init", s.handleShuttleInit)
-	shuttle.GET("/list", s.handleShuttleList)
-
-	ar := admin.Group("/autoretrieve")
-	ar.POST("/init", s.handleAutoretrieveInit)
-	ar.GET("/list", s.handleAutoretrieveList)
-
-	e.POST("/autoretrieve/heartbeat", s.handleAutoretrieveHeartbeat, s.withAutoretrieveAuth())
-
-	e.GET("/shuttle/conn", s.handleShuttleConnection)
-	e.POST("/shuttle/content/create", s.handleShuttleCreateContent, s.withShuttleAuth())
-
-	if !s.cfg.DisableSwaggerEndpoint {
-		e.GET("/swagger/*", echoSwagger.WrapHandler)
-	}
-	return e.Start(s.cfg.ApiListen)
-}
 
 func serveCpuProfile(c echo.Context) error {
 	if err := pprof.StartCPUProfile(c.Response()); err != nil {
@@ -384,7 +132,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
-func (s *Server) handleStats(c echo.Context, u *util.User) error {
+func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	limit := 500
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -439,7 +187,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
 // @Router       /admin/peering/peers [post]
-func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
+func (s *apiV1) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
 		return &util.HttpError{
@@ -503,7 +251,7 @@ type peerIDs []peerID // used for swagger
 // @Failure      500     {object}  util.HttpError
 // @Param        peerIds  body      peerIDs  true  "Peer ids"
 // @Router       /admin/peering/peers [delete]
-func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
+func (s *apiV1) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
 	if err := c.Bind(&params); err != nil {
@@ -528,7 +276,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /admin/peering/peers [get]
-func (s *Server) handlePeeringPeersList(c echo.Context) error {
+func (s *apiV1) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
 	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
 
@@ -554,7 +302,7 @@ func (s *Server) handlePeeringPeersList(c echo.Context) error {
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Router       /admin/peering/start [post]
-func (s *Server) handlePeeringStart(c echo.Context) error {
+func (s *apiV1) handlePeeringStart(c echo.Context) error {
 	err := s.Node.Peering.Start()
 	if err != nil {
 		return &util.HttpError{
@@ -574,7 +322,7 @@ func (s *Server) handlePeeringStart(c echo.Context) error {
 // @Failure      400    {object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Router       /admin/peering/stop [post]
-func (s *Server) handlePeeringStop(c echo.Context) error {
+func (s *apiV1) handlePeeringStop(c echo.Context) error {
 	err := s.Node.Peering.Stop()
 	if err != nil {
 		return &util.HttpError{
@@ -594,7 +342,7 @@ func (s *Server) handlePeeringStop(c echo.Context) error {
 // @Failure      400            {object}  util.HttpError
 // @Failure      500            {object}  util.HttpError
 // @Router       /admin/peering/status [get]
-func (s *Server) handlePeeringStatus(c echo.Context) error {
+func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 	type StateResponse struct {
 		State string `json:"state"`
 	}
@@ -612,7 +360,7 @@ func (s *Server) handlePeeringStatus(c echo.Context) error {
 // @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
-func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
+func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -689,10 +437,13 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
+
+	s.pinMgr.Add(pinOp)
+
 	return c.JSON(http.StatusAccepted, pinstatus)
 }
 
@@ -708,7 +459,7 @@ func (s *Server) handleAddIpfs(c echo.Context, u *util.User) error {
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes"
 // @Param        filename      query     string  false  "Filename"
 // @Router       /content/add-car [post]
-func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
+func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -749,7 +500,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	defer func() {
 		go func() {
 			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
+				s.log.Errorf("failed to clean up staging blockstore: %s", err)
 			}
 		}()
 	}()
@@ -798,7 +549,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
-			log.Warnf("failed to announce providers: %s", err)
+			s.log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
 
@@ -811,7 +562,7 @@ func (s *Server) handleAddCar(c echo.Context, u *util.User) error {
 	})
 }
 
-func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
+func (s *apiV1) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Reader) (*car.CarHeader, error) {
 	_, span := s.tracer.Start(ctx, "loadCar")
 	defer span.End()
 
@@ -835,7 +586,7 @@ func (s *Server) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Rea
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Router       /content/add [post]
-func (s *Server) handleAdd(c echo.Context, u *util.User) error {
+func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
@@ -885,7 +636,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
 		if err != nil {
-			log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
 		} else {
 			replication = parsed
 		}
@@ -915,7 +666,7 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	defer func() {
 		go func() {
 			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
+				s.log.Errorf("failed to clean up staging blockstore: %s", err)
 			}
 		}()
 	}()
@@ -942,13 +693,13 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 	fullPath := filepath.Join(path, content.Name)
 
 	if col != nil {
-		log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
+		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
 		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
 			Path:       &fullPath,
 		}).Error; err != nil {
-			log.Errorf("failed to add content to requested collection: %s", err)
+			s.log.Errorf("failed to add content to requested collection: %s", err)
 		}
 	}
 
@@ -965,13 +716,13 @@ func (s *Server) handleAdd(c echo.Context, u *util.User) error {
 		defer cancel()
 		if err := s.Node.FullRT.Provide(subctx, nd.Cid(), true); err != nil {
 			span.RecordError(fmt.Errorf("provide error: %w", err))
-			log.Errorf("fullrt provide call errored: %s", err)
+			s.log.Errorf("fullrt provide call errored: %s", err)
 		}
 	}
 
 	go func() {
 		if err := s.Node.Provider.Provide(nd.Cid()); err != nil {
-			log.Warnf("failed to announce providers: %s", err)
+			s.log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
 
@@ -1000,7 +751,7 @@ func constructDirectoryPath(dir string) (string, error) {
 
 // redirectContentAdding is called when localContentAddingDisabled is true
 // it finds available shuttles and adds the desired content in one of them
-func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
+func (s *apiV1) redirectContentAdding(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
@@ -1027,7 +778,7 @@ func (s *Server) redirectContentAdding(c echo.Context, u *util.User) error {
 	return nil
 }
 
-func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
+func (s *apiV1) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Reader) (ipld.Node, error) {
 	_, span := s.tracer.Start(ctx, "importFile")
 	defer span.End()
 
@@ -1044,7 +795,7 @@ func (s *Server) importFile(ctx context.Context, dserv ipld.DAGService, fi io.Re
 // @Failure      500    {object}  util.HttpError
 // @Param        datacid  path      string  true  "Data CID"
 // @Router       /content/ensure-replication/{datacid} [get]
-func (s *Server) handleEnsureReplication(c echo.Context) error {
+func (s *apiV1) handleEnsureReplication(c echo.Context) error {
 	data, err := cid.Decode(c.Param("datacid"))
 	if err != nil {
 		return err
@@ -1070,7 +821,7 @@ func (s *Server) handleEnsureReplication(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/list [get]
-func (s *Server) handleListContent(c echo.Context, u *util.User) error {
+func (s *apiV1) handleListContent(c echo.Context, u *util.User) error {
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
 		return err
@@ -1095,7 +846,7 @@ type expandedContent struct {
 // @Param        limit   query     int  false  "Limit"
 // @Param        offset  query     int  false  "Offset"
 // @Router       /content/deals [get]
-func (s *Server) handleListContentWithDeals(c echo.Context, u *util.User) error {
+func (s *apiV1) handleListContentWithDeals(c echo.Context, u *util.User) error {
 
 	var limit = 20
 	if limstr := c.QueryParam("limit"); limstr != "" {
@@ -1168,7 +919,7 @@ type dealStatus struct {
 // @Failure      500      {object}  util.HttpError
 // @Param        id   path      int  true  "Content ID"
 // @Router       /content/{id} [get]
-func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("cont_id"))
 	if err != nil {
 		return err
@@ -1203,7 +954,7 @@ func (s *Server) handleGetContent(c echo.Context, u *util.User) error {
 // @Failure      500      {object}  util.HttpError
 // @Param        id   path      int  true  "Content ID"
 // @Router       /content/status/{id} [get]
-func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
+func (s *apiV1) handleContentStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	contID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -1245,7 +996,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 
 			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
-				log.Errorf("failed to get transfer status: %s", err)
+				s.log.Errorf("failed to get transfer status: %s", err)
 				// the UI needs to display a transfer state even for intermittent errors
 				chanst = &filclient.ChannelState{
 					StatusStr: "Error",
@@ -1264,7 +1015,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 			if d.DealID > 0 {
 				markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(d.DealID), types.EmptyTSK)
 				if err != nil {
-					log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
+					s.log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
 				} else {
 					dstatus.OnChainState = &onChainDealState{
 						SectorStartEpoch: markDeal.State.SectorStartEpoch,
@@ -1305,7 +1056,7 @@ func (s *Server) handleContentStatus(c echo.Context, u *util.User) error {
 // @Failure      500     {object}  util.HttpError
 // @Param        deal  path      int  true  "Deal ID"
 // @Router       /deals/status/{deal} [get]
-func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetDealStatus(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	val, err := strconv.Atoi(c.Param("deal"))
@@ -1331,7 +1082,7 @@ func (s *Server) handleGetDealStatus(c echo.Context, u *util.User) error {
 // @Failure      500      {object}  util.HttpError
 // @Param        propcid  path      string  true  "PropCid"
 // @Router       /deal/status-by-proposal/{propcid} [get]
-func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetDealStatusByPropCid(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	propcid, err := cid.Decode(c.Param("propcid"))
@@ -1359,7 +1110,7 @@ func (s *Server) handleGetDealStatusByPropCid(c echo.Context, u *util.User) erro
 	return c.JSON(http.StatusOK, dstatus)
 }
 
-func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
+func (s *apiV1) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, error) {
 	var deal model.ContentDeal
 	if err := s.DB.First(&deal, "id = ?", dealid).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -1379,7 +1130,7 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 
 	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
-		log.Errorf("failed to get transfer status: %s", err)
+		s.log.Errorf("failed to get transfer status: %s", err)
 		// the UI needs to display a transfer state even for intermittent errors
 		chanst = &filclient.ChannelState{
 			StatusStr: "Error",
@@ -1401,7 +1152,7 @@ func (s *Server) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, 
 	if deal.DealID > 0 {
 		markDeal, err := s.Api.StateMarketStorageDeal(ctx, abi.DealID(deal.DealID), types.EmptyTSK)
 		if err != nil {
-			log.Warnw("failed to get deal info from market actor", "dealID", deal.DealID, "error", err)
+			s.log.Warnw("failed to get deal info from market actor", "dealID", deal.DealID, "error", err)
 		} else {
 			dstatus.OnChainState = &onChainDealState{
 				SectorStartEpoch: markDeal.State.SectorStartEpoch,
@@ -1420,7 +1171,7 @@ type getContentResponse struct {
 	Deals        []*model.ContentDeal `json:"deals"`
 }
 
-func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
+func (s *apiV1) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
 	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
 	// to build the CAR sub-selector
 
@@ -1451,7 +1202,7 @@ func (s *Server) calcSelector(aggregatedIn uint, contentID uint) (string, error)
 // @Failure      500     {object}  util.HttpError
 // @Param        cid  path      string  true  "Cid"
 // @Router       /public/by-cid/{cid} [get]
-func (s *Server) handleGetContentByCid(c echo.Context) error {
+func (s *apiV1) handleGetContentByCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
 		return errors.Wrapf(err, "invalid cid")
@@ -1518,7 +1269,7 @@ func (s *Server) handleGetContentByCid(c echo.Context) error {
 // @Failure      500     {object}  util.HttpError
 // @Param        cid  path      string  true  "Cid"
 // @Router       /get/{cid} [get]
-func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
+func (s *apiV1) handleGetFullContentbyCid(c echo.Context) error {
 	obj, err := cid.Decode(c.Param("cid"))
 	if err != nil {
 		return errors.Wrapf(err, "invalid cid")
@@ -1538,7 +1289,7 @@ func (s *Server) handleGetFullContentbyCid(c echo.Context) error {
 // @Param        miner  path      string  true  "CID"
 // @Router       /deal/query/{miner} [get]
 // @router       /public/miners/storage/query/{miner} [get]
-func (s *Server) handleQueryAsk(c echo.Context) error {
+func (s *apiV1) handleQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -1566,7 +1317,7 @@ type dealRequest struct {
 // @Param        miner        path      string  true  "Miner"
 // @Param        dealRequest  body      string  true  "Deal Request"
 // @Router       /deals/make/{miner} [post]
-func (s *Server) handleMakeDeal(c echo.Context, u *util.User) error {
+func (s *apiV1) handleMakeDeal(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	if u.Perm < util.PermLevelAdmin {
@@ -1635,7 +1386,7 @@ type ChannelIDParam struct {
 // @Failure      500      {object}  util.HttpError
 // @Param        chanid  body      ChannelIDParam  true  "Channel ID"
 // @Router       /deal/transfer/status [post]
-func (s *Server) handleTransferStatus(c echo.Context) error {
+func (s *apiV1) handleTransferStatus(c echo.Context) error {
 	var chanid datatransfer.ChannelID
 	if err := c.Bind(&chanid); err != nil {
 		return err
@@ -1666,7 +1417,7 @@ func (s *Server) handleTransferStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, status)
 }
 
-func (s *Server) handleTransferStatusByID(c echo.Context) error {
+func (s *apiV1) handleTransferStatusByID(c echo.Context) error {
 	transferID := c.Param("id")
 
 	var deal model.ContentDeal
@@ -1702,7 +1453,7 @@ func (s *Server) handleTransferStatusByID(c echo.Context) error {
 // @Failure      400     {object}  util.HttpError
 // @Failure      500     {object}  util.HttpError
 // @Router       /deal/transfer/in-progress [get]
-func (s *Server) handleTransferInProgress(c echo.Context) error {
+func (s *apiV1) handleTransferInProgress(c echo.Context) error {
 	ctx := context.TODO()
 
 	transfers, err := s.FilClient.TransfersInProgress(ctx)
@@ -1713,7 +1464,7 @@ func (s *Server) handleTransferInProgress(c echo.Context) error {
 	return c.JSON(http.StatusOK, transfers)
 }
 
-func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
+func (s *apiV1) handleMinerTransferDiagnostics(c echo.Context) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -1727,7 +1478,7 @@ func (s *Server) handleMinerTransferDiagnostics(c echo.Context) error {
 	return c.JSON(http.StatusOK, minerTransferDiagnostics)
 }
 
-func (s *Server) handleTransferRestart(c echo.Context) error {
+func (s *apiV1) handleTransferRestart(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	dealid, err := strconv.Atoi(c.Param("deal"))
@@ -1786,7 +1537,7 @@ func (s *Server) handleTransferRestart(c echo.Context) error {
 // @Param        miner    path      string  true  "Miner"
 // @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/status/{miner}/{propcid} [get]
-func (s *Server) handleDealStatus(c echo.Context) error {
+func (s *apiV1) handleDealStatus(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	addr, err := address.NewFromString(c.Param("miner"))
@@ -1839,7 +1590,7 @@ func (s *Server) handleDealStatus(c echo.Context) error {
 // @Failure      500         {object}  util.HttpError
 // @Param        propcid  path      string  true  "Proposal CID"
 // @Router       /deal/proposal/{propcid} [get]
-func (s *Server) handleGetProposal(c echo.Context) error {
+func (s *apiV1) handleGetProposal(c echo.Context) error {
 	propCid, err := cid.Decode(c.Param("propcid"))
 	if err != nil {
 		return err
@@ -1875,7 +1626,7 @@ func (s *Server) handleGetProposal(c echo.Context) error {
 // @Failure      500      {object}  util.HttpError
 // @Param        dealid  path      int  true  "Deal ID"
 // @Router       /deal/info/{dealid} [get]
-func (s *Server) handleGetDealInfo(c echo.Context) error {
+func (s *apiV1) handleGetDealInfo(c echo.Context) error {
 	dealid, err := strconv.ParseInt(c.Param("dealid"), 10, 64)
 	if err != nil {
 		return err
@@ -1905,7 +1656,7 @@ type getInvitesResp struct {
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Router       /admin/invites [get]
-func (s *Server) handleAdminGetInvites(c echo.Context) error {
+func (s *apiV1) handleAdminGetInvites(c echo.Context) error {
 	var invites []getInvitesResp
 	if err := s.DB.Model(&util.InviteCode{}).
 		Select("code, username, invite_codes.created_at, (?) as claimed_by", s.DB.Table("users").Select("username").Where("id = invite_codes.claimed_by")).
@@ -1929,7 +1680,7 @@ func (s *Server) handleAdminGetInvites(c echo.Context) error {
 // @Failure      500           {object}  util.HttpError
 // @Param        code  path      string  false  "Invite code to be created"
 // @Router       /admin/invites [post]
-func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
+func (s *apiV1) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
 	invite := &util.InviteCode{
 		Code:      code,
@@ -1944,11 +1695,11 @@ func (s *Server) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	})
 }
 
-func (s *Server) handleAdminFilAddress(c echo.Context) error {
+func (s *apiV1) handleAdminFilAddress(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.FilClient.ClientAddr)
 }
 
-func (s *Server) handleAdminBalance(c echo.Context) error {
+func (s *apiV1) handleAdminBalance(c echo.Context) error {
 	balance, err := s.FilClient.Balance(c.Request().Context())
 	if err != nil {
 		return err
@@ -1957,7 +1708,7 @@ func (s *Server) handleAdminBalance(c echo.Context) error {
 	return c.JSON(http.StatusOK, balance)
 }
 
-func (s *Server) handleAdminAddEscrow(c echo.Context) error {
+func (s *apiV1) handleAdminAddEscrow(c echo.Context) error {
 	amt, err := types.ParseFIL(c.Param("amt"))
 	if err != nil {
 		return err
@@ -1987,7 +1738,7 @@ type adminStatsResponse struct {
 	PinQueueSize int `json:"pinQueueSize"`
 }
 
-func (s *Server) handleAdminStats(c echo.Context) error {
+func (s *apiV1) handleAdminStats(c echo.Context) error {
 
 	var dealsTotal int64
 	if err := s.DB.Model(&model.ContentDeal{}).Count(&dealsTotal).Error; err != nil {
@@ -2044,7 +1795,7 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 		NumRetrievals:        numRetrievals,
 		NumRetrFailures:      numRetrievalFailures,
 		NumStorageFailures:   numStorageFailures,
-		PinQueueSize:         s.CM.PinMgr.PinQueueSize(),
+		PinQueueSize:         s.pinMgr.PinQueueSize(),
 	})
 }
 
@@ -2057,17 +1808,17 @@ func (s *Server) handleAdminStats(c echo.Context) error {
 // @Failure      400       {object}  util.HttpError
 // @Failure      500       {object}  util.HttpError
 // @Router       /admin/system/config [get]
-func (s *Server) handleGetSystemConfig(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	var shts []interface{}
 	for _, sh := range s.CM.Shuttles {
 		if sh.Hostname == "" {
-			log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
+			s.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
 			continue
 		}
 
 		out, err := s.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
 		if err != nil {
-			log.Warnf("failed to get shuttle config: %s", err)
+			s.log.Warnf("failed to get shuttle config: %s", err)
 			continue
 		}
 		shts = append(shts, out)
@@ -2099,7 +1850,7 @@ type minerResp struct {
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Router       /public/miners [get]
-func (s *Server) handleAdminGetMiners(c echo.Context) error {
+func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
@@ -2117,7 +1868,7 @@ func (s *Server) handleAdminGetMiners(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
+func (s *apiV1) handlePublicGetMinerStats(c echo.Context) error {
 	_, stats, err := s.minerManager.SortedMinerList()
 	if err != nil {
 		return err
@@ -2125,7 +1876,7 @@ func (s *Server) handlePublicGetMinerStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
+func (s *apiV1) handleAdminGetMinerStats(c echo.Context) error {
 	sml, err := s.minerManager.ComputeSortedMinerList()
 	if err != nil {
 		return err
@@ -2144,7 +1895,7 @@ func (s *Server) handleAdminGetMinerStats(c echo.Context) error {
 // @Param        params           body      miner.MinerSetInfoParams  true   "Miner set info params"
 // @Param        miner           path      string  true   "Miner to set info for"
 // @Router       /miner/set-info/{miner} [put]
-func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
+func (s *apiV1) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2161,7 +1912,7 @@ func (s *Server) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, emptyResp{})
 }
 
-func (s *Server) handleAdminRemoveMiner(c echo.Context) error {
+func (s *apiV1) handleAdminRemoveMiner(c echo.Context) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2186,7 +1937,7 @@ type emptyResp struct{}
 // @Param        req           body      miner.SuspendMinerBody  true   "Suspend Miner Body"
 // @Param        miner           path      string  true   "Miner to suspend"
 // @Router       /miner/suspend/{miner} [post]
-func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
+func (s *apiV1) handleSuspendMiner(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -2213,7 +1964,7 @@ func (s *Server) handleSuspendMiner(c echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        miner           path      string  true   "Miner to unsuspend"
 // @Router       /miner/unsuspend/{miner} [put]
-func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2225,7 +1976,7 @@ func (s *Server) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, emptyResp{})
 }
 
-func (s *Server) handleAdminAddMiner(c echo.Context) error {
+func (s *apiV1) handleAdminAddMiner(c echo.Context) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2251,7 +2002,7 @@ type contentDealStats struct {
 	ConfirmedSpending abi.TokenAmount `json:"confirmedSpending"`
 }
 
-func (s *Server) handleDealStats(c echo.Context) error {
+func (s *apiV1) handleDealStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleDealStats")
 	defer span.End()
 
@@ -2280,11 +2031,11 @@ func (s *Server) handleDealStats(c echo.Context) error {
 		}
 		st, err := s.FilClient.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 		if err != nil {
-			log.Errorf("checking deal status failed (%s): %s", maddr, err)
+			s.log.Errorf("checking deal status failed (%s): %s", maddr, err)
 			continue
 		}
 		if st.Proposal == nil {
-			log.Errorf("deal status proposal is empty (%s): %s", maddr, d.PropCid.CID)
+			s.log.Errorf("deal status proposal is empty (%s): %s", maddr, d.PropCid.CID)
 			continue
 		}
 
@@ -2334,7 +2085,7 @@ type diskSpaceInfo struct {
 	LmdbStat lmdbStat `json:"lmdbStat"`
 }
 
-func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
+func (s *apiV1) handleDiskSpaceCheck(c echo.Context) error {
 	/*
 		lmst, err := s.Node.Lmdb.Stat()
 		if err != nil {
@@ -2364,7 +2115,7 @@ func (s *Server) handleDiskSpaceCheck(c echo.Context) error {
 	})
 }
 
-func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
+func (s *apiV1) handleGetRetrievalInfo(c echo.Context) error {
 	var infos []model.RetrievalSuccessRecord
 	if err := s.DB.Find(&infos).Error; err != nil {
 		return err
@@ -2381,7 +2132,7 @@ func (s *Server) handleGetRetrievalInfo(c echo.Context) error {
 	})
 }
 
-func (s *Server) handleRetrievalCheck(c echo.Context) error {
+func (s *apiV1) handleRetrievalCheck(c echo.Context) error {
 	ctx := c.Request().Context()
 	contid, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -2418,7 +2169,7 @@ type priceEstimateResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        body  body      main.estimateDealBody  true  "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
 // @Router       /deal/estimate [post]
-func (s *Server) handleEstimateDealCost(c echo.Context) error {
+func (s *apiV1) handleEstimateDealCost(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	var body estimateDealBody
@@ -2450,7 +2201,7 @@ func (s *Server) handleEstimateDealCost(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/failures/{miner} [get]
-func (s *Server) handleGetMinerFailures(c echo.Context) error {
+func (s *apiV1) handleGetMinerFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2494,7 +2245,7 @@ type minerChainInfo struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        miner  path      string  true  "Filter by miner"
 // @Router       /public/miners/stats/{miner} [get]
-func (s *Server) handleGetMinerStats(c echo.Context) error {
+func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
 	defer span.End()
 
@@ -2588,7 +2339,7 @@ type minerDealsResp struct {
 // @Param        miner          path      string  true   "Filter by miner"
 // @Param        ignore-failed  query     string  false  "Ignore Failed"
 // @Router       /public/miners/deals/{miner} [get]
-func (s *Server) handleGetMinerDeals(c echo.Context) error {
+func (s *apiV1) handleGetMinerDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -2624,7 +2375,7 @@ type bandwidthResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        content  path      string  true  "Content ID"
 // @Router       /content/bw-usage/{content} [get]
-func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2671,7 +2422,7 @@ func (s *Server) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        content  path      string  true  "Content ID"
 // @Router       /content/aggregated/{content} [get]
-func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetAggregatedForContent(c echo.Context, u *util.User) error {
 	contID, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2710,7 +2461,7 @@ func (s *Server) handleGetAggregatedForContent(c echo.Context, u *util.User) err
 // @Failure      500  {object}  util.HttpError
 // @Param        content  path      string  true  "Content ID"
 // @Router       /content/failures/{content} [get]
-func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetContentFailures(c echo.Context, u *util.User) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2724,11 +2475,11 @@ func (s *Server) handleGetContentFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, errs)
 }
 
-func (s *Server) handleAdminGetStagingZones(c echo.Context) error {
+func (s *apiV1) handleAdminGetStagingZones(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
-func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
+func (s *apiV1) handleGetOffloadingCandidates(c echo.Context) error {
 	conts, err := s.CM.GetRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
 		return err
@@ -2736,7 +2487,7 @@ func (s *Server) handleGetOffloadingCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, conts)
 }
 
-func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
+func (s *apiV1) handleRunOffloadingCollection(c echo.Context) error {
 	var body struct {
 		Execute        bool   `json:"execute"`
 		SpaceRequested int64  `json:"spaceRequested"`
@@ -2756,7 +2507,7 @@ func (s *Server) handleRunOffloadingCollection(c echo.Context) error {
 	return c.JSON(http.StatusOK, res)
 }
 
-func (s *Server) handleOffloadContent(c echo.Context) error {
+func (s *apiV1) handleOffloadContent(c echo.Context) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2777,7 +2528,7 @@ type moveContentBody struct {
 	Destination string `json:"destination"`
 }
 
-func (s *Server) handleMoveContent(c echo.Context) error {
+func (s *apiV1) handleMoveContent(c echo.Context) error {
 	ctx := c.Request().Context()
 	var body moveContentBody
 	if err := c.Bind(&body); err != nil {
@@ -2790,7 +2541,7 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 	}
 
 	if len(contents) != len(body.Contents) {
-		log.Warnf("got back fewer contents than requested: %d != %d", len(contents), len(body.Contents))
+		s.log.Warnf("got back fewer contents than requested: %d != %d", len(contents), len(body.Contents))
 	}
 
 	var shuttle model.Shuttle
@@ -2805,7 +2556,7 @@ func (s *Server) handleMoveContent(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleRefreshContent(c echo.Context) error {
+func (s *apiV1) handleRefreshContent(c echo.Context) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2817,7 +2568,7 @@ func (s *Server) handleRefreshContent(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleReadLocalContent(c echo.Context) error {
+func (s *apiV1) handleReadLocalContent(c echo.Context) error {
 	cont, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
 		return err
@@ -2859,7 +2610,7 @@ func (s *Server) handleReadLocalContent(c echo.Context) error {
 	return nil
 }
 
-func (s *Server) checkTokenAuth(token string) (*util.User, error) {
+func (s *apiV1) checkTokenAuth(token string) (*util.User, error) {
 	var authToken util.AuthToken
 	tokenHash := util.GetTokenHash(token)
 	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
@@ -2897,7 +2648,7 @@ func (s *Server) checkTokenAuth(token string) (*util.User, error) {
 	return &user, nil
 }
 
-func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
+func (s *apiV1) AuthRequired(level int) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 
@@ -2920,7 +2671,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 			span.SetAttributes(attribute.Int("user", int(u.ID)))
 
 			if u.AuthToken.UploadOnly && level >= util.PermLevelUser {
-				log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
+				s.log.Warnw("api key is upload only", "user", u.ID, "perm", u.Perm, "required", level)
 
 				return &util.HttpError{
 					Code:    http.StatusForbidden,
@@ -2934,7 +2685,7 @@ func (s *Server) AuthRequired(level int) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			log.Warnw("user not authorized", "user", u.ID, "perm", u.Perm, "required", level)
+			s.log.Warnw("user not authorized", "user", u.ID, "perm", u.Perm, "required", level)
 
 			return &util.HttpError{
 				Code:    http.StatusForbidden,
@@ -2953,7 +2704,7 @@ type registerBody struct {
 
 const TOKEN_LABEL_ON_REGISTER = "on-register"
 
-func (s *Server) handleRegisterUser(c echo.Context) error {
+func (s *apiV1) handleRegisterUser(c echo.Context) error {
 	var reg registerBody
 	if err := c.Bind(&reg); err != nil {
 		return err
@@ -3042,7 +2793,7 @@ type loginResponse struct {
 
 const TOKEN_LABEL_ON_LOGIN = "on-login"
 
-func (s *Server) handleLoginUser(c echo.Context) error {
+func (s *apiV1) handleLoginUser(c echo.Context) error {
 	var body loginBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -3096,7 +2847,7 @@ type changePasswordParams struct {
 	NewPassword string `json:"newPasswordHash"`
 }
 
-func (s *Server) handleUserChangePassword(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserChangePassword(c echo.Context, u *util.User) error {
 	var params changePasswordParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -3120,7 +2871,7 @@ type changeAddressParams struct {
 	Address string `json:"address"`
 }
 
-func (s *Server) handleUserChangeAddress(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserChangeAddress(c echo.Context, u *util.User) error {
 	var params changeAddressParams
 	if err := c.Bind(&params); err != nil {
 		return err
@@ -3128,7 +2879,7 @@ func (s *Server) handleUserChangeAddress(c echo.Context, u *util.User) error {
 
 	addr, err := address.NewFromString(params.Address)
 	if err != nil {
-		log.Warnf("invalid filecoin address in change address request body: %w", err)
+		s.log.Warnf("invalid filecoin address in change address request body: %w", err)
 
 		return &util.HttpError{
 			Code:   http.StatusUnauthorized,
@@ -3157,7 +2908,7 @@ type userStatsResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/stats [get]
-func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 	var stats userStatsResponse
 	if err := s.DB.Raw(` SELECT
 						(SELECT SUM(size) FROM contents where user_id = ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size,
@@ -3169,7 +2920,7 @@ func (s *Server) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
+func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -3210,7 +2961,7 @@ func (s *Server) newAuthTokenForUser(user *util.User, expiry time.Time, perms []
 // @Failure 401 {object} util.HttpError
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
-func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
 	uep, err := s.getPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
@@ -3236,10 +2987,10 @@ func (s *Server) handleGetViewer(c echo.Context, u *util.User) error {
 	})
 }
 
-func (s *Server) getMinersOwnedByUser(u *util.User) []string {
+func (s *apiV1) getMinersOwnedByUser(u *util.User) []string {
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners, "owner = ?", u.ID).Error; err != nil {
-		log.Errorf("failed to query miners for user %d: %s", u.ID, err)
+		s.log.Errorf("failed to query miners for user %d: %s", u.ID, err)
 		return nil
 	}
 
@@ -3251,30 +3002,30 @@ func (s *Server) getMinersOwnedByUser(u *util.User) []string {
 	return out
 }
 
-func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
+func (s *apiV1) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 	// TODO: this should be a lotttttt smarter
 	s.CM.ShuttlesLk.Lock()
 	defer s.CM.ShuttlesLk.Unlock()
 	var shuttles []model.Shuttle
 	for hnd, sh := range s.CM.Shuttles {
 		if sh.ContentAddingDisabled {
-			log.Debugf("shuttle %+v content adding is disabled", sh)
+			s.log.Debugf("shuttle %+v content adding is disabled", sh)
 			continue
 		}
 
 		if sh.Hostname == "" {
-			log.Debugf("shuttle %+v has empty hostname", sh)
+			s.log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
 		}
 
 		var shuttle model.Shuttle
 		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
-			log.Errorf("failed to look up shuttle by handle: %s", err)
+			s.log.Errorf("failed to look up shuttle by handle: %s", err)
 			continue
 		}
 
 		if !shuttle.Open {
-			log.Debugf("shuttle %+v is not open, skipping", shuttle)
+			s.log.Debugf("shuttle %+v is not open, skipping", shuttle)
 			continue
 		}
 
@@ -3300,7 +3051,7 @@ func (s *Server) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 	return out, nil
 }
 
-func (s *Server) handleHealth(c echo.Context) error {
+func (s *apiV1) handleHealth(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{
 		"status": "ok",
 	})
@@ -3323,7 +3074,7 @@ type getApiKeysResp struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        key_or_hash path string true "Key or Hash"
 // @Router       /user/api-keys/{key_or_hash} [delete]
-func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 	kval := c.Param("key_or_hash")
 	// need to check the kvalHash in case someone is revoking their token by the token itself, but only its hash is stored
 	kvalHash := util.GetTokenHash(kval)
@@ -3346,7 +3097,7 @@ func (s *Server) handleUserRevokeApiKey(c echo.Context, u *util.User) error {
 // @Failure      404     {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [post]
-func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 	expiry := time.Now().Add(constants.TokenExpiryDurationDefault)
 	if exp := c.QueryParam("expiry"); exp != "" {
 		if exp == "false" {
@@ -3390,7 +3141,7 @@ func (s *Server) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 // @Failure      404   {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/api-keys [get]
-func (s *Server) handleUserGetApiKeys(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 	var keys []util.AuthToken
 	if err := s.DB.Find(&keys, "auth_tokens.user = ?", u.ID).Error; err != nil {
 		return err
@@ -3425,7 +3176,7 @@ type createCollectionBody struct {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [post]
-func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
+func (s *apiV1) handleCreateCollection(c echo.Context, u *util.User) error {
 	var body createCollectionBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -3455,7 +3206,7 @@ func (s *Server) handleCreateCollection(c echo.Context, u *util.User) error {
 // @Failure      404  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/ [get]
-func (s *Server) handleListCollections(c echo.Context, u *util.User) error {
+func (s *apiV1) handleListCollections(c echo.Context, u *util.User) error {
 	var cols []collections.Collection
 	if err := s.DB.Find(&cols, "user_id = ?", u.ID).Error; err != nil {
 		return err
@@ -3481,7 +3232,7 @@ type addContentsToCollectionBody struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid} [post]
-func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) error {
+func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	// we accept both {"contentids": [1, 2]} and [1, 2] as json payloads
@@ -3574,7 +3325,7 @@ func (s *Server) handleAddContentsToCollection(c echo.Context, u *util.User) err
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid}/commit [post]
-func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
+func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	colid := c.Param("coluuid")
 
 	var col collections.Collection
@@ -3661,10 +3412,13 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
+
+	s.pinMgr.Add(pinOp)
+
 	return c.JSON(http.StatusOK, pinstatus)
 }
 
@@ -3679,7 +3433,7 @@ func (s *Server) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Param        coluuid  path      string  true   "coluuid"
 // @Param        dir      query     string  false  "Directory"
 // @Router       /collections/{coluuid} [get]
-func (s *Server) handleGetCollectionContents(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var col collections.Collection
@@ -3818,7 +3572,7 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 // @Success      200  {string}  string  ""
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-func (s *Server) handleDeleteCollection(c echo.Context, u *util.User) error {
+func (s *apiV1) handleDeleteCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
 	var col collections.Collection
@@ -3859,7 +3613,7 @@ type deleteContentFromCollectionBody struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid}/contents [delete]
-func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
+func (s *apiV1) handleDeleteContentFromCollection(c echo.Context, u *util.User) error {
 	var body deleteContentFromCollectionBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -3916,51 +3670,6 @@ func (s *Server) handleDeleteContentFromCollection(c echo.Context, u *util.User)
 	return c.NoContent(http.StatusOK)
 }
 
-func (s *Server) tracingMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-
-		r := c.Request()
-
-		attrs := []attribute.KeyValue{
-			semconv.HTTPMethodKey.String(r.Method),
-			semconv.HTTPRouteKey.String(r.URL.Path),
-			semconv.HTTPClientIPKey.String(r.RemoteAddr),
-			semconv.HTTPRequestContentLengthKey.Int64(c.Request().ContentLength),
-		}
-
-		if reqid := r.Header.Get("EstClientReqID"); reqid != "" {
-			if len(reqid) > 64 {
-				reqid = reqid[:64]
-			}
-			attrs = append(attrs, attribute.String("ClientReqID", reqid))
-		}
-
-		tctx, span := s.tracer.Start(context.Background(),
-			"HTTP "+r.Method+" "+c.Path(),
-			trace.WithAttributes(attrs...),
-		)
-		defer span.End()
-
-		r = r.WithContext(tctx)
-		c.SetRequest(r)
-
-		err := next(c)
-		if err != nil {
-			span.SetStatus(codes.Error, err.Error())
-			span.RecordError(err)
-		} else {
-			span.SetStatus(codes.Ok, "")
-		}
-
-		span.SetAttributes(
-			semconv.HTTPStatusCodeKey.Int(c.Response().Status),
-			semconv.HTTPResponseContentLengthKey.Int64(c.Response().Size),
-		)
-
-		return err
-	}
-}
-
 type adminUserResponse struct {
 	Id       uint   `json:"id"`
 	Username string `json:"username"`
@@ -3978,7 +3687,7 @@ type adminUserResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /admin/users [get]
-func (s *Server) handleAdminGetUsers(c echo.Context) error {
+func (s *apiV1) handleAdminGetUsers(c echo.Context) error {
 	var resp []adminUserResponse
 	if err := s.DB.Model(util.Content{}).
 		Select("user_id as id,(?) as username,SUM(size) as space_used,count(*) as num_files", s.DB.Model(&util.User{}).Select("username").Where("id = user_id")).
@@ -4012,7 +3721,7 @@ type publicStatsResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
-func (s *Server) handlePublicStats(c echo.Context) error {
+func (s *apiV1) handlePublicStats(c echo.Context) error {
 	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
 		return s.computePublicStats()
 	})
@@ -4048,7 +3757,7 @@ func (s *Server) handlePublicStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, jsonResponse)
 }
 
-func (s *Server) computePublicStats() (*publicStatsResponse, error) {
+func (s *apiV1) computePublicStats() (*publicStatsResponse, error) {
 	var stats publicStatsResponse
 	if err := s.DB.Model(util.Content{}).Where("active and not aggregated_in > 0").Select("SUM(size) as total_storage").Scan(&stats).Error; err != nil {
 		return nil, err
@@ -4065,7 +3774,7 @@ func (s *Server) computePublicStats() (*publicStatsResponse, error) {
 	return &stats, nil
 }
 
-func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, error) {
+func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, error) {
 	var stats publicStatsResponse
 
 	//	this can be resource expensive but we are already caching it.
@@ -4088,7 +3797,7 @@ func (s *Server) computePublicStatsWithExtensiveLookups() (*publicStatsResponse,
 	return &stats, nil
 }
 
-func (s *Server) handleGetBucketDiag(c echo.Context) error {
+func (s *apiV1) handleGetBucketDiag(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
 }
 
@@ -4101,7 +3810,7 @@ func (s *Server) handleGetBucketDiag(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
-func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
@@ -4114,7 +3823,7 @@ func (s *Server) handleGetStagingZoneForUser(c echo.Context, u *util.User) error
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/export [get]
-func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserExportData(c echo.Context, u *util.User) error {
 	export, err := s.exportUserData(u.ID)
 	if err != nil {
 		return err
@@ -4132,7 +3841,7 @@ func (s *Server) handleUserExportData(c echo.Context, u *util.User) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/net/peers [get]
-func (s *Server) handleNetPeers(c echo.Context) error {
+func (s *apiV1) handleNetPeers(c echo.Context) error {
 	return c.JSON(http.StatusOK, s.Node.Host.Network().Peers())
 }
 
@@ -4143,7 +3852,7 @@ func (s *Server) handleNetPeers(c echo.Context) error {
 // @Produce      json
 // @Success      200  {array}  string
 // @Router       /public/net/addrs [get]
-func (s *Server) handleNetAddrs(c echo.Context) error {
+func (s *apiV1) handleNetAddrs(c echo.Context) error {
 	id := s.Node.Host.ID()
 	addrs := s.Node.Host.Addrs()
 
@@ -4184,7 +3893,7 @@ type metricsDealJoin struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
-func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
+func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
 	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
 		return s.computeDealMetrics()
 	})
@@ -4202,7 +3911,7 @@ func (s *Server) handleMetricsDealOnChain(c echo.Context) error {
 	return c.JSON(http.StatusOK, val)
 }
 
-func (s *Server) computeDealMetrics() ([]*dealMetricsInfo, error) {
+func (s *apiV1) computeDealMetrics() ([]*dealMetricsInfo, error) {
 	var deals []*metricsDealJoin
 	if err := s.DB.Model(model.ContentDeal{}).
 		Joins("left join contents on content_deals.content = contents.id").
@@ -4329,7 +4038,7 @@ type dealPairs struct {
 // @Param        duration  query     string  true  "Duration"
 // @Param        all       query     string  true  "All"
 // @Router       /content/all-deals [get]
-func (s *Server) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	begin := time.Now().Add(time.Hour * 24)
 	duration := time.Hour * 24
@@ -4396,7 +4105,7 @@ type setDealMakingBody struct {
 	Enabled bool `json:"enabled"`
 }
 
-func (s *Server) handleSetDealMaking(c echo.Context) error {
+func (s *apiV1) handleSetDealMaking(c echo.Context) error {
 	var body setDealMakingBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -4406,7 +4115,7 @@ func (s *Server) handleSetDealMaking(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleContentHealthCheck(c echo.Context) error {
+func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 	ctx := c.Request().Context()
 	val, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -4452,7 +4161,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		switch len(aggrLocs) {
 		case 0:
-			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+			s.log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
 			var aggrLoc string
 			for loc := range aggrLocs {
@@ -4471,7 +4180,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 		default:
 			// well that sucks, this will need migration
-			log.Warnf("content %d has messed up aggregation", cont.ID)
+			s.log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
 	}
 
@@ -4486,7 +4195,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 
 	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cont.Cid.CID)
 	if rootFetchErr != nil {
-		log.Errorf("failed to fetch root: %s", rootFetchErr)
+		s.log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}
 
 	if cont.Aggregate && rootFetchErr != nil {
@@ -4510,7 +4219,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 		// TODO: check if the contents of the aggregate are somewhere other than where the aggregate root is
 		switch len(aggrLocs) {
 		case 0:
-			log.Warnf("content %d has nothing aggregated in it", cont.ID)
+			s.log.Warnf("content %d has nothing aggregated in it", cont.ID)
 		case 1:
 			loc := aggr[0].Location
 			if loc != cont.Location {
@@ -4527,7 +4236,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 			}
 		default:
 			// well that sucks, this will need migration
-			log.Warnf("content %d has messed up aggregation", cont.ID)
+			s.log.Warnf("content %d has messed up aggregation", cont.ID)
 		}
 	}
 
@@ -4573,7 +4282,7 @@ func (s *Server) handleContentHealthCheck(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
+func (s *apiV1) handleContentHealthCheckByCid(c echo.Context) error {
 	ctx := c.Request().Context()
 	cc, err := cid.Decode(c.Param("cid"))
 	if err != nil {
@@ -4596,12 +4305,12 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 
 	var contents []util.Content
 	if err := s.DB.Model(util.ObjRef{}).Joins("left join contents on obj_refs.content = contents.id").Where("object = ?", obj.ID).Select("contents.*").Scan(&contents).Error; err != nil {
-		log.Errorf("failed to find contents for cid: %s", err)
+		s.log.Errorf("failed to find contents for cid: %s", err)
 	}
 
 	_, rootFetchErr := s.Node.Blockstore.Get(ctx, cc)
 	if rootFetchErr != nil {
-		log.Errorf("failed to fetch root: %s", rootFetchErr)
+		s.log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}
 
 	var exch exchange.Interface
@@ -4646,7 +4355,7 @@ func (s *Server) handleContentHealthCheckByCid(c echo.Context) error {
 	})
 }
 
-func (s *Server) handleShuttleInit(c echo.Context) error {
+func (s *apiV1) handleShuttleInit(c echo.Context) error {
 	shuttle := &model.Shuttle{
 		Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
 		Token:  "SECRET" + uuid.New().String() + "SECRET",
@@ -4662,7 +4371,7 @@ func (s *Server) handleShuttleInit(c echo.Context) error {
 	})
 }
 
-func (s *Server) handleShuttleList(c echo.Context) error {
+func (s *apiV1) handleShuttleList(c echo.Context) error {
 	var shuttles []model.Shuttle
 	if err := s.DB.Find(&shuttles).Error; err != nil {
 		return err
@@ -4683,7 +4392,7 @@ func (s *Server) handleShuttleList(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (s *Server) handleShuttleConnection(c echo.Context) error {
+func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
 	if err != nil {
 		return err
@@ -4702,13 +4411,13 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 		defer ws.Close()
 		var hello drpc.Hello
 		if err := websocket.JSON.Receive(ws, &hello); err != nil {
-			log.Errorf("failed to read hello message from client: %s", err)
+			s.log.Errorf("failed to read hello message from client: %s", err)
 			return
 		}
 
 		outgoingRpcQueue, unreg, err := s.CM.RegisterShuttleConnection(shuttle.Handle, &hello)
 		if err != nil {
-			log.Errorf("failed to register shuttle: %s", err)
+			s.log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
@@ -4720,7 +4429,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 					// Write
 					err := websocket.JSON.Send(ws, rpcMessage)
 					if err != nil {
-						log.Errorf("failed to write command to shuttle: %s", err)
+						s.log.Errorf("failed to write command to shuttle: %s", err)
 						return
 					}
 				case <-done:
@@ -4729,12 +4438,12 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 			}
 		}()
 
-		go s.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
+		go s.CM.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
 
 		for {
 			var msg drpc.Message
 			if err := websocket.JSON.Receive(ws, &msg); err != nil {
-				log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
+				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
 
@@ -4758,7 +4467,7 @@ func (s *Server) handleShuttleConnection(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/init [post]
-func (s *Server) handleAutoretrieveInit(c echo.Context) error {
+func (s *apiV1) handleAutoretrieveInit(c echo.Context) error {
 
 	err := func() error {
 		// If there's already an Autoretrieve database entry under the requested pub
@@ -4785,7 +4494,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 			return err
 		}
 
-		log.Infof("Added autoretrieve with addr info %s", addrInfo)
+		s.log.Infof("Added autoretrieve with addr info %s", addrInfo)
 
 		return c.JSON(200, &autoretrieve.AutoretrieveInitResponse{
 			Handle:            ar.Handle,
@@ -4797,7 +4506,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 	}()
 
 	if err != nil {
-		log.Errorf("Failed to register estuary: %v", err)
+		s.log.Errorf("Failed to register estuary: %v", err)
 	}
 
 	return err
@@ -4812,7 +4521,7 @@ func (s *Server) handleAutoretrieveInit(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /admin/autoretrieve/list [get]
-func (s *Server) handleAutoretrieveList(c echo.Context) error {
+func (s *apiV1) handleAutoretrieveList(c echo.Context) error {
 	var autoretrieves []autoretrieve.Autoretrieve
 	if err := s.DB.Find(&autoretrieves).Error; err != nil {
 		return err
@@ -4846,7 +4555,7 @@ func (s *Server) handleAutoretrieveList(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /autoretrieve/heartbeat [post]
-func (s *Server) handleAutoretrieveHeartbeat(c echo.Context) error {
+func (s *apiV1) handleAutoretrieveHeartbeat(c echo.Context) error {
 	auth, err := util.ExtractAuth(c)
 	if err != nil {
 		return err
@@ -4883,7 +4592,7 @@ type allDealsQuery struct {
 	DealID int64
 }
 
-func (s *Server) handleDebugGetAllDeals(c echo.Context) error {
+func (s *apiV1) handleDebugGetAllDeals(c echo.Context) error {
 	var out []allDealsQuery
 	if err := s.DB.Model(model.ContentDeal{}).Where("deal_id > 0 and not content_deals.failed").
 		Joins("left join contents on content_deals.content = contents.id").
@@ -4900,7 +4609,7 @@ type logLevelBody struct {
 	Level  string `json:"level"`
 }
 
-func (s *Server) handleLogLevel(c echo.Context) error {
+func (s *apiV1) handleLogLevel(c echo.Context) error {
 	var body logLevelBody
 	if err := c.Bind(&body); err != nil {
 		return err
@@ -4921,7 +4630,7 @@ func (s *Server) handleLogLevel(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/deals/failures [get]
-func (s *Server) handlePublicStorageFailures(c echo.Context) error {
+func (s *apiV1) handlePublicStorageFailures(c echo.Context) error {
 	recs, err := s.getStorageFailure(c, nil)
 	if err != nil {
 		return err
@@ -4938,7 +4647,7 @@ func (s *Server) handlePublicStorageFailures(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /deals/failures [get]
-func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
+func (s *apiV1) handleStorageFailures(c echo.Context, u *util.User) error {
 	recs, err := s.getStorageFailure(c, u)
 	if err != nil {
 		return err
@@ -4946,7 +4655,7 @@ func (s *Server) handleStorageFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, recs)
 }
 
-func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
+func (s *apiV1) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
 	limit := 2000
 	if limstr := c.QueryParam("limit"); limstr != "" {
 		nlim, err := strconv.Atoi(limstr)
@@ -4987,7 +4696,7 @@ func (s *Server) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRec
 // @Param        req           body      util.ContentCreateBody  true   "Content"
 // @Param        ignore-dupes  query     string                  false  "Ignore Dupes"
 // @Router       /content/create [post]
-func (s *Server) handleCreateContent(c echo.Context, u *util.User) error {
+func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
@@ -5069,7 +4778,7 @@ type claimResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.ClaimMinerBody  true   "Claim Miner Body"
 // @Router       /miner/claim [post]
-func (s *Server) handleUserClaimMiner(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserClaimMiner(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
 	var cmb miner.ClaimMinerBody
@@ -5097,7 +4806,7 @@ type claimMsgResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        miner           param      miner  true   "Miner claim message"
 // @Router       /miner/claim/{miner} [get]
-func (s *Server) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
+func (s *apiV1) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
@@ -5122,7 +4831,7 @@ type contCheck struct {
 	NumDeals int
 }
 
-func (s *Server) handleAdminGetProgress(c echo.Context) error {
+func (s *apiV1) handleAdminGetProgress(c echo.Context) error {
 	var out progressResponse
 	if err := s.DB.Model(util.Content{}).Where("not aggregated_in > 0 AND (pinning OR active) AND not failed").Count(&out.TotalTopLevel).Error; err != nil {
 		return err
@@ -5155,7 +4864,7 @@ func (s *Server) handleAdminGetProgress(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (s *Server) handleAdminBreakAggregate(c echo.Context) error {
+func (s *apiV1) handleAdminBreakAggregate(c echo.Context) error {
 	ctx := c.Request().Context()
 	aggr, err := strconv.Atoi(c.Param("content"))
 	if err != nil {
@@ -5246,7 +4955,7 @@ type publicNodeInfo struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/info [get]
-func (s *Server) handleGetPublicNodeInfo(c echo.Context) error {
+func (s *apiV1) handleGetPublicNodeInfo(c echo.Context) error {
 	return c.JSON(http.StatusOK, &publicNodeInfo{
 		PrimaryAddress: s.FilClient.ClientAddr,
 	})
@@ -5258,7 +4967,7 @@ type retrievalCandidate struct {
 	DealID  uint
 }
 
-func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
+func (s *apiV1) handleGetRetrievalCandidates(c echo.Context) error {
 	// Read the cid from the client request
 	cid, err := cid.Decode(c.Param("cid"))
 	if err != nil {
@@ -5304,13 +5013,13 @@ func (s *Server) handleGetRetrievalCandidates(c echo.Context) error {
 	return c.JSON(http.StatusOK, candidates)
 }
 
-func (s *Server) handleShuttleCreateContent(c echo.Context) error {
+func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 	var req util.ShuttleCreateContentBody
 	if err := c.Bind(&req); err != nil {
 		return err
 	}
 
-	log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
+	s.log.Debugw("handle shuttle create content", "root", req.Root, "user", req.User, "dsr", req.DagSplitRoot, "name", req.Name)
 
 	root, err := cid.Decode(req.Root)
 	if err != nil {
@@ -5345,7 +5054,7 @@ func (s *Server) handleShuttleCreateContent(c echo.Context) error {
 	})
 }
 
-func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
+func (s *apiV1) withAutoretrieveAuth() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			auth, err := util.ExtractAuth(c)
@@ -5355,7 +5064,7 @@ func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
 
 			var ar autoretrieve.Autoretrieve
 			if err := s.DB.First(&ar, "token = ?", auth).Error; err != nil {
-				log.Warnw("Autoretrieve server not authorized", "token", auth)
+				s.log.Warnw("Autoretrieve server not authorized", "token", auth)
 				if xerrors.Is(err, gorm.ErrRecordNotFound) {
 					return &util.HttpError{
 						Code:    http.StatusUnauthorized,
@@ -5370,7 +5079,7 @@ func (s *Server) withAutoretrieveAuth() echo.MiddlewareFunc {
 	}
 }
 
-func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
+func (s *apiV1) withShuttleAuth() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			auth, err := util.ExtractAuth(c)
@@ -5380,7 +5089,7 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 
 			var sh model.Shuttle
 			if err := s.DB.First(&sh, "token = ?", auth).Error; err != nil {
-				log.Warnw("Shuttle not authorized", "token", auth)
+				s.log.Warnw("Shuttle not authorized", "token", auth)
 				if xerrors.Is(err, gorm.ErrRecordNotFound) {
 					return &util.HttpError{
 						Code:    http.StatusUnauthorized,
@@ -5394,7 +5103,7 @@ func (s *Server) withShuttleAuth() echo.MiddlewareFunc {
 	}
 }
 
-func (s *Server) handleShuttleRepinAll(c echo.Context) error {
+func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 	handle := c.Param("shuttle")
 
 	rows, err := s.DB.Model(util.Content{}).Where("location = ? and not offloaded", handle).Rows()
@@ -5430,45 +5139,6 @@ func (s *Server) handleShuttleRepinAll(c echo.Context) error {
 		}
 	}
 	return nil
-}
-
-// this is required as ipfs pinning spec has strong requirements on response format
-func openApiMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
-		err := next(c)
-		if err == nil {
-			return nil
-		}
-
-		var httpRespErr *util.HttpError
-		if xerrors.As(err, &httpRespErr) {
-			log.Errorf("handler error: %s", err)
-			return c.JSON(httpRespErr.Code, &util.HttpErrorResponse{
-				Error: util.HttpError{
-					Reason:  httpRespErr.Reason,
-					Details: httpRespErr.Details,
-				},
-			})
-		}
-
-		var echoErr *echo.HTTPError
-		if xerrors.As(err, &echoErr) {
-			return c.JSON(echoErr.Code, &util.HttpErrorResponse{
-				Error: util.HttpError{
-					Reason:  http.StatusText(echoErr.Code),
-					Details: echoErr.Message.(string),
-				},
-			})
-		}
-
-		log.Errorf("handler error: %s", err)
-		return c.JSON(http.StatusInternalServerError, &util.HttpErrorResponse{
-			Error: util.HttpError{
-				Reason:  http.StatusText(http.StatusInternalServerError),
-				Details: err.Error(),
-			},
-		})
-	}
 }
 
 type CidType string
@@ -5523,7 +5193,7 @@ func sanitizePath(p string) (string, error) {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/fs/add [post]
-func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
+func (s *apiV1) handleColfsAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")
 	contid := c.QueryParam("content")
 	npath := c.QueryParam("path")
@@ -5575,14 +5245,14 @@ func (s *Server) handleColfsAdd(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *Server) handleRunGc(c echo.Context) error {
+func (s *apiV1) handleRunGc(c echo.Context) error {
 	if err := s.CM.GarbageCollect(c.Request().Context()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (s *Server) handleGateway(c echo.Context) error {
+func (s *apiV1) handleGateway(c echo.Context) error {
 	npath := "/" + c.Param("path")
 	proto, cc, segs, err := gateway.ParsePath(npath)
 	if err != nil {
@@ -5607,7 +5277,7 @@ func (s *Server) handleGateway(c echo.Context) error {
 
 const bestGateway = "dweb.link"
 
-func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (string, error) {
+func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (string, error) {
 	if proto != "ipfs" {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
@@ -5636,7 +5306,7 @@ func (s *Server) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (
 	return fmt.Sprintf("https://%s/gw/%s/%s/%s", shuttle.Host, proto, cc, strings.Join(segs, "/")), nil
 }
 
-func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (bool, error) {
+func (s *apiV1) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (bool, error) {
 	var count int64
 	if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rootCID.Bytes(), u.ID).Count(&count).Error; err != nil {
 		return false, err
@@ -5647,7 +5317,7 @@ func (s *Server) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) 
 	return false, nil
 }
 
-func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
+func (s *apiV1) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 	u, err := url.Parse(hostname)
 	if err != nil {
 		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
@@ -5681,11 +5351,11 @@ func (s *Server) getShuttleConfig(hostname string, authToken string) (interface{
 	return out, nil
 }
 
-func (s *Server) isContentAddingDisabled(u *util.User) bool {
+func (s *apiV1) isContentAddingDisabled(u *util.User) bool {
 	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
 }
 
-func (s *Server) handleFixupDeals(c echo.Context) error {
+func (s *apiV1) handleFixupDeals(c echo.Context) error {
 	ctx := context.Background()
 	var deals []model.ContentDeal
 	if err := s.DB.Order("deal_id desc").Find(&deals, "deal_id > 0 AND on_chain_at < ?", time.Now().Add(time.Hour*24*-100)).Error; err != nil {
@@ -5711,7 +5381,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			}()
 			miner, err := d.MinerAddr()
 			if err != nil {
-				log.Error(err)
+				s.log.Error(err)
 				return
 			}
 
@@ -5724,7 +5394,7 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			if d.DealUUID != "" {
 				parsed, err := uuid.Parse(d.DealUUID)
 				if err != nil {
-					log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
+					s.log.Errorf("failed to get deal status: parsing deal uuid %s: %d %s: %s",
 						d.DealUUID, d.ID, miner, err)
 					return
 				}
@@ -5733,18 +5403,18 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 
 			provds, _, err := s.CM.GetProviderDealStatus(subctx, &d, miner, dealUUID)
 			if err != nil {
-				log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
+				s.log.Errorf("failed to get deal status: %d %s: %s", d.ID, miner, err)
 				return
 			}
 
 			// this should not happen, but be safe
 			if provds == nil {
-				log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
+				s.log.Errorf("failed to lookup provider deal state for deal: %d", d.DealID)
 				return
 			}
 
 			if provds.PublishCid == nil {
-				log.Errorf("no publish cid for deal: %d", d.DealID)
+				s.log.Errorf("no publish cid for deal: %d", d.DealID)
 				return
 			}
 
@@ -5752,19 +5422,19 @@ func (s *Server) handleFixupDeals(c echo.Context) error {
 			defer cancel2()
 			wait, err := s.Api.StateSearchMsg(subctx2, head.Key(), *provds.PublishCid, 100000, true)
 			if err != nil {
-				log.Errorf("failed to search message: %s", err)
+				s.log.Errorf("failed to search message: %s", err)
 				return
 			}
 
 			if wait == nil {
-				log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
+				s.log.Errorf("failed to find message: %d %s", d.ID, *provds.PublishCid)
 				return
 			}
 
 			ontime := gentime.Add(time.Second * 30 * time.Duration(wait.Height))
-			log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
+			s.log.Debugf("updating onchainat time for deal %d %d to %s", d.ID, d.DealID, ontime)
 			if err := s.DB.Model(model.ContentDeal{}).Where("id = ?", d.ID).Update("on_chain_at", ontime).Error; err != nil {
-				log.Error(err)
+				s.log.Error(err)
 				return
 			}
 		}(dll)

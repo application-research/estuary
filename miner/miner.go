@@ -45,7 +45,7 @@ func (mm *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piece
 
 		proto, err := mm.GetDealProtocolForMiner(ctx, dbm.Address.Addr)
 		if err != nil {
-			log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
+			mm.log.Warnf("getting deal protocol for %s failed: %s", dbm.Address.Addr, err)
 			continue
 		}
 

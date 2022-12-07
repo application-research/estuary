@@ -115,7 +115,7 @@ func (cm *ContentManager) getLastAccesses(ctx context.Context, candidates []remo
 // additionally, for aggregates, we should check each aggregated item under the root
 func (cm *ContentManager) getLastAccessForContent(cont util.Content) (time.Time, error) {
 	var obj util.Object
-	if err := cm.DB.First(&obj, "cid = ?", cont.Cid).Error; err != nil {
+	if err := cm.db.First(&obj, "cid = ?", cont.Cid).Error; err != nil {
 		return time.Time{}, err
 	}
 
@@ -134,7 +134,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	defer cm.contentLk.Unlock()
 	for _, c := range conts {
 		var cont util.Content
-		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		if err := cm.db.First(&cont, "id = ?", c).Error; err != nil {
 			return 0, err
 		}
 
@@ -148,22 +148,22 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			return 0, fmt.Errorf("cannot offload aggregated content")
 		}
 
-		if err := cm.DB.Model(&util.Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
+		if err := cm.db.Model(&util.Content{}).Where("id = ?", c).Update("offloaded", true).Error; err != nil {
 			return 0, err
 		}
 
-		if err := cm.DB.Model(&util.ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
+		if err := cm.db.Model(&util.ObjRef{}).Where("content = ?", c).Update("offloaded", 1).Error; err != nil {
 			return 0, err
 		}
 
 		if cont.Aggregate {
-			if err := cm.DB.Model(&util.Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
+			if err := cm.db.Model(&util.Content{}).Where("aggregated_in = ?", c).Update("offloaded", true).Error; err != nil {
 				return 0, err
 			}
 
-			if err := cm.DB.Model(&util.ObjRef{}).
+			if err := cm.db.Model(&util.ObjRef{}).
 				Where("content in (?)",
-					cm.DB.Model(util.Content{}).
+					cm.db.Model(util.Content{}).
 						Where("aggregated_in = ?", c).
 						Select("id")).
 				Update("offloaded", 1).Error; err != nil {
@@ -171,7 +171,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 			}
 
 			var children []util.Content
-			if err := cm.DB.Find(&children, "aggregated_in = ?", c).Error; err != nil {
+			if err := cm.db.Find(&children, "aggregated_in = ?", c).Error; err != nil {
 				return 0, err
 			}
 
@@ -224,7 +224,7 @@ func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, lo
 	ctx, span := cm.tracer.Start(ctx, "getRemovalCandidates")
 	defer span.End()
 
-	q := cm.DB.Model(util.Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
+	q := cm.db.Model(util.Content{}).Where("active and not offloaded and (aggregate or not aggregated_in > 0)")
 	if loc != "" {
 		q = q.Where("location = ?", loc)
 	}
@@ -260,7 +260,7 @@ func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, lo
 
 func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint) (int, int, int, error) {
 	var contentDeals []model.ContentDeal
-	if err := cm.DB.Find(&contentDeals, "content = ?", c).Error; err != nil {
+	if err := cm.db.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return 0, 0, 0, err
 	}
 

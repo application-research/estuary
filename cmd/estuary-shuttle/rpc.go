@@ -10,7 +10,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/drpc"
-	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
@@ -179,13 +179,13 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		}
 	}
 
-	op := &pinner.PinningOperation{
+	op := &operation.PinningOperation{
 		Obj:         data,
 		ContId:      contid,
 		UserId:      user,
 		Status:      types.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
-		Peers:       pinner.SerializePeers(peers),
+		Peers:       operation.SerializePeers(peers),
 	}
 
 	d.PinMgr.Add(op)

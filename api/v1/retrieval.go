@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
+func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
 	ctx, span := s.tracer.Start(ctx, "retrievalAsksForContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))
@@ -47,7 +47,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 			}); err != nil {
 				return nil, err
 			}
-			log.Errorf("failed to query miner %s: %s", maddr, err)
+			s.log.Errorf("failed to query miner %s: %s", maddr, err)
 			continue
 		}
 		out[maddr] = resp
@@ -55,7 +55,7 @@ func (s *Server) retrievalAsksForContent(ctx context.Context, contid uint) (map[
 	return out, nil
 }
 
-func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
+func (s *apiV1) retrieveContent(ctx context.Context, contid uint) error {
 	ctx, span := s.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))
@@ -77,7 +77,7 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 
 	for m, ask := range asks {
 		if err := s.CM.TryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
-			log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
+			s.log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
 			if err := s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
@@ -89,9 +89,7 @@ func (s *Server) retrieveContent(ctx context.Context, contid uint) error {
 			}
 			continue
 		}
-
 		return nil
 	}
-
 	return nil
 }

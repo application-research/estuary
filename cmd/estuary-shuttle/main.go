@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
+
 	"github.com/application-research/estuary/pinner/types"
 
 	"github.com/application-research/estuary/config"
@@ -1609,11 +1612,11 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	prs, _ := pinner.UnSerializePeers(op.Peers)
+	prs, _ := operation.UnSerializePeers(op.Peers)
 	for _, pi := range prs {
 		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
@@ -1808,11 +1811,11 @@ func (s *Shuttle) refreshPinQueue() error {
 }
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
-	op := &pinner.PinningOperation{
+	op := &operation.PinningOperation{
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
-		Peers:   pinner.SerializePeers(peers),
+		Peers:   operation.SerializePeers(peers),
 		Started: p.CreatedAt,
 		Status:  types.PinningStatusQueued,
 		Replace: replace,

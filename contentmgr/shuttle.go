@@ -63,7 +63,7 @@ func (cm *ContentManager) RegisterShuttleConnection(handle string, hello *drpc.H
 		hello.Host = ""
 	}
 
-	if err := cm.DB.Model(model.Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
+	if err := cm.db.Model(model.Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
 		"host":            hello.Host,
 		"peer_id":         hello.AddrInfo.ID.String(),
 		"last_connection": time.Now(),
@@ -323,7 +323,7 @@ func (cm *ContentManager) handleRpcCommPComplete(ctx context.Context, handle str
 		CarSize: resp.CarSize,
 	}
 
-	return cm.DB.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
+	return cm.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
 }
 
 func (cm *ContentManager) handleRpcTransferStarted(ctx context.Context, handle string, param *drpc.TransferStartedOrFinished) error {
@@ -348,12 +348,12 @@ func (cm *ContentManager) HandleRpcTransferStatus(ctx context.Context, handle st
 	}
 
 	var cd model.ContentDeal
-	if err := cm.DB.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
+	if err := cm.db.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
 		return err
 	}
 
 	if cd.DTChan == "" {
-		if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
+		if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
 			"dt_chan": param.Chanid,
 		}).Error; err != nil {
 			return err
@@ -379,7 +379,7 @@ func (cm *ContentManager) HandleRpcTransferStatus(ctx context.Context, handle st
 			return oerr
 		}
 
-		if err := cm.DB.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+		if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 			"failed":    true,
 			"failed_at": time.Now(),
 		}).Error; err != nil {
@@ -425,7 +425,7 @@ func (cm *ContentManager) handleRpcGarbageCheck(ctx context.Context, handle stri
 	var tounpin []uint
 	for _, c := range param.Contents {
 		var cont util.Content
-		if err := cm.DB.First(&cont, "id = ?", c).Error; err != nil {
+		if err := cm.db.First(&cont, "id = ?", c).Error; err != nil {
 			if xerrors.Is(err, gorm.ErrRecordNotFound) {
 				tounpin = append(tounpin, c)
 			} else {
@@ -446,7 +446,7 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 	}
 
 	// TODO: do some sanity checks that the sub pieces were all made successfully...
-	if err := cm.DB.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
+	if err := cm.db.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
 		"dag_split": true,
 		"active":    false,
 		"size":      0,
@@ -454,7 +454,7 @@ func (cm *ContentManager) handleRpcSplitComplete(ctx context.Context, handle str
 		return fmt.Errorf("failed to update content for split complete: %w", err)
 	}
 
-	if err := cm.DB.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
+	if err := cm.db.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
 		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 	}
 	return nil
