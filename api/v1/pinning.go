@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -449,9 +450,13 @@ func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 			return fmt.Errorf("unable to unpin content while zone is consolidating or aggregating (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
 		}
 		var zone util.Content
-		if err := s.DB.Find(&zone).Where("id = ?", content.AggregatedIn).Error; err != nil {
+		if err := s.DB.First(&zone, "id = ?", content.AggregatedIn).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				s.log.Errorf("content %d's aggregatedIn zone %d not found in DB", content.ID, content.AggregatedIn)
+			}
 			return err
 		}
+
 		if zone.Active {
 			// don't unpin content belonging to a pinned aggregate
 			return fmt.Errorf("unable to unpin content belonging to a pinned aggregate (pin: %d, zone: %d)", content.ID, content.AggregatedIn)
