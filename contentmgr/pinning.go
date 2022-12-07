@@ -10,8 +10,8 @@ import (
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner/pinning_op"
-	pinning_progress "github.com/application-research/estuary/pinner/progress"
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-blockservice"
@@ -97,7 +97,7 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *pinning_op.PinningOperation, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
@@ -156,7 +156,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		}
 	}
 
-	var pinOp *pinning_op.PinningOperation
+	var pinOp *operation.PinningOperation
 	if loc == constants.ContentLocationLocal {
 		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
@@ -172,12 +172,12 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	return ipfsRes, pinOp, nil
 }
 
-func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *pinning_op.PinningOperation {
+func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
 	if cont.Location != constants.ContentLocationLocal {
 		cm.log.Errorf("calling addPinToQueue on non-local content")
 	}
 
-	return &pinning_op.PinningOperation{
+	return &operation.PinningOperation{
 		ContId:   cont.ID,
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
@@ -423,7 +423,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 	return nil
 }
 
-func (cm *ContentManager) DoPinning(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
+func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 	ctx, span := cm.tracer.Start(ctx, "doPinning")
 	defer span.End()
 

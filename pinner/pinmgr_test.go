@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/application-research/estuary/pinner/pinning_op"
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
 	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -28,7 +29,7 @@ func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
 	return NewPinManager(
-		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
+		func(ctx context.Context, op *operation.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -42,7 +43,7 @@ func newManager(count *int) *PinManager {
 
 func newManagerNoDelete(count *int) *PinManager {
 	return NewPinManager(
-		func(ctx context.Context, op *pinning_op.PinningOperation, cb pinning_progress.PinProgressCB) error {
+		func(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -114,7 +115,7 @@ func TestEncodeDecode(t *testing.T) {
 			fmt.Println(err)
 		}
 		peer := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
-		po := &pinning_op.PinningOperation{Peers: peer, Name: "pinning operation name"}
+		po := &operation.PinningOperation{Peers: peer, Name: "pinning operation name"}
 		bytes, err := encodeMsgPack(po)
 		if err != nil {
 			fmt.Println(err)
@@ -130,9 +131,9 @@ func TestEncodeDecode(t *testing.T) {
 	})
 }
 
-func newPinData(name string, userid int, contid int) pinning_op.PinningOperation {
+func newPinData(name string, userid int, contid int) operation.PinningOperation {
 	peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
-	return pinning_op.PinningOperation{
+	return operation.PinningOperation{
 		Name:   name,
 		Peers:  peers,
 		UserId: uint(userid),

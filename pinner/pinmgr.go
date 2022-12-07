@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/pinner/pinning_op"
-	pinning_progress "github.com/application-research/estuary/pinner/progress"
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -25,7 +25,7 @@ import (
 
 var log = logging.Logger("pinner")
 
-type PinFunc func(context.Context, *pinning_op.PinningOperation, pinning_progress.PinProgressCB) error
+type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
 type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
 func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
@@ -51,9 +51,9 @@ func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		pinQueue:         pinQueue,
 		activePins:       make(map[uint]int),
 		pinQueueCount:    pinQueueCount,
-		pinQueueIn:       make(chan *pinning_op.PinningOperation, 64),
-		pinQueueOut:      make(chan *pinning_op.PinningOperation),
-		pinComplete:      make(chan *pinning_op.PinningOperation, 64),
+		pinQueueIn:       make(chan *operation.PinningOperation, 64),
+		pinQueueOut:      make(chan *operation.PinningOperation),
+		pinComplete:      make(chan *operation.PinningOperation, 64),
 		duplicateGuard:   createLevelDB(opts.QueueDataDir),
 		RunPinFunc:       pinfunc,
 		StatusChangeFunc: scf,
@@ -73,9 +73,9 @@ type PinManagerOpts struct {
 }
 
 type PinManager struct {
-	pinQueueIn       chan *pinning_op.PinningOperation
-	pinQueueOut      chan *pinning_op.PinningOperation
-	pinComplete      chan *pinning_op.PinningOperation
+	pinQueueIn       chan *operation.PinningOperation
+	pinQueueOut      chan *operation.PinningOperation
+	pinComplete      chan *operation.PinningOperation
 	duplicateGuard   *leveldb.DB
 	activePins       map[uint]int // used to limit the number of pins per user
 	pinQueueCount    map[uint]int // keep track of queue count per user
@@ -91,13 +91,13 @@ type PinningOperationData struct {
 	ContId uint
 }
 
-func getPinningData(po *pinning_op.PinningOperation) PinningOperationData {
+func getPinningData(po *operation.PinningOperation) PinningOperationData {
 	return PinningOperationData{
 		ContId: po.ContId,
 	}
 }
 
-func (pm *PinManager) complete(po *pinning_op.PinningOperation) {
+func (pm *PinManager) complete(po *operation.PinningOperation) {
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
 
@@ -122,7 +122,7 @@ func (pm *PinManager) PinQueueSize() int {
 	return int(pm.pinQueue.Length())
 }
 
-func (pm *PinManager) Add(op *pinning_op.PinningOperation) {
+func (pm *PinManager) Add(op *operation.PinningOperation) {
 	if op != nil {
 		go func() {
 			sanitizePeers(op.Peers)
@@ -133,7 +133,7 @@ func (pm *PinManager) Add(op *pinning_op.PinningOperation) {
 
 var maxTimeout = 24 * time.Hour
 
-func (pm *PinManager) doPinning(op *pinning_op.PinningOperation) error {
+func (pm *PinManager) doPinning(op *operation.PinningOperation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
@@ -152,7 +152,7 @@ func (pm *PinManager) doPinning(op *pinning_op.PinningOperation) error {
 	return nil
 }
 
-func (pm *PinManager) popNextPinOp() *pinning_op.PinningOperation {
+func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 	if pm.pinQueue.Length() == 0 {
 		return nil // no content in queue
 	}
@@ -303,11 +303,11 @@ type AddrInfoString struct {
 }
 
 type PinningOperationSerialize struct {
-	Po    pinning_op.PinningOperation
+	Po    operation.PinningOperation
 	Peers []AddrInfoString
 }
 
-func encodeMsgPack(po *pinning_op.PinningOperation) ([]byte, error) {
+func encodeMsgPack(po *operation.PinningOperation) ([]byte, error) {
 	peers := po.Peers
 	po.Peers = []*peer.AddrInfo{}
 	serialPeers := []AddrInfoString{}
@@ -325,7 +325,7 @@ func encodeMsgPack(po *pinning_op.PinningOperation) ([]byte, error) {
 	return bytes, err
 }
 
-func decodeMsgPack(po_bytes []byte) (*pinning_op.PinningOperation, error) {
+func decodeMsgPack(po_bytes []byte) (*operation.PinningOperation, error) {
 	var next *PinningOperationSerialize
 	err := msgpack.Unmarshal(po_bytes, &next)
 	if err != nil {
@@ -350,7 +350,7 @@ func decodeMsgPack(po_bytes []byte) (*pinning_op.PinningOperation, error) {
 	return &po, err
 }
 
-func (pm *PinManager) enqueuePinOp(po *pinning_op.PinningOperation) {
+func (pm *PinManager) enqueuePinOp(po *operation.PinningOperation) {
 	poData := getPinningData(po)
 	if _, err := pm.duplicateGuard.Get(createLevelDBKey(poData), nil); err != leveldb.ErrNotFound {
 		//work already exists in the queue not adding duplicate
@@ -386,7 +386,7 @@ func (pm *PinManager) Run(workers int) {
 		go pm.pinWorker()
 	}
 
-	var next *pinning_op.PinningOperation
+	var next *operation.PinningOperation
 
 	pm.pinQueueLk.Lock()
 	next = pm.popNextPinOp()

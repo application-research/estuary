@@ -1,3 +1,3 @@
-package pinning_progress
+package progress
 
 type PinProgressCB func(int64)
