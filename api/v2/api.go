@@ -7,6 +7,7 @@ import (
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
@@ -19,13 +20,13 @@ import (
 
 type apiV2 struct {
 	cfg          *config.Estuary
-	DB           *gorm.DB
+	db           *gorm.DB
 	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
+	node         *node.Node
+	filClient    *filclient.FilClient
+	api          api.Gateway
+	cm           *contentmgr.ContentManager
+	stagingMgr   *stagingbs.StagingBSMgr
 	gwayHandler  *gateway.GatewayHandler
 	cacher       *memo.Cacher
 	minerManager miner.IMinerManager
@@ -48,13 +49,13 @@ func NewAPIV2(
 ) *apiV2 {
 	return &apiV2{
 		cfg:          cfg,
-		DB:           db,
+		db:           db,
 		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
+		node:         nd,
+		filClient:    fc,
+		api:          gwApi,
+		cm:           cm,
+		stagingMgr:   sbm,
 		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
 		cacher:       memo.NewCacher(),
 		minerManager: mm,
@@ -81,5 +82,14 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
-	_ = e.Group("/v2")
+	e2 := e.Group("/v2")
+
+	// to upload contents you only need an upload key
+	// to see info about contents you need a user-level key (see contents group)
+	e2.POST("/contents", util.WithUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
+	// e2.GET("/contents", util.WithUser(s.handleListContent), s.AuthRequired(util.PermLevelUser))
+	// e2.GET("/contents/:contentid", util.WithUser(s.handleGetContent), s.AuthRequired(util.PermLevelUser))
+	// e2.GET("/contents/:cid/ensure-replication", s.handleEnsureReplication, s.AuthRequired(util.PermLevelUser))
+	// e2.GET("/contents/:contentid/status", util.WithUser(s.handleContentStatus), s.AuthRequired(util.PermLevelUser))
+
 }
