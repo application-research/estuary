@@ -40,7 +40,8 @@ func (s *Server) doPinning(ctx context.Context, op *pinner.PinningOperation, cb 
 		}()
 	}
 
-	for _, pi := range op.Peers {
+	prs, _ := pinner.UnSerializePeers(op.Peers)
+	for _, pi := range prs {
 		if err := s.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}

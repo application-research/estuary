@@ -1613,7 +1613,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	for _, pi := range op.Peers {
+	prs, _ := pinner.UnSerializePeers(op.Peers)
+	for _, pi := range prs {
 		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
@@ -1811,7 +1812,7 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
-		Peers:   peers,
+		Peers:   pinner.SerializePeers(peers),
 		Started: p.CreatedAt,
 		Status:  types.PinningStatusQueued,
 		Replace: replace,

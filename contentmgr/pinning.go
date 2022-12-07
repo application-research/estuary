@@ -202,7 +202,7 @@ func (cm *ContentManager) addPinToQueue(cont util.Content, peers []*peer.AddrInf
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
 		Name:     cont.Name,
-		Peers:    peers,
+		Peers:    pinner.SerializePeers(peers),
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
 		Replace:  replaceID,

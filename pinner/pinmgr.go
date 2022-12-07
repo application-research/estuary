@@ -12,7 +12,7 @@ import (
 
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
-	ma "github.com/multiformats/go-multiaddr"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/vmihailenco/msgpack/v5"
 
 	"github.com/ipfs/go-cid"
@@ -94,7 +94,7 @@ type PinManager struct {
 type PinningOperation struct {
 	Obj   cid.Cid
 	Name  string
-	Peers []*peer.AddrInfo
+	Peers []AddrInfoString
 	Meta  string
 
 	Status types.PinningStatus
@@ -178,7 +178,6 @@ func (pm *PinManager) PinQueueSize() int {
 
 func (pm *PinManager) Add(op *PinningOperation) {
 	go func() {
-		sanitizePeers(op.Peers)
 		pm.pinQueueIn <- op
 	}()
 }
@@ -344,75 +343,60 @@ func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
 }
 
-func sanitizePeers(peers []*peer.AddrInfo) {
-	for _, peer := range peers {
-		addrs := []ma.Multiaddr{}
-		for _, addr := range peer.Addrs {
-			if addr != nil {
-				addrs = append(addrs, addr)
-			}
-		}
-		peer.Addrs = addrs
-	}
-}
-
 type AddrInfoString struct {
-	ID    peer.ID
+	ID    []byte
 	Addrs []string
 }
-type PinningOperationSerialize struct {
-	Po    PinningOperation
-	Peers []AddrInfoString
+
+func SerializePeers(peers []*peer.AddrInfo) []AddrInfoString {
+	adInfos := []AddrInfoString{}
+	for _, p := range peers {
+		id, _ := p.ID.Marshal()
+		adInfo := AddrInfoString{ID: id}
+		for _, a := range p.Addrs {
+			if a != nil {
+				adInfo.Addrs = append(adInfo.Addrs, a.String())
+			}
+		}
+		adInfos = append(adInfos, adInfo)
+	}
+	return adInfos
+}
+
+func UnSerializePeers(prs []AddrInfoString) ([]*peer.AddrInfo, error) {
+	peers := make([]*peer.AddrInfo, 0)
+	for _, pr := range prs {
+		pID := peer.ID("")
+		err := pID.Unmarshal(pr.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		addrs := make([]multiaddr.Multiaddr, 0)
+		for _, addr := range pr.Addrs {
+			maddr, err := multiaddr.NewMultiaddr(addr)
+			if err != nil {
+				continue
+			}
+			addrs = append(addrs, maddr)
+		}
+		peers = append(peers, &peer.AddrInfo{ID: pID, Addrs: addrs})
+	}
+	return peers, nil
 }
 
 func encode_msgpack(po *PinningOperation) ([]byte, error) {
-	peers := po.Peers
-	po.Peers = []*peer.AddrInfo{}
-	serialPeers := []AddrInfoString{}
-	for i := 0; i < len(peers); i++ {
-		newaddrs := []string{}
-		for j := 0; j < len(peers[i].Addrs); j++ {
-			newaddrs = append(newaddrs, peers[i].Addrs[j].String())
-		}
-		newpeer := AddrInfoString{ID: peers[i].ID, Addrs: newaddrs}
-		serialPeers = append(serialPeers, newpeer)
-	}
-	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
-	bytes, err := msgpack.Marshal(&savedObject)
-	po.Peers = peers
-	return bytes, err
+	return msgpack.Marshal(&po)
 }
+
 func decode_msgpack(po_bytes []byte) (*PinningOperation, error) {
-	var next *PinningOperationSerialize
-	err := msgpack.Unmarshal(po_bytes, &next)
-	if err != nil {
-		log.Fatal(err)
-	}
-	po := next.Po
-	newPeers := []*peer.AddrInfo{}
-	peers := next.Peers
-	for i := 0; i < len(peers); i++ {
-		newaddrs := []ma.Multiaddr{}
-		for j := 0; j < len(peers[i].Addrs); j++ {
-			newma, err := ma.NewMultiaddr(peers[i].Addrs[j])
-			if err != nil {
-				log.Fatal(err)
-			}
-			newaddrs = append(newaddrs, newma)
-		}
-		newpeer := peer.AddrInfo{ID: peers[i].ID, Addrs: newaddrs}
-		newPeers = append(newPeers, &newpeer)
-	}
-	po.Peers = newPeers
-	return &po, err
+	var next *PinningOperation
+	return next, msgpack.Unmarshal(po_bytes, &next)
 }
 
 func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
-
 	opdata := getPinningData(po)
-
 	_, err := pm.duplicateGuard.Get(createLevelDBKey(opdata), nil)
-
 	if err != leveldb.ErrNotFound {
 		//work already exists in the queue not adding duplicate
 		return
@@ -422,6 +406,7 @@ func (pm *PinManager) enqueuePinOp(po *PinningOperation) {
 	if po.SkipLimiter {
 		u = 0
 	}
+
 	po_bytes, err := encode_msgpack(po)
 	if err != nil {
 		log.Fatal("Unable to encode data to add to queue.")
