@@ -63,7 +63,7 @@ func (spm *SPPreferenceManager) PostSP(ctx context.Context, pings StorageProvide
 		})
 	}
 
-	// Save entry - Upsert -> Update existing entries
+	// Save entry - Upsert -> Update existing entries (if SP's shuttle priority changes)
 	spm.DB.Create(&toCreate).Clauses(clause.OnConflict{UpdateAll: true})
 	return nil
 }
