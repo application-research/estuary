@@ -1,4 +1,4 @@
-package apiV2
+package api
 
 import (
 	"github.com/application-research/estuary/config"
@@ -33,7 +33,7 @@ type apiV2 struct {
 	log          *zap.SugaredLogger
 }
 
-func NewAPI(
+func NewAPIV2(
 	cfg *config.Estuary,
 	db *gorm.DB,
 	nd *node.Node,

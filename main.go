@@ -43,9 +43,9 @@ import (
 
 	"golang.org/x/xerrors"
 
-	api_engine "github.com/application-research/estuary/api"
-	apiV1 "github.com/application-research/estuary/api/v1"
-	apiV2 "github.com/application-research/estuary/api/v2"
+	"github.com/application-research/estuary/api"
+	apiv1 "github.com/application-research/estuary/api/v1"
+	apiv2 "github.com/application-research/estuary/api/v2"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
@@ -773,10 +773,10 @@ func main() {
 
 		// stand up api server
 		apiTracer := otel.Tracer("api")
-		apiV1 := apiV1.NewAPI(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
-		apiV2 := apiV2.NewAPI(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
 
-		apiEngine := api_engine.NewEngine(cfg, apiTracer)
+		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)
 		apiEngine.RegisterAPI(apiV2)
 		return apiEngine.Start()
