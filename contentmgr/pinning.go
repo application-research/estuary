@@ -47,7 +47,7 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 
 	ps := &types.IpfsPinStatusResponse{
 		RequestID: fmt.Sprintf("%d", cont.ID),
-		Status:    types.PinningStatusQueued,
+		Status:    types.GetContentPinningStatus(cont),
 		Created:   cont.CreatedAt,
 		Pin: types.IpfsPin{
 			CID:     cont.Cid.CID.String(),
@@ -57,14 +57,6 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 		},
 		Delegates: delegates,
 		Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
-	}
-
-	if cont.Active {
-		ps.Status = types.PinningStatusPinned
-	} else if cont.Failed {
-		ps.Status = types.PinningStatusFailed
-	} else if cont.Pinning {
-		ps.Status = types.PinningStatusPinning
 	}
 	return ps, nil
 }
@@ -182,7 +174,7 @@ func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrI
 		UserId:   cont.UserID,
 		Obj:      cont.Cid.CID,
 		Name:     cont.Name,
-		Peers:    peers,
+		Peers:    operation.SerializePeers(peers),
 		Started:  cont.CreatedAt,
 		Status:   types.PinningStatusQueued,
 		Replace:  replaceID,
@@ -436,7 +428,8 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 		}()
 	}
 
-	for _, pi := range op.Peers {
+	prs, _ := operation.UnSerializePeers(op.Peers)
+	for _, pi := range prs {
 		if err := cm.node.Host.Connect(ctx, *pi); err != nil {
 			cm.log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}

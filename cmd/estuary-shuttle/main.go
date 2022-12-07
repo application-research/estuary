@@ -1148,7 +1148,7 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
@@ -1616,7 +1616,8 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	for _, pi := range op.Peers {
+	prs, _ := operation.UnSerializePeers(op.Peers)
+	for _, pi := range prs {
 		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
@@ -1814,7 +1815,7 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
-		Peers:   peers,
+		Peers:   operation.SerializePeers(peers),
 		Started: p.CreatedAt,
 		Status:  types.PinningStatusQueued,
 		Replace: replace,

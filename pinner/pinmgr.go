@@ -14,8 +14,6 @@ import (
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/goque"
-	"github.com/libp2p/go-libp2p/core/peer"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/vmihailenco/msgpack/v5"
 
 	logging "github.com/ipfs/go-log/v2"
@@ -101,8 +99,8 @@ func (pm *PinManager) complete(po *operation.PinningOperation) {
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
 
-	opdata := getPinningData(po)
-	err := pm.duplicateGuard.Delete(createLevelDBKey(opdata), nil)
+	opData := getPinningData(po)
+	err := pm.duplicateGuard.Delete(createLevelDBKey(opData), nil)
 	if err != nil {
 		//Delete will not returns error if key doesn't exist
 		log.Errorf("Error deleting item from duplicate guard ", err)
@@ -112,7 +110,6 @@ func (pm *PinManager) complete(po *operation.PinningOperation) {
 	if pm.activePins[po.UserId] == 0 {
 		delete(pm.activePins, po.UserId)
 	}
-
 	po.Complete()
 }
 
@@ -125,7 +122,6 @@ func (pm *PinManager) PinQueueSize() int {
 func (pm *PinManager) Add(op *operation.PinningOperation) {
 	if op != nil {
 		go func() {
-			sanitizePeers(op.Peers)
 			pm.pinQueueIn <- op
 		}()
 	}
@@ -231,7 +227,6 @@ func createLevelDBKey(value PinningOperationData) []byte {
 }
 
 func createLevelDB(QueueDataDir string) *leveldb.DB {
-
 	dname := filepath.Join(QueueDataDir, "duplicateGuard")
 	err := os.MkdirAll(dname, os.ModePerm)
 	if err != nil {
@@ -265,7 +260,6 @@ func buildPinQueueCount(q *goque.PrefixQueue) map[uint]int {
 		mapUint[uint(keyU)] = int(element)
 	}
 	return mapUint
-
 }
 
 func createDQue(QueueDataDir string) *goque.PrefixQueue {
@@ -285,69 +279,13 @@ func getUserForQueue(UserId uint) []byte {
 	return []byte(strconv.Itoa(int(UserId)))
 }
 
-func sanitizePeers(peers []*peer.AddrInfo) {
-	for _, peer := range peers {
-		addrs := []ma.Multiaddr{}
-		for _, addr := range peer.Addrs {
-			if addr != nil {
-				addrs = append(addrs, addr)
-			}
-		}
-		peer.Addrs = addrs
-	}
-}
-
-type AddrInfoString struct {
-	ID    peer.ID
-	Addrs []string
-}
-
-type PinningOperationSerialize struct {
-	Po    operation.PinningOperation
-	Peers []AddrInfoString
-}
-
 func encodeMsgPack(po *operation.PinningOperation) ([]byte, error) {
-	peers := po.Peers
-	po.Peers = []*peer.AddrInfo{}
-	serialPeers := []AddrInfoString{}
-	for i := 0; i < len(peers); i++ {
-		newaddrs := []string{}
-		for j := 0; j < len(peers[i].Addrs); j++ {
-			newaddrs = append(newaddrs, peers[i].Addrs[j].String())
-		}
-		newpeer := AddrInfoString{ID: peers[i].ID, Addrs: newaddrs}
-		serialPeers = append(serialPeers, newpeer)
-	}
-	savedObject := PinningOperationSerialize{Po: *po, Peers: serialPeers}
-	bytes, err := msgpack.Marshal(&savedObject)
-	po.Peers = peers
-	return bytes, err
+	return msgpack.Marshal(&po)
 }
 
 func decodeMsgPack(po_bytes []byte) (*operation.PinningOperation, error) {
-	var next *PinningOperationSerialize
-	err := msgpack.Unmarshal(po_bytes, &next)
-	if err != nil {
-		log.Fatal(err)
-	}
-	po := next.Po
-	newPeers := []*peer.AddrInfo{}
-	peers := next.Peers
-	for i := 0; i < len(peers); i++ {
-		newaddrs := []ma.Multiaddr{}
-		for j := 0; j < len(peers[i].Addrs); j++ {
-			newma, err := ma.NewMultiaddr(peers[i].Addrs[j])
-			if err != nil {
-				log.Fatal(err)
-			}
-			newaddrs = append(newaddrs, newma)
-		}
-		newpeer := peer.AddrInfo{ID: peers[i].ID, Addrs: newaddrs}
-		newPeers = append(newPeers, &newpeer)
-	}
-	po.Peers = newPeers
-	return &po, err
+	var next *operation.PinningOperation
+	return next, msgpack.Unmarshal(po_bytes, &next)
 }
 
 func (pm *PinManager) enqueuePinOp(po *operation.PinningOperation) {
@@ -377,7 +315,6 @@ func (pm *PinManager) enqueuePinOp(po *operation.PinningOperation) {
 	if err != nil {
 		log.Fatal("Unable to add to duplicate guard.")
 	}
-
 	pm.pinQueueCount[u]++
 }
 

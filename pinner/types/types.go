@@ -1,6 +1,10 @@
 package types
 
-import "time"
+import (
+	"time"
+
+	"github.com/application-research/estuary/util"
+)
 
 type PinningStatus string
 
@@ -36,4 +40,16 @@ type IpfsPinStatusResponse struct {
 type IpfsListPinStatusResponse struct {
 	Count   int                      `json:"count"`
 	Results []*IpfsPinStatusResponse `json:"results"`
+}
+
+func GetContentPinningStatus(cont util.Content) PinningStatus {
+	status := PinningStatusQueued
+	if cont.Active {
+		status = PinningStatusPinned
+	} else if cont.Failed {
+		status = PinningStatusFailed
+	} else if cont.Pinning {
+		status = PinningStatusPinning
+	}
+	return status
 }
