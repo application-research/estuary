@@ -45,7 +45,7 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 
 	ps := &types.IpfsPinStatusResponse{
 		RequestID: fmt.Sprintf("%d", cont.ID),
-		Status:    types.PinningStatusQueued,
+		Status:    types.GetContentPinningStatus(cont),
 		Created:   cont.CreatedAt,
 		Pin: types.IpfsPin{
 			CID:     cont.Cid.CID.String(),
@@ -55,14 +55,6 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 		},
 		Delegates: delegates,
 		Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
-	}
-
-	if cont.Active {
-		ps.Status = types.PinningStatusPinned
-	} else if cont.Failed {
-		ps.Status = types.PinningStatusFailed
-	} else if cont.Pinning {
-		ps.Status = types.PinningStatusPinning
 	}
 	return ps, nil
 }

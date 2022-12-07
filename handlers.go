@@ -34,6 +34,7 @@ import (
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/drpc"
 	esmetrics "github.com/application-research/estuary/metrics"
+	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -346,15 +347,16 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint      `json:"id"`
-	Cid             cid.Cid   `json:"cid"`
-	Filename        string    `json:"name"`
-	Size            int64     `json:"size"`
-	CreatedAt       time.Time `json:"createdAt"`
-	BWUsed          int64     `json:"bwUsed"`
-	TotalRequests   int64     `json:"totalRequests"`
-	Offloaded       bool      `json:"offloaded"`
-	AggregatedFiles int64     `json:"aggregatedFiles"`
+	ID              uint                       `json:"id"`
+	Cid             cid.Cid                    `json:"cid"`
+	Filename        string                     `json:"name"`
+	Size            int64                      `json:"size"`
+	CreatedAt       time.Time                  `json:"createdAt"`
+	BWUsed          int64                      `json:"bwUsed"`
+	TotalRequests   int64                      `json:"totalRequests"`
+	Offloaded       bool                       `json:"offloaded"`
+	AggregatedFiles int64                      `json:"aggregatedFiles"`
+	PinningStatus   pinningtypes.PinningStatus `json:"pinningStatus"`
 }
 
 func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
@@ -408,24 +410,19 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	var contents []util.Content
-	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate and active", u.ID).Error; err != nil {
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
 		return err
 	}
 
 	out := make([]statsResp, 0, len(contents))
 	for _, c := range contents {
 		st := statsResp{
-			ID:        c.ID,
-			Cid:       c.Cid.CID,
-			Filename:  c.Name,
-			Size:      c.Size,
-			CreatedAt: c.CreatedAt,
-		}
-
-		if c.Aggregate {
-			if err := s.DB.Model(util.Content{}).Where("aggregated_in = ?", c.ID).Count(&st.AggregatedFiles).Error; err != nil {
-				return err
-			}
+			ID:            c.ID,
+			Cid:           c.Cid.CID,
+			Filename:      c.Name,
+			Size:          c.Size,
+			CreatedAt:     c.CreatedAt,
+			PinningStatus: pinningtypes.GetContentPinningStatus(c),
 		}
 		out = append(out, st)
 	}
