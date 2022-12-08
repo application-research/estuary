@@ -3477,14 +3477,13 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 			continue
 		}
 
+		if !strings.HasPrefix(r.Path, queryDir) {
+			continue
+		}
+
 		relp, err := getRelativePath(r, queryDir)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
-		}
-
-		// if the relative contentPath requires pathing up, its definitely not in this queryDir
-		if strings.HasPrefix(relp, "..") {
-			continue
 		}
 
 		if relp == "." { // Query directory is the complete path containing the content.
@@ -3495,6 +3494,7 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 
 			out = append(out, collectionListResponse{
 				Name:      r.Name,
+				Type:      File,
 				Size:      r.Size,
 				ContID:    r.ID,
 				Cid:       &util.DbCID{CID: r.Cid.CID},
@@ -3502,25 +3502,9 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 				ColUuid:   coluuid,
 				UpdatedAt: r.UpdatedAt,
 			})
-		} else { // Query directory has a subdirectory, which contains the actual content.
+		} else {
 
-			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
-			//if r.Type == util.Directory {
-			//	if !dirs[relp] {
-			//		dirs[relp] = true
-			//		out = append(out, collectionListResponse{
-			//			Name:    relp,
-			//			Type:    Dir,
-			//			Size:    r.Size,
-			//			ContID:  r.ID,
-			//			Cid:     &r.Cid,
-			//			Dir:     queryDir,
-			//			ColUuid: coluuid,
-			//		})
-			//	}
-			//	continue
-			//}
-
+			// Query directory has a subdirectory, which contains the actual content.
 			// if relative contentPath has a /, the file is in a subdirectory
 			// print the directory the file is in if we haven't already
 			if strings.Contains(relp, "/") {
@@ -3529,30 +3513,28 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 				if !dirs[subDir] {
 					dirs[subDir] = true
 					out = append(out, collectionListResponse{
-						Name:    subDir,
-						Type:    Dir,
-						Dir:     queryDir,
-						ColUuid: coluuid,
+						Name:      subDir,
+						Type:      Dir,
+						Dir:       queryDir,
+						ColUuid:   coluuid,
+						UpdatedAt: r.UpdatedAt,
 					})
 					continue
 				}
+			} else {
+				out = append(out, collectionListResponse{
+					Name:      r.Name,
+					Type:      File,
+					Size:      r.Size,
+					ContID:    r.ID,
+					Cid:       &util.DbCID{CID: r.Cid.CID},
+					Dir:       queryDir,
+					ColUuid:   coluuid,
+					UpdatedAt: r.UpdatedAt,
+				})
+
 			}
 		}
-
-		//var contentType CidType
-		contentType := File
-		if r.Type == util.Directory {
-			contentType = Dir
-		}
-		out = append(out, collectionListResponse{
-			Name:    r.Name,
-			Type:    contentType,
-			Size:    r.Size,
-			ContID:  r.ID,
-			Cid:     &util.DbCID{CID: r.Cid.CID},
-			Dir:     queryDir,
-			ColUuid: coluuid,
-		})
 	}
 	return c.JSON(http.StatusOK, out)
 }
