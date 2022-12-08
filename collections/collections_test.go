@@ -87,8 +87,7 @@ func TestInvalidDirectory(t *testing.T) {
 }
 
 func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, expectedResponse CollectionListResponse) {
-	dirs := make(map[string]bool)
-	response, _, err := getDirectoryContent(ref, dirs, queryDir, coluuid)
+	response, _, err := getDirectoryContent(ref, queryDir, coluuid)
 
 	if err != nil {
 		t.Fatalf("Error: %v\n", err)

@@ -3470,7 +3470,7 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 	// if queryDir is set, do the content listing
 	queryDir = filepath.Clean(queryDir)
 
-	out, err := collections.GetDirectoryContents(c, refs, queryDir, coluuid)
+	out, err := collections.GetDirectoryContents(refs, queryDir, coluuid)
 	if err != nil {
 		return err
 	}
