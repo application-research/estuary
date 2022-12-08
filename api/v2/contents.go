@@ -139,6 +139,9 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 	dserv := merkledag.NewDAGService(bserv)
 
 	uploadedContent, err := s.loadContentFromRequest(c, ctx, uploadType, bs, dserv)
+	if err != nil {
+		return err
+	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
@@ -164,10 +167,13 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 		makeDeal := true
 		cols := []*collections.CollectionRef{
 			{
-				Collection: collection.ID,
-				Path:       &path,
+				Path: &path,
 			},
 		}
+		if collection != nil {
+			cols[0].Collection = collection.ID
+		}
+
 		pinstatus, pinOp, err := s.cm.PinContent(ctx, u.ID, uploadedContent.CID, uploadedContent.Filename, cols, uploadedContent.Origins, 0, nil, makeDeal)
 		if err != nil {
 			return err
