@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -48,6 +49,22 @@ func (s *Shuttle) PingOne(ctx context.Context, addr multiaddr.Multiaddr, pID pee
 	}
 
 	return &t, nil
+}
+
+// Returns a slice of the top-performing (lowest-latency) peers in the ping result.
+// Output will be truncated to the top `n`
+func GetTopPeers(p PingManyResult, n int) []peer.ID {
+	result := make([]peer.ID, 0, len(p))
+
+	for k := range p {
+		result = append(result, k)
+	}
+
+	sort.SliceStable(result, func(i, j int) bool {
+		return p[result[i]] < p[result[j]]
+	})
+
+	return result[0:n]
 }
 
 func netPing(ctx context.Context, p peer.ID, h host.Host) (time.Duration, error) {
