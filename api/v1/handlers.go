@@ -3466,20 +3466,23 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 	if queryDir == "" {
 		return c.JSON(http.StatusOK, refs)
 	}
-
 	// if queryDir is set, do the content listing
 	queryDir = filepath.Clean(queryDir)
 
 	dirs := make(map[string]bool)
-	var out []collectionListResponse
+	out := make([]collectionListResponse, 0)
 	for _, r := range refs {
 		if r.Path == "" || r.Name == "" {
 			continue
 		}
 
-		relp, err := getRelativePath(r, queryDir)
+		relp, err := filepath.Rel(queryDir, r.Path)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_INVALID_INPUT,
+				Details: fmt.Sprintf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path),
+			}
 		}
 
 		// if the relative contentPath requires pathing up, its definitely not in this queryDir
@@ -3487,7 +3490,8 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 			continue
 		}
 
-		if relp == "." { // Query directory is the complete path containing the content.
+		// if is query dir is a complete path to file or the ref is a file in the query dir
+		if relp == "." || !strings.Contains(relp, "/") {
 			// trying to list a CID queryDir, not allowed
 			if r.Type == util.Directory {
 				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
@@ -3504,32 +3508,22 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 				Type:      File,
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
-
-			// if relative contentPath has a /, the file is in a subdirectory
-			// print the directory the file is in if we haven't already
-			if strings.Contains(relp, "/") {
-				parts := strings.Split(relp, "/")
-				subDir := parts[0]
-				if !dirs[subDir] {
-					dirs[subDir] = true
-					out = append(out, collectionListResponse{
-						Name:    subDir,
-						Type:    Dir,
-						Dir:     queryDir,
-						ColUuid: coluuid,
-					})
-					continue
-				}
+			//TODO - support dir sizes
+			parts := strings.Split(relp, "/")
+			subDir := parts[0]
+			if !dirs[subDir] {
+				dirs[subDir] = true
+				out = append(out, collectionListResponse{
+					Name:      subDir,
+					Type:      Dir,
+					Dir:       queryDir,
+					ColUuid:   coluuid,
+					UpdatedAt: r.UpdatedAt,
+				})
 			}
 		}
 	}
 	return c.JSON(http.StatusOK, out)
-}
-
-func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
-	contentPath := r.Path
-	relp, err := filepath.Rel(queryDir, contentPath)
-	return relp, err
 }
 
 // handleDeleteCollection godoc
