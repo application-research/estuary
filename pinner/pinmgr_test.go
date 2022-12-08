@@ -78,10 +78,10 @@ func TestEncodeDecode(t *testing.T) {
 			originsStr = string(b)
 		}
 
-		var origins2 []*peer.AddrInfo
-		_ = json.Unmarshal([]byte(originsStr), &origins2)
+		var originsUnmarshalled []*peer.AddrInfo
+		_ = json.Unmarshal([]byte(originsStr), &originsUnmarshalled)
 
-		po := &operation.PinningOperation{Peers: operation.SerializePeers(origins2), Name: "pinning operation name"}
+		po := &operation.PinningOperation{Peers: operation.SerializePeers(originsUnmarshalled), Name: "pinning operation name"}
 		bytes, err := encodeMsgPack(po)
 		if err != nil {
 			assert.Nil(t, err, "encodeMsgPack should not fail")
@@ -97,8 +97,8 @@ func TestEncodeDecode(t *testing.T) {
 		newPoPeers := operation.UnSerializePeers(newpo.Peers)
 
 		assert.Equal(t, newpo.Name, po.Name, "name doesnt match")
-		assert.Equal(t, newPoPeers[0].Addrs[0].String(), origins2[0].Addrs[0].String(), "addr doesnt match")
-		assert.Equal(t, newPoPeers[0].ID, origins2[0].ID, "ID doesnt match")
+		assert.Equal(t, newPoPeers[0].Addrs[0].String(), originsUnmarshalled[0].Addrs[0].String(), "addr doesnt match")
+		assert.Equal(t, newPoPeers[0].ID, originsUnmarshalled[0].ID, "ID doesnt match")
 	})
 }
 
