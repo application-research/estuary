@@ -1382,7 +1382,7 @@ func (cm *ContentManager) safeFetchData(ctx context.Context, c cid.Cid) (func(),
 	return deref, nil
 }
 
-func (cm *ContentManager) addrInfoForShuttle(handle string) (*peer.AddrInfo, error) {
+func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrInfo, error) {
 	if handle == constants.ContentLocationLocal {
 		return &peer.AddrInfo{
 			ID:    cm.node.Host.ID(),
@@ -1489,7 +1489,7 @@ func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc str
 	for _, c := range contents {
 		prs := make([]*peer.AddrInfo, 0)
 
-		pr, err := cm.addrInfoForShuttle(c.Location)
+		pr, err := cm.addrInfoForContentLocation(c.Location)
 		if err != nil {
 			return err
 		}

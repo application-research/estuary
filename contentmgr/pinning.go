@@ -70,7 +70,7 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 		return out
 
 	} else {
-		ai, err := cm.addrInfoForShuttle(cont.Location)
+		ai, err := cm.addrInfoForContentLocation(cont.Location)
 		if err != nil {
 			cm.log.Errorf("failed to get address info for shuttle %q: %s", cont.Location, err)
 			return nil
