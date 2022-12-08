@@ -3501,6 +3501,7 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 				Dir:       queryDir,
 				ColUuid:   coluuid,
 				UpdatedAt: r.UpdatedAt,
+				Type:      File,
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
 
@@ -3538,21 +3539,6 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 				}
 			}
 		}
-
-		//var contentType CidType
-		contentType := File
-		if r.Type == util.Directory {
-			contentType = Dir
-		}
-		out = append(out, collectionListResponse{
-			Name:    r.Name,
-			Type:    contentType,
-			Size:    r.Size,
-			ContID:  r.ID,
-			Cid:     &util.DbCID{CID: r.Cid.CID},
-			Dir:     queryDir,
-			ColUuid: coluuid,
-		})
 	}
 	return c.JSON(http.StatusOK, out)
 }
