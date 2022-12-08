@@ -100,7 +100,7 @@ func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, e
 		t.Fatalf("Error: %v\n", err)
 	}
 
-	parsedResponse := &CollectionListResponse{
+	parsedResponse := CollectionListResponse{
 		Name:    response.Name,
 		Type:    response.Type,
 		Size:    response.Size,
@@ -109,7 +109,7 @@ func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, e
 		ColUuid: response.ColUuid,
 	}
 
-	if parsedResponse != expectedResponse {
-		t.Fatalf("Expected %v, got %v, %v\n", expectedResponse, response, response.Cid.CID)
+	if parsedResponse != *expectedResponse {
+		t.Fatalf("Expected %v, got %v\n", expectedResponse, response)
 	}
 }
