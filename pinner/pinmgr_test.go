@@ -2,6 +2,7 @@ package pinner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
@@ -67,41 +68,47 @@ func TestConstructMultiAddr(t *testing.T) {
 
 func TestEncodeDecode(t *testing.T) {
 	t.Run("", func(t *testing.T) {
-		addr, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
-		if err != nil {
-			fmt.Println(err)
+		p := "/ip4/154.113.32.86/tcp/4001/p2p/12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"
+		ai, _ := peer.AddrInfoFromString(p)
+		origins := []*peer.AddrInfo{ai}
+
+		var originsStr string
+		if origins != nil {
+			b, _ := json.Marshal(origins)
+			originsStr = string(b)
 		}
 
-		peer := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{addr}}}
-		po := &operation.PinningOperation{Peers: operation.SerializePeers(peer), Name: "pinning operation name"}
+		var origins2 []*peer.AddrInfo
+		_ = json.Unmarshal([]byte(originsStr), &origins2)
 
+		po := &operation.PinningOperation{Peers: operation.SerializePeers(origins2), Name: "pinning operation name"}
 		bytes, err := encodeMsgPack(po)
 		if err != nil {
-			fmt.Println(err)
+			assert.Nil(t, err, "encodeMsgPack should not fail")
+			return
 		}
 
 		newpo, err := decodeMsgPack(bytes)
 		if err != nil {
-			fmt.Println(err)
-		}
-
-		newPoPeers, err := operation.UnSerializePeers(newpo.Peers)
-		if err != nil {
-			assert.Nil(t, err, "GetPeers should not fail")
+			assert.Nil(t, err, "decodeMsgPack should not fail")
 			return
 		}
 
+		newPoPeers := operation.UnSerializePeers(newpo.Peers)
+
 		assert.Equal(t, newpo.Name, po.Name, "name doesnt match")
-		assert.Equal(t, newPoPeers[0].Addrs[0].String(), peer[0].Addrs[0].String(), "addr doesnt match")
-		assert.Equal(t, newPoPeers[0].ID, peer[0].ID, "ID doesnt match")
+		assert.Equal(t, newPoPeers[0].Addrs[0].String(), origins2[0].Addrs[0].String(), "addr doesnt match")
+		assert.Equal(t, newPoPeers[0].ID, origins2[0].ID, "ID doesnt match")
 	})
 }
 
 func newPinData(name string, userid int, contid int) operation.PinningOperation {
-	peers := []*peer.AddrInfo{{ID: peer.ID("12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"), Addrs: []ma.Multiaddr{nil}}}
+	p := "/ip4/154.113.32.86/tcp/4001/p2p/12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"
+	ai, _ := peer.AddrInfoFromString(p)
+	prs := []*peer.AddrInfo{ai}
 	return operation.PinningOperation{
 		Name:   name,
-		Peers:  operation.SerializePeers(peers),
+		Peers:  operation.SerializePeers(prs),
 		UserId: uint(userid),
 		ContId: uint(contid),
 	}

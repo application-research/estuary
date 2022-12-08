@@ -176,7 +176,7 @@ func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrI
 		Name:     cont.Name,
 		Peers:    operation.SerializePeers(peers),
 		Started:  cont.CreatedAt,
-		Status:   types.PinningStatusQueued,
+		Status:   types.GetContentPinningStatus(cont),
 		Replace:  replaceID,
 		Location: cont.Location,
 		MakeDeal: makeDeal,
@@ -428,7 +428,7 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 		}()
 	}
 
-	prs, _ := operation.UnSerializePeers(op.Peers)
+	prs := operation.UnSerializePeers(op.Peers)
 	for _, pi := range prs {
 		if err := cm.node.Host.Connect(ctx, *pi); err != nil {
 			cm.log.Warnf("failed to connect to origin node for pinning operation: %s", err)
