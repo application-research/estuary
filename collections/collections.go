@@ -99,7 +99,7 @@ func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string)
 	dirs := make(map[string]bool)
 	var result []*CollectionListResponse
 	for _, r := range refs {
-		directoryContent, subDir, err := getDirectoryContent(r, queryDir, coluuid)
+		directoryContent, err := getDirectoryContent(r, queryDir, coluuid)
 
 		if err != nil {
 			return nil, err
@@ -107,6 +107,7 @@ func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string)
 
 		if directoryContent != nil { // if there was content
 			if directoryContent.Type == CidTypeDir { // if the content was a directory
+				subDir := directoryContent.Dir
 				if dirs[subDir] { // if the directory had already been added to response, continue
 					continue
 				}
@@ -118,18 +119,18 @@ func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string)
 	return result, nil
 }
 
-func getDirectoryContent(r util.ContentWithPath, queryDir, coluuid string) (*CollectionListResponse, string, error) {
+func getDirectoryContent(r util.ContentWithPath, queryDir, coluuid string) (*CollectionListResponse, error) {
 	if r.Path == "" || r.Name == "" {
-		return nil, "", nil
+		return nil, nil
 	}
 
 	if !strings.HasPrefix(r.Path, queryDir) {
-		return nil, "", nil
+		return nil, nil
 	}
 
 	relp, err := getRelativePath(r, queryDir)
 	if err != nil {
-		return nil, "", &util.HttpError{
+		return nil, &util.HttpError{
 			Code:    http.StatusInternalServerError,
 			Reason:  util.ERR_INTERNAL_SERVER,
 			Details: fmt.Sprintf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path),
@@ -148,12 +149,12 @@ func getDirectoryContent(r util.ContentWithPath, queryDir, coluuid string) (*Col
 			Dir:       queryDir,
 			ColUuid:   coluuid,
 			UpdatedAt: r.UpdatedAt,
-		}, subDir, nil
+		}, nil
 	}
 
 	// trying to list a CID queryDir, not allowed
 	if r.Type == util.Directory {
-		return nil, "", &util.HttpError{
+		return nil, &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_BAD_REQUEST,
 			Details: fmt.Sprintf("listing CID directories is not allowed"),
@@ -168,7 +169,7 @@ func getDirectoryContent(r util.ContentWithPath, queryDir, coluuid string) (*Col
 		Dir:       queryDir,
 		ColUuid:   coluuid,
 		UpdatedAt: r.UpdatedAt,
-	}, "", nil
+	}, nil
 }
 
 func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
