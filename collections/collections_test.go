@@ -33,7 +33,7 @@ func TestSubDirectory(t *testing.T) {
 		Dir:     queryDir,
 		ColUuid: coluuid,
 	}
-	runTest(t, ref, queryDir, coluuid, expectedResponse)
+	runTest(t, ref, queryDir, coluuid, &expectedResponse)
 }
 
 func TestSubDirectory2(t *testing.T) {
@@ -47,7 +47,7 @@ func TestSubDirectory2(t *testing.T) {
 		Dir:     queryDir,
 		ColUuid: coluuid,
 	}
-	runTest(t, ref, queryDir, coluuid, expectedResponse)
+	runTest(t, ref, queryDir, coluuid, &expectedResponse)
 }
 
 func TestSubDirectoryWithFileInIt(t *testing.T) {
@@ -61,7 +61,7 @@ func TestSubDirectoryWithFileInIt(t *testing.T) {
 		Dir:     queryDir,
 		ColUuid: coluuid,
 	}
-	runTest(t, ref, queryDir, coluuid, expectedResponse)
+	runTest(t, ref, queryDir, coluuid, &expectedResponse)
 }
 
 func TestFullPath(t *testing.T) {
@@ -75,25 +75,32 @@ func TestFullPath(t *testing.T) {
 		Dir:     queryDir,
 		ColUuid: coluuid,
 	}
-	runTest(t, ref, queryDir, coluuid, expectedResponse)
+	runTest(t, ref, queryDir, coluuid, &expectedResponse)
 }
 
 func TestInvalidDirectory(t *testing.T) {
 	ref := setupRef()
 	queryDir := "/dir0"
-	expectedResponse := CollectionListResponse{}
-	runTest(t, ref, queryDir, coluuid, expectedResponse)
+	response, _, err := getDirectoryContent(ref, queryDir, "collection uuid")
+
+	if err != nil {
+		t.Fatalf("Error: %v\n", err)
+	}
+
+	if response != nil {
+		t.Fatalf("Expected nil response but got %v\n", response)
+	}
 
 }
 
-func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, expectedResponse CollectionListResponse) {
+func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, expectedResponse *CollectionListResponse) {
 	response, _, err := getDirectoryContent(ref, queryDir, coluuid)
 
 	if err != nil {
 		t.Fatalf("Error: %v\n", err)
 	}
 
-	parsedResponse := CollectionListResponse{
+	parsedResponse := &CollectionListResponse{
 		Name:    response.Name,
 		Type:    response.Type,
 		Size:    response.Size,
