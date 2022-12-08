@@ -11,15 +11,14 @@ import (
 )
 
 type AddrInfoString struct {
-	ID    []byte
+	ID    string
 	Addrs []string
 }
 
 func SerializePeers(peers []*peer.AddrInfo) []AddrInfoString {
 	adInfos := []AddrInfoString{}
 	for _, p := range peers {
-		id, _ := p.ID.Marshal()
-		adInfo := AddrInfoString{ID: id}
+		adInfo := AddrInfoString{ID: p.ID.String()}
 		for _, a := range p.Addrs {
 			if a != nil {
 				adInfo.Addrs = append(adInfo.Addrs, a.String())
@@ -30,25 +29,25 @@ func SerializePeers(peers []*peer.AddrInfo) []AddrInfoString {
 	return adInfos
 }
 
-func UnSerializePeers(prs []AddrInfoString) ([]*peer.AddrInfo, error) {
+func UnSerializePeers(prs []AddrInfoString) []*peer.AddrInfo {
 	peers := make([]*peer.AddrInfo, 0)
 	for _, pr := range prs {
-		pID := peer.ID("")
-		if err := pID.Unmarshal(pr.ID); err != nil {
-			return nil, err
+		pID, err := peer.Decode(pr.ID)
+		if err != nil {
+			continue // do not fail pinning because of peers
 		}
 
 		addrs := make([]multiaddr.Multiaddr, 0)
 		for _, addr := range pr.Addrs {
 			maddr, err := multiaddr.NewMultiaddr(addr)
 			if err != nil {
-				continue
+				continue // do not fail pinning because of peers
 			}
 			addrs = append(addrs, maddr)
 		}
 		peers = append(peers, &peer.AddrInfo{ID: pID, Addrs: addrs})
 	}
-	return peers, nil
+	return peers
 }
 
 // TODO: some of these fields are overkill for the generalized pin manager

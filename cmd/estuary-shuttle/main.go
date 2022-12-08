@@ -1616,7 +1616,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	prs, _ := operation.UnSerializePeers(op.Peers)
+	prs := operation.UnSerializePeers(op.Peers)
 	for _, pi := range prs {
 		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
