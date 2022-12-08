@@ -87,9 +87,9 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	// to upload contents you only need an upload key
 	// to see info about contents you need a user-level key (see contents group)
 	e2.POST("/contents", util.WithUser(s.handleAdd), s.AuthRequired(util.PermLevelUpload))
-	// e2.GET("/contents", util.WithUser(s.handleListContent), s.AuthRequired(util.PermLevelUser))
-	// e2.GET("/contents/:contentid", util.WithUser(s.handleGetContent), s.AuthRequired(util.PermLevelUser))
-	// e2.GET("/contents/:cid/ensure-replication", s.handleEnsureReplication, s.AuthRequired(util.PermLevelUser))
-	// e2.GET("/contents/:contentid/status", util.WithUser(s.handleContentStatus), s.AuthRequired(util.PermLevelUser))
+	e2.GET("/contents", util.WithUser(s.handleListContent), s.AuthRequired(util.PermLevelUser))
+	e2.GET("/contents/:contentid", util.WithUser(s.handleGetContent), s.AuthRequired(util.PermLevelUser))
+	e2.GET("/contents/:cid/ensure-replication", s.handleEnsureReplication, s.AuthRequired(util.PermLevelUser))
+	e2.GET("/contents/:contentid/status", util.WithUser(s.handleContentStatus), s.AuthRequired(util.PermLevelUser))
 
 }

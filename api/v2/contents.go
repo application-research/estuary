@@ -12,11 +12,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
+	"github.com/application-research/filclient"
+	"github.com/filecoin-project/go-state-types/abi"
+	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
@@ -24,10 +28,12 @@ import (
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/gommon/log"
 	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/multiformats/go-multihash"
+	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"gorm.io/gorm"
 
 	"golang.org/x/xerrors"
 )
@@ -95,7 +101,7 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 	if replVal != "" {
 		parsed, err := strconv.Atoi(replVal)
 		if err != nil {
-			log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
 		} else {
 			replication = parsed
 		}
@@ -130,7 +136,7 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 	defer func() {
 		go func() {
 			if err := s.stagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
+				s.log.Errorf("failed to clean up staging blockstore: %s", err)
 			}
 		}()
 	}()
@@ -190,13 +196,13 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 
 	// create collection if need be
 	if collection != nil {
-		log.Debugf("COLLECTION CREATION: %d, %d", collection.ID, content.ID)
+		s.log.Debugf("COLLECTION CREATION: %d, %d", collection.ID, content.ID)
 		if err := s.db.Create(&collections.CollectionRef{
 			Collection: collection.ID,
 			Content:    content.ID,
 			Path:       &fullPath,
 		}).Error; err != nil {
-			log.Errorf("failed to add content to requested collection: %s", err)
+			s.log.Errorf("failed to add content to requested collection: %s", err)
 		}
 	}
 
@@ -213,13 +219,13 @@ func (s *apiV2) handleAdd(c echo.Context, u *util.User) error {
 		defer cancel()
 		if err := s.node.FullRT.Provide(subctx, uploadedContent.CID, true); err != nil {
 			span.RecordError(fmt.Errorf("provide error: %w", err))
-			log.Errorf("fullrt provide call errored: %s", err)
+			s.log.Errorf("fullrt provide call errored: %s", err)
 		}
 	}
 
 	go func() {
 		if err := s.node.Provider.Provide(uploadedContent.CID); err != nil {
-			log.Warnf("failed to announce providers: %s", err)
+			s.log.Warnf("failed to announce providers: %s", err)
 		}
 	}()
 
@@ -464,4 +470,413 @@ func (s *apiV2) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
 		out = append(out, s.cfg.Hostname+"/content/add")
 	}
 	return out, nil
+}
+
+// handleListContent godoc
+// @Summary      List all pinned content
+// @Description  This endpoint lists all content
+// @Tags         contents
+// @Produce      json
+// @Success      200   {object}  string
+// @Failure      400   {object}  util.HttpError
+// @Failure      500   {object}  util.HttpError
+// @Param        deals   query     bool  false  "If 'true', only list content with deals made"
+// @Param        cid   query     string  false  "CID of content to look for"
+// @Router       /content [get]
+func (s *apiV2) handleListContent(c echo.Context, u *util.User) error {
+	if cidStr := c.QueryParam("cid"); cidStr != "" {
+		out, err := s.getContentByCid(cidStr)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, out)
+	}
+	if deals := c.QueryParam("deals"); deals == "true" {
+		return s.handleListContentWithDeals(c, u)
+	}
+	var contents []util.Content
+	if err := s.db.Find(&contents, "active and user_id = ?", u.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, contents)
+}
+
+type expandedContent struct {
+	util.Content
+	AggregatedFiles int64 `json:"aggregatedFiles"`
+}
+
+// handleListContentWithDeals godoc
+// @Summary      Content with deals
+// @Description  This endpoint lists all content with deals
+// @Tags         contents
+// @Produce      json
+// @Success      200     {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        limit   query     int  false  "Limit"
+// @Param        offset  query     int  false  "Offset"
+// @Router       /content/deals [get]
+func (s *apiV2) handleListContentWithDeals(c echo.Context, u *util.User) error {
+
+	var limit = 20
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		l, err := strconv.Atoi(limstr)
+		if err != nil {
+			return err
+		}
+		limit = l
+	}
+
+	var offset int
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		o, err := strconv.Atoi(offstr)
+		if err != nil {
+			return err
+		}
+		offset = o
+	}
+
+	var contents []util.Content
+	err := s.db.Model(&util.Content{}).
+		Limit(limit).
+		Offset(offset).
+		Order("contents.id desc").
+		Joins("inner join content_deals on contents.id = content_deals.content").
+		Where("contents.active and contents.user_id = ? and not contents.aggregated_in > 0", u.ID).
+		Group("contents.id").
+		Scan(&contents).Error
+
+	if err != nil {
+		return err
+	}
+
+	out := make([]expandedContent, 0, len(contents))
+	for _, content := range contents {
+		ec := expandedContent{
+			Content: content,
+		}
+		if content.Aggregate {
+			if err := s.db.Model(util.Content{}).Where("aggregated_in = ?", content.ID).Count(&ec.AggregatedFiles).Error; err != nil {
+				return err
+			}
+
+		}
+		out = append(out, ec)
+	}
+
+	return c.JSON(http.StatusOK, out)
+}
+
+type getContentResponse struct {
+	Content      *util.Content        `json:"content"`
+	AggregatedIn *util.Content        `json:"aggregatedIn,omitempty"`
+	Selector     string               `json:"selector,omitempty"`
+	Deals        []*model.ContentDeal `json:"deals"`
+}
+
+func (s *apiV2) getContentByCid(cidStr string) ([]getContentResponse, error) {
+	obj, err := cid.Decode(cidStr)
+	if err != nil {
+		return []getContentResponse{}, errors.Wrapf(err, "invalid cid")
+	}
+
+	v0 := cid.Undef
+	dec, err := multihash.Decode(obj.Hash())
+	if err == nil {
+		if dec.Code == multihash.SHA2_256 || dec.Length == 32 {
+			v0 = cid.NewCidV0(obj.Hash())
+		}
+	}
+	v1 := cid.NewCidV1(obj.Prefix().Codec, obj.Hash())
+
+	var contents []util.Content
+	if err := s.db.Find(&contents, "(cid=? or cid=?) and active", v0.Bytes(), v1.Bytes()).Error; err != nil {
+		return []getContentResponse{}, err
+	}
+
+	out := make([]getContentResponse, 0)
+	for i, content := range contents {
+		resp := getContentResponse{
+			Content: &contents[i],
+		}
+
+		id := content.ID
+
+		if content.AggregatedIn > 0 {
+			var aggr util.Content
+			if err := s.db.First(&aggr, "id = ?", content.AggregatedIn).Error; err != nil {
+				return []getContentResponse{}, err
+			}
+
+			resp.AggregatedIn = &aggr
+
+			// no need to early return here, the selector is mostly cosmetic atm
+			if selector, err := s.calcSelector(content.AggregatedIn, content.ID); err == nil {
+				resp.Selector = selector
+			}
+
+			id = content.AggregatedIn
+		}
+
+		var deals []*model.ContentDeal
+		if err := s.db.Find(&deals, "content = ? and deal_id > 0 and not failed", id).Error; err != nil {
+			return []getContentResponse{}, err
+		}
+
+		resp.Deals = deals
+
+		out = append(out, resp)
+	}
+
+	return out, nil
+}
+
+func (s *apiV2) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
+	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
+	// to build the CAR sub-selector
+
+	var ordinal uint
+	result := s.db.Raw(`SELECT ordinal - 1 FROM (
+				SELECT
+					id, ROW_NUMBER() OVER ( ORDER BY CAST(id AS TEXT) ) AS ordinal
+				FROM contents
+				WHERE aggregated_in = ?
+			) subq
+				WHERE id = ?
+			`, aggregatedIn, contentID).Scan(&ordinal)
+
+	if result.Error != nil {
+		return "", result.Error
+	}
+
+	return fmt.Sprintf("/Links/%d/Hash", ordinal), nil
+}
+
+// handleGetContentByCid godoc
+// @Summary      Get Content by Cid
+// @Description  This endpoint returns the content record associated with a CID
+// @Tags         public
+// @Produce      json
+// @Success      200      {object}  string
+// @Failure      400     {object}  util.HttpError
+// @Failure      500     {object}  util.HttpError
+// @Param        cid  path      string  true  "Cid"
+// @Router       /public/by-cid/{cid} [get]
+func (s *apiV2) handleGetContentByCid(c echo.Context) error {
+	cidStr := c.Param("cid")
+	out, err := s.getContentByCid(cidStr)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// handleGetContent godoc
+// @Summary      Content
+// @Description  This endpoint returns a content by its ID
+// @Tags         contents
+// @Produce      json
+// @Success      200    {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        contentid   path      int  true  "Content ID"
+// @Router       /contents/{contentid} [get]
+func (s *apiV2) handleGetContent(c echo.Context, u *util.User) error {
+	contID, err := strconv.Atoi(c.Param("contentid"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.db.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, content)
+}
+
+type EnsureReplicationResponse struct {
+	Content util.Content `json:"content"`
+}
+
+// handleEnsureReplication godoc
+// @Summary      Ensure Replication
+// @Description  This endpoint ensures that the content is replicated to the specified number of providers
+// @Tags         contents
+// @Produce      json
+// @Success      200   {object}  string
+// @Failure      400    {object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
+// @Param        cid  path      string  true  "CID"
+// @Router       /content/{cid}/ensure-replication [get]
+func (s *apiV2) handleEnsureReplication(c echo.Context) error {
+	cid, err := cid.Decode(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.db.Find(&content, "cid = ?", cid.Bytes()).Error; err != nil {
+		return err
+	}
+
+	fmt.Println("Content: ", content.Cid.CID, cid)
+
+	s.cm.ToCheck(content.ID)
+	return c.JSON(http.StatusOK, EnsureReplicationResponse{Content: content})
+}
+
+type onChainDealState struct {
+	SectorStartEpoch abi.ChainEpoch `json:"sectorStartEpoch"`
+	LastUpdatedEpoch abi.ChainEpoch `json:"lastUpdatedEpoch"`
+	SlashEpoch       abi.ChainEpoch `json:"slashEpoch"`
+}
+
+type dealStatus struct {
+	Deal           model.ContentDeal       `json:"deal"`
+	TransferStatus *filclient.ChannelState `json:"transfer"`
+	OnChainState   *onChainDealState       `json:"onChainState"`
+}
+
+type ContentStatusResponse struct {
+	Content       util.Content      `json:"content"`
+	Deals         []dealStatus      `json:"deals"`
+	FailuresCount int64             `json:"failuresCount"`
+	Failures      []model.DfeRecord `json:"failures"`
+	TotalOutBw    int64             `json:"totalOutBw"`
+	Aggregated    []util.Content    `json:"aggregated"`
+	Offloaded     bool              `json:"offloaded"` // TODO(gabe): this needs to be set on handleContentStatus, but we're not offloading data as of now
+}
+
+// handleContentStatus godoc
+// @Summary      Content Status
+// @Description  This endpoint returns the status of a content
+// @Tags         contents
+// @Produce      json
+// @Success      200            {object} ContentStatusResponse
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Param        contentid   path      int  true  "Content ID"
+// @Router       /contents/{contentid}/status [get]
+func (s *apiV2) handleContentStatus(c echo.Context, u *util.User) error {
+	ctx := c.Request().Context()
+	contID, err := strconv.Atoi(c.Param("contentid"))
+	if err != nil {
+		return err
+	}
+
+	var content util.Content
+	if err := s.db.First(&content, "id = ?", contID).Error; err != nil {
+		if xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return &util.HttpError{
+				Code:    http.StatusNotFound,
+				Reason:  util.ERR_CONTENT_NOT_FOUND,
+				Details: fmt.Sprintf("content: %d was not found", contID),
+			}
+		}
+		return err
+	}
+
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
+
+	var deals []model.ContentDeal
+	if err := s.db.Find(&deals, "content = ?", content.ID).Error; err != nil {
+		return err
+	}
+
+	ds := make([]dealStatus, len(deals))
+	var wg sync.WaitGroup
+	for i, d := range deals {
+		dl := d
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			d := deals[i]
+			dstatus := dealStatus{
+				Deal: d,
+			}
+
+			chanst, err := s.cm.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
+			if err != nil {
+				s.log.Errorf("failed to get transfer status: %s", err)
+				// the UI needs to display a transfer state even for intermittent errors
+				chanst = &filclient.ChannelState{
+					StatusStr: "Error",
+				}
+			}
+
+			// the transfer state is yet to be been announced - the UI needs to display a transfer state
+			if chanst == nil && d.DTChan == "" {
+				chanst = &filclient.ChannelState{
+					StatusStr: "Initializing",
+				}
+			}
+
+			dstatus.TransferStatus = chanst
+
+			if d.DealID > 0 {
+				markDeal, err := s.api.StateMarketStorageDeal(ctx, abi.DealID(d.DealID), types.EmptyTSK)
+				if err != nil {
+					s.log.Warnw("failed to get deal info from market actor", "dealID", d.DealID, "error", err)
+				} else {
+					dstatus.OnChainState = &onChainDealState{
+						SectorStartEpoch: markDeal.State.SectorStartEpoch,
+						LastUpdatedEpoch: markDeal.State.LastUpdatedEpoch,
+						SlashEpoch:       markDeal.State.SlashEpoch,
+					}
+				}
+			}
+			ds[i] = dstatus
+		}(i)
+	}
+
+	wg.Wait()
+
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Deal.CreatedAt.Before(ds[j].Deal.CreatedAt)
+	})
+
+	var failCount int64
+	var errs []model.DfeRecord
+	if err := s.db.Model(&model.DfeRecord{}).Where("content = ?", content.ID).Find(&errs).Count(&failCount).Error; err != nil {
+		return err
+	}
+
+	var bw int64
+	if err := s.db.Model(util.ObjRef{}).
+		Select("SUM(size * reads)").
+		Where("obj_refs.content = ?", content.ID).
+		Joins("left join objects on obj_refs.object = objects.id").
+		Scan(&bw).Error; err != nil {
+		return err
+	}
+
+	var sub []util.Content
+	if err := s.db.Find(&sub, "aggregated_in = ?", content.ID).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, ContentStatusResponse{
+		Content:       content,
+		Deals:         ds,
+		FailuresCount: failCount,
+		Failures:      errs,
+		TotalOutBw:    bw,
+		Aggregated:    sub,
+	})
 }
