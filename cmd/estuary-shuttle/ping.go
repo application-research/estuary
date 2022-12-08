@@ -43,7 +43,7 @@ func (s *Shuttle) PingOne(ctx context.Context, addr multiaddr.Multiaddr, pID pee
 	tctx, cancel := context.WithTimeout(ctx, time.Duration(time.Millisecond*1000))
 	defer cancel()
 
-	t, err := netPing(tctx, pID, s.Node.Host)
+	t, err := netPing(tctx, s.Node.Host, pID)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (s *Shuttle) PingOne(ctx context.Context, addr multiaddr.Multiaddr, pID pee
 
 // Returns a slice of the top-performing (lowest-latency) peers in the ping result.
 // Output will be truncated to the top `n`
-func GetTopPeers(p PingManyResult, n int) []peer.ID {
+func (p PingManyResult) GetTopPeers(n int) []peer.ID {
 	result := make([]peer.ID, 0, len(p))
 
 	for k := range p {
@@ -67,7 +67,7 @@ func GetTopPeers(p PingManyResult, n int) []peer.ID {
 	return result[0:n]
 }
 
-func netPing(ctx context.Context, p peer.ID, h host.Host) (time.Duration, error) {
+func netPing(ctx context.Context, h host.Host, p peer.ID) (time.Duration, error) {
 	result, ok := <-ping.Ping(ctx, h, p)
 	if !ok {
 		return result.RTT, ctx.Err()
