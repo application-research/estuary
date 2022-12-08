@@ -3427,7 +3427,7 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Description  This endpoint is used to get contents in a collection. If no colpath query param is passed
 // @Tags         collections
 // @Produce      json
-// @Success      200  {object}  []collectionListResponse
+// @Success      200  {object}  []collections.CollectionListResponse
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        coluuid  path      string  true   "coluuid"
@@ -3470,79 +3470,12 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 	// if queryDir is set, do the content listing
 	queryDir = filepath.Clean(queryDir)
 
-	dirs := make(map[string]bool)
-	var out []collectionListResponse
-	for _, r := range refs {
-		if r.Path == "" || r.Name == "" {
-			continue
-		}
-
-		if !strings.HasPrefix(r.Path, queryDir) {
-			continue
-		}
-
-		relp, err := getRelativePath(r, queryDir)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, fmt.Errorf("errored while calculating relative contentPath queryDir=%s, contentPath=%s", queryDir, r.Path))
-		}
-
-		if relp == "." { // Query directory is the complete path containing the content.
-			// trying to list a CID queryDir, not allowed
-			if r.Type == util.Directory {
-				return c.JSON(http.StatusBadRequest, fmt.Errorf("listing CID directories is not allowed"))
-			}
-
-			out = append(out, collectionListResponse{
-				Name:      r.Name,
-				Type:      File,
-				Size:      r.Size,
-				ContID:    r.ID,
-				Cid:       &util.DbCID{CID: r.Cid.CID},
-				Dir:       queryDir,
-				ColUuid:   coluuid,
-				UpdatedAt: r.UpdatedAt,
-			})
-		} else {
-
-			// Query directory has a subdirectory, which contains the actual content.
-			// if relative contentPath has a /, the file is in a subdirectory
-			// print the directory the file is in if we haven't already
-			if strings.Contains(relp, "/") {
-				parts := strings.Split(relp, "/")
-				subDir := parts[0]
-				if !dirs[subDir] {
-					dirs[subDir] = true
-					out = append(out, collectionListResponse{
-						Name:      subDir,
-						Type:      Dir,
-						Dir:       queryDir,
-						ColUuid:   coluuid,
-						UpdatedAt: r.UpdatedAt,
-					})
-					continue
-				}
-			} else {
-				out = append(out, collectionListResponse{
-					Name:      r.Name,
-					Type:      File,
-					Size:      r.Size,
-					ContID:    r.ID,
-					Cid:       &util.DbCID{CID: r.Cid.CID},
-					Dir:       queryDir,
-					ColUuid:   coluuid,
-					UpdatedAt: r.UpdatedAt,
-				})
-
-			}
-		}
+	out, err := collections.GetDirectoryContents(c, refs, queryDir, coluuid)
+	if err != nil {
+		return err
 	}
-	return c.JSON(http.StatusOK, out)
-}
 
-func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
-	contentPath := r.Path
-	relp, err := filepath.Rel(queryDir, contentPath)
-	return relp, err
+	return c.JSON(http.StatusOK, out)
 }
 
 // handleDeleteCollection godoc
@@ -5126,21 +5059,8 @@ func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 type CidType string
 
 const (
-	Dir    CidType = "directory"
-	File   CidType = "file"
-	ColDir string  = "dir"
+	ColDir string = "dir"
 )
-
-type collectionListResponse struct {
-	Name      string      `json:"name"`
-	Type      CidType     `json:"type"`
-	Size      int64       `json:"size"`
-	ContID    uint        `json:"contId"`
-	Cid       *util.DbCID `json:"cid,omitempty"`
-	Dir       string      `json:"dir"`
-	ColUuid   string      `json:"coluuid"`
-	UpdatedAt time.Time   `json:"updatedAt"`
-}
 
 func sanitizePath(p string) (string, error) {
 	if len(p) == 0 {
