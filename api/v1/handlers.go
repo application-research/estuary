@@ -3505,23 +3505,6 @@ func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error 
 			})
 		} else { // Query directory has a subdirectory, which contains the actual content.
 
-			// if CID is a queryDir, set type as Dir and mark Dir as listed so we don't list it again
-			//if r.Type == util.Directory {
-			//	if !dirs[relp] {
-			//		dirs[relp] = true
-			//		out = append(out, collectionListResponse{
-			//			Name:    relp,
-			//			Type:    Dir,
-			//			Size:    r.Size,
-			//			ContID:  r.ID,
-			//			Cid:     &r.Cid,
-			//			Dir:     queryDir,
-			//			ColUuid: coluuid,
-			//		})
-			//	}
-			//	continue
-			//}
-
 			// if relative contentPath has a /, the file is in a subdirectory
 			// print the directory the file is in if we haven't already
 			if strings.Contains(relp, "/") {
