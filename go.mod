@@ -69,14 +69,14 @@ require (
 	github.com/multiformats/go-multihash v0.2.1
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	github.com/swaggo/echo-swagger v1.3.5
 	github.com/swaggo/swag v1.8.8
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/urfave/cli/v2 v2.11.1
 	github.com/whyrusleeping/cbor-gen v0.0.0-20220514204315-f29c37e9c44c
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
-	go.opencensus.io v0.23.0
+	go.opencensus.io v0.24.0
 	go.opentelemetry.io/otel v1.9.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.7.0
 	go.opentelemetry.io/otel/sdk v1.9.0
