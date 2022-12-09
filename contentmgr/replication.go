@@ -1029,6 +1029,11 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	))
 	defer span.End()
 
+	// if the content is not active or is in pinning state, do not proceed
+	if !content.Active || content.Pinning {
+		return 0, fmt.Errorf("cannot make deals for content that is not pinned")
+	}
+
 	if content.Offloaded {
 		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
 	}
