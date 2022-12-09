@@ -84,16 +84,16 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, uint, error) {
 	loc, err := cm.shuttleMgr.SelectLocationForStorage(ctx, obj, user)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
+		return nil, nil, 0, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
@@ -101,7 +101,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if meta != nil {
 		b, err := json.Marshal(meta)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		metaStr = string(b)
 	}
@@ -110,7 +110,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if origins != nil {
 		b, err := json.Marshal(origins)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		originsStr = string(b)
 	}
@@ -127,7 +127,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Origins:     originsStr,
 	}
 	if err := cm.db.Create(&cont).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	if len(cols) > 0 {
@@ -139,7 +139,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
@@ -148,15 +148,15 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.shuttleMgr.SendPinCmd(ctx, loc, cont, origins); err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
 	ipfsRes, err := cm.PinStatus(cont, origins)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
-	return ipfsRes, pinOp, nil
+	return ipfsRes, pinOp, 0, nil
 }
 
 func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
