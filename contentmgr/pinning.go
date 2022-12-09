@@ -337,7 +337,7 @@ func (cm *ContentManager) selectLocationForRetrieval(ctx context.Context, cont u
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	var zones []util.Content
-	if err := cm.DB.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
+	if err := cm.DB.First(&zones, "user_id = ? and aggregate and not active", uid).Error; err != nil {
 		return ""
 	}
 
