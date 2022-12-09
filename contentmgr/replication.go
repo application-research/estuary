@@ -10,7 +10,6 @@ import (
 	marketv9 "github.com/filecoin-project/go-state-types/builtin/v9/market"
 
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
@@ -85,44 +84,6 @@ func (cm *ContentManager) Run(ctx context.Context) {
 			cm.runDealWorker(ctx)
 		}()
 	}
-}
-
-func (cm *ContentManager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
-	if st == nil {
-		return nil
-	}
-
-	var deal model.ContentDeal
-	if err := cm.db.First(&deal, "id = ?", dealDBID).Error; err != nil {
-		return err
-	}
-
-	var cont util.Content
-	if err := cm.db.First(&cont, "id = ?", deal.Content).Error; err != nil {
-		return err
-	}
-
-	updates := map[string]interface{}{
-		"dt_chan": chanIDOrTransferID,
-	}
-
-	switch isStarted {
-	case true:
-		updates["transfer_started"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := st.Stages.GetStage("Requested"); s != nil {
-			updates["transfer_started"] = s.CreatedTime.Time()
-		}
-	default:
-		updates["transfer_finished"] = time.Now() // boost transfers does not support stages, so we can't get actual timestamps
-		if s := st.Stages.GetStage("TransferFinished"); s != nil {
-			updates["transfer_finished"] = s.CreatedTime.Time()
-		}
-	}
-
-	if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
-		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
-	}
-	return nil
 }
 
 func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Content, done func(time.Duration)) error {
@@ -246,7 +207,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.ShuttleIsOnline(content.Location) {
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.ShuttleIsOnline(content.Location) {
 		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
@@ -352,7 +313,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 		}()
 		return nil
 	} else {
-		return cm.sendSplitContentCmd(ctx, cont.Location, cont.ID, size)
+		return cm.shuttleMgr.SendSplitContentCmd(ctx, cont.Location, cont.ID, size)
 	}
 }
 
@@ -400,7 +361,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *model.ContentDeal, c
 	}
 
 	// get the deal data transfer state
-	chanst, err := cm.GetTransferStatus(ctx, d, content.Cid.CID, content.Location)
+	chanst, err := cm.transferMgr.GetTransferStatus(ctx, d, content.Cid.CID, content.Location)
 	if err != nil {
 		return DEAL_CHECK_UNKNOWN, err
 	}
@@ -638,7 +599,7 @@ func (cm *ContentManager) checkDeal(ctx context.Context, d *model.ContentDeal, c
 	if d.DTChan == "" && time.Since(d.CreatedAt) < time.Hour {
 		if isPushTransfer {
 			cm.log.Warnf("creating new data transfer for local deal that is missing it: %d", d.ID)
-			if err := cm.StartDataTransfer(ctx, d); err != nil {
+			if err := cm.transferMgr.StartDataTransfer(ctx, d); err != nil {
 				cm.log.Errorw("failed to start new data transfer for weird state deal", "deal", d.ID, "miner", d.Miner, "err", err)
 				// If this fails out, just fail the deal and start from
 				// scratch. This is already a weird state.
@@ -932,7 +893,7 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 		// start data transfer async
 		go func(d deal) {
-			if err := cm.StartDataTransfer(ctx, d.contentDeal); err != nil {
+			if err := cm.transferMgr.StartDataTransfer(ctx, d.contentDeal); err != nil {
 				cm.log.Errorw("failed to start data transfer", "err", err, "miner", d.minerAddr)
 			}
 		}(rDeal)
@@ -972,11 +933,11 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		// first check if shuttle is online
-		if !cm.ShuttleIsOnline(contentLoc) {
+		if !cm.shuttleMgr.ShuttleIsOnline(contentLoc) {
 			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
 		}
 
-		addrInfo := cm.ShuttleAddrInfo(contentLoc)
+		addrInfo := cm.shuttleMgr.ShuttleAddrInfo(contentLoc)
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -994,7 +955,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
 		// so add an auth token for the data to the shuttle's auth DB
-		err := cm.sendPrepareForDataRequestCommand(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		err := cm.shuttleMgr.SendPrepareForDataRequestCommand(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
 		if err != nil {
 			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
 		}
@@ -1004,7 +965,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		if contentLoc == constants.ContentLocationLocal {
 			return cm.filClient.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken)
 		}
-		return cm.sendCleanupPreparedRequestCommand(ctx, contentLoc, dbid, authToken)
+		return cm.shuttleMgr.SendCleanupPreparedRequestCommand(ctx, contentLoc, dbid, authToken)
 	}
 
 	// Send the deal proposal to the storage provider
@@ -1024,7 +985,7 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	// if it's a shuttle content and the shuttle is not online, do not proceed
-	if content.Location != constants.ContentLocationLocal && !cm.ShuttleIsOnline(content.Location) {
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.ShuttleIsOnline(content.Location) {
 		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
@@ -1152,52 +1113,10 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	// It's a push transfer, so start the data transfer
-	if err := cm.StartDataTransfer(ctx, deal); err != nil {
+	if err := cm.transferMgr.StartDataTransfer(ctx, deal); err != nil {
 		return 0, fmt.Errorf("failed to start data transfer: %w", err)
 	}
 	return deal.ID, nil
-}
-
-func (cm *ContentManager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error {
-	var cont util.Content
-	if err := cm.db.First(&cont, "id = ?", cd.Content).Error; err != nil {
-		return err
-	}
-
-	if cont.Location != constants.ContentLocationLocal {
-		return cm.sendStartTransferCommand(ctx, cont.Location, cd, cont.Cid.CID)
-	}
-
-	miner, err := cd.MinerAddr()
-	if err != nil {
-		return err
-	}
-
-	chanid, err := cm.filClient.StartDataTransfer(ctx, miner, cd.PropCid.CID, cont.Cid.CID)
-	if err != nil {
-		if oerr := cm.recordDealFailure(&DealFailureError{
-			Miner:               miner,
-			Phase:               "start-data-transfer",
-			Message:             err.Error(),
-			Content:             cont.ID,
-			UserID:              cont.UserID,
-			DealProtocolVersion: cd.DealProtocolVersion,
-			MinerVersion:        cd.MinerVersion,
-		}); oerr != nil {
-			return oerr
-		}
-		return nil
-	}
-
-	cd.DTChan = chanid.String()
-
-	if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
-		"dt_chan": chanid.String(),
-	}).Error; err != nil {
-		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
-	}
-	cm.log.Debugw("Started data transfer", "chanid", chanid)
-	return nil
 }
 
 func (cm *ContentManager) putProposalRecord(dealprop *marketv9.ClientDealProposal) (*model.ProposalRecord, error) {
@@ -1379,121 +1298,7 @@ func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrI
 			Addrs: cm.node.Host.Addrs(),
 		}, nil
 	}
-
-	cm.ShuttlesLk.Lock()
-	defer cm.ShuttlesLk.Unlock()
-	conn, ok := cm.Shuttles[handle]
-	if !ok {
-		return nil, nil
-	}
-	return &conn.addrInfo, nil
-}
-
-func (cm *ContentManager) sendPrepareForDataRequestCommand(ctx context.Context, loc string, dbid uint, authToken string, propCid cid.Cid, payloadCid cid.Cid, size uint64) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_PrepareForDataRequest,
-		Params: drpc.CmdParams{
-			PrepareForDataRequest: &drpc.PrepareForDataRequest{
-				DealDBID:    dbid,
-				AuthToken:   authToken,
-				ProposalCid: propCid,
-				PayloadCid:  payloadCid,
-				Size:        size,
-			},
-		},
-	})
-}
-
-func (cm *ContentManager) sendCleanupPreparedRequestCommand(ctx context.Context, loc string, dbid uint, authToken string) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_CleanupPreparedRequest,
-		Params: drpc.CmdParams{
-			CleanupPreparedRequest: &drpc.CleanupPreparedRequest{
-				DealDBID:  dbid,
-				AuthToken: authToken,
-			},
-		},
-	})
-}
-
-func (cm *ContentManager) sendStartTransferCommand(ctx context.Context, loc string, cd *model.ContentDeal, datacid cid.Cid) error {
-	miner, err := cd.MinerAddr()
-	if err != nil {
-		return err
-	}
-
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_StartTransfer,
-		Params: drpc.CmdParams{
-			StartTransfer: &drpc.StartTransfer{
-				DealDBID:  cd.ID,
-				ContentID: cd.Content,
-				Miner:     miner,
-				PropCid:   cd.PropCid.CID,
-				DataCid:   datacid,
-			},
-		},
-	})
-}
-
-func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []drpc.AggregateContent) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_AggregateContent,
-		Params: drpc.CmdParams{
-			AggregateContent: &drpc.AggregateContents{
-				DBID:     cont.ID,
-				UserID:   cont.UserID,
-				Contents: aggr,
-			},
-		},
-	})
-}
-
-func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, cont uint, size int64) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_SplitContent,
-		Params: drpc.CmdParams{
-			SplitContent: &drpc.SplitContent{
-				Content: cont,
-				Size:    size,
-			},
-		},
-	})
-}
-
-func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
-	cm.log.Debugf("attempting to send consolidate content cmd to %s", loc)
-	tc := &drpc.TakeContent{}
-	for _, c := range contents {
-		prs := make([]*peer.AddrInfo, 0)
-
-		pr, err := cm.addrInfoForContentLocation(c.Location)
-		if err != nil {
-			return err
-		}
-
-		if pr != nil {
-			prs = append(prs, pr)
-		}
-
-		if pr == nil {
-			cm.log.Warnf("no addr info for node: %s", loc)
-		}
-
-		tc.Contents = append(tc.Contents, drpc.ContentFetch{
-			ID:     c.ID,
-			Cid:    c.Cid.CID,
-			UserID: c.UserID,
-			Peers:  prs,
-		})
-	}
-
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_TakeContent,
-		Params: drpc.CmdParams{
-			TakeContent: tc,
-		},
-	})
+	return cm.shuttleMgr.ShuttleAddrInfo(handle), nil
 }
 
 func (cm *ContentManager) DealMakingDisabled() bool {

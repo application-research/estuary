@@ -62,7 +62,7 @@ func (pm *EstuaryPinManager) pinContents(ctx context.Context, contents []util.Co
 					pm.Add(pinOp)
 				}
 			} else {
-				if err := pm.cm.PinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
+				if err := pm.shuttleMgr.SendPinCmd(ctx, c.Location, c, origins); err != nil {
 					log.Errorf("failed to send pin message to shuttle: %s", err)
 					time.Sleep(time.Millisecond * 100)
 				}

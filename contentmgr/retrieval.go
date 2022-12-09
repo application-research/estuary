@@ -226,7 +226,7 @@ func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint) error {
 		return err
 	}
 
-	loc, err := cm.selectLocationForRetrieval(ctx, c)
+	loc, err := cm.shuttleMgr.SelectLocationForRetrieval(ctx, c)
 	if err != nil {
 		return err
 	}

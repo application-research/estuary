@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/transfer"
 	"golang.org/x/crypto/bcrypt"
@@ -28,7 +29,6 @@ import (
 	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/build"
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -48,7 +48,6 @@ import (
 	"github.com/application-research/estuary/api"
 	apiv1 "github.com/application-research/estuary/api/v1"
 	apiv2 "github.com/application-research/estuary/api/v2"
-	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
@@ -589,6 +588,10 @@ func main() {
 			return err
 		}
 
+		// stand up saninty check manager and register the handler
+		sanitycheckMgr := sanitycheck.NewManager(db, log)
+		nd.Blockstore.SetSanityCheckFn(sanitycheckMgr.HandleMissingBlocks)
+
 		for _, a := range nd.Host.Addrs() {
 			log.Infof("%s/p2p/%s\n", a, nd.Host.ID())
 		}
@@ -672,77 +675,37 @@ func main() {
 			return err
 		}
 
-		shuttleMgr, err := shuttle.NewManager(db, cfg, log)
+		// stand up shuttle manager
+		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log)
 		if err != nil {
 			return err
 		}
 
+		// stand up transfer manager
 		transferMgr := transfer.NewManager(db, fc, log, shuttleMgr)
+		if err := transferMgr.SubscribeEventListener(cctx.Context); err != nil {
+			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+		}
 
 		// stand up miner manager
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
 		// stand up content manager
-		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr)
+		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr)
 		if err != nil {
 			return err
 		}
-
-		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
 		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
 		// stand up pin manager
-		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.PinStatusFunc, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.UpdatePinStatus, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 			QueueDataDir:     cfg.DataDir,
-		}, cm)
+		}, cm, shuttleMgr)
 		go pinmgr.Run(50)
 		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
-		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
-		go cm.HandleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-
-		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
-		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
-			go func() {
-				cm.TcLk.Lock()
-				trk, _ := cm.TrackingChannels[fst.ChannelID.String()]
-				cm.TcLk.Unlock()
-
-				// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
-				if trk != nil && trk.Last.Status == fst.Status {
-					return
-				}
-				cm.TrackTransfer(&fst.ChannelID, dbid, &fst)
-
-				switch fst.Status {
-				case datatransfer.Requested:
-					if err := cm.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, true); err != nil {
-						log.Errorf("failed to set data transfer started from event: %s", err)
-					}
-				case datatransfer.TransferFinished, datatransfer.Completed:
-					if err := cm.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, false); err != nil {
-						log.Errorf("failed to set data transfer started from event: %s", err)
-					}
-				default:
-					// for every other events
-					trsFailed, msg := util.TransferFailed(&fst)
-					if err = cm.HandleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
-						Chanid:   fst.TransferID,
-						DealDBID: dbid,
-						State:    &fst,
-						Failed:   trsFailed,
-						Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
-					}); err != nil {
-						log.Errorf("failed to set data transfer update from event: %s", err)
-					}
-				}
-			}()
-		})
-		if err != nil {
-			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
-		}
+		go cm.Run(cctx.Context) // deal making and deal reconciliation
 
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
@@ -775,14 +738,14 @@ func main() {
 		// resume all resumable legacy data transfer for local contents
 		go func() {
 			time.Sleep(time.Second * 10)
-			if err := cm.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
+			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
 
 		// stand up api server
 		apiTracer := otel.Tracer("api")
-		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
 		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
 
 		apiEngine := api.NewEngine(cfg, apiTracer)

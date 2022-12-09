@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/application-research/estuary/constants"
+	dealstatus "github.com/application-research/estuary/deal/status"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/util"
@@ -19,24 +21,30 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
 type Manager struct {
-	db         *gorm.DB
-	log        *zap.SugaredLogger
-	fc         *filclient.FilClient
-	tracer     trace.Tracer
-	shuttleMgr *shuttle.Manager
+	db                *gorm.DB
+	log               *zap.SugaredLogger
+	fc                *filclient.FilClient
+	tracer            trace.Tracer
+	shuttleMgr        *shuttle.Manager
+	dealStatusUpdater *dealstatus.Updater
+	tcLk              sync.Mutex
+	trackingChannels  map[string]*util.ChanTrack
 }
 
 func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr *shuttle.Manager) *Manager {
 	return &Manager{
-		db:         db,
-		log:        log,
-		fc:         fc,
-		tracer:     otel.Tracer("replicator"),
-		shuttleMgr: shuttleMgr,
+		db:                db,
+		log:               log,
+		fc:                fc,
+		tracer:            otel.Tracer("replicator"),
+		shuttleMgr:        shuttleMgr,
+		dealStatusUpdater: dealstatus.NewUpdater(db, log),
+		trackingChannels:  make(map[string]*util.ChanTrack),
 	}
 }
 
@@ -162,4 +170,46 @@ func (m *Manager) transferStatusByID(ctx context.Context, id string) (*filclient
 		return nil, err
 	}
 	return chanst, nil
+}
+
+func (m *Manager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error {
+	var cont util.Content
+	if err := m.db.First(&cont, "id = ?", cd.Content).Error; err != nil {
+		return err
+	}
+
+	if cont.Location != constants.ContentLocationLocal {
+		return m.shuttleMgr.SendStartTransferCommand(ctx, cont.Location, cd, cont.Cid.CID)
+	}
+
+	miner, err := cd.MinerAddr()
+	if err != nil {
+		return err
+	}
+
+	chanid, err := m.fc.StartDataTransfer(ctx, miner, cd.PropCid.CID, cont.Cid.CID)
+	if err != nil {
+		if oerr := m.dealStatusUpdater.RecordDealFailure(&dealstatus.DealFailureError{
+			Miner:               miner,
+			Phase:               "start-data-transfer",
+			Message:             err.Error(),
+			Content:             cont.ID,
+			UserID:              cont.UserID,
+			DealProtocolVersion: cd.DealProtocolVersion,
+			MinerVersion:        cd.MinerVersion,
+		}); oerr != nil {
+			return oerr
+		}
+		return nil
+	}
+
+	cd.DTChan = chanid.String()
+
+	if err := m.db.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
+		"dt_chan": chanid.String(),
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
+	}
+	m.log.Debugw("Started data transfer", "chanid", chanid)
+	return nil
 }

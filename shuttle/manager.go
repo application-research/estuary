@@ -45,13 +45,13 @@ type Manager struct {
 	pinStatuses           *lru.ARCCache
 }
 
-func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) (*Manager, error) {
+func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) (*Manager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Manager{
+	mgr := &Manager{
 		cfg:                   cfg,
 		db:                    db,
 		transferStatuses:      cache,
@@ -62,12 +62,18 @@ func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) (*Mana
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		sanityCheckMgr:        sanitycheck.NewManager(db, log),
-	}, nil
+	}
+
+	// register workers/handlers to process shuttle rpc messages from a channel(queue)
+	go mgr.handleShuttleMessages(ctx, cfg.RPCMessage.QueueHandlers)
+
+	return mgr, nil
+
 }
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 
-func (cm *Manager) HandleShuttleMessages(ctx context.Context, numHandlers int) {
+func (cm *Manager) handleShuttleMessages(ctx context.Context, numHandlers int) {
 	for i := 1; i <= numHandlers; i++ {
 		go func() {
 			for {
@@ -104,14 +110,14 @@ func (cm *Manager) processShuttleMessage(msg *drpc.Message) error {
 		if ups == nil {
 			return ErrNilParams
 		}
-		return cm.pinMgr.UpdatePinStatus(msg.Handle, ups.DBID, ups.Status)
+		return cm.UpdatePinStatus(msg.Handle, ups.DBID, ups.Status)
 	case drpc.OP_PinComplete:
 		param := msg.Params.PinComplete
 		if param == nil {
 			return ErrNilParams
 		}
 
-		if err := cm.pinMgr.HandlePinningComplete(ctx, msg.Handle, param); err != nil {
+		if err := cm.handlePinningComplete(ctx, msg.Handle, param); err != nil {
 			cm.log.Errorw("handling pin complete message failed", "shuttle", msg.Handle, "err", err)
 		}
 		return nil
@@ -190,7 +196,7 @@ func (cm *Manager) processShuttleMessage(msg *drpc.Message) error {
 		if sc == nil {
 			return ErrNilParams
 		}
-		cm.sanityCheckMgr.HandleMissingBlock(sc.CID, sc.ErrMsg)
+		cm.sanityCheckMgr.HandleMissingBlocks(sc.CID, sc.ErrMsg)
 		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
@@ -245,10 +251,10 @@ func (cm *Manager) ShuttleAddrInfo(handle string) *peer.AddrInfo {
 	cm.ShuttlesLk.Lock()
 	defer cm.ShuttlesLk.Unlock()
 	d, ok := cm.Shuttles[handle]
-	if ok {
-		return &d.addrInfo
+	if !ok {
+		return nil
 	}
-	return nil
+	return &d.addrInfo
 }
 
 func (cm *Manager) ShuttleHostName(handle string) string {
@@ -413,6 +419,37 @@ func (cm *Manager) handleRpcShuttleUpdate(ctx context.Context, handle string, pa
 	return nil
 }
 
+func (cm *Manager) SendConsolidateContentCmd(ctx context.Context, loc string, contents []util.Content) error {
+	cm.log.Debugf("attempting to send consolidate content cmd to %s", loc)
+	tc := &drpc.TakeContent{}
+	for _, c := range contents {
+		prs := make([]*peer.AddrInfo, 0)
+
+		pr := cm.ShuttleAddrInfo(c.Location)
+		if pr != nil {
+			prs = append(prs, pr)
+		}
+
+		if pr == nil {
+			cm.log.Warnf("no addr info for node: %s", loc)
+		}
+
+		tc.Contents = append(tc.Contents, drpc.ContentFetch{
+			ID:     c.ID,
+			Cid:    c.Cid.CID,
+			UserID: c.UserID,
+			Peers:  prs,
+		})
+	}
+
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_TakeContent,
+		Params: drpc.CmdParams{
+			TakeContent: tc,
+		},
+	})
+}
+
 func (cm *Manager) handleRpcGarbageCheck(ctx context.Context, handle string, param *drpc.GarbageCheck) error {
 	var tounpin []uint
 	for _, c := range param.Contents {
@@ -430,6 +467,20 @@ func (cm *Manager) handleRpcGarbageCheck(ctx context.Context, handle string, par
 		}
 	}
 	return cm.SendUnpinCmd(ctx, handle, tounpin)
+}
+
+func (cm *Manager) SendPinCmd(ctx context.Context, loc string, cont util.Content, origins []*peer.AddrInfo) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_AddPin,
+		Params: drpc.CmdParams{
+			AddPin: &drpc.AddPin{
+				DBID:   cont.ID,
+				UserId: cont.UserID,
+				Cid:    cont.Cid.CID,
+				Peers:  origins,
+			},
+		},
+	})
 }
 
 func (cm *Manager) SendCommPCmd(ctx context.Context, loc string, data cid.Cid) error {
@@ -468,6 +519,78 @@ func (cm *Manager) GetTransferStatus(ctx context.Context, contLoc string, d *mod
 		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
 	}
 	return tsr.State, nil
+}
+
+func (cm *Manager) SendStartTransferCommand(ctx context.Context, loc string, cd *model.ContentDeal, datacid cid.Cid) error {
+	miner, err := cd.MinerAddr()
+	if err != nil {
+		return err
+	}
+
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_StartTransfer,
+		Params: drpc.CmdParams{
+			StartTransfer: &drpc.StartTransfer{
+				DealDBID:  cd.ID,
+				ContentID: cd.Content,
+				Miner:     miner,
+				PropCid:   cd.PropCid.CID,
+				DataCid:   datacid,
+			},
+		},
+	})
+}
+
+func (cm *Manager) SendAggregateCmd(ctx context.Context, loc string, cont util.Content, aggr []drpc.AggregateContent) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_AggregateContent,
+		Params: drpc.CmdParams{
+			AggregateContent: &drpc.AggregateContents{
+				DBID:     cont.ID,
+				UserID:   cont.UserID,
+				Contents: aggr,
+			},
+		},
+	})
+}
+
+func (cm *Manager) SendSplitContentCmd(ctx context.Context, loc string, cont uint, size int64) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_SplitContent,
+		Params: drpc.CmdParams{
+			SplitContent: &drpc.SplitContent{
+				Content: cont,
+				Size:    size,
+			},
+		},
+	})
+}
+
+func (cm *Manager) SendPrepareForDataRequestCommand(ctx context.Context, loc string, dbid uint, authToken string, propCid cid.Cid, payloadCid cid.Cid, size uint64) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_PrepareForDataRequest,
+		Params: drpc.CmdParams{
+			PrepareForDataRequest: &drpc.PrepareForDataRequest{
+				DealDBID:    dbid,
+				AuthToken:   authToken,
+				ProposalCid: propCid,
+				PayloadCid:  payloadCid,
+				Size:        size,
+			},
+		},
+	})
+}
+
+func (cm *Manager) SendCleanupPreparedRequestCommand(ctx context.Context, loc string, dbid uint, authToken string) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_CleanupPreparedRequest,
+		Params: drpc.CmdParams{
+			CleanupPreparedRequest: &drpc.CleanupPreparedRequest{
+				DealDBID:  dbid,
+				AuthToken: authToken,
+			},
+		},
+	})
 }
 
 func (cm *Manager) SendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {

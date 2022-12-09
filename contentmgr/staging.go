@@ -153,20 +153,6 @@ func (cm *ContentManager) setUpStaging(ctx context.Context) {
 	}
 }
 
-func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	var zones []util.Content
-	if err := cm.db.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
-		return ""
-	}
-
-	// TODO: maybe we could make this more complex, but for now, if we have a
-	// staging zone opened in a particular location, just keep using that one
-	for _, z := range zones {
-		return z.Location
-	}
-	return ""
-}
-
 func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
 	cm.consolidatingZonesLk.Lock()
 	defer cm.consolidatingZonesLk.Unlock()
@@ -300,7 +286,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 		defer cm.MarkFinishedConsolidating(zone.ID)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	} else if dstLocation != "" {
-		if err := cm.SendConsolidateContentCmd(ctx, dstLocation, toMove); err != nil {
+		if err := cm.shuttleMgr.SendConsolidateContentCmd(ctx, dstLocation, toMove); err != nil {
 			// unmark as consolidating and retry later if failed to send consolidate cmd
 			cm.MarkFinishedConsolidating(zone.ID)
 			return err
@@ -389,7 +375,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 	if err := cm.db.First(&bContent, "id = ?", zone.ID).Error; err != nil {
 		return err
 	}
-	return cm.SendAggregateCmd(ctx, loc, bContent, aggrConts)
+	return cm.shuttleMgr.SendAggregateCmd(ctx, loc, bContent, aggrConts)
 }
 
 func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {

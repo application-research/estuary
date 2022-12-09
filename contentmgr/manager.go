@@ -8,9 +8,9 @@ import (
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/shuttle"
+	"github.com/application-research/estuary/transfer"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/ipfs/go-cid"
@@ -45,6 +45,7 @@ type ContentManager struct {
 	IncomingRPCMessages  chan *drpc.Message
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
+	transferMgr          *transfer.Manager
 
 	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
 	consolidatingZonesLk sync.Mutex
@@ -56,10 +57,6 @@ type ContentManager struct {
 
 	consolidatingZones map[uint]bool
 	aggregatingZones   map[uint]bool
-
-	// TODO move out to filc package
-	TcLk             sync.Mutex
-	TrackingChannels map[string]*util.ChanTrack
 }
 
 func NewContentManager(
@@ -72,6 +69,7 @@ func NewContentManager(
 	minerManager miner.IMinerManager,
 	log *zap.SugaredLogger,
 	shuttleMgr *shuttle.Manager,
+	transferMgr *transfer.Manager,
 ) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
@@ -96,26 +94,13 @@ func NewContentManager(
 		IncomingRPCMessages:  make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:         minerManager,
 		log:                  log,
+		transferMgr:          transferMgr,
 		consolidatingZones:   make(map[uint]bool),
 		aggregatingZones:     make(map[uint]bool),
-
-		// TODO move out to filc package
-		TrackingChannels: make(map[string]*util.ChanTrack),
 	}
 
 	cm.queueMgr = newQueueManager(func(c uint) {
 		cm.ToCheck(c)
 	})
 	return cm, nil
-}
-
-// TODO move out to filc package
-func (cm *ContentManager) TrackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
-	cm.TcLk.Lock()
-	defer cm.TcLk.Unlock()
-
-	cm.TrackingChannels[chanid.String()] = &util.ChanTrack{
-		Dbid: dealdbid,
-		Last: st,
-	}
 }

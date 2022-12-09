@@ -14,6 +14,7 @@ import (
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/goque"
 	"github.com/vmihailenco/msgpack/v5"
 
@@ -27,10 +28,11 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
 type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
-func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm *contentmgr.ContentManager) *EstuaryPinManager {
+func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm *contentmgr.ContentManager, shuttleMgr *shuttle.Manager) *EstuaryPinManager {
 	return &EstuaryPinManager{
 		PinManager: newPinManager(pinfunc, scf, opts),
 		cm:         cm,
+		shuttleMgr: shuttleMgr,
 	}
 }
 
@@ -103,7 +105,8 @@ type ShuttleManager struct {
 
 type EstuaryPinManager struct {
 	*PinManager
-	cm *contentmgr.ContentManager
+	cm         *contentmgr.ContentManager
+	shuttleMgr *shuttle.Manager
 }
 
 type PinningOperationData struct {

@@ -21,7 +21,7 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) *Manager {
 	}
 }
 
-func (m *Manager) HandleMissingBlock(cc cid.Cid, errMsg string) {
+func (m *Manager) HandleMissingBlocks(cc cid.Cid, errMsg string) {
 	m.log.Warnf("hanling missing block for cid: %s", cc)
 
 	// get all contents affected by this missing block on estuary or from shuttles
