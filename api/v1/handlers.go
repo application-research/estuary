@@ -3979,19 +3979,19 @@ func (s *apiV1) handleGetAllDealsForUser(c echo.Context, u *util.User) error {
 
 	var deals []dealQuery
 	if err := s.DB.Model(model.ContentDeal{}).
-		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND user_id = ?", all, begin, begin.Add(duration), u.ID).
+		Where("deal_id > 0 AND (? OR (on_chain_at >= ? AND on_chain_at <= ?)) AND content_deals.user_id = ?", all, begin, begin.Add(duration), u.ID).
 		Joins("left join contents on content_deals.content = contents.id").
 		Select("deal_id, contents.id as contentid, cid, aggregate").
 		Scan(&deals).Error; err != nil {
 		return err
 	}
 
-	contmap := make(map[uint][]dealQuery)
+	contmap := make(map[uint][]dealQuery, len(deals))
 	for _, d := range deals {
 		contmap[d.Contentid] = append(contmap[d.Contentid], d)
 	}
 
-	var out []dealPairs
+	out := make([]dealPairs, 0)
 	for cont, deals := range contmap {
 		var dp dealPairs
 		if deals[0].Aggregate {
