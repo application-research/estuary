@@ -116,6 +116,20 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 
 			cm.log.Debugf("found ready staging zones: %d", len(readyZones))
 			for _, z := range readyZones {
+
+				// if this zone is no longer pinning(mean it has pinned), activate it
+				if !z.Pinning && !z.Active {
+					if err := cm.db.Model(util.Content{}).Where("id = ?", z.ID).UpdateColumn("active", false).Error; err != nil {
+						cm.log.Errorf("failed to get ready staging zones: %s", err)
+					} else {
+						// aggregation has been completed and we can mark as finished
+						cm.MarkFinishedAggregating(z.ID)
+						// after aggregate is done, make deal for it
+						cm.ToCheck(z.ID)
+					}
+					continue
+				}
+
 				if err := cm.processStagingZone(ctx, z); err != nil {
 					cm.log.Errorf("content aggregation failed (zone %d): %s", z.ID, err)
 					continue
@@ -125,10 +139,11 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 	}
 }
 
+// getReadyStagingZones gets zones that are not activated yet (but could have been pinned)
 func (cm *ContentManager) getReadyStagingZones() ([]util.Content, error) {
 	var readyZones []util.Content
 	if err := cm.db.Model(&util.Content{}).
-		Where("not active and pinning and aggregate and size >= ?", constants.MinDealContentSize).
+		Where("not active and aggregate and size >= ?", constants.MinDealContentSize).
 		Find(&readyZones).Error; err != nil {
 		return nil, err
 	}
@@ -159,6 +174,12 @@ func (cm *ContentManager) IsZoneConsolidating(zoneID uint) bool {
 	return cm.consolidatingZones[zoneID]
 }
 
+func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
+	cm.aggregatingZonesLk.Lock()
+	defer cm.aggregatingZonesLk.Unlock()
+	return cm.aggregatingZones[zoneID]
+}
+
 func (cm *ContentManager) MarkStartedConsolidating(zoneID uint) bool {
 	cm.consolidatingZonesLk.Lock()
 	defer cm.consolidatingZonesLk.Unlock()
@@ -174,12 +195,6 @@ func (cm *ContentManager) MarkFinishedConsolidating(zoneID uint) {
 	cm.consolidatingZonesLk.Lock()
 	delete(cm.consolidatingZones, zoneID)
 	cm.consolidatingZonesLk.Unlock()
-}
-
-func (cm *ContentManager) IsZoneAggregating(zoneID uint) bool {
-	cm.aggregatingZonesLk.Lock()
-	defer cm.aggregatingZonesLk.Unlock()
-	return cm.aggregatingZones[zoneID]
 }
 
 func (cm *ContentManager) MarkStartedAggregating(zoneID uint) bool {
@@ -229,6 +244,8 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		}()
 		return nil
 	}
+	// if we reached here, consolidation is done and we can move to aggregating
+	cm.MarkFinishedConsolidating(zone.ID)
 
 	var loc string
 	for grpLoc := range grpLocs {
@@ -236,8 +253,6 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		break
 	}
 
-	// if we reached here, consolidation is done and we can move to aggregating
-	cm.MarkFinishedConsolidating(zone.ID)
 	if !cm.MarkStartedAggregating(zone.ID) {
 		// skip if zone is consolidating or already aggregating
 		return nil
@@ -459,9 +474,10 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 	return nil
 }
 
+// getStagedContentsGroupedByLocation gets the active(pin) contents only for aggregation and consolidation
 func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneID uint) (map[string][]util.Content, error) {
 	var conts []util.Content
-	if err := cm.db.Find(&conts, "aggregated_in = ?", zoneID).Error; err != nil {
+	if err := cm.db.Find(&conts, "active and aggregated_in = ?", zoneID).Error; err != nil {
 		return nil, err
 	}
 
@@ -478,7 +494,7 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 
 func (cm *ContentManager) buildStagingZoneFromContent(zone util.Content) (*ContentStagingZone, error) {
 	var contents []util.Content
-	if err := cm.db.Find(&contents, "aggregated_in = ?", zone.ID).Error; err != nil {
+	if err := cm.db.Find(&contents, "active and aggregated_in = ?", zone.ID).Error; err != nil {
 		return nil, errors.Wrapf(err, "could not build ContentStagingZone struct from content id")
 	}
 
