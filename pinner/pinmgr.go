@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
@@ -26,7 +27,18 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
 type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
-func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
+func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm *contentmgr.ContentManager) *EstuaryPinManager {
+	return &EstuaryPinManager{
+		PinManager: newPinManager(pinfunc, scf, opts),
+		cm:         cm,
+	}
+}
+
+func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
+	return newPinManager(pinfunc, scf, opts)
+}
+
+func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
 		scf = func(contID uint, location string, status types.PinningStatus) error {
 			return nil
@@ -83,6 +95,15 @@ type PinManager struct {
 	StatusChangeFunc PinStatusFunc
 	maxActivePerUser int
 	QueueDataDir     string
+}
+
+type ShuttleManager struct {
+	*PinManager
+}
+
+type EstuaryPinManager struct {
+	*PinManager
+	cm *contentmgr.ContentManager
 }
 
 type PinningOperationData struct {

@@ -655,7 +655,7 @@ func main() {
 			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
 		}
 
-		s.PinMgr = pinner.NewPinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
+		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
 		})

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/shuttle"
+	"github.com/application-research/estuary/transfer"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
@@ -670,6 +672,13 @@ func main() {
 			return err
 		}
 
+		shuttleMgr, err := shuttle.NewManager(db, cfg, log)
+		if err != nil {
+			return err
+		}
+
+		transferMgr := transfer.NewManager(db, fc, log, shuttleMgr)
+
 		// stand up miner manager
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
@@ -684,12 +693,12 @@ func main() {
 
 		// stand up pin manager
 		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(cm.DoPinning, cm.PinStatusFunc, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.PinStatusFunc, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 			QueueDataDir:     cfg.DataDir,
-		})
+		}, cm)
 		go pinmgr.Run(50)
-		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg, cm) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
+		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
 		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
 		go cm.HandleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)

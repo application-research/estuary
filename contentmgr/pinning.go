@@ -339,7 +339,7 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 	return nil
 }
 
-func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) error {
+func (cm *ContentManager) HandlePinningComplete(ctx context.Context, handle string, pincomp *drpc.PinComplete) error {
 	ctx, span := cm.tracer.Start(ctx, "handlePinningComplete")
 	defer span.End()
 

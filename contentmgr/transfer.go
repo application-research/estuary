@@ -3,6 +3,7 @@ package contentmgr
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/application-research/estuary/constants"
@@ -148,6 +149,27 @@ func (cm *ContentManager) GetTransferStatus(ctx context.Context, d *model.Conten
 		return nil, fmt.Errorf("invalid type placed in remote transfer status cache: %T", val)
 	}
 	return tsr.State, nil
+}
+
+func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
+	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_ReqTxStatus,
+		Params: drpc.CmdParams{
+			ReqTxStatus: &drpc.ReqTxStatus{
+				DealDBID: dealid,
+				ChanID:   chid,
+			},
+		},
+	})
+}
+
+// get the data transfer state by transfer ID (compatible with both deal protocol v1 and v2)
+func (cm *ContentManager) transferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
+	chanst, err := cm.filClient.TransferStatusByID(ctx, id)
+	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
+		return nil, err
+	}
+	return chanst, nil
 }
 
 func (cm *ContentManager) updateTransferStatus(ctx context.Context, loc string, dealdbid uint, st *filclient.ChannelState) {

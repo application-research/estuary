@@ -30,7 +30,7 @@ type apiV1 struct {
 	gwayHandler  *gateway.GatewayHandler
 	cacher       *memo.Cacher
 	minerManager miner.IMinerManager
-	pinMgr       *pinner.PinManager
+	pinMgr       *pinner.EstuaryPinManager
 	log          *zap.SugaredLogger
 }
 
@@ -43,7 +43,7 @@ func NewAPIV1(
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
 	mm miner.IMinerManager,
-	pinMgr *pinner.PinManager,
+	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 ) *apiV1 {

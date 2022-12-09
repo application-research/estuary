@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -383,15 +382,6 @@ func (cm *ContentManager) GetProviderDealStatus(ctx context.Context, d *model.Co
 		providerDealState, err = cm.filClient.DealStatus(ctx, maddr, d.PropCid.CID, nil)
 	}
 	return providerDealState, isPushTransfer, err
-}
-
-// get the data transfer state by transfer ID (compatible with both deal protocol v1 and v2)
-func (cm *ContentManager) transferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
-	chanst, err := cm.filClient.TransferStatusByID(ctx, id)
-	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
-		return nil, err
-	}
-	return chanst, nil
 }
 
 func (cm *ContentManager) checkDeal(ctx context.Context, d *model.ContentDeal, content util.Content) (int, error) {
@@ -1459,18 +1449,6 @@ func (cm *ContentManager) SendAggregateCmd(ctx context.Context, loc string, cont
 	})
 }
 
-func (cm *ContentManager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_ReqTxStatus,
-		Params: drpc.CmdParams{
-			ReqTxStatus: &drpc.ReqTxStatus{
-				DealDBID: dealid,
-				ChanID:   chid,
-			},
-		},
-	})
-}
-
 func (cm *ContentManager) sendSplitContentCmd(ctx context.Context, loc string, cont uint, size int64) error {
 	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_SplitContent,
@@ -1514,17 +1492,6 @@ func (cm *ContentManager) SendConsolidateContentCmd(ctx context.Context, loc str
 		Op: drpc.CMD_TakeContent,
 		Params: drpc.CmdParams{
 			TakeContent: tc,
-		},
-	})
-}
-
-func (cm *ContentManager) sendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
-	return cm.SendShuttleCommand(ctx, loc, &drpc.Command{
-		Op: drpc.CMD_UnpinContent,
-		Params: drpc.CmdParams{
-			UnpinContent: &drpc.UnpinContent{
-				Contents: conts,
-			},
 		},
 	})
 }
