@@ -598,10 +598,15 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Path to file",
-                        "name": "path",
-                        "in": "query",
-                        "required": true
+                        "description": "Directory inside collection",
+                        "name": "dir",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite file if already exists in path",
+                        "name": "overwrite",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -711,6 +716,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Directory",
                         "name": "dir",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files",
+                        "name": "overwrite",
                         "in": "query"
                     }
                 ],

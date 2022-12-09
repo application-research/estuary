@@ -741,6 +741,10 @@ paths:
           in: query
           name: dir
           type: string
+        - description: Overwrite conflicting files
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:
@@ -833,10 +837,13 @@ paths:
           name: content
           required: true
           type: string
-        - description: Path to file
+        - description: Directory inside collection
           in: query
-          name: path
-          required: true
+          name: dir
+          type: string
+        - description: Overwrite file if already exists in path
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
