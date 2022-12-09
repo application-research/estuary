@@ -26,25 +26,16 @@ func (init *Initializer) BlockstoreWrap(bs blockstore.Blockstore) (blockstore.Bl
 }
 
 func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid, error) {
-	log.Infof("running key provider func")
 	out := make(chan cid.Cid)
 	go func() {
 		defer close(out)
-
 		var contents []util.Content
-		if err := init.db.Find(&contents, "active").Error; err != nil {
-			log.Errorf("failed to load contents for reproviding: %s", err)
-			return
-		}
-		log.Infof("key provider func returning %d values", len(contents))
-
-		for _, c := range contents {
-			select {
-			case out <- c.Cid.CID:
-			case <-rpctx.Done():
-				return
+		init.db.Where("active = ?", true).FindInBatches(&contents, 100000, func(tx *gorm.DB, batch int) error {
+			for _, c := range contents {
+				out <- c.Cid.CID
 			}
-		}
+			return nil
+		})
 	}()
 	return out, nil
 }
