@@ -1,4 +1,5 @@
 #!/bin/sh
+set -eu
 
 ###################################################################
 # Script Name	:   swag.sh                                                                                          
@@ -17,11 +18,11 @@ yq=''
 localhost='api.estuary.tech'
 
 # Arguments
-host=$1
+host=${1:-}
 
 # Swag
 #swagVersion=$(curl -s https://api.github.com/repos/swaggo/swag/releases/latest | jq -r .tag_name)
-swagVersion=v1.8.1
+swagVersion=v1.8.9-rc2
 linuxSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Linux_x86_64.tar.gz
 darwinSwag=https://github.com/swaggo/swag/releases/download/${swagVersion}/swag_${swagVersion#v}_Darwin_x86_64.tar.gz
 
@@ -80,7 +81,7 @@ echo "Running Swag"
 chmod +x ./scripts/swagger/echo-swag/swag
 chmod +x ./scripts/swagger/echo-swag/yq
 
-./scripts/swagger/echo-swag/swag init -g handlers.go
+./scripts/swagger/echo-swag/swag init -g api/v1/handlers.go  --parseDependency --parseInternal --parseDepth 1
 
 ## workaround to add the security and host - this so we can add the Bearer token to the header
 ## Json 

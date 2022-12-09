@@ -1679,7 +1679,7 @@ func (s *apiV1) handleAdminGetInvites(c echo.Context) error {
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Param        code  path      string  false  "Invite code to be created"
-// @Router       /admin/invites [post]
+// @Router       /admin/invites/{code} [post]
 func (s *apiV1) handleAdminCreateInvite(c echo.Context, u *util.User) error {
 	code := c.Param("code")
 	invite := &util.InviteCode{
@@ -2167,7 +2167,7 @@ type priceEstimateResponse struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        body  body      main.estimateDealBody  true  "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
+// @Param        body  body      estimateDealBody  true  "The size of the deal in bytes, the replication factor, and the duration of the deal in blocks"
 // @Router       /deal/estimate [post]
 func (s *apiV1) handleEstimateDealCost(c echo.Context) error {
 	ctx := c.Request().Context()
@@ -4716,10 +4716,10 @@ type claimMsgResponse struct {
 // @Description  This endpoint lets a user get the message in order to claim a miner
 // @Tags         miner
 // @Produce      json
-// @Success      200  {object}  claimMsgResponse
+// @Success      200    {object}  claimMsgResponse
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner           param      miner  true   "Miner claim message"
+// @Param        miner  path     string  true  "Miner claim message"
 // @Router       /miner/claim/{miner} [get]
 func (s *apiV1) handleUserGetClaimMinerMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("miner"))
