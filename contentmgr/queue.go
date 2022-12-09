@@ -138,7 +138,12 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	}
 
 	go func() {
-		for _, c := range allcontent {
+		for i, c := range allcontent {
+			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
+			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
+			if i%100 == 0 {
+				time.Sleep(time.Second * 5)
+			}
 			cm.ToCheck(c.ID)
 		}
 	}()
