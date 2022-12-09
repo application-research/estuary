@@ -497,6 +497,7 @@ func (s *apiV1) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Read
 // @Param        coluuid       query     string  false  "Collection UUID"
 // @Param        replication   query     int     false  "Replication value"
 // @Param        ignore-dupes  query     string  false  "Ignore Dupes true/false"
+// @Param        overwrite	   query     string  false  "Overwrite files with the same path on same collection"
 // @Param        lazy-provide  query     string  false  "Lazy Provide true/false"
 // @Param        dir           query     string  false  "Directory"
 // @Success      200           {object}  util.ContentAddResponse
@@ -610,13 +611,13 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	fullPath := filepath.Join(path, content.Name)
 
 	if col != nil {
+		overwrite := false
+		if c.QueryParam("overwrite") == "true" {
+			overwrite = true
+		}
 		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := s.DB.Create(&collections.CollectionRef{
-			Collection: col.ID,
-			Content:    content.ID,
-			Path:       &fullPath,
-		}).Error; err != nil {
-			s.log.Errorf("failed to add content to requested collection: %s", err)
+		if err := collections.AddContentToCollection(col, content, fullPath, s.DB, overwrite); err != nil {
+			return xerrors.Errorf("failed to add content to collection: %s", err)
 		}
 	}
 

@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -93,6 +94,35 @@ func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) (
 	}
 
 	return selectedRefs, nil
+}
+
+func AddContentToCollection(col *Collection, content *util.Content, fullPath string, db *gorm.DB, overwrite bool) error {
+	// see if there's already a file with that name/path on that collection
+	var colRef CollectionRef
+	err := db.First(&colRef, "collection = ? and path = ?", col.ID, fullPath).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	// if there's a duplicate and overwrite has been set to true, then update
+	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+		if overwrite {
+			if err := db.Model(CollectionRef{}).Where("collection = ? and path = ?", col.ID, fullPath).UpdateColumn("content", content.ID).Error; err != nil {
+				return xerrors.Errorf("unable to overwrite file: %w", err)
+			}
+		} else {
+			return xerrors.Errorf("file already exists in collection, specify 'overwrite=true' to overwrite")
+		}
+	} else { // else, create collectionRef for new file
+		if err := db.Create(&CollectionRef{
+			Collection: col.ID,
+			Content:    content.ID,
+			Path:       &fullPath,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string) ([]*CollectionListResponse, error) {
