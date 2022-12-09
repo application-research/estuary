@@ -436,11 +436,12 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, contID, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
 	s.pinMgr.Add(pinOp)
+	s.CM.ToCheck(contID)
 
 	return c.JSON(http.StatusAccepted, pinstatus)
 }
@@ -3351,11 +3352,12 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, contID, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
 	s.pinMgr.Add(pinOp)
+	s.CM.ToCheck(contID)
 
 	return c.JSON(http.StatusOK, pinstatus)
 }
