@@ -508,6 +508,8 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
+	dir := c.QueryParam(ColDir)
+
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
@@ -563,17 +565,11 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")
 	var col *collections.Collection
 	if coluuid != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
+		colRoot, err := collections.GetCollection(coluuid, s.DB, u)
+		if err != nil {
 			return err
 		}
-
-		col = &srchCol
-	}
-
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
-	if err != nil {
-		return err
+		col = &colRoot
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -608,7 +604,6 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	if err != nil {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
-	fullPath := filepath.Join(path, content.Name)
 
 	if col != nil {
 		overwrite := false
@@ -616,7 +611,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 			overwrite = true
 		}
 		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := collections.AddContentToCollection(col, content, fullPath, s.DB, overwrite); err != nil {
+		if err := collections.AddContentToCollection(coluuid, string(content.ID), dir, overwrite, s.DB, u); err != nil {
 			return xerrors.Errorf("failed to add content to collection: %s", err)
 		}
 	}
@@ -649,20 +644,6 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		EstuaryId:           content.ID,
 		Providers:           s.CM.PinDelegatesForContent(*content),
 	})
-}
-
-func constructDirectoryPath(dir string) (string, error) {
-	defaultPath := "/"
-	path := defaultPath
-	if cp := dir; cp != "" {
-		sp, err := sanitizePath(cp)
-		if err != nil {
-			return "", err
-		}
-
-		path = sp
-	}
-	return path, nil
 }
 
 // redirectContentAdding is called when localContentAddingDisabled is true
@@ -3084,13 +3065,19 @@ type addContentsToCollectionBody struct {
 // @Produce      json
 // @Param        coluuid     path      string  true  "Collection UUID"
 // @Param        contentIDs  body      []uint  true  "Content IDs to add to collection"
-// @Param		 dir		 query	   string  false  "Directory"
+// @Param		 dir			 query	   string  false  "Directory"
+// @Param		 overwrite		 query	   string  false  "Overwrite conflicting files"
 // @Success      200         {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /collections/{coluuid} [post]
 func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
+	dir := c.QueryParam("dir")
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
 
 	// we accept both {"contentids": [1, 2]} and [1, 2] as json payloads
 	var body addContentsToCollectionBody // {"contentids": [1, 2]}
@@ -3129,22 +3116,13 @@ func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) erro
 		}
 	}
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
-			}
-		}
+	col, err := collections.GetCollection(coluuid, s.DB, u)
+	if err != nil {
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
-		return err
-	}
-
+	// use this instead of util.GetContent because it's faster
+	// util.GetContent would do one at a time
 	var contents []util.Content
 	if err := s.DB.Find(&contents, "id in ? and user_id = ?", contentIDs, u.ID).Error; err != nil {
 		return err
@@ -3154,19 +3132,11 @@ func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) erro
 		return fmt.Errorf("%d specified content(s) were not found or user missing permissions", len(contentIDs)-len(contents))
 	}
 
-	path, err := constructDirectoryPath(c.QueryParam(ColDir))
-	var colrefs []collections.CollectionRef
 	for _, cont := range contents {
-		fullPath := filepath.Join(path, cont.Name)
-		colrefs = append(colrefs, collections.CollectionRef{
-			Collection: col.ID,
-			Content:    cont.ID,
-			Path:       &fullPath,
-		})
-	}
-
-	if err := s.DB.Create(colrefs).Error; err != nil {
-		return err
+		err := collections.AddContentToCollection(string(col.ID), string(cont.ID), dir, overwrite, s.DB, u)
+		if err != nil {
+			return err
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -4523,20 +4493,15 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	}
 
 	if req.CollectionID != "" {
-		if req.CollectionDir == "" {
-			req.CollectionDir = "/"
-		}
 
-		sp, err := sanitizePath(req.CollectionDir)
+		path, err := collections.ConstructDirectoryPath(c.QueryParam(req.CollectionDir))
 		if err != nil {
 			return err
 		}
-
-		path := &sp
 		if err := s.DB.Create(&collections.CollectionRef{
 			Collection: col.ID,
 			Content:    content.ID,
-			Path:       path,
+			Path:       &path,
 		}).Error; err != nil {
 			return err
 		}
@@ -4924,34 +4889,14 @@ const (
 	ColDir string = "dir"
 )
 
-func sanitizePath(p string) (string, error) {
-	if len(p) == 0 {
-		return "", fmt.Errorf("can't sanitize empty path")
-	}
-
-	if p[0] != '/' {
-		return "", fmt.Errorf("paths must start with /")
-	}
-
-	// TODO: prevent use of special weird characters
-
-	cleanPath := filepath.Clean(p)
-
-	// if original path ends in /, append / to cleaned path
-	// needed for full path vs dir+filename magic to work in handleAddIpfs
-	if strings.HasSuffix(p, "/") {
-		cleanPath = cleanPath + "/"
-	}
-	return cleanPath, nil
-}
-
 // handleColfsAdd godoc
 // @Summary      Add a file to a collection
 // @Description  This endpoint adds a file to a collection
 // @Tags         collections
-// @Param        coluuid  query  string  true  "Collection ID"
-// @Param        content  query  string  true  "Content"
-// @Param        path     query  string  true  "Path to file"
+// @Param        coluuid    query  string  true  "Collection ID"
+// @Param        content    query  string  true  "Content"
+// @Param        dir        query  string  false  "Directory inside collection"
+// @Param        overwrite  query  string  false  "Overwrite file if already exists in path"
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
@@ -4960,52 +4905,17 @@ func sanitizePath(p string) (string, error) {
 func (s *apiV1) handleColfsAdd(c echo.Context, u *util.User) error {
 	coluuid := c.QueryParam("coluuid")
 	contid := c.QueryParam("content")
-	npath := c.QueryParam("path")
+	dir := c.QueryParam("dir")
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
-			}
-		}
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
+	err := collections.AddContentToCollection(coluuid, contid, dir, overwrite, s.DB, u)
+	if err != nil {
 		return err
 	}
 
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
-		return err
-	}
-
-	var content util.Content
-	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection content: %s was not found", contid),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-		return err
-	}
-
-	var path *string
-	if npath != "" {
-		p, err := sanitizePath(npath)
-		if err != nil {
-			return err
-		}
-		path = &p
-	}
-
-	if err := s.DB.Create(&collections.CollectionRef{Collection: col.ID, Content: content.ID, Path: path}).Error; err != nil {
-		return errors.Wrap(err, "failed to add content to requested collection")
-	}
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 

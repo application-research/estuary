@@ -33,18 +33,18 @@ const (
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
-func (s *apiV1) handleListPins(e echo.Context, u *util.User) error {
-	_, span := s.tracer.Start(e.Request().Context(), "handleListPins")
+func (s *apiV1) handleListPins(c echo.Context, u *util.User) error {
+	_, span := s.tracer.Start(c.Request().Context(), "handleListPins")
 	defer span.End()
 
-	qcids := e.QueryParam("cid")
-	qname := e.QueryParam("name")
-	qmatch := e.QueryParam("match")
-	qstatus := e.QueryParam("status")
-	qbefore := e.QueryParam("before")
-	qafter := e.QueryParam("after")
-	qlimit := e.QueryParam("limit")
-	qreqids := e.QueryParam("requestid")
+	qcids := c.QueryParam("cid")
+	qname := c.QueryParam("name")
+	qmatch := c.QueryParam("match")
+	qstatus := c.QueryParam("status")
+	qbefore := c.QueryParam("before")
+	qafter := c.QueryParam("after")
+	qlimit := c.QueryParam("limit")
+	qreqids := c.QueryParam("requestid")
 
 	lim := DEFAULT_IPFS_PIN_LIMIT
 	if qlimit != "" {
@@ -162,7 +162,7 @@ func (s *apiV1) handleListPins(e echo.Context, u *util.User) error {
 		out = append(out, st)
 	}
 
-	return e.JSON(http.StatusOK, types.IpfsListPinStatusResponse{
+	return c.JSON(http.StatusOK, types.IpfsListPinStatusResponse{
 		Count:   int(count),
 		Results: out,
 	})
@@ -242,16 +242,17 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Failure      500    {object}  util.HttpError
 // @in           202,default  string  Token "token"
 // @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
+// @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /pinning/pins [post]
-func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
-	ctx := e.Request().Context()
+func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
+	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
 	var pin types.IpfsPin
-	if err := e.Bind(&pin); err != nil {
+	if err := c.Bind(&pin); err != nil {
 		return err
 	}
 
@@ -262,21 +263,16 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 			return err
 		}
 
-		var colpath *string
-		colp, ok := pin.Meta["colpath"].(string)
-		if ok {
-			p, err := sanitizePath(colp)
-			if err != nil {
-				return err
-			}
-
-			colpath = &p
+		colp, _ := pin.Meta["colpath"].(string)
+		colpath, err := collections.ConstructDirectoryPath(colp)
+		if err != nil {
+			return err
 		}
 
 		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
-				Path:       colpath,
+				Path:       &colpath,
 			},
 		}
 	}
@@ -296,6 +292,16 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
+	if c.QueryParam("ignore-dupes") == "true" {
+		var count int64
+		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", obj.Bytes(), u.ID).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
+		}
+	}
+
 	makeDeal := true
 	status, pinOp, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
@@ -303,7 +309,7 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	}
 	s.pinMgr.Add(pinOp)
 
-	return e.JSON(http.StatusAccepted, status)
+	return c.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
@@ -316,8 +322,8 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 // @Failure      500    {object}  util.HttpError
 // @Param        pinid  path      string  true  "cid"
 // @Router       /pinning/pins/{pinid} [get]
-func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
-	pinID, err := strconv.Atoi(e.Param("pinid"))
+func (s *apiV1) handleGetPin(c echo.Context, u *util.User) error {
+	pinID, err := strconv.Atoi(c.Param("pinid"))
 	if err != nil {
 		return err
 	}
@@ -342,7 +348,7 @@ func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-	return e.JSON(http.StatusOK, st)
+	return c.JSON(http.StatusOK, st)
 }
 
 // handleReplacePin godoc
@@ -357,19 +363,19 @@ func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
 // @Param        pinid		path      string  true  "Pin ID to be replaced"
 // @Param        pin          body      types.IpfsPin  true   "New pin"
 // @Router       /pinning/pins/{pinid} [post]
-func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
+func (s *apiV1) handleReplacePin(c echo.Context, u *util.User) error {
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
 
-	pinID, err := strconv.Atoi(e.Param("pinid"))
+	pinID, err := strconv.Atoi(c.Param("pinid"))
 	if err != nil {
 		return err
 	}
 
 	var pin types.IpfsPin
-	if err := e.Bind(&pin); err != nil {
+	if err := c.Bind(&pin); err != nil {
 		return err
 	}
 
@@ -404,13 +410,13 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(c.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
 	s.pinMgr.Add(pinOp)
 
-	return e.JSON(http.StatusAccepted, status)
+	return c.JSON(http.StatusAccepted, status)
 }
 
 // handleDeletePin godoc
@@ -422,8 +428,8 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid  path      string  true  "Pin ID"
 // @Router       /pinning/pins/{pinid} [delete]
-func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
-	pinID, err := strconv.Atoi(e.Param("pinid"))
+func (s *apiV1) handleDeletePin(c echo.Context, u *util.User) error {
+	pinID, err := strconv.Atoi(c.Param("pinid"))
 	if err != nil {
 		return err
 	}
@@ -469,9 +475,9 @@ func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 
 	// unpin async
 	go func() {
-		if err := s.CM.UnpinContent(e.Request().Context(), uint(pinID)); err != nil {
+		if err := s.CM.UnpinContent(c.Request().Context(), uint(pinID)); err != nil {
 			s.log.Errorf("could not unpinContent(%d): %s", err, pinID)
 		}
 	}()
-	return e.NoContent(http.StatusAccepted)
+	return c.NoContent(http.StatusAccepted)
 }
