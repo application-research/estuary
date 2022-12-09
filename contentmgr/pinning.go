@@ -351,9 +351,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
+	// if content already active, no need to add objects, just update location
+	// this is used by consolidated contents
 	if cont.Active {
-		// content already active, no need to add objects, just update location
-		// this is used by consolidated contents
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
@@ -363,8 +363,8 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return nil
 	}
 
+	// if content is an aggregate zone
 	if cont.Aggregate {
-		// this is used by staging content aggregate
 		if len(pincomp.Objects) != 1 {
 			return fmt.Errorf("aggregate has more than 1 objects")
 		}
@@ -385,7 +385,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"active":   true,
+			"active":   false, //it will be activated by the staging worker
 			"pinning":  false,
 			"location": handle,
 			"cid":      util.DbCID{CID: pincomp.CID},
