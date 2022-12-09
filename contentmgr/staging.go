@@ -273,6 +273,11 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 		}
 	}
 
+	//TODO (next pr) - update zone status
+	if dstLocation == "" {
+		return fmt.Errorf("zone: %d failed to consolidate as no destination location could be determined", zone.ID)
+	}
+
 	// okay, move everything to 'primary'
 	var toMove []util.Content
 	for loc, conts := range contentByLoc {
@@ -283,21 +288,9 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zone.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
 	if dstLocation == constants.ContentLocationLocal {
-		defer cm.MarkFinishedConsolidating(zone.ID)
 		return cm.migrateContentsToLocalNode(ctx, toMove)
-	} else if dstLocation != "" {
-		if err := cm.shuttleMgr.SendConsolidateContentCmd(ctx, dstLocation, toMove); err != nil {
-			// unmark as consolidating and retry later if failed to send consolidate cmd
-			cm.MarkFinishedConsolidating(zone.ID)
-			return err
-		}
-		return nil
-	} else {
-		// unable to find a destination location, unmark as consolidating and let it retry later
-		cm.log.Warnf("unable to find a destination location for consolidating zone: %d", zone.ID)
-		cm.MarkFinishedConsolidating(zone.ID)
-		return nil
 	}
+	return cm.shuttleMgr.SendConsolidateContentCmd(ctx, dstLocation, toMove)
 }
 
 // AggregateStagingZone assumes zone is already in consolidatingZones
