@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"golang.org/x/time/rate"
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	"golang.org/x/time/rate"
 
 	//#nosec G108 - exposing the profiling endpoint is expected
 	httpprof "net/http/pprof"
@@ -328,7 +329,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
+			Name: "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -892,6 +893,7 @@ type Shuttle struct {
 
 	apiQueueEngEnabled *bool
 	queueEng           queueng.IShuttleRpcEngine
+	PPM                PeerPingManager
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/application-research/estuary/node"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -13,7 +14,7 @@ import (
 )
 
 type PeerPingManager struct {
-	*Shuttle
+	Node   *node.Node
 	Result PingManyResult
 }
 
