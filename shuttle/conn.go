@@ -29,7 +29,7 @@ type ShuttleConnection struct {
 	cmds     chan *drpc.Command
 }
 
-func (sc *ShuttleConnection) SendRPCMessage(ctx context.Context, cmd *drpc.Command) error {
+func (sc *ShuttleConnection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
 	select {
 	case sc.cmds <- cmd:
 		return nil

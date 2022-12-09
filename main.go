@@ -683,7 +683,7 @@ func main() {
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
 		// stand up content manager
-		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log)
+		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr)
 		if err != nil {
 			return err
 		}

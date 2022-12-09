@@ -7,6 +7,7 @@ import (
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
+	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -36,8 +37,8 @@ type ContentManager struct {
 
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
-	ShuttlesLk           sync.Mutex
-	Shuttles             map[string]*ShuttleConnection
+
+	shuttleMgr           *shuttle.Manager
 	remoteTransferStatus *lru.ARCCache
 	inflightCids         map[cid.Cid]uint
 	inflightCidsLk       sync.Mutex
@@ -61,7 +62,17 @@ type ContentManager struct {
 	TrackingChannels map[string]*util.ChanTrack
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, error) {
+func NewContentManager(
+	db *gorm.DB,
+	api api.Gateway,
+	fc *filclient.FilClient,
+	tbs *util.TrackingBlockstore,
+	nd *node.Node,
+	cfg *config.Estuary,
+	minerManager miner.IMinerManager,
+	log *zap.SugaredLogger,
+	shuttleMgr *shuttle.Manager,
+) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -78,7 +89,7 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		toCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		remoteTransferStatus: cache,
-		Shuttles:             make(map[string]*ShuttleConnection),
+		shuttleMgr:           shuttleMgr,
 		inflightCids:         make(map[cid.Cid]uint),
 		isDealMakingDisabled: cfg.Deal.IsDisabled,
 		tracer:               otel.Tracer("replicator"),

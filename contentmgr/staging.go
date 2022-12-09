@@ -281,7 +281,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 			continue
 		}
 
-		if ntot > curMax && cm.ShuttleCanAddContent(loc) {
+		if ntot > curMax && cm.shuttleMgr.ShuttleCanAddContent(loc) {
 			curMax = ntot
 			dstLocation = loc
 		}

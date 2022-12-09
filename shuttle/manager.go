@@ -17,6 +17,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	dealstatus "github.com/application-research/estuary/deal/status"
 	"github.com/application-research/estuary/sanitycheck"
+	"github.com/ipfs/go-cid"
 
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
@@ -74,7 +75,7 @@ func (cm *Manager) HandleShuttleMessages(ctx context.Context, numHandlers int) {
 				case <-ctx.Done():
 					return
 				case msg := <-cm.IncomingRPCMessages:
-					if err := cm.processShuttleMessage(msg.Handle, msg); err != nil {
+					if err := cm.processShuttleMessage(msg); err != nil {
 						cm.log.Errorf("failed to process message from shuttle: %s", err)
 					}
 				}
@@ -83,7 +84,7 @@ func (cm *Manager) HandleShuttleMessages(ctx context.Context, numHandlers int) {
 	}
 }
 
-func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error {
+func (cm *Manager) processShuttleMessage(msg *drpc.Message) error {
 	ctx := context.TODO()
 
 	// if the message contains a trace continue it here.
@@ -95,7 +96,7 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 	ctx, span := cm.tracer.Start(ctx, "processShuttleMessage")
 	defer span.End()
 
-	cm.log.Debugf("handling rpc message:%s, from shuttle:%s", msg.Op, handle)
+	cm.log.Debugf("handling rpc message:%s, from shuttle:%s", msg.Op, msg.Handle)
 
 	switch msg.Op {
 	case drpc.OP_UpdatePinStatus:
@@ -103,15 +104,15 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 		if ups == nil {
 			return ErrNilParams
 		}
-		return cm.pinMgr.UpdatePinStatus(handle, ups.DBID, ups.Status)
+		return cm.pinMgr.UpdatePinStatus(msg.Handle, ups.DBID, ups.Status)
 	case drpc.OP_PinComplete:
 		param := msg.Params.PinComplete
 		if param == nil {
 			return ErrNilParams
 		}
 
-		if err := cm.pinMgr.HandlePinningComplete(ctx, handle, param); err != nil {
-			cm.log.Errorw("handling pin complete message failed", "shuttle", handle, "err", err)
+		if err := cm.pinMgr.HandlePinningComplete(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorw("handling pin complete message failed", "shuttle", msg.Handle, "err", err)
 		}
 		return nil
 	case drpc.OP_CommPComplete:
@@ -120,8 +121,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcCommPComplete(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling commp complete message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcCommPComplete(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling commp complete message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_TransferStarted:
@@ -130,8 +131,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcTransferStarted(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling transfer started message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcTransferStarted(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling transfer started message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_TransferFinished:
@@ -140,8 +141,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcTransferFinished(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling transfer finished message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcTransferFinished(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling transfer finished message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_TransferStatus:
@@ -150,8 +151,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.HandleRpcTransferStatus(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling transfer status message from shuttle %s: %s", handle, err)
+		if err := cm.HandleRpcTransferStatus(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling transfer status message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_ShuttleUpdate:
@@ -160,8 +161,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcShuttleUpdate(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling shuttle update message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcShuttleUpdate(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling shuttle update message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_GarbageCheck:
@@ -170,8 +171,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcGarbageCheck(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling garbage check message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcGarbageCheck(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling garbage check message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_SplitComplete:
@@ -180,8 +181,8 @@ func (cm *Manager) processShuttleMessage(handle string, msg *drpc.Message) error
 			return ErrNilParams
 		}
 
-		if err := cm.handleRpcSplitComplete(ctx, handle, param); err != nil {
-			cm.log.Errorf("handling split complete message from shuttle %s: %s", handle, err)
+		if err := cm.handleRpcSplitComplete(ctx, msg.Handle, param); err != nil {
+			cm.log.Errorf("handling split complete message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case drpc.OP_SanityCheck:
@@ -209,7 +210,7 @@ func (cm *Manager) sendRPCMessage(ctx context.Context, handle string, cmd *drpc.
 	d, ok := cm.Shuttles[handle]
 	cm.ShuttlesLk.Unlock()
 	if ok {
-		return d.SendRPCMessage(ctx, cmd)
+		return d.sendMessage(ctx, cmd)
 	}
 	return ErrNoShuttleConnection
 }
@@ -431,6 +432,17 @@ func (cm *Manager) handleRpcGarbageCheck(ctx context.Context, handle string, par
 	return cm.SendUnpinCmd(ctx, handle, tounpin)
 }
 
+func (cm *Manager) SendCommPCmd(ctx context.Context, loc string, data cid.Cid) error {
+	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
+		Op: drpc.CMD_ComputeCommP,
+		Params: drpc.CmdParams{
+			ComputeCommP: &drpc.ComputeCommP{
+				Data: data,
+			},
+		},
+	})
+}
+
 func (cm *Manager) SendUnpinCmd(ctx context.Context, loc string, conts []uint) error {
 	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_UnpinContent,
@@ -445,7 +457,7 @@ func (cm *Manager) SendUnpinCmd(ctx context.Context, loc string, conts []uint) e
 func (cm *Manager) GetTransferStatus(ctx context.Context, contLoc string, d *model.ContentDeal) (*filclient.ChannelState, error) {
 	val, ok := cm.transferStatuses.Get(d.ID)
 	if !ok {
-		if err := cm.sendRequestTransferStatusCmd(ctx, contLoc, d.ID, d.DTChan); err != nil {
+		if err := cm.SendRequestTransferStatusCmd(ctx, contLoc, d.ID, d.DTChan); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -458,7 +470,7 @@ func (cm *Manager) GetTransferStatus(ctx context.Context, contLoc string, d *mod
 	return tsr.State, nil
 }
 
-func (cm *Manager) sendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
+func (cm *Manager) SendRequestTransferStatusCmd(ctx context.Context, loc string, dealid uint, chid string) error {
 	return cm.sendRPCMessage(ctx, loc, &drpc.Command{
 		Op: drpc.CMD_ReqTxStatus,
 		Params: drpc.CmdParams{

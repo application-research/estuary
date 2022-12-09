@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
@@ -65,17 +64,9 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
-		if err := cm.SendShuttleCommand(ctx, cont.Location, &drpc.Command{
-			Op: drpc.CMD_ComputeCommP,
-			Params: drpc.CmdParams{
-				ComputeCommP: &drpc.ComputeCommP{
-					Data: data,
-				},
-			},
-		}); err != nil {
+		if err := cm.shuttleMgr.SendCommPCmd(ctx, cont.Location, data); err != nil {
 			return cid.Undef, 0, 0, err
 		}
-
 		return cid.Undef, 0, 0, ErrWaitForRemoteCompute
 	}
 
