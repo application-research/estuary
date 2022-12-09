@@ -161,7 +161,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	return ipfsRes, pinOp, 0, nil
+	return ipfsRes, pinOp, cont.ID, nil
 }
 
 func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
