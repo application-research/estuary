@@ -117,9 +117,9 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 			cm.log.Debugf("found ready staging zones: %d", len(readyZones))
 			for _, z := range readyZones {
 
-				// if this zone is no longer pinning(mean it has pinned), activate it
+				// if this zone is no longer pinning(meaning it has been pinned), activate it
 				if !z.Pinning && !z.Active {
-					if err := cm.db.Model(util.Content{}).Where("id = ?", z.ID).UpdateColumn("active", false).Error; err != nil {
+					if err := cm.db.Model(util.Content{}).Where("id = ?", z.ID).UpdateColumn("active", true).Error; err != nil {
 						cm.log.Errorf("failed to get ready staging zones: %s", err)
 					} else {
 						// aggregation has been completed and we can mark as finished
