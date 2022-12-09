@@ -659,7 +659,7 @@ func main() {
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
 		})
-		go s.PinMgr.Run(100)
+		go s.PinMgr.Run(300)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled
 		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
@@ -1803,7 +1803,12 @@ func (s *Shuttle) refreshPinQueue() error {
 	// anyways
 	go func() {
 		log.Debugf("refreshing %d pins", len(toPin))
-		for _, c := range toPin {
+		for i, c := range toPin {
+			// every 100 pins re-queued, wait 5 seconds to avoid over-saturating queues
+			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
+			if i%100 == 0 {
+				time.Sleep(time.Second * 5)
+			}
 			s.addPinToQueue(c, nil, 0)
 		}
 	}()
