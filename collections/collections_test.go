@@ -81,7 +81,7 @@ func TestFullPath(t *testing.T) {
 func TestInvalidDirectory(t *testing.T) {
 	ref := setupRef()
 	queryDir := "/dir0"
-	response, _, err := getDirectoryContent(ref, queryDir, "collection uuid")
+	response, err := getDirectoryContent(ref, queryDir, "collection uuid")
 
 	if err != nil {
 		t.Fatalf("Error: %v\n", err)
@@ -94,7 +94,7 @@ func TestInvalidDirectory(t *testing.T) {
 }
 
 func runTest(t *testing.T, ref util.ContentWithPath, queryDir, coluuid string, expectedResponse *CollectionListResponse) {
-	response, _, err := getDirectoryContent(ref, queryDir, coluuid)
+	response, err := getDirectoryContent(ref, queryDir, coluuid)
 
 	if err != nil {
 		t.Fatalf("Error: %v\n", err)
