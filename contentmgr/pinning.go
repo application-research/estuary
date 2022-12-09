@@ -192,23 +192,26 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 			return errors.Wrap(err, "failed to look up content")
 		}
 
+		// if content is already active, ignore it
 		if c.Active {
-			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
+			return nil
 		}
 
-		if c.AggregatedIn > 0 {
-			// unmark zone as consolidating if a staged content fails to pin
-			cm.MarkFinishedConsolidating(c.AggregatedIn)
+		// if an aggregate zone is failing, zone is stuck
+		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		if c.Aggregate {
+			cm.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
+			return nil
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":  false,
-			"pinning": false,
-			"failed":  true,
-			// TODO: consider if we should not clear aggregated_in, but instead filter for not failed contents when aggregating
+			"active":        false,
+			"pinning":       false,
+			"failed":        true,
 			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
+			return err
 		}
 	}
 	return nil
