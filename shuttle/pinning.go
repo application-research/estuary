@@ -17,31 +17,34 @@ import (
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
 func (cm *Manager) UpdatePinStatus(location string, contID uint, status types.PinningStatus) error {
-	cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
-
 	if status == types.PinningStatusFailed {
+		cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
+
 		var c util.Content
 		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
 			return errors.Wrap(err, "failed to look up content")
 		}
 
+		// if content is already active, ignore it
 		if c.Active {
-			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
+			return nil
 		}
 
-		if c.AggregatedIn > 0 {
-			// unmark zone as consolidating if a staged content fails to pin
-			cm.MarkFinishedConsolidating(c.AggregatedIn)
+		// if an aggregate zone is failing, zone is stuck
+		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		if c.Aggregate {
+			cm.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
+			return nil
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":  false,
-			"pinning": false,
-			"failed":  true,
-			// TODO: consider if we should not clear aggregated_in, but instead filter for not failed contents when aggregating
+			"active":        false,
+			"pinning":       false,
+			"failed":        true,
 			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
+			return err
 		}
 	}
 	return nil
@@ -56,9 +59,9 @@ func (cm *Manager) handlePinningComplete(ctx context.Context, handle string, pin
 		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
+	// if content already active, no need to add objects, just update location
+	// this is used by consolidated contents
 	if cont.Active {
-		// content already active, no need to add objects, just update location
-		// this is used by consolidated contents
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
@@ -68,8 +71,8 @@ func (cm *Manager) handlePinningComplete(ctx context.Context, handle string, pin
 		return nil
 	}
 
+	// if content is an aggregate zone
 	if cont.Aggregate {
-		// this is used by staging content aggregate
 		if len(pincomp.Objects) != 1 {
 			return fmt.Errorf("aggregate has more than 1 objects")
 		}
@@ -90,7 +93,7 @@ func (cm *Manager) handlePinningComplete(ctx context.Context, handle string, pin
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"active":   true,
+			"active":   false, //it will be activated by the staging worker
 			"pinning":  false,
 			"location": handle,
 			"cid":      util.DbCID{CID: pincomp.CID},
@@ -98,15 +101,10 @@ func (cm *Manager) handlePinningComplete(ctx context.Context, handle string, pin
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
-
-		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
-		cm.MarkFinishedAggregating(cont.ID)
-
-		// after aggregate is done, make deal for it
-		cm.ToCheck(cont.ID)
 		return nil
 	}
 
+	// for individual content pin complete notification
 	objects := make([]*util.Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
 		objects = append(objects, &util.Object{
@@ -118,8 +116,6 @@ func (cm *Manager) handlePinningComplete(ctx context.Context, handle string, pin
 	if err := cm.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
-
-	cm.ToCheck(cont.ID)
 	return nil
 }
 

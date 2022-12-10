@@ -80,7 +80,7 @@ func (cm *Manager) SelectLocationForStorage(ctx context.Context, obj cid.Cid, ui
 
 func (cm *Manager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	var zones []util.Content
-	if err := cm.db.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
+	if err := cm.db.First(&zones, "user_id = ? and aggregate and not active", uid).Error; err != nil {
 		return ""
 	}
 
