@@ -89,16 +89,16 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, uint, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
-		return nil, nil, 0, xerrors.Errorf("selecting location for content failed: %w", err)
+		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 	}
 
@@ -106,7 +106,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if meta != nil {
 		b, err := json.Marshal(meta)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		metaStr = string(b)
 	}
@@ -115,7 +115,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if origins != nil {
 		b, err := json.Marshal(origins)
 		if err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 		originsStr = string(b)
 	}
@@ -132,7 +132,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Origins:     originsStr,
 	}
 	if err := cm.db.Create(&cont).Error; err != nil {
-		return nil, nil, 0, err
+		return nil, nil, err
 	}
 
 	if len(cols) > 0 {
@@ -144,7 +144,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 	}
 
@@ -153,15 +153,15 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.PinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
-			return nil, nil, 0, err
+			return nil, nil, err
 		}
 	}
 
 	ipfsRes, err := cm.PinStatus(cont, origins)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, err
 	}
-	return ipfsRes, pinOp, cont.ID, nil
+	return ipfsRes, pinOp, nil
 }
 
 func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
@@ -393,6 +393,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
+		cm.ToCheck(cont.ID)
 		return nil
 	}
 

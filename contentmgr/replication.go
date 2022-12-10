@@ -52,7 +52,7 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 	// run the deal reconciliation and deal making worker
 	for {
 		select {
-		case c := <-cm.toCheck:
+		case c := <-cm.queueMgr.NextContent():
 			cm.log.Debugf("checking content: %d", c)
 
 			var content util.Content
@@ -62,11 +62,11 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 			}
 
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
-				cm.queueMgr.add(content.ID, dur)
+				cm.queueMgr.Add(content.ID, dur)
 			})
 			if err != nil {
 				cm.log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
-				cm.queueMgr.add(content.ID, time.Minute*5)
+				cm.queueMgr.Add(content.ID, time.Minute*5)
 			}
 		}
 	}
