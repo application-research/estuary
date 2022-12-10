@@ -253,13 +253,13 @@ func (provider *Provider) Run(ctx context.Context) error {
 			break
 		}
 
-		log.Infof("Starting autoretrieve advertisement tick")
+		log.Debugf("Starting autoretrieve advertisement tick")
 
 		// Find the highest current content ID for later
 		var lastContent util.Content
 		if err := provider.db.Last(&lastContent).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				log.Infof("Failed to get last provider content ID: %v", err)
+				log.Debugf("Failed to get last provider content ID: %v", err)
 				continue
 			} else {
 				log.Warnf("No contents to advertise")

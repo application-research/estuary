@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"time"
 
@@ -58,6 +59,14 @@ func (cfg *Estuary) SetRequiredOptions() error {
 
 	if cfg.Node.Blockstore == "" {
 		cfg.Node.Blockstore = filepath.Join(cfg.DataDir, "estuary-blocks")
+	}
+	return nil
+}
+
+func (cfg *Estuary) Validate() error {
+	// TODO validate more options values - check empty strings etc
+	if cfg.Node.ApiURL == "" {
+		return errors.New("node api url cannot be empty")
 	}
 	return nil
 }

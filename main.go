@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -33,24 +32,22 @@ import (
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
-	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/google/uuid"
-	"github.com/ipfs/go-cid"
 	gsimpl "github.com/ipfs/go-graphsync/impl"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/mitchellh/go-homedir"
-	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel"
 
-	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 
+	"github.com/application-research/estuary/api"
+	apiv1 "github.com/application-research/estuary/api/v1"
+	apiv2 "github.com/application-research/estuary/api/v2"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
-	"github.com/filecoin-project/lotus/api"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/urfave/cli/v2"
@@ -234,13 +231,11 @@ func main() {
 		log.Fatalf("could not determine homedir for estuary app: %+v", err)
 	}
 
-	app := cli.NewApp()
-	app.Version = appVersion
-
 	cfg := config.NewEstuary(appVersion)
 
+	app := cli.NewApp()
+	app.Version = appVersion
 	app.Usage = "Estuary server CLI"
-
 	app.Before = before
 
 	app.Flags = []cli.Flag{
@@ -487,7 +482,7 @@ func main() {
 					return nil
 				}
 
-				username := cctx.String("username")
+				username := strings.ToLower(cctx.String("username"))
 				if username == "" {
 					return errors.New("setup username cannot be empty")
 				}
@@ -506,8 +501,6 @@ func main() {
 					Logger: logger.Discard,
 				})
 
-				username = strings.ToLower(username)
-
 				var exist *util.User
 				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
 					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
@@ -520,20 +513,19 @@ func main() {
 					return fmt.Errorf("a user already exist for that username:%s", username)
 				}
 
-				salt := uuid.New().String()
-
 				//	work with bcrypt on cli defined password.
-				var passwordBytes = []byte(password)
-				hashedPasswordBytes, err := bcrypt.GenerateFromPassword(passwordBytes, bcrypt.MinCost)
+				hashedPasswordBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+				if err != nil {
+					return fmt.Errorf("hashing admin password failed: %w", err)
+				}
 
 				newUser := &util.User{
 					UUID:     uuid.New().String(),
 					Username: username,
-					Salt:     salt, // default salt.
+					Salt:     uuid.New().String(), // default salt.
 					PassHash: string(hashedPasswordBytes),
 					Perm:     100,
 				}
-
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
@@ -580,6 +572,10 @@ func main() {
 			return err
 		}
 
+		if err := cfg.Validate(); err != nil {
+			return err
+		}
+
 		db, err := setupDatabase(cfg.DatabaseConnString)
 		if err != nil {
 			return err
@@ -591,17 +587,29 @@ func main() {
 			return err
 		}
 
+		for _, a := range nd.Host.Addrs() {
+			log.Infof("%s/p2p/%s\n", a, nd.Host.ID())
+		}
+
+		go func() {
+			for _, ai := range node.BootstrapPeers {
+				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
+					log.Warnf("failed to connect to bootstrapper: %w", err)
+					continue
+				}
+			}
+
+			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
+				log.Warnf("dht bootstrapping failed: %w", err)
+			}
+		}()
+
 		if err = view.Register(metrics.DefaultViews...); err != nil {
 			log.Fatalf("Cannot register the OpenCensus view: %v", err)
 			return err
 		}
 
-		addr, err := nd.Wallet.GetDefault()
-		if err != nil {
-			return err
-		}
-
-		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
+		walletAddr, err := nd.Wallet.GetDefault()
 		if err != nil {
 			return err
 		}
@@ -616,7 +624,7 @@ func main() {
 		}
 
 		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
-		api, closer, err := lcli.GetGatewayAPI(ncctx)
+		gatewayApi, closer, err := lcli.GetGatewayAPI(ncctx)
 		if err != nil {
 			return err
 		}
@@ -632,26 +640,10 @@ func main() {
 			otel.SetTracerProvider(tp)
 		}
 
-		s := &Server{
-			DB:               db,
-			Node:             nd,
-			Api:              api,
-			StagingMgr:       sbmgr,
-			tracer:           otel.Tracer("api"),
-			cacher:           memo.NewCacher(),
-			gwayHandler:      gateway.NewGatewayHandler(&nd.Blockstore),
-			cfg:              cfg,
-			trackingChannels: make(map[string]*util.ChanTrack),
+		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
+		if err != nil {
+			return err
 		}
-
-		// TODO: this is an ugly self referential hack... should fix
-		pinmgr := pinner.NewPinManager(s.doPinning, s.PinStatusFunc, &pinner.PinManagerOpts{
-			MaxActivePerUser: 20,
-			QueueDataDir:     cfg.DataDir,
-		})
-		go pinmgr.Run(50)
-
-		rhost := routed.Wrap(nd.Host, nd.FilDht)
 
 		var opts []func(*filclient.Config)
 		if cfg.LowMem {
@@ -672,54 +664,62 @@ func main() {
 			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
 		})
 
-		fc, err := filclient.NewClient(rhost, api, nd.Wallet, addr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		rhost := routed.Wrap(nd.Host, nd.FilDht)
+		fc, err := filclient.NewClient(rhost, gatewayApi, nd.Wallet, walletAddr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
 
-		for _, a := range nd.Host.Addrs() {
-			fmt.Printf("%s/p2p/%s\n", a, nd.Host.ID())
+		// stand up miner manager
+		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
+
+		// stand up content manager
+		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log)
+		if err != nil {
+			return err
 		}
 
-		go func() {
-			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
-					fmt.Println("failed to connect to bootstrapper: ", err)
-					continue
-				}
-			}
+		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
+		fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
-			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
-				fmt.Println("dht bootstrapping failed: ", err)
-			}
-		}()
+		// stand up pin manager
+		// TODO: this is an ugly self referential hack... should fix
+		pinmgr := pinner.NewPinManager(cm.DoPinning, cm.PinStatusFunc, &pinner.PinManagerOpts{
+			MaxActivePerUser: 20,
+			QueueDataDir:     cfg.DataDir,
+		})
+		go pinmgr.Run(50)
+		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg, cm) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
+
+		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
+		go cm.HandleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
 
 		// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
 		_, err = fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
 			go func() {
-				s.tcLk.Lock()
-				trk, _ := s.trackingChannels[fst.ChannelID.String()]
-				s.tcLk.Unlock()
+				cm.TcLk.Lock()
+				trk, _ := cm.TrackingChannels[fst.ChannelID.String()]
+				cm.TcLk.Unlock()
 
 				// if this state type is already announced, ignore it - rate limit events, only the most recent state is needed
 				if trk != nil && trk.Last.Status == fst.Status {
 					return
 				}
-				s.trackTransfer(&fst.ChannelID, dbid, &fst)
+				cm.TrackTransfer(&fst.ChannelID, dbid, &fst)
 
 				switch fst.Status {
 				case datatransfer.Requested:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, true); err != nil {
+					if err := cm.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, true); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				case datatransfer.TransferFinished, datatransfer.Completed:
-					if err := s.CM.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, false); err != nil {
+					if err := cm.SetDataTransferStartedOrFinished(cctx.Context, dbid, fst.TransferID, &fst, false); err != nil {
 						log.Errorf("failed to set data transfer started from event: %s", err)
 					}
 				default:
 					// for every other events
 					trsFailed, msg := util.TransferFailed(&fst)
-					if err = s.CM.HandleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
+					if err = cm.HandleRpcTransferStatus(context.TODO(), constants.ContentLocationLocal, &drpc.TransferStatus{
 						Chanid:   fst.TransferID,
 						DealDBID: dbid,
 						State:    &fst,
@@ -735,30 +735,11 @@ func main() {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
-		minerMgr := miner.NewMinerManager(db, fc, cfg, api)
-
-		cm, err := contentmgr.NewContentManager(db, api, fc, init.trackingBstore, pinmgr, nd, cfg, minerMgr, log)
-		if err != nil {
-			return err
-		}
-		nd.Blockstore.SetSanityCheckFn(cm.HandleSanityCheck)
-		fc.SetPieceCommFunc(cm.GetPieceCommitment)
-
-		s.CM = cm
-		s.minerManager = minerMgr
-		s.FilClient = fc
-
-		if !cfg.DisableAutoRetrieve {
-			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
-		}
-
-		go cm.Run(cctx.Context)                                                 // deal making and deal reconciliation
-		go cm.HandleShuttleMessages(cctx.Context, cfg.RPCMessage.QueueHandlers) // register workers/handlers to process shuttle rpc messages from a channel(queue)
-		go cm.RunPinningRetryWorker(cctx.Context)                               // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
-
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			s.Node.AutoretrieveProvider, err = autoretrieve.NewProvider(
+			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
+
+			ap, err := autoretrieve.NewProvider(
 				db,
 				cfg.Node.IndexerAdvertisementInterval,
 				cfg.Node.IndexerURL,
@@ -775,24 +756,31 @@ func main() {
 					}
 				}()
 
-				if err := s.Node.AutoretrieveProvider.Run(context.Background()); err != nil {
+				if err = ap.Run(context.Background()); err != nil {
 					log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
 				}
 			}()
-			defer s.Node.AutoretrieveProvider.Stop()
+			defer ap.Stop()
 		}
 
+		// resume all resumable legacy data transfer for local contents
 		go func() {
 			time.Sleep(time.Second * 10)
-
-			if err := s.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
+			if err := cm.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
 
-		return s.ServeAPI()
-	}
+		// stand up api server
+		apiTracer := otel.Tracer("api")
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
 
+		apiEngine := api.NewEngine(cfg, apiTracer)
+		apiEngine.RegisterAPI(apiV1)
+		apiEngine.RegisterAPI(apiV2)
+		return apiEngine.Start()
+	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("could not run estuary app: %+v", err)
 	}
@@ -853,97 +841,4 @@ func migrateSchemas(db *gorm.DB) error {
 		return err
 	}
 	return nil
-}
-
-type Server struct {
-	cfg              *config.Estuary
-	tracer           trace.Tracer
-	Node             *node.Node
-	DB               *gorm.DB
-	FilClient        *filclient.FilClient
-	Api              api.Gateway
-	CM               *contentmgr.ContentManager
-	StagingMgr       *stagingbs.StagingBSMgr
-	gwayHandler      *gateway.GatewayHandler
-	cacher           *memo.Cacher
-	tcLk             sync.Mutex
-	trackingChannels map[string]*util.ChanTrack
-	minerManager     miner.IMinerManager
-}
-
-func (s *Server) GarbageCollect(ctx context.Context) error {
-	// since we're reference counting all the content, garbage collection becomes easy
-	// its even easier if we don't care that its 'perfect'
-
-	// We can probably even just remove stuff when its references are removed from the database
-	keych, err := s.Node.Blockstore.AllKeysChan(ctx)
-	if err != nil {
-		return err
-	}
-
-	for c := range keych {
-		keep, err := s.trackingObject(c)
-		if err != nil {
-			return err
-		}
-
-		if !keep {
-			// can batch these deletes and execute them at the datastore layer for more perfs
-			if err := s.Node.Blockstore.DeleteBlock(ctx, c); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *Server) trackingObject(c cid.Cid) (bool, error) {
-	var count int64
-	if err := s.DB.Model(&util.Object{}).Where("cid = ?", c.Bytes()).Count(&count).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-
-	return count > 0, nil
-}
-
-func (s *Server) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
-	var deals []model.ContentDeal
-	if err := s.DB.Model(model.ContentDeal{}).
-		Joins("left join contents on contents.id = content_deals.content").
-		Where("not content_deals.failed and content_deals.deal_id = 0 and content_deals.dt_chan != '' and location = ?", loc).
-		Scan(&deals).Error; err != nil {
-		return err
-	}
-
-	go func() {
-		for _, d := range deals {
-			chid, err := d.ChannelID()
-			if err != nil {
-				// Only legacy (push) transfers need to be restarted by Estuary.
-				// Newer (pull) transfers are restarted by the Storage Provider.
-				// So if it's not a legacy channel ID, ignore it.
-				continue
-			}
-
-			if err := s.CM.RestartTransfer(ctx, loc, chid, d); err != nil {
-				log.Errorf("failed to restart transfer: %s", err)
-				continue
-			}
-		}
-	}()
-	return nil
-}
-
-func (s *Server) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
-	s.tcLk.Lock()
-	defer s.tcLk.Unlock()
-
-	s.trackingChannels[chanid.String()] = &util.ChanTrack{
-		Dbid: dealdbid,
-		Last: st,
-	}
 }

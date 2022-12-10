@@ -16,7 +16,7 @@ import (
 
 var log = logging.Logger("util")
 
-//#nosec G101 -- This is a false positive
+// #nosec G101 -- This is a false positive
 const (
 	ERR_INVALID_TOKEN                                      = "ERR_INVALID_TOKEN"
 	ERR_TOKEN_EXPIRED                                      = "ERR_TOKEN_EXPIRED"
@@ -55,6 +55,8 @@ const (
 	ERR_INVALID_MINER_CLAIM_POWER_BELOW_1TIB               = "ERR_INVALID_MINER_CLAIM_POWER_BELOW_1TIB"
 	ERR_INVALID_MINER_CLAIM_NO_ASK                         = "ERR_INVALID_MINER_CLAIM_NO_ASK"
 	ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO = "ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO"
+	ERR_INTERNAL_SERVER                                    = "ERR_INTERNAL_SERVER"
+	ERR_BAD_REQUEST                                        = "ERR_BAD_REQUEST"
 )
 
 const (

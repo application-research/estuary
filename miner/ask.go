@@ -9,7 +9,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-fil-markets/storagemarket/network"
 	"github.com/filecoin-project/lotus/chain/types"
-	"github.com/labstack/gommon/log"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm/clause"
@@ -28,7 +27,7 @@ func (mm *MinerManager) GetAsk(ctx context.Context, m address.Address, maxCacheA
 
 	minerVersion, err := mm.updateMinerVersion(ctx, m)
 	if err != nil {
-		log.Warnf("failed to update miner version: %s", err)
+		mm.log.Warnf("failed to update miner version: %s", err)
 	}
 
 	if len(asks) > 0 && time.Since(asks[0].UpdatedAt) < maxCacheAge {

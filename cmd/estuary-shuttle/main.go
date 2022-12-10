@@ -20,6 +20,9 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
+
 	"github.com/application-research/estuary/pinner/types"
 
 	"github.com/application-research/estuary/config"
@@ -406,7 +409,7 @@ func main() {
 		}
 
 		init := Initializer{&cfg.Node, db}
-		nd, err := node.Setup(context.TODO(), init)
+		nd, err := node.Setup(context.TODO(), &init)
 		if err != nil {
 			return err
 		}
@@ -656,7 +659,7 @@ func main() {
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
 		})
-		go s.PinMgr.Run(100)
+		go s.PinMgr.Run(300)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled
 		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
@@ -1145,7 +1148,7 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", withUser(s.handleAdd))
+	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
@@ -1609,11 +1612,12 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *pinner.PinningOperation, cb pinner.PinProgressCB) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
-	for _, pi := range op.Peers {
+	prs := operation.UnSerializePeers(op.Peers)
+	for _, pi := range prs {
 		if err := d.Node.Host.Connect(ctx, *pi); err != nil {
 			log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
@@ -1799,7 +1803,12 @@ func (s *Shuttle) refreshPinQueue() error {
 	// anyways
 	go func() {
 		log.Debugf("refreshing %d pins", len(toPin))
-		for _, c := range toPin {
+		for i, c := range toPin {
+			// every 100 pins re-queued, wait 5 seconds to avoid over-saturating queues
+			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
+			if i%100 == 0 {
+				time.Sleep(time.Second * 5)
+			}
 			s.addPinToQueue(c, nil, 0)
 		}
 	}()
@@ -1807,11 +1816,11 @@ func (s *Shuttle) refreshPinQueue() error {
 }
 
 func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
-	op := &pinner.PinningOperation{
+	op := &operation.PinningOperation{
 		ContId:  p.Content,
 		UserId:  p.UserID,
 		Obj:     p.Cid.CID,
-		Peers:   peers,
+		Peers:   operation.SerializePeers(peers),
 		Started: p.CreatedAt,
 		Status:  types.PinningStatusQueued,
 		Replace: replace,
