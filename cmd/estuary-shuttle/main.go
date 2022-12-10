@@ -409,7 +409,7 @@ func main() {
 		}
 
 		init := Initializer{&cfg.Node, db}
-		nd, err := node.Setup(context.TODO(), init)
+		nd, err := node.Setup(context.TODO(), &init)
 		if err != nil {
 			return err
 		}
