@@ -89,16 +89,16 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	}
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, uint, error) {
 	loc, err := cm.selectLocationForContent(ctx, obj, user)
 	if err != nil {
-		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
+		return nil, nil, 0, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
@@ -106,7 +106,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if meta != nil {
 		b, err := json.Marshal(meta)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		metaStr = string(b)
 	}
@@ -115,7 +115,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 	if origins != nil {
 		b, err := json.Marshal(origins)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 		originsStr = string(b)
 	}
@@ -132,7 +132,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Origins:     originsStr,
 	}
 	if err := cm.db.Create(&cont).Error; err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
 
 	if len(cols) > 0 {
@@ -144,7 +144,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
@@ -153,15 +153,15 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
 		if err := cm.PinContentOnShuttle(ctx, cont, origins, replaceID, loc, makeDeal); err != nil {
-			return nil, nil, err
+			return nil, nil, 0, err
 		}
 	}
 
 	ipfsRes, err := cm.PinStatus(cont, origins)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
-	return ipfsRes, pinOp, nil
+	return ipfsRes, pinOp, cont.ID, nil
 }
 
 func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
@@ -317,23 +317,26 @@ func (cm *ContentManager) UpdatePinStatus(location string, contID uint, status t
 			return errors.Wrap(err, "failed to look up content")
 		}
 
+		// if content is already active, ignore it
 		if c.Active {
-			return fmt.Errorf("got failed pin status message from location: %s where content(%d) was already active, refusing to do anything", location, contID)
+			return nil
 		}
 
-		if c.AggregatedIn > 0 {
-			// unmark zone as consolidating if a staged content fails to pin
-			cm.MarkFinishedConsolidating(c.AggregatedIn)
+		// if an aggregate zone is failing, zone is stuck
+		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		if c.Aggregate {
+			cm.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
+			return nil
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":  false,
-			"pinning": false,
-			"failed":  true,
-			// TODO: consider if we should not clear aggregated_in, but instead filter for not failed contents when aggregating
+			"active":        false,
+			"pinning":       false,
+			"failed":        true,
 			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
 		}).Error; err != nil {
 			cm.log.Errorf("failed to mark content as failed in database: %s", err)
+			return err
 		}
 	}
 	return nil
@@ -348,9 +351,9 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
 	}
 
+	// if content already active, no need to add objects, just update location
+	// this is used by consolidated contents
 	if cont.Active {
-		// content already active, no need to add objects, just update location
-		// this is used by consolidated contents
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"pinning":  false,
 			"location": handle,
@@ -360,8 +363,8 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		return nil
 	}
 
+	// if content is an aggregate zone
 	if cont.Aggregate {
-		// this is used by staging content aggregate
 		if len(pincomp.Objects) != 1 {
 			return fmt.Errorf("aggregate has more than 1 objects")
 		}
@@ -382,7 +385,7 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}
 
 		if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"active":   true,
+			"active":   false, //it will be activated by the staging worker
 			"pinning":  false,
 			"location": handle,
 			"cid":      util.DbCID{CID: pincomp.CID},
@@ -390,14 +393,10 @@ func (cm *ContentManager) handlePinningComplete(ctx context.Context, handle stri
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
-
-		// if the content is a consolidated aggregate, it means aggregation has been completed and we can mark as finished
-		cm.MarkFinishedAggregating(cont.ID)
-
-		// after aggregate is done, make deal for it
-		cm.ToCheck(cont.ID)
 		return nil
 	}
+
+	// for individual content pin complete notification
 
 	objects := make([]*util.Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
