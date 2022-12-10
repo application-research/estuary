@@ -19,6 +19,7 @@ import (
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	contentmgr "github.com/application-research/estuary/content"
+	contentqueue "github.com/application-research/estuary/content/queue"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -675,8 +676,10 @@ func main() {
 			return err
 		}
 
+		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
+
 		// stand up shuttle manager
-		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr)
+		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr, cntQueueMgr)
 		if err != nil {
 			return err
 		}
@@ -691,7 +694,7 @@ func main() {
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
 		// stand up content manager
-		cm, _, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr)
+		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, cntQueueMgr)
 		if err != nil {
 			return err
 		}

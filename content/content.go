@@ -70,13 +70,12 @@ func NewContentManager(
 	log *zap.SugaredLogger,
 	shuttleMgr shuttle.IManager,
 	transferMgr transfer.IManager,
-) (*ContentManager, contentqueue.IQueueManager, error) {
+	queueMgr contentqueue.IQueueManager,
+) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	queueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
 
 	cm := &ContentManager{
 		cfg:                  cfg,
@@ -99,7 +98,7 @@ func NewContentManager(
 		aggregatingZones:     make(map[uint]bool),
 		queueMgr:             queueMgr,
 	}
-	return cm, queueMgr, nil
+	return cm, nil
 }
 
 func (cm *ContentManager) ToCheck(contID uint) {

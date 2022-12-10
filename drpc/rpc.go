@@ -10,6 +10,34 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
+var OPtopics = map[string]bool{
+	OP_UpdatePinStatus:  true,
+	OP_PinComplete:      true,
+	OP_CommPComplete:    true,
+	OP_TransferStarted:  true,
+	OP_TransferFinished: true,
+	OP_TransferStatus:   true,
+	OP_ShuttleUpdate:    true,
+	OP_GarbageCheck:     true,
+	OP_SplitComplete:    true,
+	OP_SanityCheck:      true,
+}
+
+var CommandTopics = map[string]bool{
+	CMD_ComputeCommP:           true,
+	CMD_AddPin:                 true,
+	CMD_TakeContent:            true,
+	CMD_AggregateContent:       true,
+	CMD_StartTransfer:          true,
+	CMD_PrepareForDataRequest:  true,
+	CMD_CleanupPreparedRequest: true,
+	CMD_ReqTxStatus:            true,
+	CMD_SplitContent:           true,
+	CMD_RetrieveContent:        true,
+	CMD_UnpinContent:           true,
+	CMD_RestartTransfer:        true,
+}
+
 type Hello struct {
 	Host   string
 	PeerID string
@@ -20,7 +48,7 @@ type Hello struct {
 	AddrInfo              peer.AddrInfo
 	Private               bool
 	ContentAddingDisabled bool
-	QueueName             string
+	UseQueue              bool
 }
 
 type Hi struct {
@@ -31,6 +59,14 @@ type Command struct {
 	Op           string
 	Params       CmdParams
 	TraceCarrier *TraceCarrier `json:",omitempty"`
+	Handle       string
+}
+
+type Message struct {
+	Op           string
+	Params       MsgParams
+	TraceCarrier *TraceCarrier `json:",omitempty"`
+	Handle       string
 }
 
 // HasTraceCarrier returns true iff Command `c` contains a trace.
@@ -162,13 +198,6 @@ type ContentFetch struct {
 	Cid    cid.Cid
 	UserID uint
 	Peers  []*peer.AddrInfo
-}
-
-type Message struct {
-	Op           string
-	Params       MsgParams
-	TraceCarrier *TraceCarrier `json:",omitempty"`
-	Handle       string
 }
 
 // HasTraceCarrier returns true iff Message `m` contains a trace.

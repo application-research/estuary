@@ -36,6 +36,7 @@ type Estuary struct {
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
 	RPCMessage             RPCMessage    `json:"rpc_message"`
+	RPCQueue               RPCQueue      `json:"rpc_queue"`
 	Pinning                Pinning       `json:"pinning"`
 }
 
@@ -195,6 +196,10 @@ func NewEstuary(appVersion string) *Estuary {
 			IncomingQueueSize: 100000,
 			OutgoingQueueSize: 100000,
 			QueueHandlers:     30,
+		},
+		RPCQueue: RPCQueue{
+			Host:    "http://145.40.77.207:4171/",
+			Enabled: true,
 		},
 	}
 }

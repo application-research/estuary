@@ -28,8 +28,8 @@ type connection struct {
 	pinCount              int64
 	pinQueueLength        int64
 
-	queueName string
-	cmds      chan *drpc.Command
+	useQueue bool
+	cmds     chan *drpc.Command
 }
 
 func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
@@ -68,7 +68,7 @@ func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{})
 		ctx:                   ctx,
 		private:               hello.Private,
 		contentAddingDisabled: hello.ContentAddingDisabled,
-		queueName:             hello.QueueName,
+		useQueue:              hello.UseQueue,
 	}
 
 	m.shuttlesLk.Lock()
@@ -110,7 +110,7 @@ func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{})
 		}
 		msg.Handle = handle
 		go func() {
-			m.websocketQueue <- msg
+			m.rpcWebsocket <- msg
 		}()
 		return nil
 	}
@@ -127,8 +127,8 @@ func (m *manager) runWebsocketQueueProcessingWorkers(ctx context.Context, numHan
 				select {
 				case <-ctx.Done():
 					return
-				case msg := <-m.websocketQueue:
-					if err := m.processWebSocketMessage(msg); err != nil {
+				case msg := <-m.rpcWebsocket:
+					if err := m.processMessage(msg); err != nil {
 						m.log.Errorf("failed to process message from shuttle: %s", err)
 					}
 				}
@@ -137,7 +137,7 @@ func (m *manager) runWebsocketQueueProcessingWorkers(ctx context.Context, numHan
 	}
 }
 
-func (m *manager) processWebSocketMessage(msg *drpc.Message) error {
+func (m *manager) processMessage(msg *drpc.Message) error {
 	ctx := context.TODO()
 
 	// if the message contains a trace continue it here.

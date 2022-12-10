@@ -17,11 +17,15 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
+	shuttlequeue "github.com/application-research/estuary/shuttle/queue"
+
+	contentqueue "github.com/application-research/estuary/content/queue"
 	dealstatus "github.com/application-research/estuary/deal/status"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
+
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 
@@ -72,10 +76,13 @@ type manager struct {
 	sanityCheckMgr        sanitycheck.IManager
 	shuttlesLk            sync.Mutex
 	shuttles              map[string]*connection
-	websocketQueue        chan *drpc.Message
+	rpcWebsocket          chan *drpc.Message
+	rpcQueue              *shuttlequeue.Emanager
+
+	cntQueueMgr contentqueue.IQueueManager
 }
 
-func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager) (IManager, error) {
+func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager, cntQueueMgr contentqueue.IQueueManager) (IManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -91,12 +98,19 @@ func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		sanityCheckMgr:        sanitycheckMgr,
-		websocketQueue:        make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
+		rpcWebsocket:          make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
+	}
+
+	if cfg.RPCQueue.Enabled {
+		emgr, err := shuttlequeue.NewEstuaryQueueMgr(cfg, mgr.processMessage)
+		if err != nil {
+			return nil, err
+		}
+		mgr.rpcQueue = emgr
 	}
 
 	// register workers/handlers to process websocket messages from a channel(queue)
 	go mgr.runWebsocketQueueProcessingWorkers(ctx, cfg.RPCMessage.QueueHandlers)
-
 	return mgr, nil
 }
 
@@ -214,6 +228,7 @@ func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 }
 
 func (sc *connection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
+
 	select {
 	case sc.cmds <- cmd:
 		return nil
