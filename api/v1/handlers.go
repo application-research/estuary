@@ -70,7 +70,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	_ "github.com/application-research/estuary/docs"
-	"github.com/multiformats/go-multihash"
 )
 
 func serveCpuProfile(c echo.Context) error {
@@ -1209,9 +1208,9 @@ func (s *apiV1) handleGetContentByCid(c echo.Context) error {
 	}
 
 	v0 := cid.Undef
-	dec, err := multihash.Decode(obj.Hash())
+
 	if err == nil {
-		if dec.Code == multihash.SHA2_256 || dec.Length == 32 {
+		if obj.Prefix().Version == 0 {
 			v0 = cid.NewCidV0(obj.Hash())
 		}
 	}
