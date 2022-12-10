@@ -2,11 +2,15 @@ package contentmgr
 
 import (
 	"sync"
+	"time"
 
 	"github.com/application-research/estuary/config"
+	contentqueue "github.com/application-research/estuary/contentmgr/queue"
 	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
+	"golang.org/x/xerrors"
+
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -28,8 +32,7 @@ type ContentManager struct {
 	tracer               trace.Tracer
 	blockstore           node.EstuaryBlockstore
 	notifyBlockstore     *node.NotifyBlockstore
-	toCheck              chan uint
-	queueMgr             *queueManager
+	queueMgr             contentqueue.IQueueManager
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
@@ -61,11 +64,13 @@ type ContentManager struct {
 	TrackingChannels map[string]*util.ChanTrack
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, error) {
+func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, contentqueue.IQueueManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	queueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
 
 	cm := &ContentManager{
 		cfg:                  cfg,
@@ -75,7 +80,6 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		blockstore:           tbs.Under().(node.EstuaryBlockstore),
 		node:                 nd,
 		notifyBlockstore:     nd.NotifBlockstore,
-		toCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		remoteTransferStatus: cache,
 		Shuttles:             make(map[string]*ShuttleConnection),
@@ -88,14 +92,12 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		consolidatingZones:   make(map[uint]bool),
 		aggregatingZones:     make(map[uint]bool),
 
+		queueMgr: queueMgr,
+
 		// TODO move out to filc package
 		TrackingChannels: make(map[string]*util.ChanTrack),
 	}
-
-	cm.queueMgr = newQueueManager(func(c uint) {
-		cm.ToCheck(c)
-	})
-	return cm, nil
+	return cm, queueMgr, nil
 }
 
 // TODO move out to filc package
@@ -107,4 +109,29 @@ func (cm *ContentManager) TrackTransfer(chanid *datatransfer.ChannelID, dealdbid
 		Dbid: dealdbid,
 		Last: st,
 	}
+}
+
+func (cm *ContentManager) rebuildToCheckQueue() error {
+	cm.log.Info("rebuilding contents queue .......")
+
+	var allcontent []util.Content
+	if err := cm.db.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
+		return xerrors.Errorf("finding all content in database: %w", err)
+	}
+
+	go func() {
+		for i, c := range allcontent {
+			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
+			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
+			if i%100 == 0 {
+				time.Sleep(time.Second * 5)
+			}
+			cm.queueMgr.ToCheck(c.ID)
+		}
+	}()
+	return nil
+}
+
+func (cm *ContentManager) ToCheck(contID uint) {
+	cm.queueMgr.ToCheck(contID)
 }

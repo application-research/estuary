@@ -106,7 +106,7 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
-			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
+			cm.log.Debugw("content check queue", "length", cm.queueMgr.Len(), "nextEvent", cm.queueMgr.NextEvent())
 
 			readyZones, err := cm.getReadyStagingZones()
 			if err != nil {
@@ -125,7 +125,7 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 						// aggregation has been completed and we can mark as finished
 						cm.MarkFinishedAggregating(z.ID)
 						// after aggregate is done, make deal for it
-						cm.ToCheck(z.ID)
+						cm.queueMgr.ToCheck(z.ID)
 					}
 					continue
 				}
@@ -380,7 +380,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 		}
 
 		go func() {
-			cm.ToCheck(zone.ID)
+			cm.queueMgr.ToCheck(zone.ID)
 		}()
 
 		cm.MarkFinishedAggregating(zone.ID)
