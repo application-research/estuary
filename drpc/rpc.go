@@ -20,7 +20,11 @@ type Hello struct {
 	AddrInfo              peer.AddrInfo
 	Private               bool
 	ContentAddingDisabled bool
-	RPCQueue              string
+	QueueName             string
+}
+
+type Hi struct {
+	Handle string
 }
 
 type Command struct {

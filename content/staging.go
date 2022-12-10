@@ -106,7 +106,7 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
-			cm.log.Debugw("content check queue", "length", len(cm.queueMgr.queue.elems), "nextEvent", cm.queueMgr.nextEvent)
+			cm.log.Debugw("content check queue", "length", cm.queueMgr.Len(), "nextEvent", cm.queueMgr.NextEvent())
 
 			readyZones, err := cm.getReadyStagingZones()
 			if err != nil {
@@ -282,7 +282,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 			continue
 		}
 
-		if ntot > curMax && cm.shuttleMgr.ShuttleCanAddContent(loc) {
+		if ntot > curMax && cm.shuttleMgr.CanAddContent(loc) {
 			curMax = ntot
 			dstLocation = loc
 		}
@@ -305,7 +305,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zone uti
 	if dstLocation == constants.ContentLocationLocal {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	}
-	return cm.shuttleMgr.SendConsolidateContentCmd(ctx, dstLocation, toMove)
+	return cm.shuttleMgr.ConsolidateContent(ctx, dstLocation, toMove)
 }
 
 // AggregateStagingZone assumes zone is already in consolidatingZones
@@ -383,7 +383,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 	if err := cm.db.First(&bContent, "id = ?", zone.ID).Error; err != nil {
 		return err
 	}
-	return cm.shuttleMgr.SendAggregateCmd(ctx, loc, bContent, aggrConts)
+	return cm.shuttleMgr.AggregateContent(ctx, loc, bContent, aggrConts)
 }
 
 func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {

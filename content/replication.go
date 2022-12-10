@@ -50,7 +50,7 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 	// run the deal reconciliation and deal making worker
 	for {
 		select {
-		case c := <-cm.toCheck:
+		case c := <-cm.queueMgr.NextContent():
 			cm.log.Debugf("checking content: %d", c)
 
 			var content util.Content
@@ -60,11 +60,11 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 			}
 
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
-				cm.queueMgr.add(content.ID, dur)
+				cm.queueMgr.Add(content.ID, dur)
 			})
 			if err != nil {
 				cm.log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
-				cm.queueMgr.add(content.ID, time.Minute*5)
+				cm.queueMgr.Add(content.ID, time.Minute*5)
 			}
 		}
 	}
@@ -207,7 +207,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.ShuttleIsOnline(content.Location) {
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
 		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
@@ -313,7 +313,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 		}()
 		return nil
 	} else {
-		return cm.shuttleMgr.SendSplitContentCmd(ctx, cont.Location, cont.ID, size)
+		return cm.shuttleMgr.SplitContent(ctx, cont.Location, cont.ID, size)
 	}
 }
 
@@ -933,11 +933,11 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		// first check if shuttle is online
-		if !cm.shuttleMgr.ShuttleIsOnline(contentLoc) {
+		if !cm.shuttleMgr.IsOnline(contentLoc) {
 			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
 		}
 
-		addrInfo := cm.shuttleMgr.ShuttleAddrInfo(contentLoc)
+		addrInfo := cm.shuttleMgr.AddrInfo(contentLoc)
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -955,7 +955,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
 		// so add an auth token for the data to the shuttle's auth DB
-		err := cm.shuttleMgr.SendPrepareForDataRequestCommand(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		err := cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
 		if err != nil {
 			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
 		}
@@ -965,7 +965,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		if contentLoc == constants.ContentLocationLocal {
 			return cm.filClient.Libp2pTransferMgr.CleanupPreparedRequest(ctx, dbid, authToken)
 		}
-		return cm.shuttleMgr.SendCleanupPreparedRequestCommand(ctx, contentLoc, dbid, authToken)
+		return cm.shuttleMgr.CleanupPreparedRequest(ctx, contentLoc, dbid, authToken)
 	}
 
 	// Send the deal proposal to the storage provider
@@ -990,7 +990,7 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	// if it's a shuttle content and the shuttle is not online, do not proceed
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.ShuttleIsOnline(content.Location) {
+	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
 		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
@@ -1303,7 +1303,7 @@ func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrI
 			Addrs: cm.node.Host.Addrs(),
 		}, nil
 	}
-	return cm.shuttleMgr.ShuttleAddrInfo(handle), nil
+	return cm.shuttleMgr.AddrInfo(handle), nil
 }
 
 func (cm *ContentManager) DealMakingDisabled() bool {

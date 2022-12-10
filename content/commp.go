@@ -64,7 +64,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
-		if err := cm.shuttleMgr.SendCommPCmd(ctx, cont.Location, data); err != nil {
+		if err := cm.shuttleMgr.CommPContent(ctx, cont.Location, data); err != nil {
 			return cid.Undef, 0, 0, err
 		}
 		return cid.Undef, 0, 0, ErrWaitForRemoteCompute

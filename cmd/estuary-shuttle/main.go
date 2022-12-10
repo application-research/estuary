@@ -838,6 +838,7 @@ type Shuttle struct {
 	disableLocalAdding bool
 	dev                bool
 
+	handle        string
 	hostname      string
 	estuaryHost   string
 	shuttleHandle string
@@ -902,6 +903,12 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	if err := websocket.JSON.Send(conn, hello); err != nil {
 		return err
 	}
+
+	var hi drpc.Hi
+	if err := websocket.JSON.Receive(conn, &hi); err != nil {
+		return err
+	}
+	d.handle = hi.Handle
 
 	go func() {
 		defer close(readDone)

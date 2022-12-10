@@ -2,13 +2,14 @@ package contentmgr
 
 import (
 	"sync"
+	"time"
 
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/drpc"
+	contentqueue "github.com/application-research/estuary/content/queue"
+	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/shuttle"
-	"github.com/application-research/estuary/transfer"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
@@ -17,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
@@ -29,8 +31,7 @@ type ContentManager struct {
 	tracer               trace.Tracer
 	blockstore           node.EstuaryBlockstore
 	notifyBlockstore     *node.NotifyBlockstore
-	toCheck              chan uint
-	queueMgr             *queueManager
+	queueMgr             contentqueue.IQueueManager
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint]*util.RetrievalProgress
 	contentLk            sync.RWMutex
@@ -38,14 +39,13 @@ type ContentManager struct {
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
 
-	shuttleMgr           *shuttle.Manager
+	shuttleMgr           shuttle.IManager
 	remoteTransferStatus *lru.ARCCache
 	inflightCids         map[cid.Cid]uint
 	inflightCidsLk       sync.Mutex
-	IncomingRPCMessages  chan *drpc.Message
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
-	transferMgr          *transfer.Manager
+	transferMgr          transfer.IManager
 
 	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
 	consolidatingZonesLk sync.Mutex
@@ -68,13 +68,15 @@ func NewContentManager(
 	cfg *config.Estuary,
 	minerManager miner.IMinerManager,
 	log *zap.SugaredLogger,
-	shuttleMgr *shuttle.Manager,
-	transferMgr *transfer.Manager,
-) (*ContentManager, error) {
+	shuttleMgr shuttle.IManager,
+	transferMgr transfer.IManager,
+) (*ContentManager, contentqueue.IQueueManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+
+	queueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
 
 	cm := &ContentManager{
 		cfg:                  cfg,
@@ -84,23 +86,44 @@ func NewContentManager(
 		blockstore:           tbs.Under().(node.EstuaryBlockstore),
 		node:                 nd,
 		notifyBlockstore:     nd.NotifBlockstore,
-		toCheck:              make(chan uint, 100000),
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		remoteTransferStatus: cache,
 		shuttleMgr:           shuttleMgr,
 		inflightCids:         make(map[cid.Cid]uint),
 		isDealMakingDisabled: cfg.Deal.IsDisabled,
 		tracer:               otel.Tracer("replicator"),
-		IncomingRPCMessages:  make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:         minerManager,
 		log:                  log,
 		transferMgr:          transferMgr,
 		consolidatingZones:   make(map[uint]bool),
 		aggregatingZones:     make(map[uint]bool),
+		queueMgr:             queueMgr,
 	}
 
-	cm.queueMgr = newQueueManager(func(c uint) {
-		cm.ToCheck(c)
-	})
-	return cm, nil
+	return cm, queueMgr, nil
+}
+
+func (cm *ContentManager) ToCheck(contID uint) {
+	cm.queueMgr.ToCheck(contID)
+}
+
+func (cm *ContentManager) rebuildToCheckQueue() error {
+	cm.log.Info("rebuilding contents queue .......")
+
+	var allcontent []util.Content
+	if err := cm.db.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
+		return xerrors.Errorf("finding all content in database: %w", err)
+	}
+
+	go func() {
+		for i, c := range allcontent {
+			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
+			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
+			if i%100 == 0 {
+				time.Sleep(time.Second * 5)
+			}
+			cm.ToCheck(c.ID)
+		}
+	}()
+	return nil
 }

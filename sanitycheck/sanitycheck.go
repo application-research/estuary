@@ -9,19 +9,23 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type Manager struct {
+type IManager interface {
+	HandleMissingBlocks(cc cid.Cid, errMsg string)
+}
+
+type manager struct {
 	db  *gorm.DB
 	log *zap.SugaredLogger
 }
 
-func NewManager(db *gorm.DB, log *zap.SugaredLogger) *Manager {
-	return &Manager{
+func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
+	return &manager{
 		db:  db,
 		log: log,
 	}
 }
 
-func (m *Manager) HandleMissingBlocks(cc cid.Cid, errMsg string) {
+func (m *manager) HandleMissingBlocks(cc cid.Cid, errMsg string) {
 	m.log.Warnf("hanling missing block for cid: %s", cc)
 
 	// get all contents affected by this missing block on estuary or from shuttles

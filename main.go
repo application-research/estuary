@@ -11,14 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/estuary/shuttle"
-	"github.com/application-research/estuary/transfer"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
+	contentmgr "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -676,7 +676,7 @@ func main() {
 		}
 
 		// stand up shuttle manager
-		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log)
+		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr)
 		if err != nil {
 			return err
 		}
@@ -691,7 +691,7 @@ func main() {
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
 		// stand up content manager
-		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr)
+		cm, _, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr)
 		if err != nil {
 			return err
 		}

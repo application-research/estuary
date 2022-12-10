@@ -91,8 +91,9 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Debugf("sending rpc message: %s, from shuttle:%s", msg.Op, msg.Handle)
+	log.Debugf("sending rpc message: %s, from shuttle:%s", msg.Op, d.handle)
 
+	msg.Handle = d.handle
 	select {
 	case d.outgoing <- msg:
 		return nil

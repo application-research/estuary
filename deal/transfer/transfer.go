@@ -25,19 +25,30 @@ import (
 	"gorm.io/gorm"
 )
 
-type Manager struct {
+type IManager interface {
+	RestartAllTransfersForLocation(ctx context.Context, loc string) error
+	RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error
+	GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error)
+	GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error)
+	StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error
+	SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error
+	UpdateDataTransferStatus(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isFailed bool, msg string) error
+	SubscribeEventListener(ctx context.Context) error
+}
+
+type manager struct {
 	db                *gorm.DB
 	log               *zap.SugaredLogger
 	fc                *filclient.FilClient
 	tracer            trace.Tracer
-	shuttleMgr        *shuttle.Manager
-	dealStatusUpdater *dealstatus.Updater
+	shuttleMgr        shuttle.IManager
+	dealStatusUpdater dealstatus.IUpdater
 	tcLk              sync.Mutex
 	trackingChannels  map[string]*util.ChanTrack
 }
 
-func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr *shuttle.Manager) *Manager {
-	return &Manager{
+func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) IManager {
+	return &manager{
 		db:                db,
 		log:               log,
 		fc:                fc,
@@ -48,7 +59,7 @@ func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, sh
 	}
 }
 
-func (m *Manager) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
+func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
 	var deals []model.ContentDeal
 	if err := m.db.Model(model.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
@@ -78,7 +89,7 @@ func (m *Manager) RestartAllTransfersForLocation(ctx context.Context, loc string
 
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
 // It supports only legacy deals (PushTransfer)
-func (m *Manager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
+func (m *manager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
 	maddr, err := d.MinerAddr()
 	if err != nil {
 		return err
@@ -130,12 +141,12 @@ func (m *Manager) RestartTransfer(ctx context.Context, loc string, chanid datatr
 		}
 		return m.fc.RestartTransfer(ctx, &chanid)
 	}
-	return m.shuttleMgr.SendRestartTransferCmd(ctx, loc, chanid, d)
+	return m.shuttleMgr.RestartTransfer(ctx, loc, chanid, d)
 }
 
 // TODO - use from deal package when ready
 // first check deal protocol version 2, then check version 1
-func (m *Manager) GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
+func (m *manager) GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
 	isPushTransfer := false
 	providerDealState, err := m.fc.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
 	if err != nil && providerDealState == nil {
@@ -145,7 +156,7 @@ func (m *Manager) GetProviderDealStatus(ctx context.Context, d *model.ContentDea
 	return providerDealState, isPushTransfer, err
 }
 
-func (m *Manager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
+func (m *manager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {
 	ctx, span := m.tracer.Start(ctx, "getTransferStatus")
 	defer span.End()
 
@@ -164,7 +175,7 @@ func (m *Manager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, c
 }
 
 // get the data transfer state by transfer ID (compatible with both deal protocol v1 and v2)
-func (m *Manager) transferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
+func (m *manager) transferStatusByID(ctx context.Context, id string) (*filclient.ChannelState, error) {
 	chanst, err := m.fc.TransferStatusByID(ctx, id)
 	if err != nil && err != filclient.ErrNoTransferFound && !strings.Contains(err.Error(), "No channel for channel ID") && !strings.Contains(err.Error(), "datastore: key not found") {
 		return nil, err
@@ -172,14 +183,14 @@ func (m *Manager) transferStatusByID(ctx context.Context, id string) (*filclient
 	return chanst, nil
 }
 
-func (m *Manager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error {
+func (m *manager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error {
 	var cont util.Content
 	if err := m.db.First(&cont, "id = ?", cd.Content).Error; err != nil {
 		return err
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
-		return m.shuttleMgr.SendStartTransferCommand(ctx, cont.Location, cd, cont.Cid.CID)
+		return m.shuttleMgr.StartTransfer(ctx, cont.Location, cd, cont.Cid.CID)
 	}
 
 	miner, err := cd.MinerAddr()
@@ -204,7 +215,6 @@ func (m *Manager) StartDataTransfer(ctx context.Context, cd *model.ContentDeal) 
 	}
 
 	cd.DTChan = chanid.String()
-
 	if err := m.db.Model(model.ContentDeal{}).Where("id = ?", cd.ID).UpdateColumns(map[string]interface{}{
 		"dt_chan": chanid.String(),
 	}).Error; err != nil {

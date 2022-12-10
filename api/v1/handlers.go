@@ -436,13 +436,11 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	pinstatus, pinOp, contID, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
-
 	s.pinMgr.Add(pinOp)
-	s.CM.ToCheck(contID)
 
 	return c.JSON(http.StatusAccepted, pinstatus)
 }
@@ -2539,7 +2537,7 @@ func (s *apiV1) handleMoveContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.shuttleMgr.SendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+	if err := s.shuttleMgr.ConsolidateContent(ctx, shuttle.Handle, contents); err != nil {
 		return err
 	}
 
@@ -3353,13 +3351,11 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, pinOp, contID, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
 	if err != nil {
 		return err
 	}
-
 	s.pinMgr.Add(pinOp)
-	s.CM.ToCheck(contID)
 
 	return c.JSON(http.StatusOK, pinstatus)
 }
@@ -4086,7 +4082,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
 				}
 
-				if err := s.shuttleMgr.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
+				if err := s.shuttleMgr.AggregateContent(ctx, loc, cont, aggrConts); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true
@@ -4240,10 +4236,10 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.shuttleMgr.ShuttleIsOnline(d.Handle),
-			AddrInfo:       s.shuttleMgr.ShuttleAddrInfo(d.Handle),
-			Hostname:       s.shuttleMgr.ShuttleHostName(d.Handle),
-			StorageStats:   s.shuttleMgr.ShuttleStorageStats(d.Handle),
+			Online:         s.shuttleMgr.IsOnline(d.Handle),
+			AddrInfo:       s.shuttleMgr.AddrInfo(d.Handle),
+			Hostname:       s.shuttleMgr.HostName(d.Handle),
+			StorageStats:   s.shuttleMgr.StorageStats(d.Handle),
 		})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -4255,8 +4251,8 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	var shuttle model.Shuttle
-	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
+	shuttle, err := s.shuttleMgr.GetByAuth(auth)
+	if err != nil {
 		return err
 	}
 
@@ -4266,48 +4262,21 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		done := make(chan struct{})
 		defer close(done)
 		defer ws.Close()
-		var hello drpc.Hello
-		if err := websocket.JSON.Receive(ws, &hello); err != nil {
-			s.log.Errorf("failed to read hello message from client: %s", err)
-			return
-		}
 
-		outgoingRpcQueue, unreg, err := s.shuttleMgr.ConnectShuttle(shuttle.Handle, &hello)
+		readWebSocket, unreg, err := s.shuttleMgr.Connect(ws, shuttle.Handle, done)
 		if err != nil {
 			s.log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
 
-		go func() {
-			for {
-				select {
-				case rpcMessage := <-outgoingRpcQueue:
-					// Write
-					err := websocket.JSON.Send(ws, rpcMessage)
-					if err != nil {
-						s.log.Errorf("failed to write command to shuttle: %s", err)
-						return
-					}
-				case <-done:
-					return
-				}
-			}
-		}()
-
 		go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
 
 		for {
-			var msg drpc.Message
-			if err := websocket.JSON.Receive(ws, &msg); err != nil {
+			if err := readWebSocket(); err != nil {
 				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
-
-			go func(msg *drpc.Message) {
-				msg.Handle = shuttle.Handle
-				s.CM.IncomingRPCMessages <- msg
-			}(&msg)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
@@ -4985,7 +4954,7 @@ func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
-		if err := s.shuttleMgr.SendPinCmd(c.Request().Context(), handle, cont, origins); err != nil {
+		if err := s.shuttleMgr.PinContent(c.Request().Context(), handle, cont, origins); err != nil {
 			return err
 		}
 	}
@@ -5133,7 +5102,7 @@ func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (s
 		return "", nil
 	}
 
-	if !s.shuttleMgr.ShuttleIsOnline(cont.Location) {
+	if !s.shuttleMgr.IsOnline(cont.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 

@@ -7,7 +7,6 @@ import (
 
 	"github.com/application-research/estuary/constants"
 	dealstatus "github.com/application-research/estuary/deal/status"
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
@@ -15,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (m *Manager) SubscribeEventListener(ctx context.Context) error {
+func (m *manager) SubscribeEventListener(ctx context.Context) error {
 	// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
 	_, err := m.fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
 		go func() {
@@ -41,13 +40,7 @@ func (m *Manager) SubscribeEventListener(ctx context.Context) error {
 			default:
 				// for every other events
 				trsFailed, msg := util.TransferFailed(&fst)
-				if err := m.UpdateDataTransferStatus(ctx, constants.ContentLocationLocal, &drpc.TransferStatus{
-					Chanid:   fst.TransferID,
-					DealDBID: dbid,
-					State:    &fst,
-					Failed:   trsFailed,
-					Message:  fmt.Sprintf("status: %d(%s), message: %s", fst.Status, msg, fst.Message),
-				}); err != nil {
+				if err := m.UpdateDataTransferStatus(ctx, dbid, fst.TransferID, &fst, trsFailed, msg); err != nil {
 					m.log.Errorf("failed to set data transfer update from event: %s", err)
 				}
 			}
@@ -56,7 +49,7 @@ func (m *Manager) SubscribeEventListener(ctx context.Context) error {
 	return err
 }
 
-func (m *Manager) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
+func (m *manager) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
 	m.tcLk.Lock()
 	defer m.tcLk.Unlock()
 	m.trackingChannels[chanid.String()] = &util.ChanTrack{
@@ -65,18 +58,18 @@ func (m *Manager) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, s
 	}
 }
 
-func (cm *Manager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
+func (m *manager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error {
 	if st == nil {
 		return nil
 	}
 
 	var deal model.ContentDeal
-	if err := cm.db.First(&deal, "id = ?", dealDBID).Error; err != nil {
+	if err := m.db.First(&deal, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
 
 	var cont util.Content
-	if err := cm.db.First(&cont, "id = ?", deal.Content).Error; err != nil {
+	if err := m.db.First(&cont, "id = ?", deal.Content).Error; err != nil {
 		return err
 	}
 
@@ -97,40 +90,41 @@ func (cm *Manager) SetDataTransferStartedOrFinished(ctx context.Context, dealDBI
 		}
 	}
 
-	if err := cm.db.Model(model.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
+	if err := m.db.Model(model.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(updates).Error; err != nil {
 		return xerrors.Errorf("failed to update deal with channel ID: %w", err)
 	}
 	return nil
 }
 
-func (m *Manager) UpdateDataTransferStatus(ctx context.Context, handle string, param *drpc.TransferStatus) error {
-	if param.DealDBID == 0 {
+func (m *manager) UpdateDataTransferStatus(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isFailed bool, msg string) error {
+	if dealDBID == 0 {
 		return fmt.Errorf("received transfer status update with no identifier")
 	}
 
 	var cd model.ContentDeal
-	if err := m.db.First(&cd, "id = ?", param.DealDBID).Error; err != nil {
+	if err := m.db.First(&cd, "id = ?", dealDBID).Error; err != nil {
 		return err
 	}
 
 	if cd.DTChan == "" {
-		if err := m.db.Model(model.ContentDeal{}).Where("id = ?", param.DealDBID).UpdateColumns(map[string]interface{}{
-			"dt_chan": param.Chanid,
+		if err := m.db.Model(model.ContentDeal{}).Where("id = ?", dealDBID).UpdateColumns(map[string]interface{}{
+			"dt_chan": chanIDOrTransferID,
 		}).Error; err != nil {
 			return err
 		}
 	}
 
-	if param.Failed {
+	if isFailed {
 		miner, err := cd.MinerAddr()
 		if err != nil {
 			return err
 		}
 
+		errMsg := fmt.Sprintf("status: %d(%s), message: %s", st.Status, msg, st.Message)
 		if oerr := m.dealStatusUpdater.RecordDealFailure(&dealstatus.DealFailureError{
 			Miner:               miner,
 			Phase:               "data-transfer-remote",
-			Message:             fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
+			Message:             fmt.Sprintf("failure from shuttle %s: %s", constants.ContentLocationLocal, errMsg),
 			Content:             cd.Content,
 			UserID:              cd.UserID,
 			MinerVersion:        cd.MinerVersion,
@@ -145,16 +139,6 @@ func (m *Manager) UpdateDataTransferStatus(ctx context.Context, handle string, p
 			"failed_at": time.Now(),
 		}).Error; err != nil {
 			return err
-		}
-
-		sts := datatransfer.Failed
-		if param.State != nil {
-			sts = param.State.Status
-		}
-
-		param.State = &filclient.ChannelState{
-			Status:  sts,
-			Message: fmt.Sprintf("failure from shuttle %s: %s", handle, param.Message),
 		}
 	}
 	return nil

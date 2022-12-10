@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -11,26 +12,26 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
-func (cm *Manager) SelectLocationForStorage(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
-	ctx, span := cm.tracer.Start(ctx, "selectLocation")
+func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid uint) (string, error) {
+	ctx, span := m.tracer.Start(ctx, "selectLocation")
 	defer span.End()
 
 	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
-	cm.ShuttlesLk.Lock()
-	for d, sh := range cm.Shuttles {
-		if !sh.private && !sh.ContentAddingDisabled {
+	m.shuttlesLk.Lock()
+	for d, sh := range m.shuttles {
+		if !sh.private && !sh.contentAddingDisabled {
 			lowSpace[d] = sh.spaceLow
 			activeShuttles = append(activeShuttles, d)
 		} else {
 			allShuttlesLowSpace = false
 		}
 	}
-	cm.ShuttlesLk.Unlock()
+	m.shuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
-	if err := cm.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	if err := m.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
@@ -47,7 +48,7 @@ func (cm *Manager) SelectLocationForStorage(ctx context.Context, obj cid.Cid, ui
 	})
 
 	if len(shuttles) == 0 {
-		if cm.cfg.Content.DisableLocalAdding {
+		if m.cfg.Content.DisableLocalAdding {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
 		return constants.ContentLocationLocal, nil
@@ -55,9 +56,9 @@ func (cm *Manager) SelectLocationForStorage(ctx context.Context, obj cid.Cid, ui
 
 	// TODO: take into account existing staging zones and their primary
 	// locations while choosing
-	ploc := cm.primaryStagingLocation(ctx, uid)
+	ploc := m.primaryStagingLocation(ctx, uid)
 	if ploc == "" {
-		cm.log.Warnf("empty staging zone set for user %d", uid)
+		m.log.Warnf("empty staging zone set for user %d", uid)
 	}
 
 	if ploc != "" {
@@ -72,13 +73,13 @@ func (cm *Manager) SelectLocationForStorage(ctx context.Context, obj cid.Cid, ui
 		// TODO: maybe we should just assign the pin to the preferred shuttle
 		// anyways, this could be the case where theres a small amount of
 		// downtime from rebooting or something
-		cm.log.Warnf("preferred shuttle %q not online", ploc)
+		m.log.Warnf("preferred shuttle %q not online", ploc)
 	}
 	// since they are ordered by priority, just take the first
 	return shuttles[0].Handle, nil
 }
 
-func (cm *Manager) primaryStagingLocation(ctx context.Context, uid uint) string {
+func (cm *manager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	var zones []util.Content
 	if err := cm.db.First(&zones, "user_id = ? and aggregate and not active", uid).Error; err != nil {
 		return ""
@@ -92,26 +93,26 @@ func (cm *Manager) primaryStagingLocation(ctx context.Context, uid uint) string 
 	return ""
 }
 
-func (cm *Manager) SelectLocationForRetrieval(ctx context.Context, cont util.Content) (string, error) {
-	_, span := cm.tracer.Start(ctx, "selectLocationForRetrieval")
+func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error) {
+	_, span := m.tracer.Start(ctx, "selectLocationForRetrieval")
 	defer span.End()
 
 	var activeShuttles []string
-	cm.ShuttlesLk.Lock()
-	for d, sh := range cm.Shuttles {
+	m.shuttlesLk.Lock()
+	for d, sh := range m.shuttles {
 		if !sh.private {
 			activeShuttles = append(activeShuttles, d)
 		}
 	}
-	cm.ShuttlesLk.Unlock()
+	m.shuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
-	if err := cm.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	if err := m.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
 		return "", err
 	}
 
 	if len(shuttles) == 0 {
-		if cm.cfg.Content.DisableLocalAdding {
+		if m.cfg.Content.DisableLocalAdding {
 			return "", fmt.Errorf("no shuttles available and local content adding disabled")
 		}
 		return constants.ContentLocationLocal, nil
@@ -125,4 +126,52 @@ func (cm *Manager) SelectLocationForRetrieval(ctx context.Context, cont util.Con
 	}
 	// since they are ordered by priority, just take the first
 	return shuttles[0].Handle, nil
+}
+
+// TODO: this should be a lotttttt smarter
+func (m *manager) GetPreferredUploadEndpoints(u *util.User) ([]string, error) {
+	m.shuttlesLk.Lock()
+	defer m.shuttlesLk.Unlock()
+	var shuttles []model.Shuttle
+	for hnd, sh := range m.shuttles {
+		if sh.contentAddingDisabled {
+			m.log.Debugf("shuttle %+v content adding is disabled", sh)
+			continue
+		}
+
+		if sh.hostname == "" {
+			m.log.Debugf("shuttle %+v has empty hostname", sh)
+			continue
+		}
+
+		var shuttle model.Shuttle
+		if err := m.db.First(&shuttle, "handle = ?", hnd).Error; err != nil {
+			m.log.Errorf("failed to look up shuttle by handle: %s", err)
+			continue
+		}
+
+		if !shuttle.Open {
+			m.log.Debugf("shuttle %+v is not open, skipping", shuttle)
+			continue
+		}
+		shuttles = append(shuttles, shuttle)
+	}
+
+	sort.Slice(shuttles, func(i, j int) bool {
+		return shuttles[i].Priority > shuttles[j].Priority
+	})
+
+	var out []string
+	for _, sh := range shuttles {
+		host := "https://" + sh.Host
+		if strings.HasPrefix(sh.Host, "http://") || strings.HasPrefix(sh.Host, "https://") {
+			host = sh.Host
+		}
+		out = append(out, host+"/content/add")
+	}
+
+	if !m.cfg.Content.DisableLocalAdding {
+		out = append(out, m.cfg.Hostname+"/content/add")
+	}
+	return out, nil
 }

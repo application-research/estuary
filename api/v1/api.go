@@ -2,13 +2,13 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/contentmgr"
+	contentmgr "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/stagingbs"
-	"github.com/application-research/estuary/transfer"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -34,8 +34,8 @@ type apiV1 struct {
 	minerManager miner.IMinerManager
 	pinMgr       *pinner.EstuaryPinManager
 	log          *zap.SugaredLogger
-	shuttleMgr   *shuttle.Manager
-	transferMgr  *transfer.Manager
+	shuttleMgr   shuttle.IManager
+	transferMgr  transfer.IManager
 }
 
 func NewAPIV1(
@@ -50,8 +50,8 @@ func NewAPIV1(
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
-	shuttleMgr *shuttle.Manager,
-	transferMgr *transfer.Manager,
+	shuttleMgr shuttle.IManager,
+	transferMgr transfer.IManager,
 ) *apiV1 {
 	return &apiV1{
 		cfg:          cfg,

@@ -5,20 +5,24 @@ import (
 	"gorm.io/gorm"
 )
 
-type Updater struct {
+type IUpdater interface {
+	RecordDealFailure(dfe *DealFailureError) error
+}
+
+type updater struct {
 	db  *gorm.DB
 	log *zap.SugaredLogger
 }
 
-func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) *Updater {
-	return &Updater{
+func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) *updater {
+	return &updater{
 		db:  db,
 		log: log,
 	}
 }
 
-func (cm *Updater) RecordDealFailure(dfe *DealFailureError) error {
-	cm.log.Debugw("deal failure error", "miner", dfe.Miner, "uuid", dfe.DealUUID, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
+func (up *updater) RecordDealFailure(dfe *DealFailureError) error {
+	up.log.Debugw("deal failure error", "miner", dfe.Miner, "uuid", dfe.DealUUID, "phase", dfe.Phase, "msg", dfe.Message, "content", dfe.Content)
 	rec := dfe.record()
-	return cm.db.Create(rec).Error
+	return up.db.Create(rec).Error
 }
