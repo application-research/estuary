@@ -155,7 +155,7 @@ func (cm *ContentManager) setUpStaging(ctx context.Context) {
 
 func (cm *ContentManager) primaryStagingLocation(ctx context.Context, uid uint) string {
 	var zones []util.Content
-	if err := cm.db.Find(&zones, "user_id = ? and aggregate", uid).Error; err != nil {
+	if err := cm.db.First(&zones, "user_id = ? and aggregate and not active", uid).Error; err != nil {
 		return ""
 	}
 
