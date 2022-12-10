@@ -297,7 +297,7 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, contID, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -404,12 +404,11 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, contID, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
 	s.pinMgr.Add(pinOp)
-	s.CM.ToCheck(contID)
 
 	return e.JSON(http.StatusAccepted, status)
 }
