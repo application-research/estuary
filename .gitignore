@@ -9,26 +9,23 @@
 /benchest
 /estuary-shuttle
 
-estuary-blocks/*
-blocks/*
-estuary-leveldb/*
+estuary-blocks/
+blocks/
+estuary-leveldb/
+estuary-wallet/
+cidlistsdir/
 estuary-maddr
-estuary-peer.key
 estuary-wallet/*
 estuary-write-log/*
 estuary.db
 estuary-shuttle.db
 estuary_calibnet.db
 leveldb/
-peer.key
 wallet/
 duplicateGuard/
-pinQueue/
 pinQueue*/
 stagingdata/
-
-cidlistsdir/*
-
+*.key
 build/.*
 
 .vscode
