@@ -107,7 +107,7 @@ func NewEstuary(appVersion string) *Estuary {
 
 		StagingBucket: StagingBucket{
 			Enabled:           true,
-			AggregateInterval: time.Minute * 1, // aggregate staging buckets every 5 minutes
+			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
 		},
 
 		Pinning: Pinning{
