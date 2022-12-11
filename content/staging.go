@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-blockservice"
 	ipld "github.com/ipfs/go-ipld-format"
@@ -314,13 +313,13 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 
 	cm.log.Debugf("aggregating zone: %d", zone.ID)
 
-	var contents []util.Content
-	if err := cm.db.Find(&contents, "aggregated_in = ?", zone.ID).Error; err != nil {
+	var zoneContents []util.Content
+	if err := cm.db.Find(&zoneContents, "aggregated_in = ?", zone.ID).Error; err != nil {
 		return err
 	}
 
 	if loc == constants.ContentLocationLocal {
-		dir, err := cm.CreateAggregate(ctx, contents)
+		dir, err := cm.CreateAggregate(ctx, zoneContents)
 		if err != nil {
 			return xerrors.Errorf("failed to create aggregate: %w", err)
 		}
@@ -373,16 +372,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 	}
 
 	// handle aggregate on shuttle
-	var aggrConts []drpc.AggregateContent
-	for _, c := range contents {
-		aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
-	}
-
-	var bContent util.Content
-	if err := cm.db.First(&bContent, "id = ?", zone.ID).Error; err != nil {
-		return err
-	}
-	return cm.shuttleMgr.AggregateContent(ctx, loc, bContent, aggrConts)
+	return cm.shuttleMgr.AggregateContent(ctx, loc, zone, zoneContents)
 }
 
 func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {

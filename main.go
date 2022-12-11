@@ -170,11 +170,19 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 		case "bitswap-target-message-size":
 			cfg.Node.Bitswap.TargetMessageSize = cctx.Int("bitswap-target-message-size")
 		case "rpc-incoming-queue-size":
-			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+			cfg.RpcEngine.Websocket.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
 		case "rpc-outgoing-queue-size":
-			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
+			cfg.RpcEngine.Websocket.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
 		case "rpc-queue-handlers":
-			cfg.RPCMessage.QueueHandlers = cctx.Int("rpc-queue-handlers")
+			cfg.RpcEngine.Websocket.QueueHandlers = cctx.Int("rpc-queue-handlers")
+		case "queue-eng-driver":
+			cfg.RpcEngine.Queue.Driver = cctx.String("queue-eng-driver")
+		case "queue-eng-host":
+			cfg.RpcEngine.Queue.Host = cctx.String("queue-eng-host")
+		case "queue-eng-enabled":
+			cfg.RpcEngine.Queue.Enabled = cctx.Bool("queue-eng-enabled")
+		case "queue-eng-consumers":
+			cfg.RpcEngine.Queue.Consumers = cctx.Int("queue-eng-consumers")
 		case "staging-bucket":
 			cfg.StagingBucket.Enabled = cctx.Bool("staging-bucket")
 		case "indexer-url":
@@ -404,17 +412,37 @@ func main() {
 		&cli.IntFlag{
 			Name:  "rpc-incoming-queue-size",
 			Usage: "sets incoming rpc message queue size",
-			Value: cfg.RPCMessage.IncomingQueueSize,
+			Value: cfg.RpcEngine.Websocket.IncomingQueueSize,
 		},
 		&cli.IntFlag{
 			Name:  "rpc-outgoing-queue-size",
 			Usage: "sets outgoing rpc message queue size",
-			Value: cfg.RPCMessage.OutgoingQueueSize,
+			Value: cfg.RpcEngine.Websocket.OutgoingQueueSize,
 		},
 		&cli.IntFlag{
 			Name:  "rpc-queue-handlers",
 			Usage: "sets rpc message handler count",
-			Value: cfg.RPCMessage.QueueHandlers,
+			Value: cfg.RpcEngine.Websocket.QueueHandlers,
+		},
+		&cli.BoolFlag{
+			Name:  "queue-eng-enabled",
+			Usage: "enable queue engine for rpc",
+			Value: cfg.RpcEngine.Queue.Enabled,
+		},
+		&cli.IntFlag{
+			Name:  "queue-eng-consumers",
+			Usage: "sets number of consumers per topic",
+			Value: cfg.RpcEngine.Queue.Consumers,
+		},
+		&cli.StringFlag{
+			Name:  "queue-eng-driver",
+			Usage: "sets the type of queue",
+			Value: cfg.RpcEngine.Queue.Driver,
+		},
+		&cli.StringFlag{
+			Name:  "queue-eng-host",
+			Usage: "sets the host address for the queue",
+			Value: cfg.RpcEngine.Queue.Host,
 		},
 		&cli.BoolFlag{
 			Name:  "staging-bucket",

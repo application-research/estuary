@@ -35,8 +35,7 @@ type Estuary struct {
 	Logging                Logging       `json:"logging"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
-	RPCMessage             RPCMessage    `json:"rpc_message"`
-	RPCQueue               RPCQueue      `json:"rpc_queue"`
+	RpcEngine              RpcEngine     `json:"rpc_engine"`
 	Pinning                Pinning       `json:"pinning"`
 }
 
@@ -192,14 +191,18 @@ func NewEstuary(appVersion string) *Estuary {
 			},
 			Libp2pThrottleLimit: 100,
 		},
-		RPCMessage: RPCMessage{
-			IncomingQueueSize: 100000,
-			OutgoingQueueSize: 100000,
-			QueueHandlers:     30,
-		},
-		RPCQueue: RPCQueue{
-			Host:    "http://145.40.77.207:4171/",
-			Enabled: true,
+		RpcEngine: RpcEngine{
+			Websocket: WebsocketEngine{
+				IncomingQueueSize: 100000,
+				OutgoingQueueSize: 100000,
+				QueueHandlers:     30,
+			},
+			Queue: QueueEngine{
+				Host:      "145.40.77.207:4150",
+				Enabled:   true,
+				Consumers: 5,
+				Driver:    "nsq",
+			},
 		},
 	}
 }

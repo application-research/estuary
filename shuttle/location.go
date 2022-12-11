@@ -19,16 +19,16 @@ func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid ui
 	allShuttlesLowSpace := true
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
-	m.shuttlesLk.Lock()
-	for d, sh := range m.shuttles {
-		if !sh.private && !sh.contentAddingDisabled {
-			lowSpace[d] = sh.spaceLow
-			activeShuttles = append(activeShuttles, d)
+
+	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	for _, sh := range connectedShuttles {
+		if !sh.Private && !sh.ContentAddingDisabled {
+			lowSpace[sh.Handle] = sh.SpaceLow
+			activeShuttles = append(activeShuttles, sh.Handle)
 		} else {
 			allShuttlesLowSpace = false
 		}
 	}
-	m.shuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
 	if err := m.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
@@ -98,13 +98,12 @@ func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content
 	defer span.End()
 
 	var activeShuttles []string
-	m.shuttlesLk.Lock()
-	for d, sh := range m.shuttles {
-		if !sh.private {
-			activeShuttles = append(activeShuttles, d)
+	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	for _, sh := range connectedShuttles {
+		if !sh.Private {
+			activeShuttles = append(activeShuttles, sh.Handle)
 		}
 	}
-	m.shuttlesLk.Unlock()
 
 	var shuttles []model.Shuttle
 	if err := m.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
@@ -130,22 +129,22 @@ func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content
 
 // TODO: this should be a lotttttt smarter
 func (m *manager) GetPreferredUploadEndpoints(u *util.User) ([]string, error) {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
+
 	var shuttles []model.Shuttle
-	for hnd, sh := range m.shuttles {
-		if sh.contentAddingDisabled {
+	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	for _, sh := range connectedShuttles {
+		if sh.ContentAddingDisabled {
 			m.log.Debugf("shuttle %+v content adding is disabled", sh)
 			continue
 		}
 
-		if sh.hostname == "" {
+		if sh.Hostname == "" {
 			m.log.Debugf("shuttle %+v has empty hostname", sh)
 			continue
 		}
 
 		var shuttle model.Shuttle
-		if err := m.db.First(&shuttle, "handle = ?", hnd).Error; err != nil {
+		if err := m.db.First(&shuttle, "handle = ?", sh.Handle).Error; err != nil {
 			m.log.Errorf("failed to look up shuttle by handle: %s", err)
 			continue
 		}

@@ -34,7 +34,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	"github.com/application-research/estuary/drpc"
 	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -4076,12 +4075,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 			loc := aggr[0].Location
 			if loc != cont.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
-				var aggrConts []drpc.AggregateContent
-				for _, c := range aggr {
-					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
-				}
-
-				if err := s.shuttleMgr.AggregateContent(ctx, loc, cont, aggrConts); err != nil {
+				if err := s.shuttleMgr.AggregateContent(ctx, loc, cont, aggr); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true

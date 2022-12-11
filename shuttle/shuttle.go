@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"sync"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -16,8 +15,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/constants"
-	shuttlequeue "github.com/application-research/estuary/shuttle/queue"
+	rpc "github.com/application-research/estuary/shuttle/rpc"
 
 	contentqueue "github.com/application-research/estuary/content/queue"
 	dealstatus "github.com/application-research/estuary/deal/status"
@@ -30,10 +28,9 @@ import (
 	"github.com/pkg/errors"
 
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
-	"github.com/application-research/estuary/drpc"
+	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
 
 	"github.com/application-research/estuary/util"
-	lru "github.com/hashicorp/golang-lru"
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
@@ -54,7 +51,7 @@ type IManager interface {
 	UnpinContent(ctx context.Context, loc string, conts []uint) error
 	PinContent(ctx context.Context, loc string, cont util.Content, origins []*peer.AddrInfo) error
 	ConsolidateContent(ctx context.Context, loc string, contents []util.Content) error
-	AggregateContent(ctx context.Context, loc string, cont util.Content, aggr []drpc.AggregateContent) error
+	AggregateContent(ctx context.Context, loc string, zone util.Content, zoneContents []util.Content) error
 	CommPContent(ctx context.Context, loc string, data cid.Cid) error
 	SplitContent(ctx context.Context, loc string, cont uint, size int64) error
 	GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error)
@@ -69,61 +66,37 @@ type manager struct {
 	db                    *gorm.DB
 	cfg                   *config.Estuary
 	tracer                trace.Tracer
-	transferStatuses      *lru.ARCCache
 	log                   *zap.SugaredLogger
 	transferStatusUpdater transferstatus.IUpdater
 	dealStatusUpdater     dealstatus.IUpdater
-	sanityCheckMgr        sanitycheck.IManager
-	shuttlesLk            sync.Mutex
-	shuttles              map[string]*connection
-	rpcWebsocket          chan *drpc.Message
-	rpcQueue              *shuttlequeue.Emanager
-
-	cntQueueMgr contentqueue.IQueueManager
+	rpcMgr                rpc.IManager
 }
 
 func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager, cntQueueMgr contentqueue.IQueueManager) (IManager, error) {
-	cache, err := lru.NewARC(50000)
+	rpcMgr, err := rpc.NewEstuaryRpcManager(ctx, db, cfg, log, sanitycheckMgr, cntQueueMgr)
 	if err != nil {
 		return nil, err
 	}
 
-	mgr := &manager{
-		cfg:                   cfg,
+	return &manager{
 		db:                    db,
-		transferStatuses:      cache,
-		shuttles:              make(map[string]*connection),
-		tracer:                otel.Tracer("replicator"),
+		cfg:                   cfg,
+		tracer:                otel.Tracer("shuttle"),
 		log:                   log,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
-		sanityCheckMgr:        sanitycheckMgr,
-		rpcWebsocket:          make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
-	}
-
-	if cfg.RPCQueue.Enabled {
-		emgr, err := shuttlequeue.NewEstuaryQueueMgr(cfg, mgr.processMessage)
-		if err != nil {
-			return nil, err
-		}
-		mgr.rpcQueue = emgr
-	}
-
-	// register workers/handlers to process websocket messages from a channel(queue)
-	go mgr.runWebsocketQueueProcessingWorkers(ctx, cfg.RPCMessage.QueueHandlers)
-	return mgr, nil
+		rpcMgr:                rpcMgr,
+	}, nil
 }
 
 func (m *manager) IsOnline(handle string) bool {
-	m.shuttlesLk.Lock()
-	sc, ok := m.shuttles[handle]
-	m.shuttlesLk.Unlock()
+	sc, ok := m.rpcMgr.GetShuttleConnection(handle)
 	if !ok {
 		return false
 	}
 
 	select {
-	case <-sc.ctx.Done():
+	case <-sc.Ctx.Done():
 		return false
 	default:
 		return true
@@ -131,60 +104,53 @@ func (m *manager) IsOnline(handle string) bool {
 }
 
 func (m *manager) CanAddContent(handle string) bool {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-	d, ok := m.shuttles[handle]
+	d, ok := m.rpcMgr.GetShuttleConnection(handle)
 	if ok {
-		return !d.contentAddingDisabled
+		return !d.ContentAddingDisabled
 	}
 	return true
 }
 
 func (m *manager) AddrInfo(handle string) *peer.AddrInfo {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-	d, ok := m.shuttles[handle]
+	d, ok := m.rpcMgr.GetShuttleConnection(handle)
 	if !ok {
 		return nil
 	}
-	return &d.addrInfo
+	return &d.AddrInfo
 }
 
 func (m *manager) HostName(handle string) string {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-	d, ok := m.shuttles[handle]
+	d, ok := m.rpcMgr.GetShuttleConnection(handle)
 	if ok {
-		return d.hostname
+		return d.Hostname
 	}
 	return ""
 }
 
 func (m *manager) StorageStats(handle string) *util.ShuttleStorageStats {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-	d, ok := m.shuttles[handle]
+	d, ok := m.rpcMgr.GetShuttleConnection(handle)
 	if !ok {
 		return nil
 	}
 
 	return &util.ShuttleStorageStats{
-		BlockstoreSize: d.blockstoreSize,
-		BlockstoreFree: d.blockstoreFree,
-		PinCount:       d.pinCount,
-		PinQueueLength: d.pinQueueLength,
+		BlockstoreSize: d.BlockstoreSize,
+		BlockstoreFree: d.BlockstoreFree,
+		PinCount:       d.PinCount,
+		PinQueueLength: d.PinQueueLength,
 	}
 }
 
 func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 	var shts []interface{}
-	for _, sh := range m.shuttles {
-		if sh.hostname == "" {
-			m.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.handle)
+	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	for _, sh := range connectedShuttles {
+		if sh.Hostname == "" {
+			m.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
 			continue
 		}
 
-		out, err := getShuttleConfig(sh.hostname, u.AuthToken.Token)
+		out, err := getShuttleConfig(sh.Hostname, u.AuthToken.Token)
 		if err != nil {
 			return nil, err
 		}
@@ -227,49 +193,12 @@ func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 	return out, nil
 }
 
-func (sc *connection) sendMessage(ctx context.Context, cmd *drpc.Command) error {
-
-	select {
-	case sc.cmds <- cmd:
-		return nil
-	case <-sc.ctx.Done():
-		return ErrNoShuttleConnection
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *rcpevent.Command) error {
+	return m.rpcMgr.SendRPCMessage(ctx, handle, cmd)
 }
 
-func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *drpc.Command) error {
-	if handle == "" || handle == constants.ContentLocationLocal {
-		return fmt.Errorf("attempted to send command to empty shuttle handle or local")
-	}
-
-	m.log.Debugf("sending rpc message:%s, to shuttle:%s", cmd.Op, handle)
-
-	m.shuttlesLk.Lock()
-	d, ok := m.shuttles[handle]
-	m.shuttlesLk.Unlock()
-	if ok {
-		return d.sendMessage(ctx, cmd)
-	}
-	return ErrNoShuttleConnection
-}
-
-func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *drpc.ShuttleUpdate) error {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-	d, ok := m.shuttles[handle]
-	if !ok {
-		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
-	}
-
-	d.spaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
-	d.blockstoreFree = param.BlockstoreFree
-	d.blockstoreSize = param.BlockstoreSize
-	d.pinCount = param.NumPins
-	d.pinQueueLength = int64(param.PinQueueSize)
-
-	return nil
+func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
+	return m.rpcMgr.Connect(ws, handle, done)
 }
 
 func (m *manager) GetByAuth(auth string) (*model.Shuttle, error) {

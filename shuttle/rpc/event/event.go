@@ -1,4 +1,4 @@
-package drpc
+package event
 
 import (
 	"github.com/application-research/estuary/pinner/types"
@@ -10,7 +10,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-var OPtopics = map[string]bool{
+// add new shuttle operation topic here, so estaury consumers can be registered for them
+var MessageTopics = map[string]bool{
 	OP_UpdatePinStatus:  true,
 	OP_PinComplete:      true,
 	OP_CommPComplete:    true,
@@ -23,6 +24,7 @@ var OPtopics = map[string]bool{
 	OP_SanityCheck:      true,
 }
 
+// add new estuary command topic here, so shuttle consumers can be registered for them
 var CommandTopics = map[string]bool{
 	CMD_ComputeCommP:           true,
 	CMD_AddPin:                 true,
@@ -39,20 +41,14 @@ var CommandTopics = map[string]bool{
 }
 
 type Hello struct {
-	Host   string
-	PeerID string
-
-	DiskSpaceFree int64
-
+	Host                  string
+	PeerID                string
+	DiskSpaceFree         int64
 	Address               address.Address
 	AddrInfo              peer.AddrInfo
 	Private               bool
 	ContentAddingDisabled bool
-	UseQueue              bool
-}
-
-type Hi struct {
-	Handle string
+	QueueEngEnabled       bool
 }
 
 type Command struct {

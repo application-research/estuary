@@ -45,9 +45,10 @@ import (
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
+	queueng "github.com/application-research/estuary/shuttle/rpc/engines/queue"
+	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
@@ -184,9 +185,17 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 		case "no-reload-pin-queue":
 			cfg.NoReloadPinQueue = cctx.Bool("no-reload-pin-queue")
 		case "rpc-incoming-queue-size":
-			cfg.RPCMessage.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
+			cfg.RpcEngine.Websocket.IncomingQueueSize = cctx.Int("rpc-incoming-queue-size")
 		case "rpc-outgoing-queue-size":
-			cfg.RPCMessage.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
+			cfg.RpcEngine.Websocket.OutgoingQueueSize = cctx.Int("rpc-outgoing-queue-size")
+		case "queue-eng-driver":
+			cfg.RpcEngine.Queue.Driver = cctx.String("queue-eng-driver")
+		case "queue-eng-host":
+			cfg.RpcEngine.Queue.Host = cctx.String("queue-eng-host")
+		case "queue-eng-enabled":
+			cfg.RpcEngine.Queue.Enabled = cctx.Bool("queue-eng-enabled")
+		case "queue-eng-consumers":
+			cfg.RpcEngine.Queue.Consumers = cctx.Int("queue-eng-consumers")
 		default:
 		}
 	}
@@ -357,12 +366,33 @@ func main() {
 		&cli.IntFlag{
 			Name:  "rpc-incoming-queue-size",
 			Usage: "sets incoming rpc message queue size",
-			Value: cfg.RPCMessage.IncomingQueueSize,
+			Value: cfg.RpcEngine.Websocket.IncomingQueueSize,
 		},
 		&cli.IntFlag{
 			Name:  "rpc-outgoing-queue-size",
 			Usage: "sets outgoing rpc message queue size",
-			Value: cfg.RPCMessage.OutgoingQueueSize,
+			Value: cfg.RpcEngine.Websocket.OutgoingQueueSize,
+		},
+
+		&cli.BoolFlag{
+			Name:  "queue-eng-enabled",
+			Usage: "enable queue engine for rpc",
+			Value: cfg.RpcEngine.Queue.Enabled,
+		},
+		&cli.IntFlag{
+			Name:  "queue-eng-consumers",
+			Usage: "sets number of consumers per topic",
+			Value: cfg.RpcEngine.Queue.Consumers,
+		},
+		&cli.StringFlag{
+			Name:  "queue-eng-driver",
+			Usage: "sets the type of queue",
+			Value: cfg.RpcEngine.Queue.Driver,
+		},
+		&cli.StringFlag{
+			Name:  "queue-eng-host",
+			Usage: "sets the host address for the queue",
+			Value: cfg.RpcEngine.Queue.Host,
 		},
 	}
 
@@ -512,7 +542,7 @@ func main() {
 			aggrInProgress:   make(map[uint]bool),
 			unpinInProgress:  make(map[uint]bool),
 
-			outgoing:  make(chan *drpc.Message, cfg.RPCMessage.OutgoingQueueSize),
+			outgoing:  make(chan *rcpevent.Message, cfg.RpcEngine.Websocket.OutgoingQueueSize),
 			authCache: cache,
 
 			hostname:           cfg.Hostname,
@@ -522,6 +552,15 @@ func main() {
 			disableLocalAdding: cfg.Content.DisableLocalAdding,
 			dev:                cfg.Dev,
 			shuttleConfig:      cfg,
+		}
+
+		if cfg.RpcEngine.Queue.Enabled {
+			queueEng, err := queueng.NewShuttleRpcEngine(cfg, s.shuttleHandle, log, s.handleRpcCmd)
+			if err != nil {
+				return err
+			}
+			log.Debugf("going to use queue for rpc ....")
+			s.queueEng = queueEng
 		}
 
 		nd.Blockstore.SetSanityCheckFn(s.SendSanityCheck)
@@ -550,30 +589,30 @@ func main() {
 
 				switch fst.Status {
 				case datatransfer.Requested:
-					op := drpc.OP_TransferStarted
-					params := drpc.MsgParams{
-						TransferStarted: &drpc.TransferStartedOrFinished{
+					op := rcpevent.OP_TransferStarted
+					params := rcpevent.MsgParams{
+						TransferStarted: &rcpevent.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
 							State:    fst,
 						},
 					}
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+					if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
 						log.Errorf("failed to notify estuary primary node about transfer state: %s", err)
 					}
 				case datatransfer.TransferFinished, datatransfer.Completed:
-					op := drpc.OP_TransferFinished
-					params := drpc.MsgParams{
-						TransferFinished: &drpc.TransferStartedOrFinished{
+					op := rcpevent.OP_TransferFinished
+					params := rcpevent.MsgParams{
+						TransferFinished: &rcpevent.TransferStartedOrFinished{
 							DealDBID: trk.Dbid,
 							Chanid:   fst.TransferID,
 							State:    fst,
 						},
 					}
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+					if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
@@ -582,7 +621,7 @@ func main() {
 				default:
 					// send transfer update for every other events
 					trsFailed, msg := util.TransferFailed(fst)
-					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					s.sendTransferStatusUpdate(context.TODO(), &rcpevent.TransferStatus{
 						Chanid:   fst.TransferID,
 						DealDBID: trk.Dbid,
 						State:    fst,
@@ -608,15 +647,15 @@ func main() {
 
 				switch fst.Status {
 				case datatransfer.Requested:
-					op := drpc.OP_TransferStarted
-					params := drpc.MsgParams{
-						TransferStarted: &drpc.TransferStartedOrFinished{
+					op := rcpevent.OP_TransferStarted
+					params := rcpevent.MsgParams{
+						TransferStarted: &rcpevent.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
 							State:    &fst,
 						},
 					}
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+					if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
@@ -624,15 +663,15 @@ func main() {
 					}
 
 				case datatransfer.TransferFinished, datatransfer.Completed:
-					op := drpc.OP_TransferFinished
-					params := drpc.MsgParams{
-						TransferFinished: &drpc.TransferStartedOrFinished{
+					op := rcpevent.OP_TransferFinished
+					params := rcpevent.MsgParams{
+						TransferFinished: &rcpevent.TransferStartedOrFinished{
 							DealDBID: dbid,
 							Chanid:   fst.TransferID,
 							State:    &fst,
 						},
 					}
-					if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
+					if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
 						Op:     op,
 						Params: params,
 					}); err != nil {
@@ -641,7 +680,7 @@ func main() {
 				default:
 					// send transfer update for every other events
 					trsFailed, msg := util.TransferFailed(&fst)
-					s.sendTransferStatusUpdate(context.TODO(), &drpc.TransferStatus{
+					s.sendTransferStatusUpdate(context.TODO(), &rcpevent.TransferStatus{
 						Chanid:   fst.TransferID,
 						DealDBID: dbid,
 						State:    &fst,
@@ -686,9 +725,9 @@ func main() {
 			blockstoreSize.Set(float64(upd.BlockstoreSize))
 			blockstoreFree.Set(float64(upd.BlockstoreFree))
 
-			if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-				Op: drpc.OP_ShuttleUpdate,
-				Params: drpc.MsgParams{
+			if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
+				Op: rcpevent.OP_ShuttleUpdate,
+				Params: rcpevent.MsgParams{
 					ShuttleUpdate: upd,
 				},
 			}); err != nil {
@@ -703,9 +742,9 @@ func main() {
 				blockstoreSize.Set(float64(upd.BlockstoreSize))
 				blockstoreFree.Set(float64(upd.BlockstoreFree))
 
-				if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-					Op: drpc.OP_ShuttleUpdate,
-					Params: drpc.MsgParams{
+				if err := s.sendRpcMessage(context.TODO(), &rcpevent.Message{
+					Op: rcpevent.OP_ShuttleUpdate,
+					Params: rcpevent.MsgParams{
 						ShuttleUpdate: upd,
 					},
 				}); err != nil {
@@ -832,13 +871,12 @@ type Shuttle struct {
 
 	addPinLk sync.Mutex
 
-	outgoing chan *drpc.Message
+	outgoing chan *rcpevent.Message
 
 	Private            bool
 	disableLocalAdding bool
 	dev                bool
 
-	handle        string
 	hostname      string
 	estuaryHost   string
 	shuttleHandle string
@@ -855,6 +893,8 @@ type Shuttle struct {
 	inflightCidsLk sync.Mutex
 
 	shuttleConfig *config.Shuttle
+
+	queueEng queueng.IShuttleRpcEngine
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
@@ -904,24 +944,18 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 		return err
 	}
 
-	var hi drpc.Hi
-	if err := websocket.JSON.Receive(conn, &hi); err != nil {
-		return err
-	}
-	d.handle = hi.Handle
-
 	go func() {
 		defer close(readDone)
 
 		for {
-			var cmd drpc.Command
+			var cmd rcpevent.Command
 			if err := websocket.JSON.Receive(conn, &cmd); err != nil {
 				log.Errorf("failed to read command from websocket: %s", err)
 				return
 			}
 
-			go func(cmd *drpc.Command) {
-				if err := d.handleRpcCmd(cmd); err != nil {
+			go func(cmd *rcpevent.Command) {
+				if err := d.handleRpcCmd(cmd, "websocket"); err != nil {
 					log.Errorf("failed to handle rpc command: %s", err)
 				}
 			}(&cmd)
@@ -947,7 +981,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	}
 }
 
-func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
+func (d *Shuttle) getHelloMessage() (*rcpevent.Hello, error) {
 	addr, err := d.Node.Wallet.GetDefault()
 	if err != nil {
 		return nil, err
@@ -959,7 +993,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 	}
 
 	log.Infow("sending hello", "hostname", hostname, "address", addr, "pid", d.Node.Host.ID())
-	return &drpc.Hello{
+	return &rcpevent.Hello{
 		Host:    hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),
 		Address: addr,
@@ -969,6 +1003,7 @@ func (d *Shuttle) getHelloMessage() (*drpc.Hello, error) {
 			Addrs: d.Node.Host.Addrs(),
 		},
 		ContentAddingDisabled: d.disableLocalAdding,
+		QueueEngEnabled:       d.shuttleConfig.RpcEngine.Queue.Enabled,
 	}, nil
 }
 
@@ -1779,10 +1814,10 @@ func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.Pin
 		}
 
 		go func() {
-			if err := d.sendRpcMessage(context.TODO(), &drpc.Message{
-				Op: drpc.OP_UpdatePinStatus,
-				Params: drpc.MsgParams{
-					UpdatePinStatus: &drpc.UpdatePinStatus{
+			if err := d.sendRpcMessage(context.TODO(), &rcpevent.Message{
+				Op: rcpevent.OP_UpdatePinStatus,
+				Params: rcpevent.MsgParams{
+					UpdatePinStatus: &rcpevent.UpdatePinStatus{
 						DBID:   cont,
 						Status: status,
 					},
@@ -1851,8 +1886,8 @@ func (s *Shuttle) importFile(ctx context.Context, dserv ipld.DAGService, fi io.R
 	return util.ImportFile(dserv, fi)
 }
 
-func (s *Shuttle) getUpdatePacket() (*drpc.ShuttleUpdate, error) {
-	var upd drpc.ShuttleUpdate
+func (s *Shuttle) getUpdatePacket() (*rcpevent.ShuttleUpdate, error) {
+	var upd rcpevent.ShuttleUpdate
 
 	upd.PinQueueSize = s.PinMgr.PinQueueSize()
 
@@ -2261,10 +2296,10 @@ func (s *Shuttle) handleManualGarbageCheck(c echo.Context) error {
 		return err
 	}
 
-	return s.sendRpcMessage(ctx, &drpc.Message{
-		Op: drpc.OP_GarbageCheck,
-		Params: drpc.MsgParams{
-			GarbageCheck: &drpc.GarbageCheck{
+	return s.sendRpcMessage(ctx, &rcpevent.Message{
+		Op: rcpevent.OP_GarbageCheck,
+		Params: rcpevent.MsgParams{
+			GarbageCheck: &rcpevent.GarbageCheck{
 				Contents: body.Contents,
 			},
 		},

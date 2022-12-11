@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/application-research/estuary/drpc"
+	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
@@ -26,7 +26,7 @@ type retrievalProgress struct {
 	endErr error
 }
 
-func (s *Shuttle) retrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
+func (s *Shuttle) retrieveContent(ctx context.Context, req *rcpevent.RetrieveContent) error {
 	ctx, span := s.Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(req.Content)),
 	))
@@ -67,7 +67,7 @@ func (s *Shuttle) retrieveContent(ctx context.Context, req *drpc.RetrieveContent
 	return nil
 }
 
-func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, sel ipld.Node) error {
+func (s *Shuttle) runRetrieval(ctx context.Context, req *rcpevent.RetrieveContent, sel ipld.Node) error {
 	ctx, span := s.Tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
