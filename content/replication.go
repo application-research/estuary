@@ -244,7 +244,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.blockstore)
 			if err != nil {
 				if err == ErrWaitForRemoteCompute {
-					cm.log.Debugf("waiting for shuttle:%s to finish commp for cont:%d", content.Location, content.ID)
+					cm.log.Debugf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
 				} else {
 					cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}

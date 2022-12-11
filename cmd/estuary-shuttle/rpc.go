@@ -38,7 +38,7 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 		}
 	}
 
-	log.Debugf("handling rpc message:%s, for shuttle:%s", d.shuttleHandle)
+	log.Debugf("handling rpc message: %s, for shuttle: %s using %s engine", cmd.Op, d.shuttleHandle, source)
 
 	switch cmd.Op {
 	case rpcevent.CMD_AddPin:

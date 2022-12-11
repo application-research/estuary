@@ -244,15 +244,18 @@ func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpceve
 	if handle == "" || handle == constants.ContentLocationLocal {
 		return fmt.Errorf("attempted to send command to empty shuttle handle or local")
 	}
-	m.log.Debugf("sending rpc message:%s, to shuttle:%s", cmd.Op, handle)
 
 	d, ok := m.websocketEng.GetShuttleConnection(handle)
 	if ok {
 		// if shutlle has rpc queue engine enabled and estuary has rpc queue enabled, use it
 		if d.QueueEngEnabled && m.queueEng != nil {
+			m.log.Debugf("sending rpc message: %s, to shuttle: %s using queue engine", cmd.Op, handle)
+
 			if !rpcevent.CommandTopics[cmd.Op] {
 				return fmt.Errorf("%s topic has not been registered properly", cmd.Op)
 			}
+
+			m.log.Debugf("sending rpc message: %s, to shuttle: %s using websocket engine", cmd.Op, handle)
 			return m.queueEng.SendMessage(cmd.Op, handle, cmd)
 		}
 		return d.SendMessage(ctx, cmd)
