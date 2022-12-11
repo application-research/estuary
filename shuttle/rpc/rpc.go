@@ -22,9 +22,7 @@ import (
 	"github.com/application-research/filclient"
 
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -37,30 +35,11 @@ import (
 )
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
-var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
 type transferStatusRecord struct {
 	State    *filclient.ChannelState
 	Shuttle  string
 	Received time.Time
-}
-
-type connection struct {
-	Handle                string
-	Ctx                   context.Context
-	Hostname              string
-	AddrInfo              peer.AddrInfo
-	Address               address.Address
-	Private               bool
-	ContentAddingDisabled bool
-	SpaceLow              bool
-	BlockstoreSize        uint64
-	BlockstoreFree        uint64
-	PinCount              int64
-	PinQueueLength        int64
-
-	useQueue bool
-	cmds     chan *rpcevent.Command
 }
 
 type IManager interface {
@@ -260,7 +239,7 @@ func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpceve
 		}
 		return d.SendMessage(ctx, cmd)
 	}
-	return ErrNoShuttleConnection
+	return websocketeng.ErrNoShuttleConnection
 }
 
 func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *rpcevent.ShuttleUpdate) error {
