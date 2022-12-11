@@ -193,21 +193,6 @@ definitions:
       - PinningStatusPinned
       - PinningStatusFailed
       - PinningStatusQueued
-  util.ContentAddIpfsBody:
-    properties:
-      coluuid:
-        type: string
-      dir:
-        type: string
-      filename:
-        type: string
-      peers:
-        items:
-          type: string
-        type: array
-      root:
-        type: string
-    type: object
   util.ContentAddResponse:
     properties:
       cid:
@@ -936,38 +921,6 @@ paths:
           schema:
             $ref: '#/definitions/util.HttpError'
       summary: Upload content via a car file
-      tags:
-        - content
-  /content/add-ipfs:
-    post:
-      description: This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.
-      parameters:
-        - description: IPFS Body
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/util.ContentAddIpfsBody'
-        - description: Ignore Dupes
-          in: query
-          name: ignore-dupes
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Add IPFS object
       tags:
         - content
   /content/aggregated/{content}:

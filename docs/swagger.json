@@ -920,55 +920,6 @@
         }
       }
     },
-    "/content/add-ipfs": {
-      "post": {
-        "description": "This endpoint is used to add an IPFS object to the network. The object can be a file or a directory.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "content"
-        ],
-        "summary": "Add IPFS object",
-        "parameters": [
-          {
-            "description": "IPFS Body",
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/util.ContentAddIpfsBody"
-            }
-          },
-          {
-            "type": "string",
-            "description": "Ignore Dupes",
-            "name": "ignore-dupes",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
     "/content/aggregated/{content}": {
       "get": {
         "description": "This endpoint returns aggregated content stats",
@@ -3459,29 +3410,6 @@
         "PinningStatusFailed",
         "PinningStatusQueued"
       ]
-    },
-    "util.ContentAddIpfsBody": {
-      "type": "object",
-      "properties": {
-        "coluuid": {
-          "type": "string"
-        },
-        "dir": {
-          "type": "string"
-        },
-        "filename": {
-          "type": "string"
-        },
-        "peers": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "root": {
-          "type": "string"
-        }
-      }
     },
     "util.ContentAddResponse": {
       "type": "object",
