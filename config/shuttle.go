@@ -175,8 +175,8 @@ func NewShuttle(appVersion string) *Shuttle {
 				QueueHandlers:     30,
 			},
 			Queue: QueueEngine{
-				Host:      "145.40.77.207:4150",
-				Enabled:   true,
+				Host:      "",
+				Enabled:   false,
 				Consumers: 5,
 				Driver:    "nsq",
 			},
