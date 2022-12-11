@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/application-research/estuary/config"
+	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	"gorm.io/gorm"
@@ -27,12 +28,12 @@ func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid,
 	go func() {
 		defer close(out)
 		var pins []Pin
-		init.db.Where("active = ?", true).FindInBatches(&pins, 100000, func(tx *gorm.DB, batch int) error {
+		util.FindAndProcessLargeRequests(init.db, func(tx *gorm.DB, batch int) error {
 			for _, c := range pins {
 				out <- c.Cid.CID
 			}
 			return nil
-		})
+		}, &pins, "active = ?", true)
 	}()
 	return out, nil
 }
