@@ -237,6 +237,10 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		return err
 	}
 
+	if len(grpLocs) == 0 {
+		return fmt.Errorf("no location for staged contents")
+	}
+
 	// if the staged contents of this bucket are in different locations (more than 1 group)
 	// Need to migrate/consolidate the contents to the same location
 	// TODO - we should avoid doing this, best we have staging by location - this process is just to expensive
