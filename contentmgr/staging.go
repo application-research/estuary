@@ -232,9 +232,13 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 	ctx, span := cm.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
-	grpLocs, err := cm.getStagedContentsGroupedByLocation(ctx, zone.ID)
-	if err != nil {
+	var grpLocs []string
+	if err := cm.db.Model(&util.Content{}).Where("active and aggregated_in = ?", zone.ID).Distinct().Pluck("location", &grpLocs).Error; err != nil {
 		return err
+	}
+
+	if len(grpLocs) == 0 {
+		return fmt.Errorf("no location for staged contents")
 	}
 
 	// if the staged contents of this bucket are in different locations (more than 1 group)
@@ -258,14 +262,11 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zone util.Cont
 		}()
 		return nil
 	}
+
 	// if we reached here, consolidation is done and we can move to aggregating
 	cm.MarkFinishedConsolidating(zone.ID)
 
-	var loc string
-	for grpLoc := range grpLocs {
-		loc = grpLoc
-		break
-	}
+	loc := grpLocs[0]
 
 	if !cm.MarkStartedAggregating(zone.ID) {
 		// skip if zone is consolidating or already aggregating

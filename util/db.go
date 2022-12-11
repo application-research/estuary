@@ -10,6 +10,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const DefaultBatchSize int = 100000
+
 func SetupDatabase(dbval string) (*gorm.DB, error) {
 	parts := strings.SplitN(dbval, "=", 2)
 	if len(parts) == 1 {
@@ -43,4 +45,8 @@ func SetupDatabase(dbval string) (*gorm.DB, error) {
 	sqldb.SetConnMaxIdleTime(time.Hour)
 
 	return db, nil
+}
+
+func FindAndProcessLargeRequests(db *gorm.DB, fc func(tx *gorm.DB, batch int) error, dest interface{}, query ...interface{}) (tx *gorm.DB) {
+	return db.Where(query).FindInBatches(&dest, DefaultBatchSize, fc)
 }
