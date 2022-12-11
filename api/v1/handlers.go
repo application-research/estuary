@@ -356,7 +356,7 @@ func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
+// @Param        body          body      types.IpfsPin  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
 func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
@@ -366,53 +366,52 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var params util.ContentAddIpfsBody
-	if err := c.Bind(&params); err != nil {
+	var pin pinningtypes.IpfsPin
+	if err := c.Bind(&pin); err != nil {
 		return err
 	}
 
-	filename := params.Name
+	filename := pin.Name
 	if filename == "" {
-		filename = params.Root
+		filename = pin.CID
 	}
 
 	var cols []*collections.CollectionRef
-	if params.CollectionID != "" {
+	if coluuid, ok := pin.Meta["collection"].(string); ok && coluuid != "" {
 		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
+		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", coluuid, u.ID).Error; err != nil {
 			return err
 		}
 
-		// if dir is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + filename
-		colp := defaultPath
-		if params.CollectionDir != "" {
-			p, err := sanitizePath(params.CollectionDir)
+		var colpath *string
+		colp, ok := pin.Meta["colpath"].(string)
+		if ok {
+			p, err := sanitizePath(colp)
 			if err != nil {
 				return err
 			}
-			colp = p
-		}
 
-		// default: colp ends in / (does not include filename e.g. /hello/)
-		path := colp + filename
+			// if it ends in /, it doesn't include filename
+			if !strings.HasSuffix(p, "/") {
+				p = p + filename
+			}
 
-		// if path does not end in /, it includes the filename
-		if !strings.HasSuffix(colp, "/") {
-			path = colp
-			filename = filepath.Base(colp)
+			colpath = &p
+		} else {
+			defaultPath := "/" + filename
+			colpath = &defaultPath
 		}
 
 		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
-				Path:       &path,
+				Path:       colpath,
 			},
 		}
 	}
 
 	var origins []*peer.AddrInfo
-	for _, p := range params.Peers {
+	for _, p := range pin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
 			return err
@@ -420,7 +419,7 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 		origins = append(origins, ai)
 	}
 
-	rcid, err := cid.Decode(params.Root)
+	rcid, err := cid.Decode(pin.CID)
 	if err != nil {
 		return err
 	}
