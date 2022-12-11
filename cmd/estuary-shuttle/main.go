@@ -1381,9 +1381,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
 
-	if err := s.Provide(ctx, nd.Cid()); err != nil {
-		log.Warnf("failed to provide: %+v", err)
-	}
+	s.Provide(ctx, nd.Cid())
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:                 nd.Cid().String(),
@@ -1400,12 +1398,14 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 
 	if s.Node.FullRT.Ready() {
 		if err := s.Node.FullRT.Provide(subCtx, c, true); err != nil {
-			return errors.Wrap(err, "failed to provide newly added content")
+			log.Warnf("failed to provide newly added content: %s", err)
+			return nil
 		}
 	} else {
 		log.Warnf("fullrt not in ready state, falling back to standard dht provide")
 		if err := s.Node.Dht.Provide(subCtx, c, true); err != nil {
-			return errors.Wrap(err, "fallback provide failed")
+			log.Warnf("fallback provide failed: %s", err)
+			return nil
 		}
 	}
 
@@ -1524,9 +1524,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
 
-	if err := s.Provide(ctx, root); err != nil {
-		log.Warn(err)
-	}
+	s.Provide(ctx, root)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:                 root.String(),
@@ -1671,14 +1669,12 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 
 	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, &d.Node.Blockstore, op.Obj, cb)
 	if err != nil {
-		return errors.Wrapf(err, "failed to addDatabaseTrackingToContent - contID(%d), cid(%s)", op.ContId, op.Obj.String())
+		return xerrors.Errorf("failed to addDatabaseTrackingToContent - contID(%d), cid(%s): %w", op.ContId, op.Obj.String(), err)
 	}
 
 	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
 
-	if err := d.Provide(ctx, op.Obj); err != nil {
-		log.Warnf("failed to provide - contID(%d), cid(%s), err: %w", op.ContId, op.Obj.String(), ctx.Err())
-	}
+	d.Provide(ctx, op.Obj)
 	return nil
 }
 
@@ -1691,7 +1687,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 	var dbpin Pin
 	if err := d.DB.First(&dbpin, "content = ?", contid).Error; err != nil {
-		return 0, nil, errors.Wrap(err, "failed to retrieve content")
+		return 0, nil, fmt.Errorf("failed to retrieve content: %w", err)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -1743,7 +1739,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 
 		node, err := dserv.Get(ctx, c)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to Get CID node")
+			return nil, fmt.Errorf("failed to Get CID node: %w", err)
 		}
 
 		cb(int64(len(node.RawData())))
@@ -1769,7 +1765,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		return util.FilterUnwalkableLinks(node.Links()), nil
 	}, root, cset.Visit, merkledag.Concurrent())
 	if err != nil {
-		return 0, nil, errors.Wrap(err, "failed to walk DAG")
+		return 0, nil, fmt.Errorf("failed to walk DAG: %w", err)
 	}
 
 	span.SetAttributes(
@@ -1778,7 +1774,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	)
 
 	if err := d.DB.CreateInBatches(objects, 300).Error; err != nil {
-		return 0, nil, errors.Wrap(err, "failed to create objects in db")
+		return 0, nil, fmt.Errorf("failed to create objects in db: %w", err)
 	}
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", contid).UpdateColumns(map[string]interface{}{
@@ -1786,7 +1782,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		"size":    totalSize,
 		"pinning": false,
 	}).Error; err != nil {
-		return 0, nil, errors.Wrap(err, "failed to update content in database")
+		return 0, nil, fmt.Errorf("failed to update content in database: %w", err)
 	}
 
 	refs := make([]ObjRef, len(objects))
@@ -1796,7 +1792,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	}
 
 	if err := d.DB.CreateInBatches(refs, 500).Error; err != nil {
-		return 0, nil, errors.Wrap(err, "failed to create refs")
+		return 0, nil, fmt.Errorf("failed to create refs: %w", err)
 	}
 	return totalSize, objects, nil
 }
