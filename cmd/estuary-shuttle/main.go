@@ -1381,7 +1381,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 
 	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
 
-	s.Provide(ctx, nd.Cid())
+	_ = s.Provide(ctx, nd.Cid())
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:                 nd.Cid().String(),
@@ -1524,7 +1524,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 
 	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
 
-	s.Provide(ctx, root)
+	_ = s.Provide(ctx, root)
 
 	return c.JSON(http.StatusOK, &util.ContentAddResponse{
 		Cid:                 root.String(),
@@ -1674,7 +1674,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 
 	d.sendPinCompleteMessage(ctx, op.ContId, totalSize, objects, op.Obj)
 
-	d.Provide(ctx, op.Obj)
+	_ = d.Provide(ctx, op.Obj)
 	return nil
 }
 
