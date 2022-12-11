@@ -114,7 +114,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	contmeta := e.Group("/content")
 	uploads := contmeta.Group("", s.AuthRequired(util.PermLevelUpload))
 	uploads.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
-	uploads.POST("/add-ipfs", withUser(s.handleAddIpfs))
+	uploads.POST("/add-ipfs", withUser(s.handleAddPin))
 	uploads.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	uploads.POST("/create", withUser(s.handleCreateContent))
 
