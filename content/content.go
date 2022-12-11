@@ -101,31 +101,6 @@ func NewContentManager(
 	return cm, nil
 }
 
-func (cm *ContentManager) ToCheck(contID uint) {
-	cm.queueMgr.ToCheck(contID)
-}
-
-func (cm *ContentManager) rebuildToCheckQueue() error {
-	cm.log.Info("rebuilding contents queue .......")
-
-	var allcontent []util.Content
-	if err := cm.db.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
-		return xerrors.Errorf("finding all content in database: %w", err)
-	}
-
-	go func() {
-		for i, c := range allcontent {
-			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
-			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
-			if i%100 == 0 {
-				time.Sleep(time.Second * 5)
-			}
-			cm.ToCheck(c.ID)
-		}
-	}()
-	return nil
-}
-
 func (cm *ContentManager) rebuildToCheckQueue() error {
 	cm.log.Info("rebuilding contents queue .......")
 
