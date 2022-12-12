@@ -3154,7 +3154,7 @@ func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) erro
 	}
 
 	for _, cont := range contents {
-		err := collections.AddContentToCollection(string(col.ID), string(cont.ID), dir, overwrite, s.DB, u)
+		err := collections.AddContentToCollection(col.UUID, string(cont.ID), dir, overwrite, s.DB, u)
 		if err != nil {
 			return err
 		}
@@ -4532,16 +4532,14 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	}
 
 	if req.CollectionID != "" {
-
 		path, err := collections.ConstructDirectoryPath(c.QueryParam(req.CollectionDir))
 		if err != nil {
 			return err
 		}
-		if err := s.DB.Create(&collections.CollectionRef{
-			Collection: col.ID,
-			Content:    content.ID,
-			Path:       &path,
-		}).Error; err != nil {
+		fullPath := filepath.Join(path, req.Name)
+
+		err = collections.AddContentToCollection(req.CollectionID, strconv.Itoa(int(content.ID)), fullPath, req.Overwrite, s.DB, u)
+		if err != nil {
 			return err
 		}
 	}

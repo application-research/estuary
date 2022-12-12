@@ -100,10 +100,10 @@ func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) (
 func Contains(collection *Collection, fullPath string, db *gorm.DB) (bool, error) {
 	var colRef CollectionRef
 	err := db.First(&colRef, "collection = ? and path = ?", collection.ID, fullPath).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, nil
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, err
 	}
-	return true, err
+	return true, nil
 }
 
 func AddContentToCollection(coluuid string, contentID string, dir string, overwrite bool, db *gorm.DB, u *util.User) error {

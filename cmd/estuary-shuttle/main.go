@@ -1601,16 +1601,16 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			return 0, err
 		}
-		return 0, fmt.Errorf("failed to request createContent: %s", bodyBytes)
+		return 0, &out.Error
 	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, errors.Wrap(err, "failed to decode resp body")
+		return 0, errors.Wrap(err, "failed to decode response body")
 	}
 	return rbody.ID, nil
 }
