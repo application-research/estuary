@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
@@ -72,8 +71,6 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 }
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
-
-	spew.Dump("nkjnjnjnjknnnnlnnkjnnjnnkknnnnkjnl")
 	// send - tell estuary about a bad block on this shuttle
 	if err := s.sendRpcMessage(context.TODO(), &rpcevent.Message{
 		Op: rpcevent.OP_SanityCheck,

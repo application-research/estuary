@@ -526,14 +526,14 @@ func (cm *ContentManager) buildStagingZoneFromContent(zone util.Content) (*Conte
 	}, nil
 }
 
-func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
+func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) ([]*ContentStagingZone, error) {
 	var zones []util.Content
 	var zonesBatch []util.Content
 	if err := cm.db.Where("not active and pinning and aggregate and user_id = ?", user).FindInBatches(&zonesBatch, 500, func(tx *gorm.DB, batch int) error {
 		zones = append(zones, zonesBatch...)
 		return nil
 	}).Error; err != nil {
-		return nil
+		return nil, err
 	}
 
 	var out []*ContentStagingZone
@@ -544,7 +544,7 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 		}
 		out = append(out, stagingZone)
 	}
-	return out
+	return out, nil
 }
 
 func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*ContentStagingZone {
