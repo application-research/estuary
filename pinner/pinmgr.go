@@ -206,19 +206,24 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 		return nil
 	}
 
+	// Dequeue the next item in the queue
 	item, err := pm.pinQueue.Dequeue(getUserForQueue(user))
 	pm.pinQueueCount[user]--
 	if pm.pinQueueCount[user] == 0 {
 		delete(pm.pinQueueCount, user)
 	}
-
 	pm.activePins[user]++
 
-	// Dequeue the next item in the queue
+	// no item in the queue for that query
+	if err == goque.ErrOutOfBounds {
+		return nil
+	}
+
 	if err != nil {
 		log.Errorf("Error dequeuing item ", err)
 		return nil
 	}
+
 	// Assert type of the response to an Item pointer so we can work with it
 	next, err := decodeMsgPack(item.Value)
 	if err != nil {
