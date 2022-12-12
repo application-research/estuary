@@ -3553,8 +3553,7 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
 	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID)
 	if err != nil {
-		// TODO: better error handling for more accurate http statuses
-		return c.JSON(http.StatusInternalServerError, err)
+		return err
 	}
 	return c.JSON(http.StatusOK, res)
 }
@@ -3576,8 +3575,7 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 	}
 	contents, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
 	if err != nil {
-		// TODO: better error handling for more accurate http statuses
-		return c.JSON(http.StatusInternalServerError, err)
+		return err
 	}
 	return c.JSON(http.StatusOK, contents)
 }
@@ -3603,8 +3601,7 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
 	if err != nil {
-		// TODO: better error handling for more accurate http statuses
-		return c.JSON(http.StatusInternalServerError, err)
+		return err
 	}
 	return c.JSON(http.StatusOK, contents)
 }
