@@ -1,4 +1,4 @@
-package drpc
+package event
 
 import (
 	"encoding/json"

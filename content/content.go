@@ -5,21 +5,20 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/config"
-	contentqueue "github.com/application-research/estuary/contentmgr/queue"
-	"github.com/application-research/estuary/drpc"
+	contentqueue "github.com/application-research/estuary/content/queue"
+	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
-	"golang.org/x/xerrors"
-
+	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/lotus/api"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/ipfs/go-cid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
@@ -39,14 +38,14 @@ type ContentManager struct {
 
 	dealDisabledLk       sync.Mutex
 	isDealMakingDisabled bool
-	ShuttlesLk           sync.Mutex
-	Shuttles             map[string]*ShuttleConnection
+
+	shuttleMgr           shuttle.IManager
 	remoteTransferStatus *lru.ARCCache
 	inflightCids         map[cid.Cid]uint
 	inflightCidsLk       sync.Mutex
-	IncomingRPCMessages  chan *drpc.Message
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
+	transferMgr          transfer.IManager
 
 	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
 	consolidatingZonesLk sync.Mutex
@@ -58,19 +57,25 @@ type ContentManager struct {
 
 	consolidatingZones map[uint]bool
 	aggregatingZones   map[uint]bool
-
-	// TODO move out to filc package
-	TcLk             sync.Mutex
-	TrackingChannels map[string]*util.ChanTrack
 }
 
-func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tbs *util.TrackingBlockstore, nd *node.Node, cfg *config.Estuary, minerManager miner.IMinerManager, log *zap.SugaredLogger) (*ContentManager, contentqueue.IQueueManager, error) {
+func NewContentManager(
+	db *gorm.DB,
+	api api.Gateway,
+	fc *filclient.FilClient,
+	tbs *util.TrackingBlockstore,
+	nd *node.Node,
+	cfg *config.Estuary,
+	minerManager miner.IMinerManager,
+	log *zap.SugaredLogger,
+	shuttleMgr shuttle.IManager,
+	transferMgr transfer.IManager,
+	queueMgr contentqueue.IQueueManager,
+) (*ContentManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	queueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
 
 	cm := &ContentManager{
 		cfg:                  cfg,
@@ -82,33 +87,18 @@ func NewContentManager(db *gorm.DB, api api.Gateway, fc *filclient.FilClient, tb
 		notifyBlockstore:     nd.NotifBlockstore,
 		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
 		remoteTransferStatus: cache,
-		Shuttles:             make(map[string]*ShuttleConnection),
+		shuttleMgr:           shuttleMgr,
 		inflightCids:         make(map[cid.Cid]uint),
 		isDealMakingDisabled: cfg.Deal.IsDisabled,
 		tracer:               otel.Tracer("replicator"),
-		IncomingRPCMessages:  make(chan *drpc.Message, cfg.RPCMessage.IncomingQueueSize),
 		minerManager:         minerManager,
 		log:                  log,
+		transferMgr:          transferMgr,
 		consolidatingZones:   make(map[uint]bool),
 		aggregatingZones:     make(map[uint]bool),
-
-		queueMgr: queueMgr,
-
-		// TODO move out to filc package
-		TrackingChannels: make(map[string]*util.ChanTrack),
+		queueMgr:             queueMgr,
 	}
-	return cm, queueMgr, nil
-}
-
-// TODO move out to filc package
-func (cm *ContentManager) TrackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, st *filclient.ChannelState) {
-	cm.TcLk.Lock()
-	defer cm.TcLk.Unlock()
-
-	cm.TrackingChannels[chanid.String()] = &util.ChanTrack{
-		Dbid: dealdbid,
-		Last: st,
-	}
+	return cm, nil
 }
 
 func (cm *ContentManager) rebuildToCheckQueue() error {

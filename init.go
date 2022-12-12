@@ -30,6 +30,7 @@ func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid,
 	go func() {
 		defer close(out)
 		var contents []util.Content
+
 		if err := init.db.Where("active = ?", true).FindInBatches(&contents, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
 			for _, c := range contents {
 				out <- c.Cid.CID

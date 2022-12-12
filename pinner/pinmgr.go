@@ -10,9 +10,11 @@ import (
 	"sync"
 	"time"
 
+	contentmgr "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/goque"
 	"github.com/vmihailenco/msgpack/v5"
 
@@ -26,7 +28,19 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
 type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
 
-func NewPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
+func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm *contentmgr.ContentManager, shuttleMgr shuttle.IManager) *EstuaryPinManager {
+	return &EstuaryPinManager{
+		PinManager: newPinManager(pinfunc, scf, opts),
+		cm:         cm,
+		shuttleMgr: shuttleMgr,
+	}
+}
+
+func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
+	return newPinManager(pinfunc, scf, opts)
+}
+
+func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
 		scf = func(contID uint, location string, status types.PinningStatus) error {
 			return nil
@@ -83,6 +97,16 @@ type PinManager struct {
 	StatusChangeFunc PinStatusFunc
 	maxActivePerUser int
 	QueueDataDir     string
+}
+
+type ShuttleManager struct {
+	*PinManager
+}
+
+type EstuaryPinManager struct {
+	*PinManager
+	cm         *contentmgr.ContentManager
+	shuttleMgr shuttle.IManager
 }
 
 type PinningOperationData struct {
@@ -182,19 +206,24 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 		return nil
 	}
 
+	// Dequeue the next item in the queue
 	item, err := pm.pinQueue.Dequeue(getUserForQueue(user))
 	pm.pinQueueCount[user]--
 	if pm.pinQueueCount[user] == 0 {
 		delete(pm.pinQueueCount, user)
 	}
-
 	pm.activePins[user]++
 
-	// Dequeue the next item in the queue
+	// no item in the queue for that query
+	if err == goque.ErrOutOfBounds {
+		return nil
+	}
+
 	if err != nil {
 		log.Infof("Error dequeuing item ", err) // usually no item to dequeue
 		return nil
 	}
+
 	// Assert type of the response to an Item pointer so we can work with it
 	next, err := decodeMsgPack(item.Value)
 	if err != nil {
