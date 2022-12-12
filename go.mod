@@ -95,7 +95,6 @@ require (
 	github.com/ipfs/go-ds-flatfs v0.5.1
 	github.com/ipfs/go-ipfs-provider v0.7.1
 	github.com/ipfs/go-metrics-prometheus v0.0.2
-	github.com/libp2p/go-libp2p-core v0.20.0
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
@@ -256,6 +255,7 @@ require (
 	github.com/libp2p/go-cidranger v1.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.2.0 // indirect
+	github.com/libp2p/go-libp2p-core v0.20.0 // indirect
 	github.com/libp2p/go-libp2p-gostream v0.4.1-0.20220720161416-e1952aede109 // indirect
 	github.com/libp2p/go-libp2p-http v0.2.1 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.5.0 // indirect

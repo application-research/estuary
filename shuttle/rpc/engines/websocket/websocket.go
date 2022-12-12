@@ -11,7 +11,7 @@ import (
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/shuttle/rpc/types"
 	"github.com/filecoin-project/go-address"
-	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/net/websocket"
 
 	"github.com/application-research/estuary/config"
