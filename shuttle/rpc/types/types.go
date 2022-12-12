@@ -1,8 +1,8 @@
 package types
 
 import (
-	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 )
 
-type MessageHandlerFn func(msg *rcpevent.Message, source string) error
-type CommandHandlerFn func(msg *rcpevent.Command, source string) error
+type MessageHandlerFn func(msg *rpcevent.Message, source string) error
+type CommandHandlerFn func(msg *rpcevent.Command, source string) error

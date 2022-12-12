@@ -5,18 +5,18 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/shuttle/rpc/engines/queue/drivers/nsq"
-	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/shuttle/rpc/types"
 
 	"go.uber.org/zap"
 )
 
 type IEstuaryRpcEngine interface {
-	SendMessage(topic string, handle string, msg *rcpevent.Command) error
+	SendMessage(topic string, handle string, msg *rpcevent.Command) error
 }
 
 type IShuttleRpcEngine interface {
-	SendMessage(topic string, msg *rcpevent.Message) error
+	SendMessage(topic string, msg *rpcevent.Message) error
 }
 
 func NewEstuaryRpcEngine(cfg *config.Estuary, log *zap.SugaredLogger, handlerFn types.MessageHandlerFn) (IEstuaryRpcEngine, error) {

@@ -28,7 +28,7 @@ import (
 	"github.com/pkg/errors"
 
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
-	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 
 	"github.com/application-research/estuary/util"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -193,7 +193,7 @@ func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 	return out, nil
 }
 
-func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *rcpevent.Command) error {
+func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error {
 	return m.rpcMgr.SendRPCMessage(ctx, handle, cmd)
 }
 

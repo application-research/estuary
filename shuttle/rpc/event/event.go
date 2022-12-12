@@ -51,6 +51,10 @@ type Hello struct {
 	QueueEngEnabled       bool
 }
 
+type Hi struct {
+	QueueEngEnabled bool
+}
+
 type Command struct {
 	Op           string
 	Params       CmdParams

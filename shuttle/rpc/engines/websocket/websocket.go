@@ -73,6 +73,11 @@ func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{})
 		return nil, nil, err
 	}
 
+	// tell shuttle if api support queue engine
+	if err := websocket.JSON.Send(ws, &rpcevent.Hi{QueueEngEnabled: m.cfg.RpcEngine.Queue.Enabled}); err != nil {
+		return nil, nil, err
+	}
+
 	_, err := url.Parse(hello.Host)
 	if err != nil {
 		m.log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)

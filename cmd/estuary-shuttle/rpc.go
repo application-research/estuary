@@ -93,8 +93,8 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) err
 	msg.TraceCarrier = rpcevent.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
 	msg.Handle = d.shuttleHandle
 
-	// use queue engine for rpc if enabled
-	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.queueEng != nil {
+	// use queue engine for rpc if enabled by shuttle and api
+	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.apiQueueEngEnabled && d.queueEng != nil {
 		log.Debugf("sending rpc message: %s, from shuttle: %s using queue engine", msg.Op, d.shuttleHandle)
 
 		// error if operation is not a registered topic

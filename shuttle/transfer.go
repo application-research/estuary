@@ -3,7 +3,7 @@ package shuttle
 import (
 	"context"
 
-	rcpevent "github.com/application-research/estuary/shuttle/rpc/event"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/filclient"
@@ -17,10 +17,10 @@ func (m *manager) StartTransfer(ctx context.Context, loc string, cd *model.Conte
 		return err
 	}
 
-	return m.sendRPCMessage(ctx, loc, &rcpevent.Command{
-		Op: rcpevent.CMD_StartTransfer,
-		Params: rcpevent.CmdParams{
-			StartTransfer: &rcpevent.StartTransfer{
+	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
+		Op: rpcevent.CMD_StartTransfer,
+		Params: rpcevent.CmdParams{
+			StartTransfer: &rpcevent.StartTransfer{
 				DealDBID:  cd.ID,
 				ContentID: cd.Content,
 				Miner:     miner,
@@ -32,10 +32,10 @@ func (m *manager) StartTransfer(ctx context.Context, loc string, cd *model.Conte
 }
 
 func (m *manager) RequestTransferStatus(ctx context.Context, loc string, dealid uint, chid string) error {
-	return m.sendRPCMessage(ctx, loc, &rcpevent.Command{
-		Op: rcpevent.CMD_ReqTxStatus,
-		Params: rcpevent.CmdParams{
-			ReqTxStatus: &rcpevent.ReqTxStatus{
+	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
+		Op: rpcevent.CMD_ReqTxStatus,
+		Params: rpcevent.CmdParams{
+			ReqTxStatus: &rpcevent.ReqTxStatus{
 				DealDBID: dealid,
 				ChanID:   chid,
 			},
@@ -44,10 +44,10 @@ func (m *manager) RequestTransferStatus(ctx context.Context, loc string, dealid 
 }
 
 func (m *manager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
-	return m.sendRPCMessage(ctx, loc, &rcpevent.Command{
-		Op: rcpevent.CMD_RestartTransfer,
-		Params: rcpevent.CmdParams{
-			RestartTransfer: &rcpevent.RestartTransfer{
+	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
+		Op: rpcevent.CMD_RestartTransfer,
+		Params: rpcevent.CmdParams{
+			RestartTransfer: &rpcevent.RestartTransfer{
 				ChanID:    chanid,
 				DealDBID:  d.ID,
 				ContentID: d.Content,
