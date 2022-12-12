@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/davecgh/go-spew/spew"
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
@@ -71,6 +72,8 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 }
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
+
+	spew.Dump("nkjnjnjnjknnnnlnnkjnnjnnkknnnnkjnl")
 	// send - tell estuary about a bad block on this shuttle
 	if err := s.sendRpcMessage(context.TODO(), &rpcevent.Message{
 		Op: rpcevent.OP_SanityCheck,
@@ -95,12 +98,11 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) err
 
 	// use queue engine for rpc if enabled by shuttle and api
 	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.apiQueueEngEnabled && d.queueEng != nil {
-		log.Debugf("sending rpc message: %s, from shuttle: %s using queue engine", msg.Op, d.shuttleHandle)
-
 		// error if operation is not a registered topic
 		if !rpcevent.MessageTopics[msg.Op] {
 			return fmt.Errorf("%s topic has not been registered properly", msg.Op)
 		}
+		log.Debugf("sending rpc message: %s, from shuttle: %s using queue engine", msg.Op, d.shuttleHandle)
 		return d.queueEng.SendMessage(msg.Op, msg)
 	}
 	log.Debugf("sending rpc message: %s, from shuttle: %s using websocket engine", msg.Op, d.shuttleHandle)
@@ -381,7 +383,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 		}
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, s.Node.Bitswap)
+	bserv := blockservice.New(s.Node.Blockstore, s.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 
 	sort.Slice(aggregate.Contents, func(i, j int) bool {
@@ -672,13 +674,13 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.Split
 		return nil
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(req.Size), 0)
 	if err := b.Pack(ctx, pin.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(&s.Node.Blockstore)
+	cst := cbor.NewCborStore(s.Node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {
@@ -711,7 +713,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.Split
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
 		if err != nil {
 			return err
 		}

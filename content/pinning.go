@@ -237,7 +237,7 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 		}
 	}
 
-	bserv := blockservice.New(&cm.node.Blockstore, cm.node.Bitswap)
+	bserv := blockservice.New(cm.node.Blockstore, cm.node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 

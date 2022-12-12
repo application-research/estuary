@@ -16,6 +16,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/sanitycheck"
 
 	"github.com/application-research/estuary/config"
 
@@ -106,7 +107,7 @@ type Node struct {
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
-	Blockstore      SanityCheckBlockstore
+	Blockstore      *sanitycheck.Blockstore
 	Bitswap         *bitswap.Bitswap
 	NotifBlockstore *NotifyBlockstore
 
@@ -117,7 +118,7 @@ type Node struct {
 	Config  *config.Node
 }
 
-func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
+func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckFn) (*Node, error) {
 	cfg := init.Config()
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
@@ -286,7 +287,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
-		Blockstore: newSanityCheckBlockstoreWrapper(mbs),
+		Blockstore: sanitycheck.NewBlockstoreWrapper(mbs, checkFn),
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
 		Bitswap:    bswap,

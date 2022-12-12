@@ -438,11 +438,45 @@ func main() {
 			cfg.Node.ListenAddrs = append(cfg.Node.ListenAddrs, config.DefaultWebsocketAddr)
 		}
 
-		init := Initializer{&cfg.Node, db}
-		nd, err := node.Setup(context.TODO(), &init)
+		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
 		if err != nil {
 			return err
 		}
+
+		// TODO: Paramify this? also make a proper constructor for the shuttle
+		cache, err := lru.New2Q(1000)
+		if err != nil {
+			return err
+		}
+
+		s := &Shuttle{
+			DB:                 db,
+			StagingMgr:         sbm,
+			Private:            cfg.Private,
+			Tracer:             otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
+			trackingChannels:   make(map[string]*util.ChanTrack),
+			inflightCids:       make(map[cid.Cid]uint),
+			splitsInProgress:   make(map[uint]bool),
+			aggrInProgress:     make(map[uint]bool),
+			unpinInProgress:    make(map[uint]bool),
+			outgoing:           make(chan *rpcevent.Message, cfg.RpcEngine.Websocket.OutgoingQueueSize),
+			authCache:          cache,
+			hostname:           cfg.Hostname,
+			estuaryHost:        cfg.EstuaryRemote.Api,
+			shuttleHandle:      cfg.EstuaryRemote.Handle,
+			shuttleToken:       cfg.EstuaryRemote.AuthToken,
+			disableLocalAdding: cfg.Content.DisableLocalAdding,
+			dev:                cfg.Dev,
+			shuttleConfig:      cfg,
+		}
+
+		init := Initializer{&cfg.Node, db}
+		nd, err := node.Setup(context.TODO(), &init, s.SendSanityCheck)
+		if err != nil {
+			return err
+		}
+		s.Node = nd
+		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
@@ -458,6 +492,7 @@ func main() {
 		if err != nil {
 			return err
 		}
+		s.Api = api
 		defer closer()
 
 		defaddr, err := nd.Wallet.GetDefault()
@@ -466,12 +501,13 @@ func main() {
 		}
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, &nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
+		filc, err := filclient.NewClient(rhost, api, nd.Wallet, defaddr, nd.Blockstore, nd.Datastore, cfg.DataDir, func(config *filclient.Config) {
 			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
 		})
 		if err != nil {
 			return err
 		}
+		s.Filc = filc
 
 		metCtx := metrics.CtxScope(context.Background(), "shuttle")
 		activeCommp := metrics.NewCtx(metCtx, "active_commp", "number of active piece commitment calculations ongoing").Gauge()
@@ -486,7 +522,7 @@ func main() {
 				return nil, err
 			}
 
-			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, &nd.Blockstore)
+			commpcid, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, c, nd.Blockstore)
 			if err != nil {
 				return nil, err
 			}
@@ -502,17 +538,7 @@ func main() {
 			return res, nil
 		})
 		commpMemo.SetConcurrencyLimit(4)
-
-		sbm, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
-		if err != nil {
-			return err
-		}
-
-		// TODO: Paramify this? also make a proper constructor for the shuttle
-		cache, err := lru.New2Q(1000)
-		if err != nil {
-			return err
-		}
+		s.commpMemo = commpMemo
 
 		if cfg.Jaeger.EnableTracing {
 			tp, err := estumetrics.NewJaegerTraceProvider("estuary-shuttle",
@@ -523,37 +549,6 @@ func main() {
 			otel.SetTracerProvider(tp)
 		}
 
-		s := &Shuttle{
-			Node:        nd,
-			Api:         api,
-			DB:          db,
-			Filc:        filc,
-			StagingMgr:  sbm,
-			Private:     cfg.Private,
-			gwayHandler: gateway.NewGatewayHandler(&nd.Blockstore),
-
-			Tracer: otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
-
-			commpMemo: commpMemo,
-
-			trackingChannels: make(map[string]*util.ChanTrack),
-			inflightCids:     make(map[cid.Cid]uint),
-			splitsInProgress: make(map[uint]bool),
-			aggrInProgress:   make(map[uint]bool),
-			unpinInProgress:  make(map[uint]bool),
-
-			outgoing:  make(chan *rpcevent.Message, cfg.RpcEngine.Websocket.OutgoingQueueSize),
-			authCache: cache,
-
-			hostname:           cfg.Hostname,
-			estuaryHost:        cfg.EstuaryRemote.Api,
-			shuttleHandle:      cfg.EstuaryRemote.Handle,
-			shuttleToken:       cfg.EstuaryRemote.AuthToken,
-			disableLocalAdding: cfg.Content.DisableLocalAdding,
-			dev:                cfg.Dev,
-			shuttleConfig:      cfg,
-		}
-
 		if cfg.RpcEngine.Queue.Enabled {
 			queueEng, err := queueng.NewShuttleRpcEngine(cfg, s.shuttleHandle, log, s.handleRpcCmd)
 			if err != nil {
@@ -562,8 +557,6 @@ func main() {
 			log.Debugf("going to use queue for rpc ....")
 			s.queueEng = queueEng
 		}
-
-		nd.Blockstore.SetSanityCheckFn(s.SendSanityCheck)
 
 		// Subscribe to legacy markets data transfer events (go-data-transfer)
 		s.Filc.SubscribeToDataTransferEvents(func(event datatransfer.Event, dts datatransfer.ChannelState) {
@@ -1382,7 +1375,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1525,7 +1518,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return xerrors.Errorf("encountered problem computing object references: %w", err)
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, &s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
@@ -1670,11 +1663,11 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 		}
 	}
 
-	bserv := blockservice.New(&d.Node.Blockstore, d.Node.Bitswap)
+	bserv := blockservice.New(d.Node.Blockstore, d.Node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, &d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
 	if err != nil {
 		return xerrors.Errorf("failed to addDatabaseTrackingToContent - contID(%d), cid(%s): %w", op.ContId, op.Obj.String(), err)
 	}
@@ -2093,7 +2086,7 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		return err
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -2143,36 +2136,38 @@ func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
 		log.Errorf("failed to fetch root: %s", rootFetchErr)
 	}
 
-	var exch exchange.Interface
-	if c.QueryParam("fetch") != "" {
-		exch = s.Node.Bitswap
-	}
-
-	bserv := blockservice.New(&s.Node.Blockstore, exch)
-	dserv := merkledag.NewDAGService(bserv)
-
-	cset := cid.NewSet()
-	err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
-		node, err := dserv.Get(ctx, c)
-		if err != nil {
-			return nil, err
-		}
-
-		if c.Type() == cid.Raw {
-			return nil, nil
-		}
-
-		return util.FilterUnwalkableLinks(node.Links()), nil
-	}, cc, cset.Visit, merkledag.Concurrent())
-
-	errstr := ""
-	if err != nil {
-		errstr = err.Error()
-	}
-
 	rferrstr := ""
 	if rootFetchErr != nil {
 		rferrstr = rootFetchErr.Error()
+	}
+
+	errstr := rferrstr
+	cset := cid.NewSet()
+	if rootFetchErr == nil {
+		var exch exchange.Interface
+		if c.QueryParam("fetch") != "" {
+			exch = s.Node.Bitswap
+		}
+
+		bserv := blockservice.New(s.Node.Blockstore, exch)
+		dserv := merkledag.NewDAGService(bserv)
+
+		err = merkledag.Walk(ctx, func(ctx context.Context, c cid.Cid) ([]*ipld.Link, error) {
+			node, err := dserv.Get(ctx, c)
+			if err != nil {
+				return nil, err
+			}
+
+			if c.Type() == cid.Raw {
+				return nil, nil
+			}
+
+			return util.FilterUnwalkableLinks(node.Links()), nil
+		}, cc, cset.Visit, merkledag.Concurrent())
+
+		if err != nil {
+			errstr = err.Error()
+		}
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -2418,8 +2413,8 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		return err
 	}
 
-	dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, &s.Node.Blockstore, cc, nil)
+	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
 	if err != nil {
 		return err
 	}

@@ -1319,13 +1319,13 @@ func (cm *ContentManager) SetDealMakingEnabled(enable bool) {
 }
 
 func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
-	dserv := merkledag.NewDAGService(blockservice.New(&cm.node.Blockstore, nil))
+	dserv := merkledag.NewDAGService(blockservice.New(cm.node.Blockstore, nil))
 	b := dagsplit.NewBuilder(dserv, uint64(size), 0)
 	if err := b.Pack(ctx, cont.Cid.CID); err != nil {
 		return err
 	}
 
-	cst := cbor.NewCborStore(&cm.node.Blockstore)
+	cst := cbor.NewCborStore(cm.node.Blockstore)
 
 	var boxCids []cid.Cid
 	for _, box := range b.Boxes() {
