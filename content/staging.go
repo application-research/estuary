@@ -502,9 +502,9 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 	return stagingZones, nil
 }
 
-func (cm *ContentManager) GetContentsForStagingZone(ctx context.Context, user uint, zoneID uint) ([]util.Content, error) {
+func (cm *ContentManager) GetStagingZoneWithContents(ctx context.Context, user uint, zoneID uint) (*ContentStagingZone, error) {
 	var zone util.Content
-	if err := cm.db.First(zone, "id = ? and user_id = ?", zoneID, user).Error; err != nil {
+	if err := cm.db.First(&zone, "id = ? and user_id = ?", zoneID, user).Error; err != nil {
 		return nil, errors.Wrapf(err, "zone not found or does not belong to user: %s", zoneID)
 	}
 	var contents []util.Content
@@ -515,7 +515,18 @@ func (cm *ContentManager) GetContentsForStagingZone(ctx context.Context, user ui
 	}).Error; err != nil {
 		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zone.ID)
 	}
-	return contents, nil
+	return &ContentStagingZone{
+		ZoneOpened:      zone.CreatedAt,
+		Contents:        contents,
+		MinSize:         constants.MinDealContentSize,
+		MaxSize:         constants.MaxDealContentSize,
+		CurSize:         zone.Size,
+		User:            zone.UserID,
+		ContID:          zone.ID,
+		Location:        zone.Location,
+		IsConsolidating: cm.IsZoneConsolidating(zone.ID),
+		IsAggregating:   cm.IsZoneAggregating(zone.ID),
+	}, nil
 }
 
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {

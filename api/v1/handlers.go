@@ -3576,23 +3576,22 @@ func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error
 	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
 }
 
-// handleGetStagingZoneContents godoc
-// @Summary      Get staging zone contents
-// @Description  This endpoint is used to get staging zone contents.
+// handleGetStagingZoneWithContents godoc
+// @Summary      Get staging zone with its contents field populated
+// @Description  This endpoint is used to get a staging zone, including its contents.
 // @Tags         content
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        id   path      int  true  "Content ID"
-// @Router       /content/staging-zones/{staging_zone}/contents [get]
-func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error {
-	zoneIDInt, err := strconv.Atoi(c.Param("staging_zone"))
+// @Param        staging_zone   path      int  true  "Staging Zone Content ID"
+// @Router       /content/staging-zones/{staging_zone} [get]
+func (s *apiV1) handleGetStagingZoneWithContents(c echo.Context, u *util.User) error {
+	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
 	if err != nil {
 		return err
 	}
-	zoneID := uint(zoneIDInt)
-	contents, err := s.CM.GetContentsForStagingZone(c.Request().Context(), u.ID, zoneID)
+	contents, err := s.CM.GetStagingZoneWithContents(c.Request().Context(), u.ID, uint(zoneID))
 	if err != nil {
 		// TODO: better error handling for more accurate http statuses
 		return c.JSON(http.StatusInternalServerError, err)
