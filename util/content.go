@@ -30,13 +30,6 @@ type ContentInCollection struct {
 	CollectionDir string `json:"dir"`
 }
 
-type ContentAddIpfsBody struct {
-	ContentInCollection
-	Root  string   `json:"root"`
-	Name  string   `json:"filename"`
-	Peers []string `json:"peers"`
-}
-
 type ContentAddResponse struct {
 	Cid                 string   `json:"cid"`
 	RetrievalURL        string   `json:"retrieval_url"`
