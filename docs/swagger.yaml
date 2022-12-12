@@ -193,21 +193,6 @@ definitions:
       - PinningStatusPinned
       - PinningStatusFailed
       - PinningStatusQueued
-  util.ContentAddIpfsBody:
-    properties:
-      coluuid:
-        type: string
-      dir:
-        type: string
-      filename:
-        type: string
-      peers:
-        items:
-          type: string
-        type: array
-      root:
-        type: string
-    type: object
   util.ContentAddResponse:
     properties:
       cid:
@@ -947,7 +932,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/util.ContentAddIpfsBody'
+            $ref: '#/definitions/types.IpfsPin'
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
