@@ -220,7 +220,7 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 	}
 
 	if err != nil {
-		log.Infof("Error dequeuing item ", err) // usually no item to dequeue
+		log.Errorf("Error dequeuing item ", err)
 		return nil
 	}
 
