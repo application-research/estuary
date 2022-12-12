@@ -3582,33 +3582,6 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 	return c.JSON(http.StatusOK, contents)
 }
 
-func (s *apiV1) getLimitAndOffset(c echo.Context, defaultLimit int, defaultOffset int) (int, int, error) {
-	limit := defaultLimit
-	offset := defaultOffset
-	if limstr := c.QueryParam("limit"); limstr != "" {
-		nlim, err := strconv.Atoi(limstr)
-		if err != nil {
-			return limit, offset, err
-		}
-
-		if nlim > 0 {
-			limit = nlim
-		}
-	}
-
-	if offstr := c.QueryParam("offset"); offstr != "" {
-		noff, err := strconv.Atoi(offstr)
-		if err != nil {
-			return limit, offset, err
-		}
-
-		if noff > 0 {
-			offset = noff
-		}
-	}
-	return limit, offset, nil
-}
-
 // handleGetStagingZoneContents godoc
 // @Summary      Get contents for a staging zone
 // @Description  This endpoint is used to get the contents for a staging zone
@@ -5173,4 +5146,31 @@ func (s *apiV1) handleFixupDeals(c echo.Context) error {
 		}(dll)
 	}
 	return nil
+}
+
+func (s *apiV1) getLimitAndOffset(c echo.Context, defaultLimit int, defaultOffset int) (int, int, error) {
+	limit := defaultLimit
+	offset := defaultOffset
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		nlim, err := strconv.Atoi(limstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if nlim > 0 {
+			limit = nlim
+		}
+	}
+
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		noff, err := strconv.Atoi(offstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if noff > 0 {
+			offset = noff
+		}
+	}
+	return limit, offset, nil
 }
