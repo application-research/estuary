@@ -944,7 +944,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/util.ContentAddIpfsBody"
+                            "$ref": "#/definitions/types.IpfsPin"
                         }
                     },
                     {
@@ -3466,29 +3466,6 @@ const docTemplate = `{
                 "PinningStatusFailed",
                 "PinningStatusQueued"
             ]
-        },
-        "util.ContentAddIpfsBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "filename": {
-                    "type": "string"
-                },
-                "peers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "root": {
-                    "type": "string"
-                }
-            }
         },
         "util.ContentAddResponse": {
             "type": "object",

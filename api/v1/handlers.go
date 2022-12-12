@@ -355,92 +355,11 @@ func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
+// @Param        body          body      types.IpfsPin  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
 func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
-	ctx := c.Request().Context()
-
-	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
-		return err
-	}
-
-	var params util.ContentAddIpfsBody
-	if err := c.Bind(&params); err != nil {
-		return err
-	}
-
-	filename := params.Name
-	if filename == "" {
-		filename = params.Root
-	}
-
-	var cols []*collections.CollectionRef
-	if params.CollectionID != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
-			return err
-		}
-
-		// if dir is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + filename
-		colp := defaultPath
-		if params.CollectionDir != "" {
-			p, err := sanitizePath(params.CollectionDir)
-			if err != nil {
-				return err
-			}
-			colp = p
-		}
-
-		// default: colp ends in / (does not include filename e.g. /hello/)
-		path := colp + filename
-
-		// if path does not end in /, it includes the filename
-		if !strings.HasSuffix(colp, "/") {
-			path = colp
-			filename = filepath.Base(colp)
-		}
-
-		cols = []*collections.CollectionRef{
-			{
-				Collection: srchCol.ID,
-				Path:       &path,
-			},
-		}
-	}
-
-	var origins []*peer.AddrInfo
-	for _, p := range params.Peers {
-		ai, err := peer.AddrInfoFromString(p)
-		if err != nil {
-			return err
-		}
-		origins = append(origins, ai)
-	}
-
-	rcid, err := cid.Decode(params.Root)
-	if err != nil {
-		return err
-	}
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		var count int64
-		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
-		}
-	}
-
-	makeDeal := true
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
-	if err != nil {
-		return err
-	}
-	s.pinMgr.Add(pinOp)
-	return c.JSON(http.StatusAccepted, pinstatus)
+	return s.handleAddPin(c, u)
 }
 
 // handleAddCar godoc
