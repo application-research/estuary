@@ -140,10 +140,11 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 // getReadyStagingZones gets zones that are not activated yet (but could have been pinned)
 func (cm *ContentManager) getReadyStagingZones() ([]util.Content, error) {
 	var readyZones []util.Content
+	var readyZonesBatch []util.Content
 	if err := cm.db.Model(&util.Content{}).
 		Where("not active and aggregate and size >= ?", constants.MinDealContentSize).
-		FindInBatches(&readyZones, 500, func(tx *gorm.DB, batch int) error {
-			readyZones = append(readyZones, readyZones...)
+		FindInBatches(&readyZonesBatch, 500, func(tx *gorm.DB, batch int) error {
+			readyZones = append(readyZones, readyZonesBatch...)
 			return nil
 		}).Error; err != nil {
 		return nil, err
@@ -318,8 +319,9 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 	cm.log.Debugf("aggregating zone: %d", zone.ID)
 
 	var zoneContents []util.Content
-	if err := cm.db.Where("aggregated_in = ?", zone.ID).FindInBatches(&zoneContents, 500, func(tx *gorm.DB, batch int) error {
-		zoneContents = append(zoneContents, zoneContents...)
+	var zoneContentsBatch []util.Content
+	if err := cm.db.Where("aggregated_in = ?", zone.ID).FindInBatches(&zoneContentsBatch, 500, func(tx *gorm.DB, batch int) error {
+		zoneContents = append(zoneContents, zoneContentsBatch...)
 		return nil
 	}).Error; err != nil {
 		return err
@@ -421,11 +423,12 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 	cm.log.Info("recomputing staging zone sizes .......")
 
 	var storedZoneSizes []zoneSize
+	var storedZoneSizesBatch []zoneSize
 	if err := cm.db.Model(&util.Content{}).
 		Where("not active and pinning and aggregate and size = 0").
 		Select("id, size").
-		FindInBatches(&storedZoneSizes, 500, func(tx *gorm.DB, batch int) error {
-			storedZoneSizes = append(storedZoneSizes, storedZoneSizes...)
+		FindInBatches(&storedZoneSizesBatch, 500, func(tx *gorm.DB, batch int) error {
+			storedZoneSizes = append(storedZoneSizes, storedZoneSizesBatch...)
 			return nil
 		}).Error; err != nil {
 		return err
@@ -477,8 +480,9 @@ func (cm *ContentManager) recomputeStagingZoneSizes() error {
 // getStagedContentsGroupedByLocation gets the active(pin) contents only for aggregation and consolidation
 func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneID uint) (map[string][]util.Content, error) {
 	var conts []util.Content
-	if err := cm.db.Where("active and aggregated_in = ?", zoneID, 5, nil).FindInBatches(&conts, 500, func(tx *gorm.DB, batch int) error {
-		conts = append(conts, conts...)
+	var contsBatch []util.Content
+	if err := cm.db.Where("active and aggregated_in = ?", zoneID, 5, nil).FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
+		conts = append(conts, contsBatch...)
 		return nil
 	}).Error; err != nil {
 		return nil, err
@@ -497,8 +501,9 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 
 func (cm *ContentManager) buildStagingZoneFromContent(zone util.Content) (*ContentStagingZone, error) {
 	var contents []util.Content
-	if err := cm.db.Where("active and aggregated_in = ?", zone.ID).FindInBatches(&contents, 500, func(tx *gorm.DB, batch int) error {
-		contents = append(contents, contents...)
+	var contentsBatch []util.Content
+	if err := cm.db.Where("active and aggregated_in = ?", zone.ID).FindInBatches(&contentsBatch, 500, func(tx *gorm.DB, batch int) error {
+		contents = append(contents, contentsBatch...)
 		return nil
 	}).Error; err != nil {
 		return nil, errors.Wrapf(err, "could not build ContentStagingZone struct from content id")
@@ -523,8 +528,9 @@ func (cm *ContentManager) buildStagingZoneFromContent(zone util.Content) (*Conte
 
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint) []*ContentStagingZone {
 	var zones []util.Content
-	if err := cm.db.Where("not active and pinning and aggregate and user_id = ?", user).FindInBatches(&zones, 500, func(tx *gorm.DB, batch int) error {
-		zones = append(zones, zones...)
+	var zonesBatch []util.Content
+	if err := cm.db.Where("not active and pinning and aggregate and user_id = ?", user).FindInBatches(&zonesBatch, 500, func(tx *gorm.DB, batch int) error {
+		zones = append(zones, zonesBatch...)
 		return nil
 	}).Error; err != nil {
 		return nil
@@ -543,8 +549,9 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 
 func (cm *ContentManager) GetStagingZoneSnapshot(ctx context.Context) map[uint][]*ContentStagingZone {
 	var zones []util.Content
-	if err := cm.db.Where("not active and pinning and aggregate").FindInBatches(&zones, 500, func(tx *gorm.DB, batch int) error {
-		zones = append(zones, zones...)
+	var zonesBatch []util.Content
+	if err := cm.db.Where("not active and pinning and aggregate").FindInBatches(&zonesBatch, 500, func(tx *gorm.DB, batch int) error {
+		zones = append(zones, zonesBatch...)
 		return nil
 	}).Error; err != nil {
 		return nil
@@ -578,8 +585,9 @@ func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content u
 	// TODO: move processing state into DB, use FirstOrInit here, also filter for not processing
 	// theoretically any user only needs to have up to one non-processing zone at a time
 	var zones []util.Content
-	if err := cm.db.Where("not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).FindInBatches(&zones, 500, func(tx *gorm.DB, batch int) error {
-		zones = append(zones, zones...)
+	var zonesBatch []util.Content
+	if err := cm.db.Where("not active and pinning and aggregate and user_id = ? and size + ? <= ?", content.UserID, content.Size, constants.MaxDealContentSize).FindInBatches(&zonesBatch, 500, func(tx *gorm.DB, batch int) error {
+		zones = append(zones, zonesBatch...)
 		return nil
 	}).Error; err != nil {
 		return nil
