@@ -137,7 +137,8 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZonesForUser))
-	content.GET("/staging-zones/:staging_zone", withUser(s.handleGetStagingZoneWithContents))
+	content.GET("/staging-zones/:staging_zone", withUser(s.handleGetStagingZoneWithoutContents))
+	content.GET("/staging-zones/:staging_zone/contents", withUser(s.handleGetStagingZoneContents))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 

@@ -502,22 +502,14 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 	return stagingZones, nil
 }
 
-func (cm *ContentManager) GetStagingZoneWithContents(ctx context.Context, user uint, zoneID uint) (*ContentStagingZone, error) {
+func (cm *ContentManager) GetStagingZoneWithoutContents(ctx context.Context, user uint, zoneID uint) (*ContentStagingZone, error) {
 	var zone util.Content
 	if err := cm.db.First(&zone, "id = ? and user_id = ?", zoneID, user).Error; err != nil {
 		return nil, errors.Wrapf(err, "zone not found or does not belong to user: %s", zoneID)
 	}
-	var contents []util.Content
-	var contentsBatch []util.Content
-	if err := cm.db.Where("active and aggregated_in = ?", zone.ID).FindInBatches(&contentsBatch, 500, func(tx *gorm.DB, batch int) error {
-		contents = append(contents, contentsBatch...)
-		return nil
-	}).Error; err != nil {
-		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zone.ID)
-	}
 	return &ContentStagingZone{
 		ZoneOpened:      zone.CreatedAt,
-		Contents:        contents,
+		Contents:        []util.Content{}, // omit contents, we only want to return the metadata of the zone here
 		MinSize:         constants.MinDealContentSize,
 		MaxSize:         constants.MaxDealContentSize,
 		CurSize:         zone.Size,
@@ -527,6 +519,18 @@ func (cm *ContentManager) GetStagingZoneWithContents(ctx context.Context, user u
 		IsConsolidating: cm.IsZoneConsolidating(zone.ID),
 		IsAggregating:   cm.IsZoneAggregating(zone.ID),
 	}, nil
+}
+
+func (cm *ContentManager) GetStagingZoneContents(ctx context.Context, user uint, zoneID uint, limit int, offset int) ([]util.Content, error) {
+	var zone util.Content
+	if err := cm.db.First(&zone, "id = ? and user_id = ?", zoneID, user).Error; err != nil {
+		return nil, errors.Wrapf(err, "zone not found or does not belong to user: %s", zoneID)
+	}
+	var contents []util.Content
+	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "active and aggregated_in = ?", zone.ID).Error; err != nil {
+		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zone.ID)
+	}
+	return contents, nil
 }
 
 func (cm *ContentManager) addContentToStagingZone(ctx context.Context, content util.Content) error {
