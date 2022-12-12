@@ -3581,7 +3581,11 @@ func (s *apiV1) handleGetBucketDiag(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
+	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, res)
 }
 
 // handleUserExportData godoc
