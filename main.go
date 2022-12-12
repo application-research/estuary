@@ -611,15 +611,14 @@ func main() {
 			return err
 		}
 
+		// stand up saninty check manager
+		sanitycheckMgr := sanitycheck.NewManager(db, log)
+
 		init := Initializer{&cfg.Node, db, nil}
-		nd, err := node.Setup(cctx.Context, &init)
+		nd, err := node.Setup(cctx.Context, &init, sanitycheckMgr.HandleMissingBlocks)
 		if err != nil {
 			return err
 		}
-
-		// stand up saninty check manager and register the handler
-		sanitycheckMgr := sanitycheck.NewManager(db, log)
-		nd.Blockstore.SetSanityCheckFn(sanitycheckMgr.HandleMissingBlocks)
 
 		for _, a := range nd.Host.Addrs() {
 			log.Infof("%s/p2p/%s\n", a, nd.Host.ID())
@@ -699,7 +698,7 @@ func main() {
 		})
 
 		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		fc, err := filclient.NewClient(rhost, gatewayApi, nd.Wallet, walletAddr, &nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+		fc, err := filclient.NewClient(rhost, gatewayApi, nd.Wallet, walletAddr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
 		if err != nil {
 			return err
 		}
