@@ -33,26 +33,20 @@ make clean all
 Then run `./estuary setup --username=<uname> --password=<pword>` to initialize the database as well as the access token. **Make sure to save this token as it'll be used to do almost all API calls**.
 ```bash
 $ ./estuary setup --username=<uname> --password=<pword>
-```
-output 
-
-```
-Auth Token: ESTb43c2f9c-9832-498a-8300-35d9c4b8c16eARY
+Auth Token: <your_auth_token>
 ```
 
 Next, set the `FULLNODE_API_INFO` environment variable to a synced lotus node. This can either be a local Lotus node, or a public endpoint, e.g. `wss://api.chain.love`
-
 ```bash
 $ export FULLNODE_API_INFO=wss://api.chain.love
 ```
 
 Start your Estuary Node (Note: if you see error messages like `too many open files`, increase the number of open files allow `ulimit -n 10000`)
-
 ```bash
 $ ./estuary --logging
 ```
-output
 
+if the node is started successfully, you will receive the following output:
 ```
 Wallet address is:  <your_estuary_address_printed_here>
 2021-09-16T13:32:48.463-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
@@ -76,40 +70,28 @@ ____________________________________O/_______
 Estuary stores data on IPFS before replicating it to the Filecoin Network. When you store data using Estuary, that data will first go to an `estuary-shuttle` *node* that utilizes IPFS as *hot-storage* before replication to the Filecoin Network begins.
 
 Build the shuttle binary
-
 ```bash
 $ make estuary-shuttle
 ```
 
-Then, initialize a shuttle node. There are three ways to do this. 
-
-1. using the admin UI at <host>/admin/shuttle
-2. using the Estuary API endpoint `/admin/shuttle/init` 
+Then, initialize a shuttle node. You can do this by using the admin UI at `<host>/admin/shuttle`, by posting to the Estuary API endpoint `/admin/shuttle/init` 
 ```bash
-$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X POST localhost:3004/admin/shuttle/init
+$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X POST localhost:3004/admin/shuttle/
+{"handle":"<your_handle_printed_here>", "token":"<your_auth_token_printed_here>"}
 ```
-3. using the CLI 
+
+or by using the CLI 
 ```bash 
 $ ./estuary shuttle
-```
-If you are using the API endpoint or the CLI command option, you should receive the following output:
-```
-{"handle":"<your_handle_printed_here>","token":"<your_auth_token_printed_here>"}
+{"handle":"<your_handle_printed_here>", "token":"<your_auth_token_printed_here>"}
 ```
 
-To view a list of shuttle nodes already initialized, you can make a request to the shuttle/list API endpoint 
-```bash
-$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X GET localhost:3004/admin/shuttle/list 
-```
-
-Using the handle and auth token given above, start a shuttle node in development mode
-
+Using the output from the above command, start a shuttle node in development mode: 
 ```bash
 $ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=REPLACE_ME_WITH_AUTH_TOKEN 
 --handle=REPLACE_ME_WITH_HANDLE --logging --host=localhost:3005
 ```
 output
-
 ```
 Wallet address is:  <your_estuary-shuttle_address_printed_here>
 2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.xo:145        start data-transfer module
@@ -130,6 +112,10 @@ ____________________________________O/_______
 ```
 
 NB: The above commands can be repeated to create and run more shuttle nodes. 
+To view a list of shuttle nodes that have already been initialized, make a GET request to the `admin/shuttle/list` API endpoint 
+```bash
+$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X GET localhost:3004/admin/shuttle/list 
+```
 
 ### API
 
