@@ -589,6 +589,28 @@ func main() {
 				}
 				return cfg.Save(configFile)
 			},
+		}, {
+			Name:  "shuttle",
+			Usage: "Initializes a shuttle node, returns handle and authorization token",
+			Action: func(cctx *cli.Context) error {
+				shuttle := &model.Shuttle{
+					Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
+					Token:  "SECRET" + uuid.New().String() + "SECRET",
+					Open:   false,
+				}
+
+				db, err := setupDatabase(cfg.DatabaseConnString)
+				if err != nil {
+					return err
+				}
+
+				if err := db.Create(shuttle).Error; err != nil {
+					return err
+				}
+
+				log.Infof(`{"handle":"%s","token":"%s"}`, shuttle.Handle, shuttle.Token)
+				return nil
+			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
