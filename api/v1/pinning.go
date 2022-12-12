@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -243,6 +244,7 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @in           202,default  string  Token "token"
 // @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
+// @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /pinning/pins [post]
 func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
@@ -251,9 +253,19 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		return err
 	}
 
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
+
 	var pin types.IpfsPin
 	if err := c.Bind(&pin); err != nil {
 		return err
+	}
+
+	filename := pin.Name
+	if filename == "" {
+		filename = pin.CID
 	}
 
 	var cols []*collections.CollectionRef
@@ -263,17 +275,31 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 			return err
 		}
 
-		colp, _ := pin.Meta["colpath"].(string)
-		colpath, err := collections.ConstructDirectoryPath(colp)
+		colp, _ := pin.Meta[ColDir].(string)
+		path, err := collections.ConstructDirectoryPath(colp)
 		if err != nil {
 			return err
 		}
+		fullPath := filepath.Join(path, filename)
 
 		cols = []*collections.CollectionRef{
 			{
 				Collection: srchCol.ID,
-				Path:       &colpath,
+				Path:       &fullPath,
 			},
+		}
+
+		// see if there's already a file with that name/path on that collection
+		pathInCollection, err := collections.Contains(&srchCol, fullPath, s.DB)
+		if err != nil {
+			return err
+		}
+		if pathInCollection && !overwrite {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_CONTENT_IN_COLLECTION,
+				Details: "file already exists in collection, specify 'overwrite=true' to overwrite",
+			}
 		}
 	}
 

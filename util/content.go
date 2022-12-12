@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ const (
 type ContentInCollection struct {
 	CollectionID  string `json:"coluuid"`
 	CollectionDir string `json:"dir"`
+	Overwrite     bool   `json:"overwrite"`
 }
 
 type ContentAddResponse struct {
@@ -194,7 +196,11 @@ func CreateEstuaryRetrievalURL(cid string) string {
 
 func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
 	var content Content
-	if err := db.First(&content, "id = ?", contentid).Error; err != nil {
+	contID, err := strconv.Atoi(contentid)
+	if err != nil {
+		return Content{}, err
+	}
+	if err := db.First(&content, "id = ?", contID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return Content{}, &HttpError{
 				Code:    http.StatusNotFound,

@@ -361,6 +361,7 @@ func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 // @Failure      500           {object}  util.HttpError
 // @Param        body          body      types.IpfsPin  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
+// @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /content/add-ipfs [post]
 func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 	return s.handleAddPin(c, u)
@@ -508,6 +509,10 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleAdd", trace.WithAttributes(attribute.Int("user", int(u.ID))))
 	defer span.End()
 
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
 	dir := c.QueryParam(ColDir)
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -543,6 +548,11 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	if fvname := c.FormValue("filename"); fvname != "" {
 		filename = fvname
 	}
+	path, err := collections.ConstructDirectoryPath(dir)
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Join(path, filename)
 
 	fi, err := mpf.Open()
 	if err != nil {
@@ -585,6 +595,21 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		}()
 	}()
 
+	// see if there's already a file with that name/path on that collection
+	if col != nil {
+		pathInCollection, err := collections.Contains(col, fullPath, s.DB)
+		if err != nil {
+			return err
+		}
+		if pathInCollection && !overwrite {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_CONTENT_IN_COLLECTION,
+				Details: "file already exists in collection, specify 'overwrite=true' to overwrite",
+			}
+		}
+	}
+
 	bserv := blockservice.New(bs, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
@@ -606,12 +631,8 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	}
 
 	if col != nil {
-		overwrite := false
-		if c.QueryParam("overwrite") == "true" {
-			overwrite = true
-		}
 		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := collections.AddContentToCollection(coluuid, string(content.ID), dir, overwrite, s.DB, u); err != nil {
+		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(content.ID)), dir, overwrite, s.DB, u); err != nil {
 			return xerrors.Errorf("failed to add content to collection: %s", err)
 		}
 	}
@@ -4469,12 +4490,30 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 
 	var col collections.Collection
 	if req.CollectionID != "" {
-		if err := s.DB.First(&col, "uuid = ?", req.CollectionID).Error; err != nil {
+		// get collection
+		col, err = collections.GetCollection(req.CollectionID, s.DB, u)
+		if err != nil {
 			return err
 		}
 
-		if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
+		// build full path with filename
+		path, err := collections.ConstructDirectoryPath(req.CollectionDir)
+		if err != nil {
 			return err
+		}
+		fullPath := filepath.Join(path, req.Name)
+
+		// check for file conflicts
+		pathInCollection, err := collections.Contains(&col, fullPath, s.DB)
+		if err != nil {
+			return err
+		}
+		if pathInCollection && !req.Overwrite {
+			return &util.HttpError{
+				Code:    http.StatusBadRequest,
+				Reason:  util.ERR_CONTENT_IN_COLLECTION,
+				Details: "file already exists in collection, specify 'overwrite=true' to overwrite",
+			}
 		}
 	}
 

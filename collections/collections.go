@@ -97,6 +97,15 @@ func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) (
 	return selectedRefs, nil
 }
 
+func Contains(collection *Collection, fullPath string, db *gorm.DB) (bool, error) {
+	var colRef CollectionRef
+	err := db.First(&colRef, "collection = ? and path = ?", collection.ID, fullPath).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	return true, err
+}
+
 func AddContentToCollection(coluuid string, contentID string, dir string, overwrite bool, db *gorm.DB, u *util.User) error {
 	// first we get the collection and content
 	col, err := GetCollection(coluuid, db, u)
@@ -115,20 +124,18 @@ func AddContentToCollection(coluuid string, contentID string, dir string, overwr
 	fullPath := filepath.Join(path, content.Name)
 
 	// see if there's already a file with that name/path on that collection
-	var colRef CollectionRef
-	err = db.First(&colRef, "collection = ? and path = ?", col.ID, fullPath).Error
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	pathInCollection, err := Contains(&col, fullPath, db)
+	if err != nil {
 		return err
+	}
+	if pathInCollection && !overwrite {
+		return xerrors.Errorf("file already exists in collection, specify 'overwrite=true' to overwrite")
 	}
 
 	// if there's a duplicate and overwrite has been set to true, then update
-	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
-		if overwrite {
-			if err := db.Model(CollectionRef{}).Where("collection = ? and path = ?", col.ID, fullPath).UpdateColumn("content", content.ID).Error; err != nil {
-				return xerrors.Errorf("unable to overwrite file: %w", err)
-			}
-		} else {
-			return xerrors.Errorf("file already exists in collection, specify 'overwrite=true' to overwrite")
+	if pathInCollection && overwrite {
+		if err := db.Model(CollectionRef{}).Where("collection = ? and path = ?", col.ID, fullPath).UpdateColumn("content", content.ID).Error; err != nil {
+			return xerrors.Errorf("unable to overwrite file: %w", err)
 		}
 	} else { // else, create collectionRef for new file
 		if err := db.Create(&CollectionRef{

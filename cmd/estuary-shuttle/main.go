@@ -1295,12 +1295,22 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Param        overwrite	   query     string  false  "Overwrite files with the same path on same collection"
+// @Param        dir           query     string  false  "Directory"
+// @Param        coluuid       query     string  false  "Collection UUID"
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
+	dir := c.QueryParam(ColDir)
+	coluuid := c.QueryParam("coluuid")
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -1335,8 +1345,9 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:  c.QueryParam(ColUuid),
-		CollectionDir: c.QueryParam(ColDir),
+		CollectionID:  coluuid,
+		CollectionDir: dir,
+		Overwrite:     overwrite,
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
