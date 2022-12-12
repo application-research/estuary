@@ -628,18 +628,18 @@ func main() {
 		go func() {
 			for _, ai := range node.BootstrapPeers {
 				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
-					log.Warnf("failed to connect to bootstrapper: %w", err)
+					log.Warnf("failed to connect to bootstrapper: %s", err)
 					continue
 				}
 			}
 
 			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
-				log.Warnf("dht bootstrapping failed: %w", err)
+				log.Warnf("dht bootstrapping failed: %s", err)
 			}
 		}()
 
 		if err = view.Register(metrics.DefaultViews...); err != nil {
-			log.Fatalf("Cannot register the OpenCensus view: %v", err)
+			log.Errorf("Cannot register the OpenCensus view: %s", err)
 			return err
 		}
 
