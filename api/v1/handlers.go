@@ -3542,8 +3542,8 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 }
 
 // handleGetStagingZonesForUser godoc
-// @Summary      Get staging zone for user
-// @Description  This endpoint is used to get staging zone for user.
+// @Summary      Get staging zone for user, excluding its contents
+// @Description  This endpoint is used to get staging zone for user, excluding its contents.
 // @Tags         content
 // @Produce      json
 // @Success      200  {object}  string
@@ -3599,10 +3599,7 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	if err != nil {
 		return err
 	}
-	fmt.Println(c.QueryParams())
 	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
-	fmt.Println(limit)
-	fmt.Println(offset)
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
 	if err != nil {
