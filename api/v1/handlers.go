@@ -131,29 +131,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
 func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
-	limit := 500
-	if limstr := c.QueryParam("limit"); limstr != "" {
-		nlim, err := strconv.Atoi(limstr)
-		if err != nil {
-			return err
-		}
-
-		if nlim > 0 {
-			limit = nlim
-		}
-	}
-
-	offset := 0
-	if offstr := c.QueryParam("offset"); offstr != "" {
-		noff, err := strconv.Atoi(offstr)
-		if err != nil {
-			return err
-		}
-
-		if noff > 0 {
-			offset = noff
-		}
-	}
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -2380,10 +2358,6 @@ func (s *apiV1) handleGetContentFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, errs)
 }
 
-func (s *apiV1) handleAdminGetStagingZones(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
-}
-
 func (s *apiV1) handleGetOffloadingCandidates(c echo.Context) error {
 	conts, err := s.CM.GetRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
@@ -3567,13 +3541,9 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 	return &stats, nil
 }
 
-func (s *apiV1) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
-}
-
-// handleGetStagingZoneForUser godoc
-// @Summary      Get staging zone for user
-// @Description  This endpoint is used to get staging zone for user.
+// handleGetStagingZonesForUser godoc
+// @Summary      Get staging zone for user, excluding its contents
+// @Description  This endpoint is used to get staging zone for user, excluding its contents.
 // @Tags         content
 // @Produce      json
 // @Success      200  {object}  string
@@ -3586,6 +3556,54 @@ func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error 
 		return err
 	}
 	return c.JSON(http.StatusOK, res)
+}
+
+// handleGetStagingZoneWithoutContents godoc
+// @Summary      Get staging zone without its contents field populated
+// @Description  This endpoint is used to get a staging zone, excluding its contents.
+// @Tags         content
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        staging_zone   path      int  true  "Staging Zone Content ID"
+// @Router       /content/staging-zones/{staging_zone} [get]
+func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User) error {
+	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
+	if err != nil {
+		return err
+	}
+	contents, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, contents)
+}
+
+// handleGetStagingZoneContents godoc
+// @Summary      Get contents for a staging zone
+// @Description  This endpoint is used to get the contents for a staging zone
+// @Tags         content
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        staging_zone   path      int  true  "Staging Zone Content ID"
+// @Param        limit   query  string  true  "limit"
+// @Param        offset  query  string  true  "offset"
+// @Router       /content/staging-zones/{staging_zone}/contents [get]
+func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error {
+	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
+	if err != nil {
+		return err
+	}
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, contents)
 }
 
 // handleUserExportData godoc
@@ -4398,14 +4416,7 @@ func (s *apiV1) handleStorageFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *apiV1) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
-	limit := 2000
-	if limstr := c.QueryParam("limit"); limstr != "" {
-		nlim, err := strconv.Atoi(limstr)
-		if err != nil {
-			return nil, err
-		}
-		limit = nlim
-	}
+	limit, _, _ := s.getLimitAndOffset(c, 2000, 0)
 
 	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
@@ -5129,4 +5140,31 @@ func (s *apiV1) handleFixupDeals(c echo.Context) error {
 		}(dll)
 	}
 	return nil
+}
+
+func (s *apiV1) getLimitAndOffset(c echo.Context, defaultLimit int, defaultOffset int) (int, int, error) {
+	limit := defaultLimit
+	offset := defaultOffset
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		nlim, err := strconv.Atoi(limstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if nlim > 0 {
+			limit = nlim
+		}
+	}
+
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		noff, err := strconv.Atoi(offstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if noff > 0 {
+			offset = noff
+		}
+	}
+	return limit, offset, nil
 }
