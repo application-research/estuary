@@ -192,7 +192,7 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 
 	// Dequeue the next item in the queue
 	if err != nil {
-		log.Errorf("Error dequeuing item ", err)
+		log.Infof("Error dequeuing item ", err) // usually no item to dequeue
 		return nil
 	}
 	// Assert type of the response to an Item pointer so we can work with it
