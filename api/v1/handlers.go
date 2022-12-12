@@ -1261,7 +1261,7 @@ func (s *apiV1) handleMakeDeal(c echo.Context, u *util.User) error {
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"deal": cd.DealID,
+		"deal": cd.ID,
 	})
 }
 

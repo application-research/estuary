@@ -808,7 +808,10 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 	var readyDeals []deal
 	for _, m := range miners {
-		cd, _ := cm.MakeDealWithMiner(ctx, content, m.Address)
+		cd, err := cm.MakeDealWithMiner(ctx, content, m.Address)
+		if err != nil {
+			return err
+		}
 		isPushTransfer := cd.DealProtocolVersion == filclient.DealProtocolv110
 		readyDeals = append(readyDeals, deal{minerAddr: m.Address, isPushTransfer: isPushTransfer, contentDeal: cd})
 		if len(readyDeals) >= dealsToBeMade {
