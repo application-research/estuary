@@ -120,6 +120,8 @@ definitions:
         type: string
       name:
         type: string
+      overwrite:
+        type: boolean
     type: object
   miner.ClaimMinerBody:
     properties:
@@ -220,6 +222,8 @@ definitions:
         type: string
       name:
         type: string
+      overwrite:
+        type: boolean
       root:
         type: string
       type:
@@ -893,6 +897,19 @@ paths:
   /content/add:
     post:
       description: This endpoint uploads a file.
+      parameters:
+        - description: Overwrite files with the same path on same collection
+          in: query
+          name: overwrite
+          type: string
+        - description: Directory
+          in: query
+          name: dir
+          type: string
+        - description: Collection UUID
+          in: query
+          name: coluuid
+          type: string
       produces:
         - application/json
       responses:
@@ -945,6 +962,10 @@ paths:
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
@@ -1949,6 +1970,14 @@ paths:
           required: true
           schema:
             $ref: '#/definitions/types.IpfsPin'
+        - description: Ignore Dupes
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:

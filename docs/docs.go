@@ -884,6 +884,26 @@ const docTemplate = `{
                     "content"
                 ],
                 "summary": "Upload a file",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Overwrite files with the same path on same collection",
+                        "name": "overwrite",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -962,6 +982,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Ignore Dupes",
                         "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files in collections",
+                        "name": "overwrite",
                         "in": "query"
                     }
                 ],
@@ -2526,6 +2552,18 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/types.IpfsPin"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files in collections",
+                        "name": "overwrite",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3512,6 +3550,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "overwrite": {
+                    "type": "boolean"
                 }
             }
         },
@@ -3661,6 +3702,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "overwrite": {
+                    "type": "boolean"
                 },
                 "root": {
                     "type": "string"
