@@ -524,7 +524,7 @@ func (cm *ContentManager) GetStagingZoneWithoutContents(ctx context.Context, use
 func (cm *ContentManager) GetStagingZoneContents(ctx context.Context, user uint, zoneID uint, limit int, offset int) ([]util.Content, error) {
 	var contents []util.Content
 	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "active and user_id = ? and aggregated_in = ?", user, zoneID).Error; err != nil {
-		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zone.ID)
+		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zoneID)
 	}
 	return contents, nil
 }
