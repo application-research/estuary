@@ -34,7 +34,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	"github.com/application-research/estuary/drpc"
 	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -668,7 +667,7 @@ func constructDirectoryPath(dir string) (string, error) {
 // redirectContentAdding is called when localContentAddingDisabled is true
 // it finds available shuttles and adds the desired content in one of them
 func (s *apiV1) redirectContentAdding(c echo.Context, u *util.User) error {
-	uep, err := s.getPreferredUploadEndpoints(u)
+	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
 	}
@@ -910,7 +909,7 @@ func (s *apiV1) handleContentStatus(c echo.Context, u *util.User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
+			chanst, err := s.transferMgr.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
 				s.log.Errorf("failed to get transfer status: %s", err)
 				// the UI needs to display a transfer state even for intermittent errors
@@ -1044,7 +1043,7 @@ func (s *apiV1) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, e
 		return nil, err
 	}
 
-	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
+	chanst, err := s.transferMgr.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		s.log.Errorf("failed to get transfer status: %s", err)
 		// the UI needs to display a transfer state even for intermittent errors
@@ -1325,7 +1324,7 @@ func (s *apiV1) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.transferMgr.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1353,7 +1352,7 @@ func (s *apiV1) handleTransferStatusByID(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.transferMgr.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1436,7 +1435,7 @@ func (s *apiV1) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
+	if err := s.transferMgr.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
 		return err
 	}
 	return nil
@@ -1725,25 +1724,15 @@ func (s *apiV1) handleAdminStats(c echo.Context) error {
 // @Failure      500       {object}  util.HttpError
 // @Router       /admin/system/config [get]
 func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
-	var shts []interface{}
-	for _, sh := range s.CM.Shuttles {
-		if sh.Hostname == "" {
-			s.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
-			continue
-		}
-
-		out, err := s.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
-		if err != nil {
-			s.log.Warnf("failed to get shuttle config: %s", err)
-			continue
-		}
-		shts = append(shts, out)
+	shConfigs, err := s.shuttleMgr.GetShuttlesConfig(u)
+	if err != nil {
+		return err
 	}
 
 	resp := map[string]interface{}{
 		"data": map[string]interface{}{
 			"primary":  s.cfg,
-			"shuttles": shts,
+			"shuttles": shConfigs,
 		},
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -2465,7 +2454,7 @@ func (s *apiV1) handleMoveContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.SendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+	if err := s.shuttleMgr.ConsolidateContent(ctx, shuttle.Handle, contents); err != nil {
 		return err
 	}
 
@@ -2878,7 +2867,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
-	uep, err := s.getPreferredUploadEndpoints(u)
+	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
 	}
@@ -2916,55 +2905,6 @@ func (s *apiV1) getMinersOwnedByUser(u *util.User) []string {
 	}
 
 	return out
-}
-
-func (s *apiV1) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
-	// TODO: this should be a lotttttt smarter
-	s.CM.ShuttlesLk.Lock()
-	defer s.CM.ShuttlesLk.Unlock()
-	var shuttles []model.Shuttle
-	for hnd, sh := range s.CM.Shuttles {
-		if sh.ContentAddingDisabled {
-			s.log.Debugf("shuttle %+v content adding is disabled", sh)
-			continue
-		}
-
-		if sh.Hostname == "" {
-			s.log.Debugf("shuttle %+v has empty hostname", sh)
-			continue
-		}
-
-		var shuttle model.Shuttle
-		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
-			s.log.Errorf("failed to look up shuttle by handle: %s", err)
-			continue
-		}
-
-		if !shuttle.Open {
-			s.log.Debugf("shuttle %+v is not open, skipping", shuttle)
-			continue
-		}
-
-		shuttles = append(shuttles, shuttle)
-	}
-
-	sort.Slice(shuttles, func(i, j int) bool {
-		return shuttles[i].Priority > shuttles[j].Priority
-	})
-
-	var out []string
-	for _, sh := range shuttles {
-		host := "https://" + sh.Host
-		if strings.HasPrefix(sh.Host, "http://") || strings.HasPrefix(sh.Host, "https://") {
-			host = sh.Host
-		}
-		out = append(out, host+"/content/add")
-	}
-
-	if !s.cfg.Content.DisableLocalAdding {
-		out = append(out, s.cfg.Hostname+"/content/add")
-	}
-	return out, nil
 }
 
 func (s *apiV1) handleHealth(c echo.Context) error {
@@ -4054,12 +3994,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 			loc := aggr[0].Location
 			if loc != cont.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
-				var aggrConts []drpc.AggregateContent
-				for _, c := range aggr {
-					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
-				}
-
-				if err := s.CM.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
+				if err := s.shuttleMgr.AggregateContent(ctx, loc, cont, aggr); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true
@@ -4213,10 +4148,10 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.CM.ShuttleIsOnline(d.Handle),
-			AddrInfo:       s.CM.ShuttleAddrInfo(d.Handle),
-			Hostname:       s.CM.ShuttleHostName(d.Handle),
-			StorageStats:   s.CM.ShuttleStorageStats(d.Handle),
+			Online:         s.shuttleMgr.IsOnline(d.Handle),
+			AddrInfo:       s.shuttleMgr.AddrInfo(d.Handle),
+			Hostname:       s.shuttleMgr.HostName(d.Handle),
+			StorageStats:   s.shuttleMgr.StorageStats(d.Handle),
 		})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -4228,8 +4163,8 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	var shuttle model.Shuttle
-	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
+	shuttle, err := s.shuttleMgr.GetByAuth(auth)
+	if err != nil {
 		return err
 	}
 
@@ -4239,48 +4174,21 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		done := make(chan struct{})
 		defer close(done)
 		defer ws.Close()
-		var hello drpc.Hello
-		if err := websocket.JSON.Receive(ws, &hello); err != nil {
-			s.log.Errorf("failed to read hello message from client: %s", err)
-			return
-		}
 
-		outgoingRpcQueue, unreg, err := s.CM.RegisterShuttleConnection(shuttle.Handle, &hello)
+		readWebSocket, unreg, err := s.shuttleMgr.Connect(ws, shuttle.Handle, done)
 		if err != nil {
 			s.log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
 
-		go func() {
-			for {
-				select {
-				case rpcMessage := <-outgoingRpcQueue:
-					// Write
-					err := websocket.JSON.Send(ws, rpcMessage)
-					if err != nil {
-						s.log.Errorf("failed to write command to shuttle: %s", err)
-						return
-					}
-				case <-done:
-					return
-				}
-			}
-		}()
-
-		go s.CM.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
+		go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
 
 		for {
-			var msg drpc.Message
-			if err := websocket.JSON.Receive(ws, &msg); err != nil {
+			if err := readWebSocket(); err != nil {
 				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
-
-			go func(msg *drpc.Message) {
-				msg.Handle = shuttle.Handle
-				s.CM.IncomingRPCMessages <- msg
-			}(&msg)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
@@ -4958,17 +4866,7 @@ func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
-		if err := s.CM.SendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
-			Op: drpc.CMD_AddPin,
-			Params: drpc.CmdParams{
-				AddPin: &drpc.AddPin{
-					DBID:   cont.ID,
-					UserId: cont.UserID,
-					Cid:    cont.Cid.CID,
-					Peers:  origins,
-				},
-			},
-		}); err != nil {
+		if err := s.shuttleMgr.PinContent(c.Request().Context(), handle, cont, origins); err != nil {
 			return err
 		}
 	}
@@ -5116,7 +5014,7 @@ func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (s
 		return "", nil
 	}
 
-	if !s.CM.ShuttleIsOnline(cont.Location) {
+	if !s.shuttleMgr.IsOnline(cont.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
@@ -5136,40 +5034,6 @@ func (s *apiV1) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (
 		return true, c.JSON(409, map[string]string{"message": fmt.Sprintf("this content is already preserved under cid:%s", rootCID.String())})
 	}
 	return false, nil
-}
-
-func (s *apiV1) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
-	u, err := url.Parse(hostname)
-	if err != nil {
-		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
-	}
-	u.Path = ""
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/admin/system/config", u.Scheme, u.Host), nil)
-	if err != nil {
-		return nil, errors.Errorf("failed to build GET request for shuttle(%s) config: %s", hostname, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, errors.Errorf("failed to request shuttle(%s) config: %s", hostname, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, errors.Errorf("failed to read shuttle(%s) config err resp: %s", hostname, err)
-		}
-		return nil, errors.Errorf("failed to get shuttle(%s) config: %s", hostname, bodyBytes)
-	}
-
-	var out interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
-	}
-	return out, nil
 }
 
 func (s *apiV1) isContentAddingDisabled(u *util.User) bool {

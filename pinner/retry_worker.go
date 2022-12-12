@@ -7,14 +7,13 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
-	"github.com/application-research/estuary/contentmgr"
 	"github.com/application-research/estuary/util"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"gorm.io/gorm"
 )
 
 // RunPinningRetryWorker re-attempt pinning contents that have not yet been pinned after a period of time
-func (pm *PinManager) RunPinningRetryWorker(ctx context.Context, db *gorm.DB, cfg *config.Estuary, cm *contentmgr.ContentManager) {
+func (pm *EstuaryPinManager) RunPinningRetryWorker(ctx context.Context, db *gorm.DB, cfg *config.Estuary) {
 	log.Info("running pinning retry worker .......")
 
 	timer := time.NewTicker(cfg.Pinning.RetryWorker.Interval)
@@ -36,14 +35,14 @@ func (pm *PinManager) RunPinningRetryWorker(ctx context.Context, db *gorm.DB, cf
 					break
 				}
 
-				go pm.pinContents(ctx, cm, contents, cfg)
+				go pm.pinContents(ctx, contents, cfg)
 				startContentID = int(contents[len(contents)-1].ID)
 			}
 		}
 	}
 }
 
-func (pm *PinManager) pinContents(ctx context.Context, cm *contentmgr.ContentManager, contents []util.Content, cfg *config.Estuary) {
+func (pm *EstuaryPinManager) pinContents(ctx context.Context, contents []util.Content, cfg *config.Estuary) {
 	makeDeal := true
 	for _, c := range contents {
 		select {
@@ -59,11 +58,11 @@ func (pm *PinManager) pinContents(ctx context.Context, cm *contentmgr.ContentMan
 			if c.Location == constants.ContentLocationLocal {
 				// if local content adding is enabled, retry local pin
 				if !cfg.Content.DisableLocalAdding {
-					pinOp := cm.GetPinOperation(c, origins, 0, makeDeal)
+					pinOp := pm.cm.GetPinOperation(c, origins, 0, makeDeal)
 					pm.Add(pinOp)
 				}
 			} else {
-				if err := cm.PinContentOnShuttle(ctx, c, origins, 0, c.Location, makeDeal); err != nil {
+				if err := pm.shuttleMgr.PinContent(ctx, c.Location, c, origins); err != nil {
 					log.Errorf("failed to send pin message to shuttle: %s", err)
 					time.Sleep(time.Millisecond * 100)
 				}

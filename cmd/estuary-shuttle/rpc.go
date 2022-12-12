@@ -9,9 +9,9 @@ import (
 
 	uio "github.com/ipfs/go-unixfs/io"
 
-	"github.com/application-research/estuary/drpc"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/types"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 	"github.com/application-research/filclient"
@@ -28,7 +28,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
+func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 	ctx := context.TODO()
 
 	// If the command contains a trace continue it here.
@@ -38,32 +38,32 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 		}
 	}
 
-	log.Debugf("handling rpc message:%s, for shuttle:%s", d.shuttleHandle)
+	log.Debugf("handling rpc message: %s, for shuttle: %s using %s engine", cmd.Op, d.shuttleHandle, source)
 
 	switch cmd.Op {
-	case drpc.CMD_AddPin:
+	case rpcevent.CMD_AddPin:
 		return d.handleRpcAddPin(ctx, cmd.Params.AddPin)
-	case drpc.CMD_ComputeCommP:
+	case rpcevent.CMD_ComputeCommP:
 		return d.handleRpcComputeCommP(ctx, cmd.Params.ComputeCommP)
-	case drpc.CMD_TakeContent:
+	case rpcevent.CMD_TakeContent:
 		return d.handleRpcTakeContent(ctx, cmd.Params.TakeContent)
-	case drpc.CMD_AggregateContent:
+	case rpcevent.CMD_AggregateContent:
 		return d.handleRpcAggregateStagedContent(ctx, cmd.Params.AggregateContent)
-	case drpc.CMD_StartTransfer:
+	case rpcevent.CMD_StartTransfer:
 		return d.handleRpcStartTransfer(ctx, cmd.Params.StartTransfer)
-	case drpc.CMD_PrepareForDataRequest:
+	case rpcevent.CMD_PrepareForDataRequest:
 		return d.handleRpcPrepareForDataRequest(ctx, cmd.Params.PrepareForDataRequest)
-	case drpc.CMD_CleanupPreparedRequest:
+	case rpcevent.CMD_CleanupPreparedRequest:
 		return d.handleRpcCleanupPreparedRequest(ctx, cmd.Params.CleanupPreparedRequest)
-	case drpc.CMD_ReqTxStatus:
+	case rpcevent.CMD_ReqTxStatus:
 		return d.handleRpcReqTxStatus(ctx, cmd.Params.ReqTxStatus)
-	case drpc.CMD_RetrieveContent:
+	case rpcevent.CMD_RetrieveContent:
 		return d.handleRpcRetrieveContent(ctx, cmd.Params.RetrieveContent)
-	case drpc.CMD_UnpinContent:
+	case rpcevent.CMD_UnpinContent:
 		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
-	case drpc.CMD_SplitContent:
+	case rpcevent.CMD_SplitContent:
 		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
-	case drpc.CMD_RestartTransfer:
+	case rpcevent.CMD_RestartTransfer:
 		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
 		return fmt.Errorf("unrecognized command op: %q", cmd.Op)
@@ -72,10 +72,10 @@ func (d *Shuttle) handleRpcCmd(cmd *drpc.Command) error {
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 	// send - tell estuary about a bad block on this shuttle
-	if err := s.sendRpcMessage(context.TODO(), &drpc.Message{
-		Op: drpc.OP_SanityCheck,
-		Params: drpc.MsgParams{
-			SanityCheck: &drpc.SanityCheck{
+	if err := s.sendRpcMessage(context.TODO(), &rpcevent.Message{
+		Op: rpcevent.OP_SanityCheck,
+		Params: rpcevent.MsgParams{
+			SanityCheck: &rpcevent.SanityCheck{
 				CID:    cc,
 				ErrMsg: errMsg,
 			},
@@ -87,11 +87,23 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 	//mark shuttle content?
 }
 
-func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
+func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
-	msg.TraceCarrier = drpc.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
-	log.Debugf("sending rpc message: %s, from shuttle:%s", msg.Op, msg.Handle)
+	msg.TraceCarrier = rpcevent.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
+	msg.Handle = d.shuttleHandle
+
+	// use queue engine for rpc if enabled by shuttle and api
+	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.apiQueueEngEnabled && d.queueEng != nil {
+		log.Debugf("sending rpc message: %s, from shuttle: %s using queue engine", msg.Op, d.shuttleHandle)
+
+		// error if operation is not a registered topic
+		if !rpcevent.MessageTopics[msg.Op] {
+			return fmt.Errorf("%s topic has not been registered properly", msg.Op)
+		}
+		return d.queueEng.SendMessage(msg.Op, msg)
+	}
+	log.Debugf("sending rpc message: %s, from shuttle: %s using websocket engine", msg.Op, d.shuttleHandle)
 
 	select {
 	case d.outgoing <- msg:
@@ -101,7 +113,7 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *drpc.Message) error {
 	}
 }
 
-func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *drpc.AddPin) error {
+func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *rpcevent.AddPin) error {
 	d.addPinLk.Lock()
 	defer d.addPinLk.Unlock()
 	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, apo.Peers, false)
@@ -133,10 +145,10 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			// primary node isnt aware that this pin failed, we need to resend
 			// that notification
 
-			if err := d.sendRpcMessage(ctx, &drpc.Message{
-				Op: drpc.OP_UpdatePinStatus,
-				Params: drpc.MsgParams{
-					UpdatePinStatus: &drpc.UpdatePinStatus{
+			if err := d.sendRpcMessage(ctx, &rpcevent.Message{
+				Op: rpcevent.OP_UpdatePinStatus,
+				Params: rpcevent.MsgParams{
+					UpdatePinStatus: &rpcevent.UpdatePinStatus{
 						DBID:   contid,
 						Status: types.PinningStatusFailed,
 					},
@@ -223,7 +235,7 @@ type commpResult struct {
 	CarSize uint64
 }
 
-func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCommP) error {
+func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.ComputeCommP) error {
 	ctx, span := d.Tracer.Start(ctx, "handleComputeCommP", trace.WithAttributes(
 		attribute.String("data", cmd.Data.String()),
 	))
@@ -239,10 +251,10 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 		return xerrors.Errorf("result from commp memoizer was of wrong type: %T", res)
 	}
 
-	return d.sendRpcMessage(ctx, &drpc.Message{
-		Op: drpc.OP_CommPComplete,
-		Params: drpc.MsgParams{
-			CommPComplete: &drpc.CommPComplete{
+	return d.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_CommPComplete,
+		Params: rpcevent.MsgParams{
+			CommPComplete: &rpcevent.CommPComplete{
 				Data:    cmd.Data,
 				CommP:   commpRes.CommP,
 				CarSize: commpRes.CarSize,
@@ -253,10 +265,10 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *drpc.ComputeCo
 }
 
 func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
-	if err := s.sendRpcMessage(ctx, &drpc.Message{
-		Op: drpc.OP_SplitComplete,
-		Params: drpc.MsgParams{
-			SplitComplete: &drpc.SplitComplete{
+	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_SplitComplete,
+		Params: rpcevent.MsgParams{
+			SplitComplete: &rpcevent.SplitComplete{
 				ID: cont,
 			},
 		},
@@ -269,18 +281,18 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size 
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
 
-	objs := make([]drpc.PinObj, 0, len(objects))
+	objs := make([]rpcevent.PinObj, 0, len(objects))
 	for _, o := range objects {
-		objs = append(objs, drpc.PinObj{
+		objs = append(objs, rpcevent.PinObj{
 			Cid:  o.Cid.CID,
 			Size: o.Size,
 		})
 	}
 
-	if err := d.sendRpcMessage(ctx, &drpc.Message{
-		Op: drpc.OP_PinComplete,
-		Params: drpc.MsgParams{
-			PinComplete: &drpc.PinComplete{
+	if err := d.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_PinComplete,
+		Params: rpcevent.MsgParams{
+			PinComplete: &rpcevent.PinComplete{
 				DBID:    contID,
 				Size:    size,
 				Objects: objs,
@@ -293,7 +305,7 @@ func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size 
 }
 
 // handleRpcTakeContent is used for consolidation, pulls pins from one shuttle to another shuttle
-func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeContent) error {
+func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *rpcevent.TakeContent) error {
 	ctx, span := d.Tracer.Start(ctx, "handleTakeContent")
 	defer span.End()
 
@@ -305,7 +317,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 		err := d.DB.First(&pin, "content = ?", c.ID).Error
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				go func(c drpc.ContentFetch) {
+				go func(c rpcevent.ContentFetch) {
 					if err := d.addPin(ctx, c.ID, c.Cid, c.UserID, c.Peers, true); err != nil {
 						log.Errorf("failed to pin takeContent: %d", c.ID)
 					}
@@ -326,7 +338,7 @@ func (d *Shuttle) handleRpcTakeContent(ctx context.Context, cmd *drpc.TakeConten
 	return nil
 }
 
-func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate *drpc.AggregateContents) error {
+func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate *rpcevent.AggregateContents) error {
 	// only progress if aggr is not already in progress
 	if !s.markStartAggr(aggregate.DBID) {
 		return nil
@@ -455,7 +467,7 @@ func (s *Shuttle) trackTransfer(chanid *datatransfer.ChannelID, dealdbid uint, s
 	}
 }
 
-func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.PrepareForDataRequest) error {
+func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *rpcevent.PrepareForDataRequest) error {
 	ctx, span := s.Tracer.Start(ctx, "handleRpcPrepareForDataRequest", trace.WithAttributes(
 		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
 		attribute.String("proposalCID", cmd.ProposalCid.String()),
@@ -472,7 +484,7 @@ func (s *Shuttle) handleRpcPrepareForDataRequest(ctx context.Context, cmd *drpc.
 	return nil
 }
 
-func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc.CleanupPreparedRequest) error {
+func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *rpcevent.CleanupPreparedRequest) error {
 	ctx, span := s.Tracer.Start(ctx, "handleRpcCleanupPreparedRequest", trace.WithAttributes(
 		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
 	))
@@ -486,7 +498,7 @@ func (s *Shuttle) handleRpcCleanupPreparedRequest(ctx context.Context, cmd *drpc
 	return nil
 }
 
-func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTransfer) error {
+func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *rpcevent.StartTransfer) error {
 	ctx, span := s.Tracer.Start(ctx, "handleStartTransfer", trace.WithAttributes(
 		attribute.Int64("contentID", int64(cmd.ContentID)),
 		attribute.Int64("dealDbID", int64(cmd.DealDBID)),
@@ -498,7 +510,7 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 
 	chanid, err := s.Filc.StartDataTransfer(ctx, cmd.Miner, cmd.PropCid, cmd.DataCid)
 	if err != nil {
-		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+		s.sendTransferStatusUpdate(ctx, &rpcevent.TransferStatus{
 			DealDBID: cmd.DealDBID,
 			Failed:   true,
 			Message:  fmt.Sprintf("failed to start data transfer: %s", err),
@@ -509,7 +521,7 @@ func (s *Shuttle) handleRpcStartTransfer(ctx context.Context, cmd *drpc.StartTra
 	return nil
 }
 
-func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.TransferStatus) {
+func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *rpcevent.TransferStatus) {
 	ctx, span := d.Tracer.Start(ctx, "sendTransferStatusUpdate")
 	defer span.End()
 
@@ -519,9 +531,9 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	}
 
 	log.Debugf("sending transfer status update: %d %s", st.DealDBID, extra)
-	if err := d.sendRpcMessage(ctx, &drpc.Message{
-		Op: drpc.OP_TransferStatus,
-		Params: drpc.MsgParams{
+	if err := d.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_TransferStatus,
+		Params: rpcevent.MsgParams{
 			TransferStatus: st,
 		},
 	}); err != nil {
@@ -529,7 +541,7 @@ func (d *Shuttle) sendTransferStatusUpdate(ctx context.Context, st *drpc.Transfe
 	}
 }
 
-func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatus) error {
+func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *rpcevent.ReqTxStatus) error {
 	_, span := s.Tracer.Start(ctx, "handleReqTxStatus", trace.WithAttributes(
 		attribute.Int64("dealDbID", int64(req.DealDBID)),
 	))
@@ -546,7 +558,7 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 	}
 
 	trsFailed, msg := util.TransferFailed(st)
-	s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+	s.sendTransferStatusUpdate(ctx, &rpcevent.TransferStatus{
 		Chanid:   req.ChanID,
 		DealDBID: req.DealDBID,
 		State:    st,
@@ -556,11 +568,11 @@ func (s *Shuttle) handleRpcReqTxStatus(ctx context.Context, req *drpc.ReqTxStatu
 	return nil
 }
 
-func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
+func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *rpcevent.RetrieveContent) error {
 	return s.retrieveContent(ctx, req)
 }
 
-func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *drpc.UnpinContent) error {
+func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *rpcevent.UnpinContent) error {
 	for _, c := range req.Contents {
 		go func(cntID uint) {
 			if err := s.Unpin(ctx, cntID); err != nil {
@@ -625,7 +637,7 @@ func (s *Shuttle) finishSplit(cont uint) {
 	delete(s.splitsInProgress, cont)
 }
 
-func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitContent) error {
+func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.SplitContent) error {
 	// only progress if split is not allready in progress
 	if !s.markStartSplit(req.Content) {
 		return nil
@@ -723,7 +735,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *drpc.SplitCont
 	return nil
 }
 
-func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.RestartTransfer) error {
+func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *rpcevent.RestartTransfer) error {
 	log.Debugf("restarting data transfer: %s", req.ChanID)
 	st, err := s.Filc.TransferStatus(ctx, &req.ChanID)
 	if err != nil && err != filclient.ErrNoTransferFound {
@@ -737,7 +749,7 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 	cannotRestart := !util.CanRestartTransfer(st)
 	if cannotRestart {
 		if trsFailed, msg := util.TransferFailed(st); trsFailed {
-			s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+			s.sendTransferStatusUpdate(ctx, &rpcevent.TransferStatus{
 				DealDBID: req.DealDBID,
 				Chanid:   req.ChanID.String(),
 				State:    st,
@@ -750,7 +762,7 @@ func (s *Shuttle) handleRpcRestartTransfer(ctx context.Context, req *drpc.Restar
 	}
 
 	if err = s.Filc.RestartTransfer(ctx, &req.ChanID); err != nil {
-		s.sendTransferStatusUpdate(ctx, &drpc.TransferStatus{
+		s.sendTransferStatusUpdate(ctx, &rpcevent.TransferStatus{
 			DealDBID: req.DealDBID,
 			Chanid:   req.ChanID.String(),
 			State:    st,

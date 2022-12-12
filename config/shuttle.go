@@ -33,7 +33,7 @@ type Shuttle struct {
 	Content            Content       `json:"content"`
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
-	RPCMessage         RPCMessage    `json:"rpc_message"`
+	RpcEngine          RpcEngine     `json:"rpc_engine"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -168,9 +168,18 @@ func NewShuttle(appVersion string) *Shuttle {
 			Handle:    "",
 			AuthToken: "",
 		},
-		RPCMessage: RPCMessage{
-			OutgoingQueueSize: 100000,
-			IncomingQueueSize: 100000,
+		RpcEngine: RpcEngine{
+			Websocket: WebsocketEngine{
+				IncomingQueueSize: 100000,
+				OutgoingQueueSize: 100000,
+				QueueHandlers:     30,
+			},
+			Queue: QueueEngine{
+				Host:      "",
+				Enabled:   false,
+				Consumers: 5,
+				Driver:    "nsq",
+			},
 		},
 	}
 }
