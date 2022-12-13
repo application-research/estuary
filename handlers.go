@@ -289,11 +289,11 @@ func (s *Server) ServeAPI() error {
 	adminPeering.GET("/status", s.handlePeeringStatus)
 
 	// peering endpoints that manage peers connected to the service
-	adminPeers := e.Group("/peering-peers")
-	adminPeers.Use(s.AuthRequired(util.PermLevelAdmin))
-	adminPeers.GET("", s.handlePeeringPeersList)
-	adminPeers.POST("", s.handlePeeringPeersAdd)
-	adminPeers.DELETE("", s.handlePeeringPeersRemove)
+	peeringPeers := e.Group("/peering-peers", s.AuthRequired(util.PermLevelAdmin))
+	peeringPeers.GET("", s.handlePeeringPeersList)
+	peeringPeers.POST("", s.handlePeeringPeersAdd)
+	peeringPeers.DELETE("", s.handlePeeringPeersRemove)
+
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
