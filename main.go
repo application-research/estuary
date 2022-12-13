@@ -117,12 +117,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 			cfg.DatabaseConnString = cctx.String("database")
 		case "apilisten":
 			cfg.ApiListen = cctx.String("apilisten")
-		case "announce":
-			_, err := multiaddr.NewMultiaddr(cctx.String("announce"))
+		case "announce-addr":
+			_, err := multiaddr.NewMultiaddr(cctx.String("announce-addr"))
 			if err != nil {
 				return fmt.Errorf("failed to parse announce address %s: %w", cctx.String("announce"), err)
 			}
-			cfg.Node.AnnounceAddrs = []string{cctx.String("announce")}
+			cfg.Node.AnnounceAddrs = []string{cctx.String("announce-addr")}
 		case "peering-peers":
 			//	The peer is an array of multiaddress so we need to allow
 			//	the user to specify ID and Addrs
@@ -278,7 +278,7 @@ func main() {
 			EnvVars: []string{"ESTUARY_API_LISTEN"},
 		},
 		&cli.StringFlag{
-			Name:    "announce",
+			Name:    "announce-addr",
 			Usage:   "announce address for the libp2p server to listen on",
 			EnvVars: []string{"ESTUARY_ANNOUNCE"},
 		},
