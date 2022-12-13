@@ -87,6 +87,14 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 	//mark shuttle content?
 }
 
+func (d *Shuttle) apiQueueIsEnbaled() bool {
+	return d.apiQueueEngEnabled != nil && *d.apiQueueEngEnabled
+}
+
+func (d *Shuttle) shuttleQueueIsEnabled() bool {
+	return d.queueEng != nil && d.shuttleConfig.RpcEngine.Queue.Enabled
+}
+
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
@@ -94,7 +102,7 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) err
 	msg.Handle = d.shuttleHandle
 
 	// use queue engine for rpc if enabled by shuttle and api
-	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.apiQueueEngEnabled && d.queueEng != nil {
+	if d.shuttleQueueIsEnabled() && d.apiQueueIsEnbaled() {
 		// error if operation is not a registered topic
 		if !rpcevent.MessageTopics[msg.Op] {
 			return fmt.Errorf("%s topic has not been registered properly", msg.Op)
