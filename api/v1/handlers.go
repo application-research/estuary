@@ -4808,8 +4808,6 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	s.CM.ToCheck(content.ID)
-
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
