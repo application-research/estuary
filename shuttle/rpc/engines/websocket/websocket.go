@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"sync"
@@ -107,9 +108,18 @@ func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{})
 		QueueEngEnabled:       hello.QueueEngEnabled,
 	}
 
+	err = nil
 	m.shuttlesLk.Lock()
-	m.shuttles[handle] = sc
+	_, shuttleExists := m.shuttles[handle]
+	if shuttleExists {
+		err = errors.New("Shuttle already has a connection to api node")
+	} else {
+		m.shuttles[handle] = sc
+	}
 	m.shuttlesLk.Unlock()
+	if err != nil {
+		return nil, nil, err
+	}
 
 	closeConn := func() {
 		cancel()
