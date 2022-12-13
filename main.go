@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"golang.org/x/time/rate"
 	"os"
 	"path/filepath"
 	"strings"
@@ -222,6 +223,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 				return fmt.Errorf("failed to parse max-verified-price %s: %w", cctx.String("max-verified-price"), err)
 			}
 			cfg.Deal.MaxVerifiedPrice = abi.TokenAmount(maxVerifiedPrice)
+
+		case "rate-limit":
+			cfg.RateLimit = rate.Limit(cctx.Float64("rate-limit"))
 
 		default:
 		}

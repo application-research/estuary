@@ -86,6 +86,7 @@ func NewEstuary(appVersion string) *Estuary {
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
 		DisableAutoRetrieve:    true,
+		RateLimit:              rate.Limit(20),
 
 		Deal: Deal{
 			IsDisabled:            false,
