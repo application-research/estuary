@@ -280,82 +280,6 @@ paths:
       summary: Create an Estuary invite
       tags:
         - content
-  /admin/peering/peers:
-    delete:
-      description: This endpoint can be used to remove a Peer from the Peering Service
-      parameters:
-        - description: Peer ids
-          in: body
-          name: peerIds
-          required: true
-          schema:
-            items:
-              type: boolean
-            type: array
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Remove peers on Peering Service
-      tags:
-        - admin
-        - peering
-        - peers
-    get:
-      description: This endpoint can be used to list all peers on Peering Service
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: List all Peering peers
-      tags:
-        - admin
-        - peering
-        - peers
-    post:
-      description: This endpoint can be used to add a Peer from the Peering Service
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Add peers on Peering Service
-      tags:
-        - admin
-        - peering
-        - peers
   /admin/peering/start:
     post:
       description: This endpoint can be used to start the Peering Service
@@ -1656,6 +1580,82 @@ paths:
       summary: Net Addrs
       tags:
         - net
+  /peering-peers:
+    delete:
+      description: This endpoint can be used to remove a Peer from the Peering Service
+      parameters:
+        - description: Peer ids
+          in: body
+          name: peerIds
+          required: true
+          schema:
+            items:
+              type: boolean
+            type: array
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Remove peers on Peering Service
+      tags:
+        - admin
+        - peering
+        - peers
+    get:
+      description: This endpoint can be used to list all peers on Peering Service
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: List all Peering peers
+      tags:
+        - admin
+        - peering
+        - peers
+    post:
+      description: This endpoint can be used to add a Peer from the Peering Service
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Add peers on Peering Service
+      tags:
+        - admin
+        - peering
+        - peers
   /pinning/pins:
     get:
       description: This endpoint lists all pin status objects

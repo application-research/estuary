@@ -286,14 +286,18 @@ func (s *Server) ServeAPI() error {
 	admin.POST("/cm/transfer/restart/:chanid", s.handleTransferRestart)
 	admin.POST("/cm/repinall/:shuttle", s.handleShuttleRepinAll)
 
-	//	peering
+	// peering endpoints that manage the service itself
 	adminPeering := admin.Group("/peering")
-	adminPeering.POST("/peers", s.handlePeeringPeersAdd)
-	adminPeering.DELETE("/peers", s.handlePeeringPeersRemove)
-	adminPeering.GET("/peers", s.handlePeeringPeersList)
 	adminPeering.POST("/start", s.handlePeeringStart)
 	adminPeering.POST("/stop", s.handlePeeringStop)
 	adminPeering.GET("/status", s.handlePeeringStatus)
+
+	// peering endpoints that manage peers connected to the service
+	peeringPeers := e.Group("/peering-peers", s.AuthRequired(util.PermLevelAdmin))
+	peeringPeers.GET("", s.handlePeeringPeersList)
+	peeringPeers.POST("", s.handlePeeringPeersAdd)
+	peeringPeers.DELETE("", s.handlePeeringPeersRemove)
+
 
 	admnetw := admin.Group("/net")
 	admnetw.GET("/peers", s.handleNetPeers)
@@ -460,7 +464,7 @@ func (s *Server) handleStats(c echo.Context, u *util.User) error {
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
-// @Router       /admin/peering/peers [post]
+// @Router       /peering-peers [post]
 func (s *Server) handlePeeringPeersAdd(c echo.Context) error {
 	var params []peering.PeeringPeer
 	if err := c.Bind(&params); err != nil {
@@ -524,7 +528,7 @@ type peerIDs []peerID // used for swagger
 // @Failure      400     {object}  util.HttpError
 // @Failure      500     {object}  util.HttpError
 // @Param        peerIds  body      peerIDs  true  "Peer ids"
-// @Router       /admin/peering/peers [delete]
+// @Router       /peering-peers [delete]
 func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
 
@@ -549,7 +553,7 @@ func (s *Server) handlePeeringPeersRemove(c echo.Context) error {
 // @Success      200      {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
-// @Router       /admin/peering/peers [get]
+// @Router       /peering-peers [get]
 func (s *Server) handlePeeringPeersList(c echo.Context) error {
 	var connectionCheck []peering.PeeringPeer
 	for _, peerAddrInfo := range s.Node.Peering.ListPeers() {
