@@ -549,6 +549,19 @@ func main() {
 			otel.SetTracerProvider(tp)
 		}
 
+		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
+			MaxActivePerUser: 30,
+			QueueDataDir:     cfg.DataDir,
+		})
+		go s.PinMgr.Run(300)
+
+		// only refresh pin queue if pin queue refresh and local adding are enabled
+		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
+			if err := s.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
+		}
+
 		if cfg.RpcEngine.Queue.Enabled {
 			queueEng, err := queueng.NewShuttleRpcEngine(cfg, s.shuttleHandle, log, s.handleRpcCmd)
 			if err != nil {
@@ -685,19 +698,6 @@ func main() {
 		})
 		if err != nil {
 			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
-		}
-
-		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
-			MaxActivePerUser: 30,
-			QueueDataDir:     cfg.DataDir,
-		})
-		go s.PinMgr.Run(300)
-
-		// only refresh pin queue if pin queue refresh and local adding are enabled
-		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
-			if err := s.refreshPinQueue(); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
 		}
 
 		go func() {
