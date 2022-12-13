@@ -887,7 +887,7 @@ type Shuttle struct {
 
 	shuttleConfig *config.Shuttle
 
-	apiQueueEngEnabled bool
+	apiQueueEngEnabled *bool
 	queueEng           queueng.IShuttleRpcEngine
 }
 
@@ -947,7 +947,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 		return err
 	}
 
-	d.apiQueueEngEnabled = hi.QueueEngEnabled
+	d.apiQueueEngEnabled = &hi.QueueEngEnabled
 
 	go func() {
 		defer close(readDone)
