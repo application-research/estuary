@@ -92,7 +92,7 @@ func NewAPIV1(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 
-	e.Use(middleware.RateLimiterWithConfig(configureRateLimiter(20)))
+	e.Use(middleware.RateLimiterWithConfig(configureRateLimiter(s.cfg.RateLimit)))
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
