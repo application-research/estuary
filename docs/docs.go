@@ -134,7 +134,9 @@ const docTemplate = `{
                         }
                     }
                 }
-            },
+            }
+        },
+        "/admin/invites/{code}": {
             "post": {
                 "description": "This endpoint is used to create an estuary invite.",
                 "produces": [
@@ -537,7 +539,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.createCollectionBody"
+                            "$ref": "#/definitions/api.createCollectionBody"
                         }
                     }
                 ],
@@ -653,7 +655,10 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/collections.CollectionListResponse"
+                            }
                         }
                     },
                     "400": {
@@ -832,7 +837,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.deleteContentFromCollectionBody"
+                            "$ref": "#/definitions/api.deleteContentFromCollectionBody"
                         }
                     }
                 ],
@@ -860,67 +865,19 @@ const docTemplate = `{
         },
         "/content/add": {
             "post": {
-                "description": "This endpoint is used to upload new content.",
-                "consumes": [
-                    "multipart/form-data"
-                ],
+                "description": "This endpoint uploads a file.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Add new content",
-                "parameters": [
-                    {
-                        "type": "file",
-                        "description": "File to upload",
-                        "name": "data",
-                        "in": "formData",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filename to use for upload",
-                        "name": "filename",
-                        "in": "formData"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Replication value",
-                        "name": "replication",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Ignore Dupes true/false",
-                        "name": "ignore-dupes",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Lazy Provide true/false",
-                        "name": "lazy-provide",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Directory",
-                        "name": "dir",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Upload a file",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/util.ContentAddResponse"
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -940,42 +897,19 @@ const docTemplate = `{
         },
         "/content/add-car": {
             "post": {
-                "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
+                "description": "This endpoint uploads content via a car file",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Add Car object",
-                "parameters": [
-                    {
-                        "description": "Car",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    {
-                        "type": "string",
-                        "description": "Ignore Dupes",
-                        "name": "ignore-dupes",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Filename",
-                        "name": "filename",
-                        "in": "query"
-                    }
-                ],
+                "summary": "Upload content via a car file",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/util.ContentAddResponse"
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -1010,7 +944,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/util.ContentAddIpfsBody"
+                            "$ref": "#/definitions/types.IpfsPin"
                         }
                     },
                     {
@@ -1474,14 +1408,110 @@ const docTemplate = `{
         },
         "/content/staging-zones": {
             "get": {
-                "description": "This endpoint is used to get staging zone for user.",
+                "description": "This endpoint is used to get staging zone for user, excluding its contents.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Get staging zone for user",
+                "summary": "Get staging zone for user, excluding its contents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/staging-zones/{staging_zone}": {
+            "get": {
+                "description": "This endpoint is used to get a staging zone, excluding its contents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get staging zone without its contents field populated",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/staging-zones/{staging_zone}/contents": {
+            "get": {
+                "description": "This endpoint is used to get the contents for a staging zone",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get contents for a staging zone",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1506,7 +1536,7 @@ const docTemplate = `{
         },
         "/content/stats": {
             "get": {
-                "description": "This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten",
+                "description": "This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content",
                 "produces": [
                     "application/json"
                 ],
@@ -1651,7 +1681,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.estimateDealBody"
+                            "$ref": "#/definitions/api.estimateDealBody"
                         }
                     }
                 ],
@@ -1938,7 +1968,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/main.ChannelIDParam"
+                            "$ref": "#/definitions/api.ChannelIDParam"
                         }
                     }
                 ],
@@ -2111,6 +2141,231 @@ const docTemplate = `{
                         "description": "Temporary Redirect",
                         "schema": {
                             "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/miner/claim": {
+            "post": {
+                "description": "This endpoint lets a user claim a miner",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "miner"
+                ],
+                "summary": "Claim Miner",
+                "parameters": [
+                    {
+                        "description": "Claim Miner Body",
+                        "name": "req",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/miner.ClaimMinerBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.claimResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/miner/claim/{miner}": {
+            "get": {
+                "description": "This endpoint lets a user get the message in order to claim a miner",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "miner"
+                ],
+                "summary": "Get Claim Miner Message",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner claim message",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.claimMsgResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/miner/set-info/{miner}": {
+            "put": {
+                "description": "This endpoint lets a user set miner info.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "miner"
+                ],
+                "summary": "Set Miner Info",
+                "parameters": [
+                    {
+                        "description": "Miner set info params",
+                        "name": "params",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/miner.MinerSetInfoParams"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Miner to set info for",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.emptyResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/miner/suspend/{miner}": {
+            "post": {
+                "description": "This endpoint lets a user suspend a miner.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "miner"
+                ],
+                "summary": "Suspend Miner",
+                "parameters": [
+                    {
+                        "description": "Suspend Miner Body",
+                        "name": "req",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/miner.SuspendMinerBody"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Miner to suspend",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.emptyResp"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/miner/unsuspend/{miner}": {
+            "put": {
+                "description": "This endpoint lets a user unsuspend a miner.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "miner"
+                ],
+                "summary": "Unuspend Miner",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Miner to unsuspend",
+                        "name": "miner",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/api.emptyResp"
                         }
                     },
                     "400": {
@@ -2341,7 +2596,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "202": {
-                        "description": ""
+                        "description": "Accepted"
                     },
                     "500": {
                         "description": "Internal Server Error",
@@ -2439,7 +2694,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/api.publicNodeInfo"
                         }
                     },
                     "400": {
@@ -2804,7 +3059,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/main.getApiKeysResp"
+                                "$ref": "#/definitions/api.getApiKeysResp"
                             }
                         }
                     },
@@ -2855,7 +3110,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.getApiKeysResp"
+                            "$ref": "#/definitions/api.getApiKeysResp"
                         }
                     },
                     "400": {
@@ -2954,7 +3209,7 @@ const docTemplate = `{
         },
         "/user/stats": {
             "get": {
-                "description": "This endpoint is used to geet stats for the current user.",
+                "description": "This endpoint is used to get stats for the current user.",
                 "produces": [
                     "application/json"
                 ],
@@ -2983,9 +3238,152 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/viewer": {
+            "get": {
+                "description": "This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.",
+                "produces": [
+                    "application/json"
+                ],
+                "summary": "Fetch viewer details",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/util.ViewerResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
+        "address.Address": {
+            "type": "object"
+        },
+        "api.ChannelIDParam": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "initiator": {
+                    "type": "string"
+                },
+                "responder": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.claimMsgResponse": {
+            "type": "object",
+            "properties": {
+                "hexmsg": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.claimResponse": {
+            "type": "object",
+            "properties": {
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.createCollectionBody": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.deleteContentFromCollectionBody": {
+            "type": "object",
+            "properties": {
+                "by": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.emptyResp": {
+            "type": "object"
+        },
+        "api.estimateDealBody": {
+            "type": "object",
+            "properties": {
+                "durationBlks": {
+                    "type": "integer"
+                },
+                "replication": {
+                    "type": "integer"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "verified": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "api.getApiKeysResp": {
+            "type": "object",
+            "properties": {
+                "expiry": {
+                    "type": "string"
+                },
+                "label": {
+                    "type": "string"
+                },
+                "token": {
+                    "type": "string"
+                },
+                "tokenHash": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.publicNodeInfo": {
+            "type": "object",
+            "properties": {
+                "primaryAddress": {
+                    "$ref": "#/definitions/address.Address"
+                }
+            }
+        },
+        "cid.Cid": {
+            "type": "object"
+        },
+        "collections.CidType": {
+            "type": "string",
+            "enum": [
+                "directory",
+                "file"
+            ],
+            "x-enum-varnames": [
+                "CidTypeDir",
+                "CidTypeFile"
+            ]
+        },
         "collections.Collection": {
             "type": "object",
             "properties": {
@@ -3009,72 +3407,31 @@ const docTemplate = `{
                 }
             }
         },
-        "main.ChannelIDParam": {
+        "collections.CollectionListResponse": {
             "type": "object",
             "properties": {
-                "id": {
+                "cid": {
+                    "$ref": "#/definitions/util.DbCID"
+                },
+                "coluuid": {
+                    "type": "string"
+                },
+                "contId": {
                     "type": "integer"
                 },
-                "initiator": {
-                    "type": "string"
-                },
-                "responder": {
-                    "type": "string"
-                }
-            }
-        },
-        "main.createCollectionBody": {
-            "type": "object",
-            "properties": {
-                "description": {
+                "dir": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
-                }
-            }
-        },
-        "main.deleteContentFromCollectionBody": {
-            "type": "object",
-            "properties": {
-                "by": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "main.estimateDealBody": {
-            "type": "object",
-            "properties": {
-                "durationBlks": {
-                    "type": "integer"
-                },
-                "replication": {
-                    "type": "integer"
                 },
                 "size": {
                     "type": "integer"
                 },
-                "verified": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "main.getApiKeysResp": {
-            "type": "object",
-            "properties": {
-                "expiry": {
-                    "type": "string"
+                "type": {
+                    "$ref": "#/definitions/collections.CidType"
                 },
-                "label": {
-                    "type": "string"
-                },
-                "token": {
-                    "type": "string"
-                },
-                "tokenHash": {
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -3095,6 +3452,36 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "miner.ClaimMinerBody": {
+            "type": "object",
+            "properties": {
+                "claim": {
+                    "type": "string"
+                },
+                "miner": {
+                    "$ref": "#/definitions/address.Address"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "miner.MinerSetInfoParams": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "miner.SuspendMinerBody": {
+            "type": "object",
+            "properties": {
+                "reason": {
                     "type": "string"
                 }
             }
@@ -3157,32 +3544,24 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "status": {
-                    "type": "string"
+                    "$ref": "#/definitions/types.PinningStatus"
                 }
             }
         },
-        "util.ContentAddIpfsBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "filename": {
-                    "type": "string"
-                },
-                "peers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "root": {
-                    "type": "string"
-                }
-            }
+        "types.PinningStatus": {
+            "type": "string",
+            "enum": [
+                "pinning",
+                "pinned",
+                "failed",
+                "queued"
+            ],
+            "x-enum-varnames": [
+                "PinningStatusPinning",
+                "PinningStatusPinned",
+                "PinningStatusFailed",
+                "PinningStatusQueued"
+            ]
         },
         "util.ContentAddResponse": {
             "type": "object",
@@ -3226,7 +3605,28 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "type": "integer"
+                    "$ref": "#/definitions/util.ContentType"
+                }
+            }
+        },
+        "util.ContentType": {
+            "type": "integer",
+            "enum": [
+                0,
+                1,
+                2
+            ],
+            "x-enum-varnames": [
+                "Unknown",
+                "File",
+                "Directory"
+            ]
+        },
+        "util.DbCID": {
+            "type": "object",
+            "properties": {
+                "cid": {
+                    "$ref": "#/definitions/cid.Cid"
                 }
             }
         },
@@ -3240,6 +3640,67 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "util.UserSettings": {
+            "type": "object",
+            "properties": {
+                "contentAddingDisabled": {
+                    "type": "boolean"
+                },
+                "dealDuration": {
+                    "type": "integer"
+                },
+                "dealMakingDisabled": {
+                    "type": "boolean"
+                },
+                "fileStagingThreshold": {
+                    "type": "integer"
+                },
+                "flags": {
+                    "type": "integer"
+                },
+                "replication": {
+                    "type": "integer"
+                },
+                "uploadEndpoints": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "verified": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "util.ViewerResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "auth_expiry": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "miners": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "perms": {
+                    "type": "integer"
+                },
+                "settings": {
+                    "$ref": "#/definitions/util.UserSettings"
+                },
+                "username": {
                     "type": "string"
                 }
             }

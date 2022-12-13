@@ -2,29 +2,35 @@ package pinner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
+	pinning_progress "github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
+	"github.com/libp2p/go-libp2p/core/peer"
+
+	ma "github.com/multiformats/go-multiaddr"
 	"github.com/stretchr/testify/assert"
 )
 
 var countLock sync.Mutex
 
 func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
-	//fmt.Println("onPinStatusUpdate", status, cont)
 	return nil
 }
+
 func newManager(count *int) *PinManager {
-
 	_ = os.RemoveAll("/tmp/duplicateGuard")
-	_ = os.RemoveAll("/tmp/pinQueue")
+	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
-	return NewPinManager(
-		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+	return newPinManager(
+		func(ctx context.Context, op *operation.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -37,8 +43,8 @@ func newManager(count *int) *PinManager {
 }
 
 func newManagerNoDelete(count *int) *PinManager {
-	return NewPinManager(
-		func(ctx context.Context, op *PinningOperation, cb PinProgressCB) error {
+	return newPinManager(
+		func(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
 			*count += 1
@@ -50,16 +56,64 @@ func newManagerNoDelete(count *int) *PinManager {
 		})
 }
 
-func newPinData(name string, userid int, contid int) PinningOperation {
-	return PinningOperation{
+func TestConstructMultiAddr(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		_, err := ma.NewMultiaddr("/ip4/172.17.0.2/udp/4001/quic")
+		if err != nil {
+			fmt.Println(err)
+			panic(err)
+		}
+	})
+}
+
+func TestEncodeDecode(t *testing.T) {
+	t.Run("", func(t *testing.T) {
+		p := "/ip4/154.113.32.86/tcp/4001/p2p/12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"
+		ai, _ := peer.AddrInfoFromString(p)
+		origins := []*peer.AddrInfo{ai}
+
+		var originsStr string
+		if origins != nil {
+			b, _ := json.Marshal(origins)
+			originsStr = string(b)
+		}
+
+		var originsUnmarshalled []*peer.AddrInfo
+		_ = json.Unmarshal([]byte(originsStr), &originsUnmarshalled)
+
+		po := &operation.PinningOperation{Peers: operation.SerializePeers(originsUnmarshalled), Name: "pinning operation name"}
+		bytes, err := encodeMsgPack(po)
+		if err != nil {
+			assert.Nil(t, err, "encodeMsgPack should not fail")
+			return
+		}
+
+		newpo, err := decodeMsgPack(bytes)
+		if err != nil {
+			assert.Nil(t, err, "decodeMsgPack should not fail")
+			return
+		}
+
+		newPoPeers := operation.UnSerializePeers(newpo.Peers)
+
+		assert.Equal(t, newpo.Name, po.Name, "name doesnt match")
+		assert.Equal(t, newPoPeers[0].Addrs[0].String(), originsUnmarshalled[0].Addrs[0].String(), "addr doesnt match")
+		assert.Equal(t, newPoPeers[0].ID, originsUnmarshalled[0].ID, "ID doesnt match")
+	})
+}
+
+func newPinData(name string, userid int, contid int) operation.PinningOperation {
+	p := "/ip4/154.113.32.86/tcp/4001/p2p/12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"
+	ai, _ := peer.AddrInfoFromString(p)
+	prs := []*peer.AddrInfo{ai}
+	return operation.PinningOperation{
 		Name:   name,
+		Peers:  operation.SerializePeers(prs),
 		UserId: uint(userid),
-		lk:     sync.Mutex{},
 		ContId: uint(contid),
 	}
 }
 
-var N = 20
 var sleeptime time.Duration = 100
 
 func TestSend1Pin1worker(t *testing.T) {
@@ -99,6 +153,7 @@ func TestSend1Pin0workers(t *testing.T) {
 func TestNUniqueNames(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 
 		go mgr.Run(0)
@@ -115,6 +170,7 @@ func TestNUniqueNames(t *testing.T) {
 func TestNUniqueNamesWorker(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(5)
 		for i := 0; i < N; i++ {
@@ -131,10 +187,10 @@ func TestNUniqueNamesWorker(t *testing.T) {
 func TestNUniqueNamesSameUserWorker(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 
 		for j := 0; j < N; j++ {
-
 			for i := 0; i < N; i++ {
 				pin := newPinData("name"+fmt.Sprint(i), i, i*N+j)
 				go mgr.Add(&pin)
@@ -154,6 +210,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 func TestNUniqueNamesSameUser(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(0)
 		for j := 0; j < N; j++ {
@@ -173,6 +230,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 func TestNDuplicateNamesWorker(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 
 		pin := newPinData("name", 0, 0)
@@ -196,6 +254,7 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 func TestNDuplicateNames(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(0)
 
@@ -213,6 +272,7 @@ func TestNDuplicateNames(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(5)
 		for k := 0; k < N; k++ {
@@ -234,6 +294,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(0)
 
@@ -252,6 +313,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(1)
 		for k := 0; k < N; k++ {
@@ -271,6 +333,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 }
 
 func sleepWhileWork(mgr *PinManager, SIZE int) {
+	var N = 20
 	for i := 0; i < N; i++ {
 		time.Sleep(sleeptime * time.Millisecond)
 		if mgr.PinQueueSize() == SIZE {
@@ -282,8 +345,8 @@ func sleepWhileWork(mgr *PinManager, SIZE int) {
 }
 
 func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
-
 	var count = 0
+	var N = 20
 	mgr := newManager(&count)
 	go mgr.Run(0)
 
@@ -301,9 +364,11 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	assert.Equal(t, 0, count, "no work")
 	mgr.closeQueueDataStructures()
 }
+
 func TestResumeQueue(t *testing.T) {
 	t.Run("", func(t *testing.T) {
 		var count = 0
+		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(0)
 		for k := 0; k < N; k++ {

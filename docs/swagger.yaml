@@ -1,5 +1,79 @@
 basePath: /
 definitions:
+  address.Address:
+    type: object
+  api.ChannelIDParam:
+    properties:
+      id:
+        type: integer
+      initiator:
+        type: string
+      responder:
+        type: string
+    type: object
+  api.claimMsgResponse:
+    properties:
+      hexmsg:
+        type: string
+    type: object
+  api.claimResponse:
+    properties:
+      success:
+        type: boolean
+    type: object
+  api.createCollectionBody:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  api.deleteContentFromCollectionBody:
+    properties:
+      by:
+        type: string
+      value:
+        type: string
+    type: object
+  api.emptyResp:
+    type: object
+  api.estimateDealBody:
+    properties:
+      durationBlks:
+        type: integer
+      replication:
+        type: integer
+      size:
+        type: integer
+      verified:
+        type: boolean
+    type: object
+  api.getApiKeysResp:
+    properties:
+      expiry:
+        type: string
+      label:
+        type: string
+      token:
+        type: string
+      tokenHash:
+        type: string
+    type: object
+  api.publicNodeInfo:
+    properties:
+      primaryAddress:
+        $ref: '#/definitions/address.Address'
+    type: object
+  cid.Cid:
+    type: object
+  collections.CidType:
+    enum:
+      - directory
+      - file
+    type: string
+    x-enum-varnames:
+      - CidTypeDir
+      - CidTypeFile
   collections.Collection:
     properties:
       cid:
@@ -15,49 +89,23 @@ definitions:
       uuid:
         type: string
     type: object
-  main.ChannelIDParam:
+  collections.CollectionListResponse:
     properties:
-      id:
+      cid:
+        $ref: '#/definitions/util.DbCID'
+      coluuid:
+        type: string
+      contId:
         type: integer
-      initiator:
-        type: string
-      responder:
-        type: string
-    type: object
-  main.createCollectionBody:
-    properties:
-      description:
+      dir:
         type: string
       name:
         type: string
-    type: object
-  main.deleteContentFromCollectionBody:
-    properties:
-      by:
-        type: string
-      value:
-        type: string
-    type: object
-  main.estimateDealBody:
-    properties:
-      durationBlks:
-        type: integer
-      replication:
-        type: integer
       size:
         type: integer
-      verified:
-        type: boolean
-    type: object
-  main.getApiKeysResp:
-    properties:
-      expiry:
-        type: string
-      label:
-        type: string
-      token:
-        type: string
-      tokenHash:
+      type:
+        $ref: '#/definitions/collections.CidType'
+      updatedAt:
         type: string
     type: object
   main.importDealBody:
@@ -71,6 +119,25 @@ definitions:
       dir:
         type: string
       name:
+        type: string
+    type: object
+  miner.ClaimMinerBody:
+    properties:
+      claim:
+        type: string
+      miner:
+        $ref: '#/definitions/address.Address'
+      name:
+        type: string
+    type: object
+  miner.MinerSetInfoParams:
+    properties:
+      name:
+        type: string
+    type: object
+  miner.SuspendMinerBody:
+    properties:
+      reason:
         type: string
     type: object
   types.IpfsListPinStatusResponse:
@@ -112,23 +179,20 @@ definitions:
       requestid:
         type: string
       status:
-        type: string
+        $ref: '#/definitions/types.PinningStatus'
     type: object
-  util.ContentAddIpfsBody:
-    properties:
-      coluuid:
-        type: string
-      dir:
-        type: string
-      filename:
-        type: string
-      peers:
-        items:
-          type: string
-        type: array
-      root:
-        type: string
-    type: object
+  types.PinningStatus:
+    enum:
+      - pinning
+      - pinned
+      - failed
+      - queued
+    type: string
+    x-enum-varnames:
+      - PinningStatusPinning
+      - PinningStatusPinned
+      - PinningStatusFailed
+      - PinningStatusQueued
   util.ContentAddResponse:
     properties:
       cid:
@@ -157,7 +221,22 @@ definitions:
       root:
         type: string
       type:
-        type: integer
+        $ref: '#/definitions/util.ContentType'
+    type: object
+  util.ContentType:
+    enum:
+      - 0
+      - 1
+      - 2
+    type: integer
+    x-enum-varnames:
+      - Unknown
+      - File
+      - Directory
+  util.DbCID:
+    properties:
+      cid:
+        $ref: '#/definitions/cid.Cid'
     type: object
   util.HttpError:
     properties:
@@ -166,6 +245,46 @@ definitions:
       details:
         type: string
       reason:
+        type: string
+    type: object
+  util.UserSettings:
+    properties:
+      contentAddingDisabled:
+        type: boolean
+      dealDuration:
+        type: integer
+      dealMakingDisabled:
+        type: boolean
+      fileStagingThreshold:
+        type: integer
+      flags:
+        type: integer
+      replication:
+        type: integer
+      uploadEndpoints:
+        items:
+          type: string
+        type: array
+      verified:
+        type: boolean
+    type: object
+  util.ViewerResponse:
+    properties:
+      address:
+        type: string
+      auth_expiry:
+        type: string
+      id:
+        type: integer
+      miners:
+        items:
+          type: string
+        type: array
+      perms:
+        type: integer
+      settings:
+        $ref: '#/definitions/util.UserSettings'
+      username:
         type: string
     type: object
 host: api.estuary.tech
@@ -255,6 +374,7 @@ paths:
       summary: Get Estuary invites
       tags:
         - content
+  /admin/invites/{code}:
     post:
       description: This endpoint is used to create an estuary invite.
       parameters:
@@ -517,7 +637,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/main.createCollectionBody'
+            $ref: '#/definitions/api.createCollectionBody'
       produces:
         - application/json
       responses:
@@ -583,7 +703,9 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            items:
+              $ref: '#/definitions/collections.CollectionListResponse'
+            type: array
         "400":
           description: Bad Request
           schema:
@@ -676,7 +798,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/main.deleteContentFromCollectionBody'
+            $ref: '#/definitions/api.deleteContentFromCollectionBody'
       produces:
         - application/json
       responses:
@@ -761,46 +883,14 @@ paths:
         - content
   /content/add:
     post:
-      consumes:
-        - multipart/form-data
-      description: This endpoint is used to upload new content.
-      parameters:
-        - description: File to upload
-          in: formData
-          name: data
-          required: true
-          type: file
-        - description: Filename to use for upload
-          in: formData
-          name: filename
-          type: string
-        - description: Collection UUID
-          in: query
-          name: coluuid
-          type: string
-        - description: Replication value
-          in: query
-          name: replication
-          type: integer
-        - description: Ignore Dupes true/false
-          in: query
-          name: ignore-dupes
-          type: string
-        - description: Lazy Provide true/false
-          in: query
-          name: lazy-provide
-          type: string
-        - description: Directory
-          in: query
-          name: dir
-          type: string
+      description: This endpoint uploads a file.
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/util.ContentAddResponse'
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -809,34 +899,19 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Add new content
+      summary: Upload a file
       tags:
         - content
   /content/add-car:
     post:
-      description: This endpoint is used to add a car object to the network. The object can be a file or a directory.
-      parameters:
-        - description: Car
-          in: body
-          name: body
-          required: true
-          schema:
-            type: string
-        - description: Ignore Dupes
-          in: query
-          name: ignore-dupes
-          type: string
-        - description: Filename
-          in: query
-          name: filename
-          type: string
+      description: This endpoint uploads content via a car file
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/util.ContentAddResponse'
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -845,7 +920,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Add Car object
+      summary: Upload content via a car file
       tags:
         - content
   /content/add-ipfs:
@@ -857,7 +932,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/util.ContentAddIpfsBody'
+            $ref: '#/definitions/types.IpfsPin'
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
@@ -1165,7 +1240,7 @@ paths:
         - content
   /content/staging-zones:
     get:
-      description: This endpoint is used to get staging zone for user.
+      description: This endpoint is used to get staging zone for user, excluding its contents.
       produces:
         - application/json
       responses:
@@ -1181,12 +1256,76 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Get staging zone for user
+      summary: Get staging zone for user, excluding its contents
+      tags:
+        - content
+  /content/staging-zones/{staging_zone}:
+    get:
+      description: This endpoint is used to get a staging zone, excluding its contents.
+      parameters:
+        - description: Staging Zone Content ID
+          in: path
+          name: staging_zone
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get staging zone without its contents field populated
+      tags:
+        - content
+  /content/staging-zones/{staging_zone}/contents:
+    get:
+      description: This endpoint is used to get the contents for a staging zone
+      parameters:
+        - description: Staging Zone Content ID
+          in: path
+          name: staging_zone
+          required: true
+          type: integer
+        - description: limit
+          in: query
+          name: limit
+          required: true
+          type: string
+        - description: offset
+          in: query
+          name: offset
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get contents for a staging zone
       tags:
         - content
   /content/stats:
     get:
-      description: This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a conten
+      description: This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
       parameters:
         - description: limit
           in: query
@@ -1252,7 +1391,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/main.estimateDealBody'
+            $ref: '#/definitions/api.estimateDealBody'
       produces:
         - application/json
       responses:
@@ -1441,7 +1580,7 @@ paths:
           name: chanid
           required: true
           schema:
-            $ref: '#/definitions/main.ChannelIDParam'
+            $ref: '#/definitions/api.ChannelIDParam'
       produces:
         - application/json
       responses:
@@ -1568,6 +1707,154 @@ paths:
       summary: Get Full Content by Cid
       tags:
         - public
+  /miner/claim:
+    post:
+      description: This endpoint lets a user claim a miner
+      parameters:
+        - description: Claim Miner Body
+          in: body
+          name: req
+          required: true
+          schema:
+            $ref: '#/definitions/miner.ClaimMinerBody'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.claimResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Claim Miner
+      tags:
+        - miner
+  /miner/claim/{miner}:
+    get:
+      description: This endpoint lets a user get the message in order to claim a miner
+      parameters:
+        - description: Miner claim message
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.claimMsgResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get Claim Miner Message
+      tags:
+        - miner
+  /miner/set-info/{miner}:
+    put:
+      description: This endpoint lets a user set miner info.
+      parameters:
+        - description: Miner set info params
+          in: body
+          name: params
+          required: true
+          schema:
+            $ref: '#/definitions/miner.MinerSetInfoParams'
+        - description: Miner to set info for
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.emptyResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Set Miner Info
+      tags:
+        - miner
+  /miner/suspend/{miner}:
+    post:
+      description: This endpoint lets a user suspend a miner.
+      parameters:
+        - description: Suspend Miner Body
+          in: body
+          name: req
+          required: true
+          schema:
+            $ref: '#/definitions/miner.SuspendMinerBody'
+        - description: Miner to suspend
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.emptyResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Suspend Miner
+      tags:
+        - miner
+  /miner/unsuspend/{miner}:
+    put:
+      description: This endpoint lets a user unsuspend a miner.
+      parameters:
+        - description: Miner to unsuspend
+          in: path
+          name: miner
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.emptyResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Unuspend Miner
+      tags:
+        - miner
   /net/addrs:
     get:
       description: This endpoint is used to get net addrs
@@ -1648,7 +1935,7 @@ paths:
         - application/json
       responses:
         "202":
-          description: ""
+          description: Accepted
         "500":
           description: Internal Server Error
           schema:
@@ -1773,7 +2060,7 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/api.publicNodeInfo'
         "400":
           description: Bad Request
           schema:
@@ -2015,7 +2302,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/main.getApiKeysResp'
+              $ref: '#/definitions/api.getApiKeysResp'
             type: array
         "400":
           description: Bad Request
@@ -2049,7 +2336,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.getApiKeysResp'
+            $ref: '#/definitions/api.getApiKeysResp'
         "400":
           description: Bad Request
           schema:
@@ -2115,7 +2402,7 @@ paths:
         - User
   /user/stats:
     get:
-      description: This endpoint is used to geet stats for the current user.
+      description: This endpoint is used to get stats for the current user.
       produces:
         - application/json
       responses:
@@ -2134,6 +2421,25 @@ paths:
       summary: Get stats for the current user
       tags:
         - User
+  /viewer:
+    get:
+      description: This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/util.ViewerResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Fetch viewer details
 swagger: "2.0"
 securityDefinitions:
   bearerAuth:

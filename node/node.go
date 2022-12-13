@@ -15,8 +15,8 @@ import (
 	"github.com/libp2p/go-libp2p"
 	"github.com/multiformats/go-multiaddr"
 
-	"github.com/application-research/estuary/autoretrieve"
 	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/sanitycheck"
 
 	"github.com/application-research/estuary/config"
 
@@ -107,19 +107,18 @@ type Node struct {
 	//Lmdb      *lmdb.Blockstore
 	Datastore datastore.Batching
 
-	Blockstore      SanityCheckBlockstore
+	Blockstore      *sanitycheck.Blockstore
 	Bitswap         *bitswap.Bitswap
 	NotifBlockstore *NotifyBlockstore
 
 	Wallet *wallet.LocalWallet
 
-	Bwc                  *metrics.BandwidthCounter
-	Peering              *peering.EstuaryPeeringService
-	Config               *config.Node
-	AutoretrieveProvider *autoretrieve.Provider
+	Bwc     *metrics.BandwidthCounter
+	Peering *peering.EstuaryPeeringService
+	Config  *config.Node
 }
 
-func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
+func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckFn) (*Node, error) {
 	cfg := init.Config()
 
 	peerkey, err := loadOrInitPeerKey(cfg.Libp2pKeyFile)
@@ -144,12 +143,12 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		}
 	}
 
-	bwc := metrics.NewBandwidthCounter()
-
 	cmgr, err := connmgr.NewConnManager(cfg.ConnectionManager.LowWater, cfg.ConnectionManager.HighWater)
 	if err != nil {
 		return nil, err
 	}
+
+	bwc := metrics.NewBandwidthCounter()
 	opts := []libp2p.Option{
 		libp2p.ListenAddrStrings(cfg.ListenAddrs...),
 		libp2p.NATPortMap(),
@@ -175,10 +174,12 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 	}
 
 	h, err := libp2p.New(opts...)
+	if err != nil {
+		return nil, err
+	}
 
 	//	peering service
 	peerServ := peering.NewEstuaryPeeringService(h)
-
 	//	add the peers
 	for _, addrInfo := range cfg.PeeringPeers {
 		addrs, err := toMultiAddresses(addrInfo.Addrs)
@@ -192,13 +193,8 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		peerServ.AddPeer(peer.AddrInfo{ID: addrInfoId, Addrs: addrs})
 	}
 
-	errOnPeerStar := peerServ.Start()
-	if errOnPeerStar != nil {
+	if errOnPeerStar := peerServ.Start(); errOnPeerStar != nil {
 		log.Warn(errOnPeerStar)
-	}
-
-	if err != nil {
-		return nil, err
 	}
 
 	dhtopts := fullrt.DHTOption(
@@ -291,7 +287,7 @@ func Setup(ctx context.Context, init NodeInitializer) (*Node, error) {
 		FullRT:     frt,
 		Provider:   prov,
 		Host:       h,
-		Blockstore: newSanityCheckBlockstoreWrapper(mbs),
+		Blockstore: sanitycheck.NewBlockstoreWrapper(mbs, checkFn),
 		//Lmdb:       lmdbs,
 		Datastore:  ds,
 		Bitswap:    bswap,

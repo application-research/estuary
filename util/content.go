@@ -30,13 +30,6 @@ type ContentInCollection struct {
 	CollectionDir string `json:"dir"`
 }
 
-type ContentAddIpfsBody struct {
-	ContentInCollection
-	Root  string   `json:"root"`
-	Name  string   `json:"filename"`
-	Peers []string `json:"peers"`
-}
-
 type ContentAddResponse struct {
 	Cid                 string   `json:"cid"`
 	RetrievalURL        string   `json:"retrieval_url"`
@@ -60,7 +53,7 @@ type ContentCreateResponse struct {
 
 type Content struct {
 	ID        uint           `gorm:"primarykey" json:"id"`
-	CreatedAt time.Time      `json:"-"`
+	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/application-research/estuary/drpc"
+	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/application-research/filclient/retrievehelper"
@@ -26,7 +26,7 @@ type retrievalProgress struct {
 	endErr error
 }
 
-func (s *Shuttle) retrieveContent(ctx context.Context, req *drpc.RetrieveContent) error {
+func (s *Shuttle) retrieveContent(ctx context.Context, req *rpcevent.RetrieveContent) error {
 	ctx, span := s.Tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(req.Content)),
 	))
@@ -67,7 +67,7 @@ func (s *Shuttle) retrieveContent(ctx context.Context, req *drpc.RetrieveContent
 	return nil
 }
 
-func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, sel ipld.Node) error {
+func (s *Shuttle) runRetrieval(ctx context.Context, req *rpcevent.RetrieveContent, sel ipld.Node) error {
 	ctx, span := s.Tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
@@ -138,8 +138,8 @@ func (s *Shuttle) runRetrieval(ctx context.Context, req *drpc.RetrieveContent, s
 			return err
 		}
 
-		dserv := merkledag.NewDAGService(blockservice.New(&s.Node.Blockstore, nil))
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, &s.Node.Blockstore, req.Cid, func(int64) {})
+		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, s.Node.Blockstore, req.Cid, func(int64) {})
 		if err != nil {
 			log.Errorw("failed adding content to database after successful retrieval", "cont", req.Content, "err", err.Error())
 			return err

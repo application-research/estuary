@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"path/filepath"
 	"time"
 
@@ -34,7 +35,7 @@ type Estuary struct {
 	Logging                Logging       `json:"logging"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
-	RPCMessage             RPCMessage    `json:"rpc_message"`
+	RpcEngine              RpcEngine     `json:"rpc_engine"`
 	Pinning                Pinning       `json:"pinning"`
 }
 
@@ -62,6 +63,14 @@ func (cfg *Estuary) SetRequiredOptions() error {
 	return nil
 }
 
+func (cfg *Estuary) Validate() error {
+	// TODO validate more options values - check empty strings etc
+	if cfg.Node.ApiURL == "" {
+		return errors.New("node api url cannot be empty")
+	}
+	return nil
+}
+
 func NewEstuary(appVersion string) *Estuary {
 	return &Estuary{
 		AppVersion:             appVersion,
@@ -74,7 +83,7 @@ func NewEstuary(appVersion string) *Estuary {
 		LowMem:                 false,
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
-		DisableAutoRetrieve:    false,
+		DisableAutoRetrieve:    true,
 
 		Deal: Deal{
 			IsDisabled:            false,
@@ -182,10 +191,18 @@ func NewEstuary(appVersion string) *Estuary {
 			},
 			Libp2pThrottleLimit: 100,
 		},
-		RPCMessage: RPCMessage{
-			IncomingQueueSize: 100000,
-			OutgoingQueueSize: 100000,
-			QueueHandlers:     30,
+		RpcEngine: RpcEngine{
+			Websocket: WebsocketEngine{
+				IncomingQueueSize: 100000,
+				OutgoingQueueSize: 100000,
+				QueueHandlers:     30,
+			},
+			Queue: QueueEngine{
+				Host:      "",
+				Enabled:   false,
+				Consumers: 5,
+				Driver:    "nsq",
+			},
 		},
 	}
 }
