@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/labstack/echo/v4/middleware"
+	"golang.org/x/time/rate"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -117,6 +119,25 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 		}
 		return f(c, u)
 	}
+}
+
+func configureRateLimiter(rateLimit rate.Limit) middleware.RateLimiterConfig {
+	config := middleware.DefaultRateLimiterConfig
+
+	config.IdentifierExtractor = func(ctx echo.Context) (string, error) {
+		var id string
+		user, ok := ctx.Get("user").(*util.User)
+		if !ok {
+			id = ctx.RealIP()
+		} else {
+			id = user.UUID
+		}
+		return id, nil
+	}
+
+	config.Store = middleware.NewRateLimiterMemoryStore(rateLimit)
+
+	return config
 }
 
 // handleStats godoc

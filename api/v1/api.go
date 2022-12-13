@@ -14,6 +14,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -91,6 +92,7 @@ func NewAPIV1(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 
+	e.Use(middleware.RateLimiterWithConfig(configureRateLimiter(20)))
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
