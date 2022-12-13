@@ -144,7 +144,7 @@ func (pm *PinManager) PinQueueSize() int {
 }
 
 func (pm *PinManager) Add(op *operation.PinningOperation) {
-	if op != nil {
+	if op != nil && pm != nil {
 		go func() {
 			pm.pinQueueIn <- op
 		}()
