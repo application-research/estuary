@@ -505,7 +505,7 @@ func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, user uint)
 func (cm *ContentManager) GetStagingZoneWithoutContents(ctx context.Context, user uint, zoneID uint) (*ContentStagingZone, error) {
 	var zone util.Content
 	if err := cm.db.First(&zone, "id = ? and user_id = ?", zoneID, user).Error; err != nil {
-		return nil, errors.Wrapf(err, "zone not found or does not belong to user: %s", zoneID)
+		return nil, errors.Wrapf(err, "zone not found or does not belong to user: %d", zoneID)
 	}
 	return &ContentStagingZone{
 		ZoneOpened:      zone.CreatedAt,
