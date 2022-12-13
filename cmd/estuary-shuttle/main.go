@@ -928,20 +928,25 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 
 	readDone := make(chan struct{})
 
-	// Send hello message
-	hello, err := d.getHelloMessage()
+	helloByets, err := d.getHelloMessage()
 	if err != nil {
 		return err
 	}
 
-	if err := websocket.JSON.Send(conn, hello); err != nil {
+	if err := websocket.Message.Send(conn, helloByets); err != nil {
+		return err
+	}
+
+	var hiBytes []byte
+	if err := websocket.Message.Receive(conn, &hiBytes); err != nil {
 		return err
 	}
 
 	var hi rpcevent.Hi
-	if err := websocket.JSON.Receive(conn, &hello); err != nil {
+	if err := json.Unmarshal(hiBytes, &hi); err != nil {
 		return err
 	}
+
 	d.apiQueueEngEnabled = hi.QueueEngEnabled
 
 	go func() {
@@ -981,7 +986,7 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	}
 }
 
-func (d *Shuttle) getHelloMessage() (*rpcevent.Hello, error) {
+func (d *Shuttle) getHelloMessage() ([]byte, error) {
 	addr, err := d.Node.Wallet.GetDefault()
 	if err != nil {
 		return nil, err
@@ -993,7 +998,8 @@ func (d *Shuttle) getHelloMessage() (*rpcevent.Hello, error) {
 	}
 
 	log.Infow("sending hello", "hostname", hostname, "address", addr, "pid", d.Node.Host.ID())
-	return &rpcevent.Hello{
+
+	return json.Marshal(&rpcevent.Hello{
 		Host:    hostname,
 		PeerID:  d.Node.Host.ID().Pretty(),
 		Address: addr,
@@ -1004,7 +1010,7 @@ func (d *Shuttle) getHelloMessage() (*rpcevent.Hello, error) {
 		},
 		ContentAddingDisabled: d.disableLocalAdding,
 		QueueEngEnabled:       d.shuttleConfig.RpcEngine.Queue.Enabled,
-	}, nil
+	})
 }
 
 func (d *Shuttle) dialConn() (*websocket.Conn, error) {
