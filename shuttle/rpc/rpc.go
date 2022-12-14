@@ -212,7 +212,9 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 		if sc == nil {
 			return ErrNilParams
 		}
-		m.sanityCheckMgr.HandleMissingBlocks(sc.CID, sc.ErrMsg)
+		go func() {
+			m.sanityCheckMgr.HandleMissingBlocks(sc.CID, sc.ErrMsg)
+		}()
 		return nil
 	default:
 		return fmt.Errorf("unrecognized message op: %q", msg.Op)
