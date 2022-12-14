@@ -1253,13 +1253,17 @@ func (s *apiV1) handleMakeDeal(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	id, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
+	if err := s.CM.CheckContentReadyForDealMaking(ctx, cont); err != nil {
+		return err
+	}
+
+	cd, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"deal": id,
+		"deal": cd.ID,
 	})
 }
 
