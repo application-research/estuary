@@ -187,12 +187,14 @@ definitions:
       - pinned
       - failed
       - queued
+      - offloaded
     type: string
     x-enum-varnames:
       - PinningStatusPinning
       - PinningStatusPinned
       - PinningStatusFailed
       - PinningStatusQueued
+      - PinningStatusOffloaded
   util.ContentAddResponse:
     properties:
       cid:
@@ -1044,6 +1046,38 @@ paths:
           schema:
             $ref: '#/definitions/util.HttpError'
       summary: Get content bandwidth
+      tags:
+        - content
+  /content/contents:
+    get:
+      description: This endpoint is used to get user contents
+      parameters:
+        - description: limit
+          in: query
+          name: limit
+          required: true
+          type: string
+        - description: offset
+          in: query
+          name: offset
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get user contents
       tags:
         - content
   /content/create:

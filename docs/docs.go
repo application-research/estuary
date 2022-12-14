@@ -1113,6 +1113,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/content/contents": {
+            "get": {
+                "description": "This endpoint is used to get user contents",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get user contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/content/create": {
             "post": {
                 "description": "This endpoint adds a new content",
@@ -3554,13 +3602,15 @@ const docTemplate = `{
                 "pinning",
                 "pinned",
                 "failed",
-                "queued"
+                "queued",
+                "offloaded"
             ],
             "x-enum-varnames": [
                 "PinningStatusPinning",
                 "PinningStatusPinned",
                 "PinningStatusFailed",
-                "PinningStatusQueued"
+                "PinningStatusQueued",
+                "PinningStatusOffloaded"
             ]
         },
         "util.ContentAddResponse": {
