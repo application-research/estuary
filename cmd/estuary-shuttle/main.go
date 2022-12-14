@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"golang.org/x/time/rate"
 	"io"
 	"io/ioutil"
 	"net/http"
+
+	"golang.org/x/time/rate"
 
 	//#nosec G108 - exposing the profiling endpoint is expected
 	httpprof "net/http/pprof"
@@ -328,7 +329,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
+			Name: "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -480,6 +481,7 @@ func main() {
 		}
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
+		s.PPM = NewPPM(nd)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
@@ -842,14 +844,14 @@ var backoffTimer = backoff.ExponentialBackOff{
 }
 
 type Shuttle struct {
-	Node       *node.Node
-	Api        api.Gateway
-	DB         *gorm.DB
-	PinMgr     *pinner.PinManager
-	Filc       *filclient.FilClient
-	StagingMgr *stagingbs.StagingBSMgr
-
+	Node        *node.Node
+	Api         api.Gateway
+	DB          *gorm.DB
+	PinMgr      *pinner.PinManager
+	Filc        *filclient.FilClient
+	StagingMgr  *stagingbs.StagingBSMgr
 	gwayHandler *gateway.GatewayHandler
+	PPM         *PeerPingManager
 
 	Tracer trace.Tracer
 
