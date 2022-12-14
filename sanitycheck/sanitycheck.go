@@ -5,6 +5,7 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	"go.uber.org/zap"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -28,10 +29,29 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
 func (m *manager) HandleMissingBlocks(cc cid.Cid, errMsg string) {
 	m.log.Warnf("hanling missing block for cid: %s", cc)
 
+	// if already handled, ignore
+	var exist *model.SanityCheck
+	if err := m.db.First(&exist, "block_cid = ?", cc.Bytes()).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			m.log.Errorf("sanity check failed for cid:%s, err: %w", cc.String(), err)
+			return
+		}
+		exist = nil
+	}
+
+	if exist != nil {
+		m.log.Debugf("already handled this missing block for cid: %s", cc)
+		return
+	}
+
 	// get all contents affected by this missing block on estuary or from shuttles
 	var cnts []util.Content
-	where := "id in (select content from obj_refs where object = (select id from objects where cid = ?))"
-	if err := m.db.Find(&cnts, where, cc.Bytes()).Error; err != nil {
+	var cntsBatch []util.Content
+	where := "id in (select content from obj_refs where object in (select id from objects where cid = ?))"
+	if err := m.db.Where(where, cc.Bytes()).FindInBatches(&cntsBatch, 500, func(tx *gorm.DB, batch int) error {
+		cnts = append(cnts, cntsBatch...)
+		return nil
+	}).Error; err != nil {
 		m.log.Errorf("sanity check failed to get content(s) for cid: %s, err: %w", cc.String(), err)
 		return
 	}

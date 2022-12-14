@@ -118,12 +118,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	// if content has any missing blocks, do not proceed
-	var sncks []model.SanityCheck
-	if err := cm.db.Find(&sncks, "content_id = ?", content.ID).Error; err != nil {
-		return err
+	var isCorrupt *model.SanityCheck
+	if err := cm.db.First(&isCorrupt, "content_id = ?", content.ID).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		isCorrupt = nil
 	}
-	if len(sncks) > 0 {
+	if isCorrupt != nil {
 		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
 		return nil
 	}
