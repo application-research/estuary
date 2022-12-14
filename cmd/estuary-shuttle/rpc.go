@@ -88,7 +88,7 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 }
 
 func (d *Shuttle) apiQueueIsEnabled() bool {
-	return d.apiQueueEngEnabled != nil && *d.apiQueueEngEnabled
+	return d.apiQueueEngEnabled != nil
 }
 
 func (d *Shuttle) shuttleQueueIsEnabled() bool {
