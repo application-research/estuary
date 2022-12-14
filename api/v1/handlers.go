@@ -154,6 +154,32 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
+// handleGetUserContents godoc
+// @Summary      Get user contents
+// @Description  This endpoint is used to get user contents
+// @Tags         content
+// @Param        limit   query  string  true  "limit"
+// @Param        offset  query  string  true  "offset"
+// @Produce      json
+// @Success      200          {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Router       /content/contents [get]
+func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	var contents []util.Content
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
+		return err
+	}
+
+	for i, c := range contents {
+		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
+	}
+
+	return c.JSON(http.StatusOK, contents)
+}
+
 // handlePeeringPeersAdd godoc
 // @Summary      Add peers on Peering Service
 // @Description  This endpoint can be used to add a Peer from the Peering Service
@@ -3606,6 +3632,9 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
 	if err != nil {
 		return err
+	}
+	for i, c := range contents {
+		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
 	}
 	return c.JSON(http.StatusOK, contents)
 }

@@ -92,6 +92,8 @@ type Content struct {
 	// them (unlike with aggregates)
 	DagSplit  bool `json:"dagSplit"`
 	SplitFrom uint `json:"splitFrom"`
+
+	PinningStatus string `json:"pinningStatus" gorm:"-"`
 }
 
 type ContentWithPath struct {
