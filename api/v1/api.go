@@ -130,6 +130,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
+	content.GET("/contents", withUser(s.handleGetUserContents))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
 	content.GET("/list", withUser(s.handleListContent))
