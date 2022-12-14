@@ -727,7 +727,9 @@ func (s *apiV1) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.ToCheck(content.ID)
+	go func() {
+		s.CM.ToCheck(content.ID)
+	}()
 	return nil
 }
 
@@ -4525,8 +4527,6 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	defer s.CM.ToCheck(content.ID)
-
 	if req.CollectionID != "" {
 		if req.CollectionDir == "" {
 			req.CollectionDir = "/"
@@ -4546,6 +4546,10 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 			return err
 		}
 	}
+
+	go func() {
+		s.CM.ToCheck(content.ID)
+	}()
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
@@ -4836,6 +4840,10 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
 	}
+
+	go func() {
+		s.CM.ToCheck(content.ID)
+	}()
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
