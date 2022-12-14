@@ -25,8 +25,16 @@ type Libp2pHost struct {
 
 type PingManyResult map[peer.ID]time.Duration
 
+func NewPPM(node *node.Node) *PeerPingManager {
+
+	return &PeerPingManager{
+		Node:   node,
+		Result: make(map[peer.ID]time.Duration),
+	}
+}
+
 // Ping a list of hosts, returning RTT for each of them. Errors will be ignored, unresponsive hosts will not be returned
-func (ppm PeerPingManager) PingMany(ctx context.Context, hosts []Libp2pHost) {
+func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []Libp2pHost) {
 	result := make(PingManyResult)
 
 	// TODO: Batch them in go funcs for faster performance
@@ -42,7 +50,8 @@ func (ppm PeerPingManager) PingMany(ctx context.Context, hosts []Libp2pHost) {
 }
 
 // Perform a libp2p network ping to a specified host, returning the Round trip time (RTT)
-func (ppm PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiaddr, pID peer.ID) (*time.Duration, error) {
+// Note: this function may take as long as 1 second to complete, while it waits for pings back from the remote host
+func (ppm *PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiaddr, pID peer.ID) (*time.Duration, error) {
 	// Add the host to the peerstore so it can be found
 	ppm.Node.Host.Peerstore().AddAddr(pID, addr, peerstore.TempAddrTTL)
 

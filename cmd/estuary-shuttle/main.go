@@ -843,14 +843,14 @@ var backoffTimer = backoff.ExponentialBackOff{
 }
 
 type Shuttle struct {
-	Node       *node.Node
-	Api        api.Gateway
-	DB         *gorm.DB
-	PinMgr     *pinner.PinManager
-	Filc       *filclient.FilClient
-	StagingMgr *stagingbs.StagingBSMgr
-
+	Node        *node.Node
+	Api         api.Gateway
+	DB          *gorm.DB
+	PinMgr      *pinner.PinManager
+	Filc        *filclient.FilClient
+	StagingMgr  *stagingbs.StagingBSMgr
 	gwayHandler *gateway.GatewayHandler
+	PPM         *PeerPingManager
 
 	Tracer trace.Tracer
 
@@ -893,7 +893,6 @@ type Shuttle struct {
 
 	apiQueueEngEnabled *bool
 	queueEng           queueng.IShuttleRpcEngine
-	PPM                PeerPingManager
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
