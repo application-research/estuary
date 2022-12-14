@@ -99,7 +99,7 @@ func (cm *ContentManager) runStagingBucketWorker(ctx context.Context) {
 						// aggregation has been completed and we can mark as finished
 						cm.MarkFinishedAggregating(z.ID)
 						// after aggregate is done, make deal for it
-						cm.queueMgr.ToCheck(z.ID)
+						cm.queueMgr.ToCheck(z.ID, z.Size)
 					}
 					continue
 				}
@@ -349,7 +349,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone util.Co
 		}
 
 		go func() {
-			cm.queueMgr.ToCheck(zone.ID)
+			cm.queueMgr.ToCheck(zone.ID, zone.Size)
 		}()
 
 		cm.MarkFinishedAggregating(zone.ID)

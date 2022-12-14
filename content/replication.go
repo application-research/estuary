@@ -60,11 +60,11 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 			}
 
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
-				cm.queueMgr.Add(content.ID, dur)
+				cm.queueMgr.Add(content.ID, content.Size, dur)
 			})
 			if err != nil {
 				cm.log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
-				cm.queueMgr.Add(content.ID, time.Minute*5)
+				cm.queueMgr.Add(content.ID, content.Size, time.Minute*5)
 			}
 		}
 	}
@@ -1282,10 +1282,8 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 		}
 
 		// queue splited contents
-		go func() {
-			cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
-			cm.ToCheck(content.ID)
-		}()
+		cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
+		cm.ToCheck(content.ID, content.Size)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{

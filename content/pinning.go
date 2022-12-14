@@ -230,6 +230,11 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 		}()
 	}
 
+	var c util.Content
+	if err := cm.db.First(&c, "id = ?", op.ContId).Error; err != nil {
+		return errors.Wrap(err, "failed to look up content for dopinning")
+	}
+
 	prs := operation.UnSerializePeers(op.Peers)
 	for _, pi := range prs {
 		if err := cm.node.Host.Connect(ctx, *pi); err != nil {
@@ -246,7 +251,7 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 	}
 
 	if op.MakeDeal {
-		cm.ToCheck(op.ContId)
+		cm.ToCheck(op.ContId, c.Size)
 	}
 
 	// this provide call goes out immediately
