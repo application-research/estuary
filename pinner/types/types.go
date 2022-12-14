@@ -37,6 +37,7 @@ type IpfsPinStatusResponse struct {
 	Delegates []string               `json:"delegates"`
 	Info      map[string]interface{} `json:"info"`
 	Pin       IpfsPin                `json:"pin"`
+	Content   util.Content           `json:"content"`
 }
 
 type IpfsListPinStatusResponse struct {

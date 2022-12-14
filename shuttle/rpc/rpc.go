@@ -274,7 +274,7 @@ func (m *manager) handleRpcGarbageCheck(ctx context.Context, handle string, para
 }
 
 // even though there are 4 pin statuses, queued, pinning, pinned and failed
-// the UpdatePinStatus only changes DB state for failed status
+// the UpdateContentPinStatus only changes DB state for failed status
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
 func (m *manager) handlePinUpdate(location string, contID uint64, status types.PinningStatus) error {

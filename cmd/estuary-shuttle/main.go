@@ -6,9 +6,19 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/application-research/filclient/retrievehelper"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	lotusTypes "github.com/filecoin-project/lotus/chain/types"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	uio "github.com/ipfs/go-unixfs/io"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"runtime"
+	"strconv"
 
 	"golang.org/x/time/rate"
 
@@ -16,8 +26,6 @@ import (
 	httpprof "net/http/pprof"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strconv"
 	"sync"
 	"time"
 
@@ -30,7 +38,6 @@ import (
 	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/util/gateway"
-	"github.com/application-research/filclient/retrievehelper"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
@@ -55,26 +62,19 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
-	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
-	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
 )
@@ -1171,8 +1171,8 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
-	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAddToShuttle)))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCarToShuttle)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1268,7 +1268,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{})
 }
 
-// handleAdd godoc
+// handleAddToShuttle godoc
 // @Summary      Upload a file
 // @Description  This endpoint uploads a file.
 // @Tags         content
@@ -1280,7 +1280,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
-func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
+func (s *Shuttle) handleAddToShuttle(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	overwrite := false
@@ -1416,7 +1416,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
-// handleAddCar godoc
+// handleAddCarToShuttle godoc
 // @Summary      Upload content via a car file
 // @Description  This endpoint uploads content via a car file
 // @Tags         content
@@ -1425,7 +1425,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add-car [post]
-func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
+func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -1794,31 +1794,30 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 }
 
 func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
-	if status == types.PinningStatusFailed {
-		log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
+	log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
 
-		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
-			"pinning": false,
-			"active":  false,
-			"failed":  true,
-		}).Error; err != nil {
-			log.Errorf("failed to mark pin as failed in database: %s", err)
-		}
-
-		go func() {
-			if err := d.sendRpcMessage(context.TODO(), &rpcevent.Message{
-				Op: rpcevent.OP_UpdatePinStatus,
-				Params: rpcevent.MsgParams{
-					UpdatePinStatus: &rpcevent.UpdatePinStatus{
-						DBID:   cont,
-						Status: status,
-					},
-				},
-			}); err != nil {
-				log.Errorf("failed to send pin status update: %s", err)
-			}
-		}()
+	if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
+		"active":  status == types.PinningStatusPinned,
+		"pinning": status == types.PinningStatusPinning,
+		"failed":  status == types.PinningStatusFailed,
+	}).Error; err != nil {
+		log.Errorf("failed to update pin status for cont %d in database: %s", cont, err)
 	}
+
+	go func() {
+		if err := d.sendRpcMessage(context.TODO(), &rpcevent.Message{
+			Op: rpcevent.OP_UpdatePinStatus,
+			Params: rpcevent.MsgParams{
+				UpdatePinStatus: &rpcevent.UpdatePinStatus{
+					DBID:   cont,
+					Status: status,
+				},
+			},
+		}); err != nil {
+			log.Errorf("failed to send pin status update: %s", err)
+		}
+	}()
+
 	return nil
 }
 

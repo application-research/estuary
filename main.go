@@ -457,7 +457,6 @@ func Setup(username, password string, cfg *config.Estuary) error {
 }
 
 func Run(ctx context.Context, cfg *config.Estuary) error {
-
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -584,7 +583,7 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	fc.SetPieceCommFunc(cm.GetPieceCommitment)
 
 	// stand up pin manager
-	pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.UpdatePinStatus, &pinner.PinManagerOpts{
+	pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.UpdateContentPinStatus, &pinner.PinManagerOpts{
 		MaxActivePerUser: 20,
 		QueueDataDir:     cfg.DataDir,
 	}, cm, shuttleMgr)
