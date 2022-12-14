@@ -461,10 +461,8 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	go func() {
-		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck(cont.ID)
-	}()
+	// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
+	s.CM.ToCheck(cont.ID, cont.Size)
 
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
@@ -626,9 +624,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	go func() {
-		s.CM.ToCheck(content.ID)
-	}()
+	s.CM.ToCheck(content.ID, content.Size)
 
 	if c.QueryParam("lazy-provide") != "true" {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -727,9 +723,7 @@ func (s *apiV1) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	go func() {
-		s.CM.ToCheck(content.ID)
-	}()
+	s.CM.ToCheck(content.ID, content.Size)
 	return nil
 }
 
@@ -4547,9 +4541,7 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		}
 	}
 
-	go func() {
-		s.CM.ToCheck(content.ID)
-	}()
+	s.CM.ToCheck(content.ID, content.Size)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
@@ -4841,9 +4833,7 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	go func() {
-		s.CM.ToCheck(content.ID)
-	}()
+	s.CM.ToCheck(content.ID, content.Size)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,

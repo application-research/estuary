@@ -372,7 +372,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 		}).Error; err != nil {
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
-		m.cntQueueMgr.ToCheck(cont.ID)
+		m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
 		return nil
 	}
 
@@ -388,7 +388,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 	if err := m.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
-	m.cntQueueMgr.ToCheck(cont.ID)
+	m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
 	return nil
 }
 

@@ -10,8 +10,8 @@ import (
 )
 
 type IQueueManager interface {
-	ToCheck(contID uint)
-	Add(content uint, wait time.Duration)
+	ToCheck(contID uint, contSize int64)
+	Add(content uint, size int64, wait time.Duration)
 	NextContent() chan uint
 	Len() int
 	NextEvent() time.Time
@@ -19,7 +19,7 @@ type IQueueManager interface {
 
 type queueManager struct {
 	queue *entryQueue
-	cb    func(uint)
+	cb    func(uint, int64)
 	qlk   sync.Mutex
 
 	nextEvent time.Time
@@ -28,12 +28,14 @@ type queueManager struct {
 	qsizeMetr metrics.Gauge
 	qnextMetr metrics.Gauge
 
-	toCheck    chan uint
-	isDisabled bool
+	toCheck       chan uint
+	isDisabled    bool
+	dealSizeLimit int64
 }
 
 type queueEntry struct {
 	content   uint
+	size      int64
 	checkTime time.Time
 }
 
@@ -67,7 +69,7 @@ func (eq *entryQueue) PopEntry() *queueEntry {
 	return heap.Pop(eq).(*queueEntry)
 }
 
-func NewQueueManager(isDisabled bool) *queueManager {
+func NewQueueManager(isDisabled bool, dealSizeLimit int64) *queueManager {
 	metCtx := metrics.CtxScope(context.Background(), "content_manager")
 	qsizeMetr := metrics.NewCtx(metCtx, "queue_size", "number of items in the replicator queue").Gauge()
 	qnextMetr := metrics.NewCtx(metCtx, "queue_next", "next event time for queue").Gauge()
@@ -78,8 +80,9 @@ func NewQueueManager(isDisabled bool) *queueManager {
 		qsizeMetr: qsizeMetr,
 		qnextMetr: qnextMetr,
 
-		toCheck:    make(chan uint, 100000),
-		isDisabled: isDisabled,
+		toCheck:       make(chan uint, 100000),
+		isDisabled:    isDisabled,
+		dealSizeLimit: dealSizeLimit,
 	}
 	qm.cb = qm.ToCheck
 
@@ -87,7 +90,7 @@ func NewQueueManager(isDisabled bool) *queueManager {
 	return qm
 }
 
-func (qm *queueManager) Add(content uint, wait time.Duration) {
+func (qm *queueManager) Add(content uint, size int64, wait time.Duration) {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
@@ -95,6 +98,7 @@ func (qm *queueManager) Add(content uint, wait time.Duration) {
 
 	heap.Push(qm.queue, &queueEntry{
 		content:   content,
+		size:      size,
 		checkTime: at,
 	})
 
@@ -122,7 +126,7 @@ func (qm *queueManager) processQueue() {
 		qe := qm.queue.PopEntry()
 		if time.Now().After(qe.checkTime) {
 			qm.qsizeMetr.Add(-1)
-			go qm.cb(qe.content)
+			go qm.cb(qe.content, qe.size)
 		} else {
 			heap.Push(qm.queue, qe)
 			qm.nextEvent = qe.checkTime
@@ -134,10 +138,12 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
-func (qm *queueManager) ToCheck(contID uint) {
+func (qm *queueManager) ToCheck(contID uint, contSize int64) {
 	// if DisableFilecoinStorage is not enabled, queue content for deal making
-	if !qm.isDisabled {
-		qm.toCheck <- contID
+	if !qm.isDisabled && contSize >= qm.dealSizeLimit {
+		go func() {
+			qm.toCheck <- contID
+		}()
 	}
 }
 

@@ -707,7 +707,7 @@ func main() {
 			return err
 		}
 
-		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
+		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage, cfg.Content.MinSize)
 
 		// stand up shuttle manager
 		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr, cntQueueMgr)

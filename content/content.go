@@ -112,7 +112,7 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 			if i%100 == 0 {
 				time.Sleep(time.Second * 5)
 			}
-			cm.queueMgr.ToCheck(c.ID)
+			cm.queueMgr.ToCheck(c.ID, c.Size)
 		}
 		return nil
 	}).Error; err != nil {
@@ -121,6 +121,6 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) ToCheck(contID uint) {
-	cm.queueMgr.ToCheck(contID)
+func (cm *ContentManager) ToCheck(contID uint, contSize int64) {
+	cm.queueMgr.ToCheck(contID, contSize)
 }

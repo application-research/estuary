@@ -127,12 +127,15 @@ func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{})
 		for {
 			select {
 			case msg := <-sc.cmds:
-				// Write
-				err := websocket.JSON.Send(ws, msg)
-				if err != nil {
-					m.log.Errorf("failed to write command to shuttle: %s", err)
-					return
-				}
+				go func() {
+					// Write
+					err := websocket.JSON.Send(ws, msg)
+					if err != nil {
+						m.log.Errorf("failed to write command to shuttle: %s", err)
+						return
+					}
+				}()
+
 			case <-done:
 				return
 			}
