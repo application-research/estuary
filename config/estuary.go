@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"golang.org/x/time/rate"
 	"path/filepath"
 	"time"
 
@@ -37,6 +38,7 @@ type Estuary struct {
 	Replication            int           `json:"replication"`
 	RpcEngine              RpcEngine     `json:"rpc_engine"`
 	Pinning                Pinning       `json:"pinning"`
+	RateLimit              rate.Limit    `json:"rate_limit"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -84,6 +86,7 @@ func NewEstuary(appVersion string) *Estuary {
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
 		DisableAutoRetrieve:    true,
+		RateLimit:              rate.Limit(20),
 
 		Deal: Deal{
 			IsDisabled:            false,

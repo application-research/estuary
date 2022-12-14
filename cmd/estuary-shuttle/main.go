@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"golang.org/x/time/rate"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -86,7 +87,7 @@ const (
 	ColDir  = "dir"
 )
 
-//#nosec G104 - it's not common to treat SetLogLevel error return
+// #nosec G104 - it's not common to treat SetLogLevel error return
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
@@ -196,6 +197,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.RpcEngine.Queue.Enabled = cctx.Bool("queue-eng-enabled")
 		case "queue-eng-consumers":
 			cfg.RpcEngine.Queue.Consumers = cctx.Int("queue-eng-consumers")
+		case "rate-limit":
+			cfg.RateLimit = rate.Limit(cctx.Float64("rate-limit"))
 		default:
 		}
 	}
@@ -325,7 +328,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name: "announce-addr",
+			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -1153,6 +1156,8 @@ func (s *Shuttle) ServeAPI() error {
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
+
+	e.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.shuttleConfig.RateLimit)))
 
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))
