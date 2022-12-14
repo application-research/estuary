@@ -76,20 +76,19 @@ $ make estuary-shuttle
 
 Then, initialize a shuttle node. You can do this by using the admin UI at `<host>/admin/shuttle`, by posting to the Estuary API endpoint `/admin/shuttle/init` 
 ```bash
-$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X POST localhost:3004/admin/shuttle/
+$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X POST localhost:3004/admin/shuttle/init
 {"handle":"<your_handle_printed_here>", "token":"<your_auth_token_printed_here>"}
 ```
 
 or by using the CLI 
 ```bash 
-$ ./estuary shuttle
+$ ./estuary shuttle-init
 {"handle":"<your_handle_printed_here>", "token":"<your_auth_token_printed_here>"}
 ```
 
-Using the output from the above command, start a shuttle node in development mode: 
+Using the ouxtput from the above command, start a shuttle node in development mode: 
 ```bash
-$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=REPLACE_ME_WITH_AUTH_TOKEN 
---handle=REPLACE_ME_WITH_HANDLE --logging --host=localhost:3005
+$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRETfd17213b-48ad-4937-8d70-3946855920a2SECRET --handle=SHUTTLEd55cd9ee-7ad7-4978-b7f0-2b36f0fdfeffHANDLE --logging --host=localhost:3005
 ```
 output
 ```
@@ -114,7 +113,7 @@ ____________________________________O/_______
 NB: The above commands can be repeated to create and run more shuttle nodes. 
 To view a list of shuttle nodes that have already been initialized, make a GET request to the `admin/shuttle/list` API endpoint 
 ```bash
-$ curl -H "Authorization: Bearer REPLACE_ME_WITH_API_KEY" -X GET localhost:3004/admin/shuttle/list 
+$ curl -H "Authorization: Bearer AUTH" -X GET localhost:3004/admin/shuttle/list 
 ```
 
 ### API
