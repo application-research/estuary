@@ -143,11 +143,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		}
 	}
 
-	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content) {
-		return cm.addContentToStagingZone(ctx, content)
-	}
-
 	// check on each of the existing deals, see if any needs fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int

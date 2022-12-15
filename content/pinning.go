@@ -7,6 +7,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
@@ -17,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -189,7 +191,11 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 
 		var c util.Content
 		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
-			return errors.Wrap(err, "failed to look up content")
+			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
+			}
+			cm.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
+			return nil
 		}
 
 		// if content is already active, ignore it
@@ -198,21 +204,34 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 		}
 
 		// if an aggregate zone is failing, zone is stuck
-		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		// TODO - revisit this later if it is actually happening
 		if c.Aggregate {
-			cm.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
-			return nil
+			cm.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
+
+			return cm.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"status":  model.ZoneStatusStuck,
+				"message": model.ZoneMessageStuck,
+			}).Error
 		}
 
-		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":        false,
-			"pinning":       false,
-			"failed":        true,
-			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
-		}).Error; err != nil {
-			cm.log.Errorf("failed to mark content as failed in database: %s", err)
-			return err
-		}
+		return cm.db.Transaction(func(tx *gorm.DB) error {
+			if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"active":        false,
+				"pinning":       false,
+				"failed":        true,
+				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
+			}).Error; err != nil {
+				cm.log.Errorf("failed to mark content as failed in database: %s", err)
+				return err
+			}
+
+			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
+			// we did not reset the flag so that consolidation will not be reattempted by the worker
+			if c.AggregatedIn > 0 {
+				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
+			}
+			return nil
+		})
 	}
 	return nil
 }

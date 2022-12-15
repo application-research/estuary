@@ -15,10 +15,8 @@ const MinSafeDealLifetime = 2880 * 21 // three weeks
 // miners who start their deals early don't run into issues
 const DealDuration = 1555200 - (2880 * 21)
 
-// MinDealContentSize 3.6 GB
-// 90% of the un-padded data size for a 4GB piece
-// the 10% gap is to accommodate car file packing overhead, can probably do this better
-const MinDealContentSize = int64((4 << 30) * 9 / 10)
+// MinDealContentSize 1 GB
+const MinDealContentSize = int64(1_100_000_000)
 
 // MaxDealContentSize 31.66 GB
 const MaxDealContentSize = int64(34_000_000_000)
