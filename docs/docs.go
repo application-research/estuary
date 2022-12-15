@@ -944,7 +944,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/util.ContentAddIpfsBody"
+                            "$ref": "#/definitions/types.IpfsPin"
                         }
                     },
                     {
@@ -1088,6 +1088,54 @@ const docTemplate = `{
                         "description": "Content ID",
                         "name": "content",
                         "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/contents": {
+            "get": {
+                "description": "This endpoint is used to get user contents",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get user contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
                         "required": true
                     }
                 ],
@@ -1408,14 +1456,110 @@ const docTemplate = `{
         },
         "/content/staging-zones": {
             "get": {
-                "description": "This endpoint is used to get staging zone for user.",
+                "description": "This endpoint is used to get staging zone for user, excluding its contents.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Get staging zone for user",
+                "summary": "Get staging zone for user, excluding its contents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/staging-zones/{staging_zone}": {
+            "get": {
+                "description": "This endpoint is used to get a staging zone, excluding its contents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get staging zone without its contents field populated",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/staging-zones/{staging_zone}/contents": {
+            "get": {
+                "description": "This endpoint is used to get the contents for a staging zone",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get contents for a staging zone",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3458,37 +3602,16 @@ const docTemplate = `{
                 "pinning",
                 "pinned",
                 "failed",
-                "queued"
+                "queued",
+                "offloaded"
             ],
             "x-enum-varnames": [
                 "PinningStatusPinning",
                 "PinningStatusPinned",
                 "PinningStatusFailed",
-                "PinningStatusQueued"
+                "PinningStatusQueued",
+                "PinningStatusOffloaded"
             ]
-        },
-        "util.ContentAddIpfsBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "filename": {
-                    "type": "string"
-                },
-                "peers": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "root": {
-                    "type": "string"
-                }
-            }
         },
         "util.ContentAddResponse": {
             "type": "object",

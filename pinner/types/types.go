@@ -14,11 +14,13 @@ const (
 	   - pinning    # pinning in progress; additional info can be returned in info[status_details]
 	   - pinned     # pinned successfully
 	   - failed     # pinning service was unable to finish pinning operation; additional info can be found in info[status_details]
+	   - offloaded  # content has been offloaded
 	*/
-	PinningStatusPinning PinningStatus = "pinning"
-	PinningStatusPinned  PinningStatus = "pinned"
-	PinningStatusFailed  PinningStatus = "failed"
-	PinningStatusQueued  PinningStatus = "queued"
+	PinningStatusPinning   PinningStatus = "pinning"
+	PinningStatusPinned    PinningStatus = "pinned"
+	PinningStatusFailed    PinningStatus = "failed"
+	PinningStatusQueued    PinningStatus = "queued"
+	PinningStatusOffloaded PinningStatus = "offloaded"
 )
 
 type IpfsPin struct {
@@ -50,6 +52,8 @@ func GetContentPinningStatus(cont util.Content) PinningStatus {
 		status = PinningStatusFailed
 	} else if cont.Pinning {
 		status = PinningStatusPinning
+	} else if cont.Offloaded {
+		status = PinningStatusOffloaded
 	}
 	return status
 }

@@ -1,4 +1,4 @@
-package contentmgr
+package contentqueue
 
 import (
 	"container/heap"
@@ -6,14 +6,20 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-metrics-interface"
-	"golang.org/x/xerrors"
 )
+
+type IQueueManager interface {
+	ToCheck(contID uint, contSize int64)
+	Add(content uint, size int64, wait time.Duration)
+	NextContent() chan uint
+	Len() int
+	NextEvent() time.Time
+}
 
 type queueManager struct {
 	queue *entryQueue
-	cb    func(uint)
+	cb    func(uint, int64)
 	qlk   sync.Mutex
 
 	nextEvent time.Time
@@ -21,10 +27,15 @@ type queueManager struct {
 
 	qsizeMetr metrics.Gauge
 	qnextMetr metrics.Gauge
+
+	toCheck       chan uint
+	isDisabled    bool
+	dealSizeLimit int64
 }
 
 type queueEntry struct {
 	content   uint
+	size      int64
 	checkTime time.Time
 }
 
@@ -58,24 +69,28 @@ func (eq *entryQueue) PopEntry() *queueEntry {
 	return heap.Pop(eq).(*queueEntry)
 }
 
-func newQueueManager(cb func(c uint)) *queueManager {
+func NewQueueManager(isDisabled bool, dealSizeLimit int64) *queueManager {
 	metCtx := metrics.CtxScope(context.Background(), "content_manager")
 	qsizeMetr := metrics.NewCtx(metCtx, "queue_size", "number of items in the replicator queue").Gauge()
 	qnextMetr := metrics.NewCtx(metCtx, "queue_next", "next event time for queue").Gauge()
 
 	qm := &queueManager{
 		queue: new(entryQueue),
-		cb:    cb,
 
 		qsizeMetr: qsizeMetr,
 		qnextMetr: qnextMetr,
+
+		toCheck:       make(chan uint, 100000),
+		isDisabled:    isDisabled,
+		dealSizeLimit: dealSizeLimit,
 	}
+	qm.cb = qm.ToCheck
 
 	heap.Init(qm.queue)
 	return qm
 }
 
-func (qm *queueManager) add(content uint, wait time.Duration) {
+func (qm *queueManager) Add(content uint, size int64, wait time.Duration) {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
@@ -83,6 +98,7 @@ func (qm *queueManager) add(content uint, wait time.Duration) {
 
 	heap.Push(qm.queue, &queueEntry{
 		content:   content,
+		size:      size,
 		checkTime: at,
 	})
 
@@ -110,7 +126,7 @@ func (qm *queueManager) processQueue() {
 		qe := qm.queue.PopEntry()
 		if time.Now().After(qe.checkTime) {
 			qm.qsizeMetr.Add(-1)
-			go qm.cb(qe.content)
+			go qm.cb(qe.content, qe.size)
 		} else {
 			heap.Push(qm.queue, qe)
 			qm.nextEvent = qe.checkTime
@@ -122,30 +138,23 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
-func (cm *ContentManager) ToCheck(contID uint) {
+func (qm *queueManager) ToCheck(contID uint, contSize int64) {
 	// if DisableFilecoinStorage is not enabled, queue content for deal making
-	if !cm.cfg.DisableFilecoinStorage {
-		cm.toCheck <- contID
+	if !qm.isDisabled && contSize >= qm.dealSizeLimit {
+		go func() {
+			qm.toCheck <- contID
+		}()
 	}
 }
 
-func (cm *ContentManager) rebuildToCheckQueue() error {
-	cm.log.Info("rebuilding contents queue .......")
+func (qm *queueManager) NextContent() chan uint {
+	return qm.toCheck
+}
 
-	var allcontent []util.Content
-	if err := cm.db.Find(&allcontent, "active AND NOT aggregated_in > 0").Error; err != nil {
-		return xerrors.Errorf("finding all content in database: %w", err)
-	}
+func (qm *queueManager) Len() int {
+	return len(qm.queue.elems)
+}
 
-	go func() {
-		for i, c := range allcontent {
-			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
-			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
-			if i%100 == 0 {
-				time.Sleep(time.Second * 5)
-			}
-			cm.ToCheck(c.ID)
-		}
-	}()
-	return nil
+func (qm *queueManager) NextEvent() time.Time {
+	return qm.nextEvent
 }

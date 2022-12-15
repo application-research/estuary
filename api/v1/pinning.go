@@ -301,8 +301,8 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-
 	s.pinMgr.Add(pinOp)
+
 	return e.JSON(http.StatusAccepted, status)
 }
 
@@ -408,7 +408,6 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-
 	s.pinMgr.Add(pinOp)
 
 	return e.JSON(http.StatusAccepted, status)

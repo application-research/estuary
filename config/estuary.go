@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"golang.org/x/time/rate"
 	"path/filepath"
 	"time"
 
@@ -35,8 +36,9 @@ type Estuary struct {
 	Logging                Logging       `json:"logging"`
 	StagingBucket          StagingBucket `json:"staging_bucket"`
 	Replication            int           `json:"replication"`
-	RPCMessage             RPCMessage    `json:"rpc_message"`
+	RpcEngine              RpcEngine     `json:"rpc_engine"`
 	Pinning                Pinning       `json:"pinning"`
+	RateLimit              rate.Limit    `json:"rate_limit"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -84,6 +86,7 @@ func NewEstuary(appVersion string) *Estuary {
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
 		DisableAutoRetrieve:    true,
+		RateLimit:              rate.Limit(20),
 
 		Deal: Deal{
 			IsDisabled:            false,
@@ -106,7 +109,7 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:           true,
+			Enabled:           false,
 			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
 		},
 
@@ -191,10 +194,18 @@ func NewEstuary(appVersion string) *Estuary {
 			},
 			Libp2pThrottleLimit: 100,
 		},
-		RPCMessage: RPCMessage{
-			IncomingQueueSize: 100000,
-			OutgoingQueueSize: 100000,
-			QueueHandlers:     30,
+		RpcEngine: RpcEngine{
+			Websocket: WebsocketEngine{
+				IncomingQueueSize: 100000,
+				OutgoingQueueSize: 100000,
+				QueueHandlers:     30,
+			},
+			Queue: QueueEngine{
+				Host:      "",
+				Enabled:   false,
+				Consumers: 5,
+				Driver:    "nsq",
+			},
 		},
 	}
 }

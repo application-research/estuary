@@ -34,7 +34,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	"github.com/application-research/estuary/drpc"
 	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
@@ -132,29 +131,7 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
 func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
-	limit := 500
-	if limstr := c.QueryParam("limit"); limstr != "" {
-		nlim, err := strconv.Atoi(limstr)
-		if err != nil {
-			return err
-		}
-
-		if nlim > 0 {
-			limit = nlim
-		}
-	}
-
-	offset := 0
-	if offstr := c.QueryParam("offset"); offstr != "" {
-		noff, err := strconv.Atoi(offstr)
-		if err != nil {
-			return err
-		}
-
-		if noff > 0 {
-			offset = noff
-		}
-	}
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -175,6 +152,32 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	}
 
 	return c.JSON(http.StatusOK, out)
+}
+
+// handleGetUserContents godoc
+// @Summary      Get user contents
+// @Description  This endpoint is used to get user contents
+// @Tags         content
+// @Param        limit   query  string  true  "limit"
+// @Param        offset  query  string  true  "offset"
+// @Produce      json
+// @Success      200          {object}  string
+// @Failure      400      {object}  util.HttpError
+// @Failure      500      {object}  util.HttpError
+// @Router       /content/contents [get]
+func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	var contents []util.Content
+	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
+		return err
+	}
+
+	for i, c := range contents {
+		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
+	}
+
+	return c.JSON(http.StatusOK, contents)
 }
 
 // handlePeeringPeersAdd godoc
@@ -356,94 +359,11 @@ func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Param        body          body      util.ContentAddIpfsBody  true   "IPFS Body"
+// @Param        body          body      types.IpfsPin  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Router       /content/add-ipfs [post]
 func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
-	ctx := c.Request().Context()
-
-	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
-		return err
-	}
-
-	var params util.ContentAddIpfsBody
-	if err := c.Bind(&params); err != nil {
-		return err
-	}
-
-	filename := params.Name
-	if filename == "" {
-		filename = params.Root
-	}
-
-	var cols []*collections.CollectionRef
-	if params.CollectionID != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", params.CollectionID, u.ID).Error; err != nil {
-			return err
-		}
-
-		// if dir is "" or nil, put the file on the root dir (/filename)
-		defaultPath := "/" + filename
-		colp := defaultPath
-		if params.CollectionDir != "" {
-			p, err := sanitizePath(params.CollectionDir)
-			if err != nil {
-				return err
-			}
-			colp = p
-		}
-
-		// default: colp ends in / (does not include filename e.g. /hello/)
-		path := colp + filename
-
-		// if path does not end in /, it includes the filename
-		if !strings.HasSuffix(colp, "/") {
-			path = colp
-			filename = filepath.Base(colp)
-		}
-
-		cols = []*collections.CollectionRef{
-			{
-				Collection: srchCol.ID,
-				Path:       &path,
-			},
-		}
-	}
-
-	var origins []*peer.AddrInfo
-	for _, p := range params.Peers {
-		ai, err := peer.AddrInfoFromString(p)
-		if err != nil {
-			return err
-		}
-		origins = append(origins, ai)
-	}
-
-	rcid, err := cid.Decode(params.Root)
-	if err != nil {
-		return err
-	}
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		var count int64
-		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", rcid.Bytes(), u.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
-		}
-	}
-
-	makeDeal := true
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rcid, filename, cols, origins, 0, nil, makeDeal)
-	if err != nil {
-		return err
-	}
-
-	s.pinMgr.Add(pinOp)
-
-	return c.JSON(http.StatusAccepted, pinstatus)
+	return s.handleAddPin(c, u)
 }
 
 // handleAddCar godoc
@@ -537,14 +457,12 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, &s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	go func() {
-		// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-		s.CM.ToCheck(cont.ID)
-	}()
+	// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
+	s.CM.ToCheck(cont.ID, cont.Size)
 
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
@@ -702,13 +620,11 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, &s.Node.Blockstore); err != nil {
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	go func() {
-		s.CM.ToCheck(content.ID)
-	}()
+	s.CM.ToCheck(content.ID, content.Size)
 
 	if c.QueryParam("lazy-provide") != "true" {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -751,7 +667,7 @@ func constructDirectoryPath(dir string) (string, error) {
 // redirectContentAdding is called when localContentAddingDisabled is true
 // it finds available shuttles and adds the desired content in one of them
 func (s *apiV1) redirectContentAdding(c echo.Context, u *util.User) error {
-	uep, err := s.getPreferredUploadEndpoints(u)
+	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return fmt.Errorf("failed to get preferred upload endpoints: %s", err)
 	}
@@ -807,7 +723,7 @@ func (s *apiV1) handleEnsureReplication(c echo.Context) error {
 
 	fmt.Println("Content: ", content.Cid.CID, data)
 
-	s.CM.ToCheck(content.ID)
+	s.CM.ToCheck(content.ID, content.Size)
 	return nil
 }
 
@@ -993,7 +909,7 @@ func (s *apiV1) handleContentStatus(c echo.Context, u *util.User) error {
 				Deal: d,
 			}
 
-			chanst, err := s.CM.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
+			chanst, err := s.transferMgr.GetTransferStatus(ctx, &dl, content.Cid.CID, content.Location)
 			if err != nil {
 				s.log.Errorf("failed to get transfer status: %s", err)
 				// the UI needs to display a transfer state even for intermittent errors
@@ -1127,7 +1043,7 @@ func (s *apiV1) dealStatusByID(ctx context.Context, dealid uint) (*dealStatus, e
 		return nil, err
 	}
 
-	chanst, err := s.CM.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
+	chanst, err := s.transferMgr.GetTransferStatus(ctx, &deal, content.Cid.CID, content.Location)
 	if err != nil {
 		s.log.Errorf("failed to get transfer status: %s", err)
 		// the UI needs to display a transfer state even for intermittent errors
@@ -1357,13 +1273,17 @@ func (s *apiV1) handleMakeDeal(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	id, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
+	if err := s.CM.CheckContentReadyForDealMaking(ctx, cont); err != nil {
+		return err
+	}
+
+	cd, err := s.CM.MakeDealWithMiner(ctx, cont, addr)
 	if err != nil {
 		return err
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"deal": id,
+		"deal": cd.ID,
 	})
 }
 
@@ -1408,7 +1328,7 @@ func (s *apiV1) handleTransferStatus(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.transferMgr.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1436,7 +1356,7 @@ func (s *apiV1) handleTransferStatusByID(c echo.Context) error {
 		return err
 	}
 
-	status, err := s.CM.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
+	status, err := s.transferMgr.GetTransferStatus(c.Request().Context(), &deal, cont.Cid.CID, cont.Location)
 	if err != nil {
 		return err
 	}
@@ -1519,7 +1439,7 @@ func (s *apiV1) handleTransferRestart(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
+	if err := s.transferMgr.RestartTransfer(ctx, cont.Location, chanid, deal); err != nil {
 		return err
 	}
 	return nil
@@ -1808,25 +1728,15 @@ func (s *apiV1) handleAdminStats(c echo.Context) error {
 // @Failure      500       {object}  util.HttpError
 // @Router       /admin/system/config [get]
 func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
-	var shts []interface{}
-	for _, sh := range s.CM.Shuttles {
-		if sh.Hostname == "" {
-			s.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
-			continue
-		}
-
-		out, err := s.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
-		if err != nil {
-			s.log.Warnf("failed to get shuttle config: %s", err)
-			continue
-		}
-		shts = append(shts, out)
+	shConfigs, err := s.shuttleMgr.GetShuttlesConfig(u)
+	if err != nil {
+		return err
 	}
 
 	resp := map[string]interface{}{
 		"data": map[string]interface{}{
 			"primary":  s.cfg,
-			"shuttles": shts,
+			"shuttles": shConfigs,
 		},
 	}
 	return c.JSON(http.StatusOK, resp)
@@ -2474,10 +2384,6 @@ func (s *apiV1) handleGetContentFailures(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, errs)
 }
 
-func (s *apiV1) handleAdminGetStagingZones(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
-}
-
 func (s *apiV1) handleGetOffloadingCandidates(c echo.Context) error {
 	conts, err := s.CM.GetRemovalCandidates(c.Request().Context(), c.QueryParam("all") == "true", c.QueryParam("location"), nil)
 	if err != nil {
@@ -2548,7 +2454,7 @@ func (s *apiV1) handleMoveContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.SendConsolidateContentCmd(ctx, shuttle.Handle, contents); err != nil {
+	if err := s.shuttleMgr.ConsolidateContent(ctx, shuttle.Handle, contents); err != nil {
 		return err
 	}
 
@@ -2585,7 +2491,7 @@ func (s *apiV1) handleReadLocalContent(c echo.Context) error {
 		return err
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, offline.Exchange(&s.Node.Blockstore))
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
 	dserv := merkledag.NewDAGService(bserv)
 
 	ctx := context.Background()
@@ -2961,7 +2867,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
-	uep, err := s.getPreferredUploadEndpoints(u)
+	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
 	}
@@ -2999,55 +2905,6 @@ func (s *apiV1) getMinersOwnedByUser(u *util.User) []string {
 	}
 
 	return out
-}
-
-func (s *apiV1) getPreferredUploadEndpoints(u *util.User) ([]string, error) {
-	// TODO: this should be a lotttttt smarter
-	s.CM.ShuttlesLk.Lock()
-	defer s.CM.ShuttlesLk.Unlock()
-	var shuttles []model.Shuttle
-	for hnd, sh := range s.CM.Shuttles {
-		if sh.ContentAddingDisabled {
-			s.log.Debugf("shuttle %+v content adding is disabled", sh)
-			continue
-		}
-
-		if sh.Hostname == "" {
-			s.log.Debugf("shuttle %+v has empty hostname", sh)
-			continue
-		}
-
-		var shuttle model.Shuttle
-		if err := s.DB.First(&shuttle, "handle = ?", hnd).Error; err != nil {
-			s.log.Errorf("failed to look up shuttle by handle: %s", err)
-			continue
-		}
-
-		if !shuttle.Open {
-			s.log.Debugf("shuttle %+v is not open, skipping", shuttle)
-			continue
-		}
-
-		shuttles = append(shuttles, shuttle)
-	}
-
-	sort.Slice(shuttles, func(i, j int) bool {
-		return shuttles[i].Priority > shuttles[j].Priority
-	})
-
-	var out []string
-	for _, sh := range shuttles {
-		host := "https://" + sh.Host
-		if strings.HasPrefix(sh.Host, "http://") || strings.HasPrefix(sh.Host, "https://") {
-			host = sh.Host
-		}
-		out = append(out, host+"/content/add")
-	}
-
-	if !s.cfg.Content.DisableLocalAdding {
-		out = append(out, s.cfg.Hostname+"/content/add")
-	}
-	return out, nil
 }
 
 func (s *apiV1) handleHealth(c echo.Context) error {
@@ -3374,7 +3231,7 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 		origins = append(origins, ai)
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, nil)
+	bserv := blockservice.New(s.Node.Blockstore, nil)
 	dserv := merkledag.NewDAGService(bserv)
 
 	// create DAG respecting directory structure
@@ -3415,7 +3272,6 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-
 	s.pinMgr.Add(pinOp)
 
 	return c.JSON(http.StatusOK, pinstatus)
@@ -3711,13 +3567,9 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 	return &stats, nil
 }
 
-func (s *apiV1) handleGetBucketDiag(c echo.Context) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZoneSnapshot(c.Request().Context()))
-}
-
-// handleGetStagingZoneForUser godoc
-// @Summary      Get staging zone for user
-// @Description  This endpoint is used to get staging zone for user.
+// handleGetStagingZonesForUser godoc
+// @Summary      Get staging zone for user, excluding its contents
+// @Description  This endpoint is used to get staging zone for user, excluding its contents.
 // @Tags         content
 // @Produce      json
 // @Success      200  {object}  string
@@ -3725,7 +3577,62 @@ func (s *apiV1) handleGetBucketDiag(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	return c.JSON(http.StatusOK, s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID))
+	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, res)
+}
+
+// handleGetStagingZoneWithoutContents godoc
+// @Summary      Get staging zone without its contents field populated
+// @Description  This endpoint is used to get a staging zone, excluding its contents.
+// @Tags         content
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        staging_zone   path      int  true  "Staging Zone Content ID"
+// @Router       /content/staging-zones/{staging_zone} [get]
+func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User) error {
+	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
+	if err != nil {
+		return err
+	}
+	contents, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, contents)
+}
+
+// handleGetStagingZoneContents godoc
+// @Summary      Get contents for a staging zone
+// @Description  This endpoint is used to get the contents for a staging zone
+// @Tags         content
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        staging_zone   path      int  true  "Staging Zone Content ID"
+// @Param        limit   query  string  true  "limit"
+// @Param        offset  query  string  true  "offset"
+// @Router       /content/staging-zones/{staging_zone}/contents [get]
+func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error {
+	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
+	if err != nil {
+		return err
+	}
+	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
+	if err != nil {
+		return err
+	}
+	for i, c := range contents {
+		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
+	}
+	return c.JSON(http.StatusOK, contents)
 }
 
 // handleUserExportData godoc
@@ -4138,12 +4045,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 			loc := aggr[0].Location
 			if loc != cont.Location {
 				// should be safe to send a re-aggregate command to the shuttle in question
-				var aggrConts []drpc.AggregateContent
-				for _, c := range aggr {
-					aggrConts = append(aggrConts, drpc.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})
-				}
-
-				if err := s.CM.SendAggregateCmd(ctx, loc, cont, aggrConts); err != nil {
+				if err := s.shuttleMgr.AggregateContent(ctx, loc, cont, aggr); err != nil {
 					return err
 				}
 				fixedAggregateLocation = true
@@ -4159,7 +4061,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, exch)
+	bserv := blockservice.New(s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -4232,7 +4134,7 @@ func (s *apiV1) handleContentHealthCheckByCid(c echo.Context) error {
 		exch = s.Node.Bitswap
 	}
 
-	bserv := blockservice.New(&s.Node.Blockstore, exch)
+	bserv := blockservice.New(s.Node.Blockstore, exch)
 	dserv := merkledag.NewDAGService(bserv)
 
 	cset := cid.NewSet()
@@ -4297,10 +4199,10 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.CM.ShuttleIsOnline(d.Handle),
-			AddrInfo:       s.CM.ShuttleAddrInfo(d.Handle),
-			Hostname:       s.CM.ShuttleHostName(d.Handle),
-			StorageStats:   s.CM.ShuttleStorageStats(d.Handle),
+			Online:         s.shuttleMgr.IsOnline(d.Handle),
+			AddrInfo:       s.shuttleMgr.AddrInfo(d.Handle),
+			Hostname:       s.shuttleMgr.HostName(d.Handle),
+			StorageStats:   s.shuttleMgr.StorageStats(d.Handle),
 		})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -4312,8 +4214,8 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	var shuttle model.Shuttle
-	if err := s.DB.First(&shuttle, "token = ?", auth).Error; err != nil {
+	shuttle, err := s.shuttleMgr.GetByAuth(auth)
+	if err != nil {
 		return err
 	}
 
@@ -4323,48 +4225,21 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		done := make(chan struct{})
 		defer close(done)
 		defer ws.Close()
-		var hello drpc.Hello
-		if err := websocket.JSON.Receive(ws, &hello); err != nil {
-			s.log.Errorf("failed to read hello message from client: %s", err)
-			return
-		}
 
-		outgoingRpcQueue, unreg, err := s.CM.RegisterShuttleConnection(shuttle.Handle, &hello)
+		readWebSocket, unreg, err := s.shuttleMgr.Connect(ws, shuttle.Handle, done)
 		if err != nil {
 			s.log.Errorf("failed to register shuttle: %s", err)
 			return
 		}
 		defer unreg()
 
-		go func() {
-			for {
-				select {
-				case rpcMessage := <-outgoingRpcQueue:
-					// Write
-					err := websocket.JSON.Send(ws, rpcMessage)
-					if err != nil {
-						s.log.Errorf("failed to write command to shuttle: %s", err)
-						return
-					}
-				case <-done:
-					return
-				}
-			}
-		}()
-
-		go s.CM.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
+		go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
 
 		for {
-			var msg drpc.Message
-			if err := websocket.JSON.Receive(ws, &msg); err != nil {
+			if err := readWebSocket(); err != nil {
 				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
 				return
 			}
-
-			go func(msg *drpc.Message) {
-				msg.Handle = shuttle.Handle
-				s.CM.IncomingRPCMessages <- msg
-			}(&msg)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
@@ -4570,14 +4445,7 @@ func (s *apiV1) handleStorageFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *apiV1) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
-	limit := 2000
-	if limstr := c.QueryParam("limit"); limstr != "" {
-		nlim, err := strconv.Atoi(limstr)
-		if err != nil {
-			return nil, err
-		}
-		limit = nlim
-	}
+	limit, _, _ := s.getLimitAndOffset(c, 2000, 0)
 
 	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
@@ -4672,6 +4540,8 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 			return err
 		}
 	}
+
+	s.CM.ToCheck(content.ID, content.Size)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
@@ -4808,7 +4678,7 @@ func (s *apiV1) handleAdminBreakAggregate(c echo.Context) error {
 
 	if c.QueryParam("check-missing-children") != "" {
 		var childRes []map[string]interface{}
-		bserv := blockservice.New(&s.Node.Blockstore, nil)
+		bserv := blockservice.New(s.Node.Blockstore, nil)
 		dserv := merkledag.NewDAGService(bserv)
 
 		for _, c := range children {
@@ -4963,6 +4833,8 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
+	s.CM.ToCheck(content.ID, content.Size)
+
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
@@ -5038,17 +4910,7 @@ func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 			_ = json.Unmarshal([]byte(cont.Origins), &origins) // no need to handle or log err, its just a nice to have
 		}
 
-		if err := s.CM.SendShuttleCommand(c.Request().Context(), handle, &drpc.Command{
-			Op: drpc.CMD_AddPin,
-			Params: drpc.CmdParams{
-				AddPin: &drpc.AddPin{
-					DBID:   cont.ID,
-					UserId: cont.UserID,
-					Cid:    cont.Cid.CID,
-					Peers:  origins,
-				},
-			},
-		}); err != nil {
+		if err := s.shuttleMgr.PinContent(c.Request().Context(), handle, cont, origins); err != nil {
 			return err
 		}
 	}
@@ -5196,7 +5058,7 @@ func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (s
 		return "", nil
 	}
 
-	if !s.CM.ShuttleIsOnline(cont.Location) {
+	if !s.shuttleMgr.IsOnline(cont.Location) {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
@@ -5216,40 +5078,6 @@ func (s *apiV1) isDupCIDContent(c echo.Context, rootCID cid.Cid, u *util.User) (
 		return true, c.JSON(409, map[string]string{"message": fmt.Sprintf("this content is already preserved under cid:%s", rootCID.String())})
 	}
 	return false, nil
-}
-
-func (s *apiV1) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
-	u, err := url.Parse(hostname)
-	if err != nil {
-		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
-	}
-	u.Path = ""
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/admin/system/config", u.Scheme, u.Host), nil)
-	if err != nil {
-		return nil, errors.Errorf("failed to build GET request for shuttle(%s) config: %s", hostname, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, errors.Errorf("failed to request shuttle(%s) config: %s", hostname, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return nil, errors.Errorf("failed to read shuttle(%s) config err resp: %s", hostname, err)
-		}
-		return nil, errors.Errorf("failed to get shuttle(%s) config: %s", hostname, bodyBytes)
-	}
-
-	var out interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, errors.Errorf("failed to decode shuttle config response: %s", err)
-	}
-	return out, nil
 }
 
 func (s *apiV1) isContentAddingDisabled(u *util.User) bool {
@@ -5341,4 +5169,31 @@ func (s *apiV1) handleFixupDeals(c echo.Context) error {
 		}(dll)
 	}
 	return nil
+}
+
+func (s *apiV1) getLimitAndOffset(c echo.Context, defaultLimit int, defaultOffset int) (int, int, error) {
+	limit := defaultLimit
+	offset := defaultOffset
+	if limstr := c.QueryParam("limit"); limstr != "" {
+		nlim, err := strconv.Atoi(limstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if nlim > 0 {
+			limit = nlim
+		}
+	}
+
+	if offstr := c.QueryParam("offset"); offstr != "" {
+		noff, err := strconv.Atoi(offstr)
+		if err != nil {
+			return limit, offset, err
+		}
+
+		if noff > 0 {
+			offset = noff
+		}
+	}
+	return limit, offset, nil
 }

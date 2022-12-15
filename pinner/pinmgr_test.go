@@ -29,7 +29,7 @@ func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/duplicateGuard")
 	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
 
-	return NewPinManager(
+	return newPinManager(
 		func(ctx context.Context, op *operation.PinningOperation, cb pinning_progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()
@@ -43,7 +43,7 @@ func newManager(count *int) *PinManager {
 }
 
 func newManagerNoDelete(count *int) *PinManager {
-	return NewPinManager(
+	return newPinManager(
 		func(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
 			go cb(1)
 			countLock.Lock()

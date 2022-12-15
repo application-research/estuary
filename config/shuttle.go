@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"golang.org/x/time/rate"
 	"path/filepath"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
@@ -28,12 +29,13 @@ type Shuttle struct {
 	Private            bool          `json:"private"`
 	Dev                bool          `json:"dev"`
 	NoReloadPinQueue   bool          `json:"no_reload_pin_queue"`
+	RateLimit          rate.Limit    `json:"rate_limit"`
 	Node               Node          `json:"node"`
 	Jaeger             Jaeger        `json:"jaeger"`
 	Content            Content       `json:"content"`
 	Logging            Logging       `json:"logging"`
 	EstuaryRemote      EstuaryRemote `json:"estuary_remote"`
-	RPCMessage         RPCMessage    `json:"rpc_message"`
+	RpcEngine          RpcEngine     `json:"rpc_engine"`
 }
 
 func (cfg *Shuttle) Load(filename string) error {
@@ -82,6 +84,7 @@ func NewShuttle(appVersion string) *Shuttle {
 		Private:            false,
 		Dev:                false,
 		NoReloadPinQueue:   false,
+		RateLimit:          rate.Limit(20),
 
 		Content: Content{
 			DisableLocalAdding: false,
@@ -168,9 +171,18 @@ func NewShuttle(appVersion string) *Shuttle {
 			Handle:    "",
 			AuthToken: "",
 		},
-		RPCMessage: RPCMessage{
-			OutgoingQueueSize: 100000,
-			IncomingQueueSize: 100000,
+		RpcEngine: RpcEngine{
+			Websocket: WebsocketEngine{
+				IncomingQueueSize: 100000,
+				OutgoingQueueSize: 100000,
+				QueueHandlers:     30,
+			},
+			Queue: QueueEngine{
+				Host:      "",
+				Enabled:   false,
+				Consumers: 5,
+				Driver:    "nsq",
+			},
 		},
 	}
 }

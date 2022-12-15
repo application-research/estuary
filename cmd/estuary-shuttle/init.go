@@ -27,7 +27,7 @@ func (init *Initializer) KeyProviderFunc(rpctx context.Context) (<-chan cid.Cid,
 	go func() {
 		defer close(out)
 		var pins []Pin
-		init.db.Where("active = ?", true).FindInBatches(&pins, 100000, func(tx *gorm.DB, batch int) error {
+		init.db.Where("active = ?", true).FindInBatches(&pins, 500, func(tx *gorm.DB, batch int) error {
 			for _, c := range pins {
 				out <- c.Cid.CID
 			}

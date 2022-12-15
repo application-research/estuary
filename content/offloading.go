@@ -186,7 +186,7 @@ func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (in
 	}
 
 	for loc, conts := range remote {
-		if err := cm.sendUnpinCmd(ctx, loc, conts); err != nil {
+		if err := cm.shuttleMgr.UnpinContent(ctx, loc, conts); err != nil {
 			cm.log.Errorf("failed to send unpin command to shuttle: %s", err)
 		}
 	}

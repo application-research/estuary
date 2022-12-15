@@ -2,16 +2,19 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	"github.com/application-research/estuary/contentmgr"
+	contentmgr "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
+	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/whyrusleeping/memo"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -30,8 +33,10 @@ type apiV1 struct {
 	gwayHandler  *gateway.GatewayHandler
 	cacher       *memo.Cacher
 	minerManager miner.IMinerManager
-	pinMgr       *pinner.PinManager
+	pinMgr       *pinner.EstuaryPinManager
 	log          *zap.SugaredLogger
+	shuttleMgr   shuttle.IManager
+	transferMgr  transfer.IManager
 }
 
 func NewAPIV1(
@@ -43,9 +48,11 @@ func NewAPIV1(
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
 	mm miner.IMinerManager,
-	pinMgr *pinner.PinManager,
+	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
+	shuttleMgr shuttle.IManager,
+	transferMgr transfer.IManager,
 ) *apiV1 {
 	return &apiV1{
 		cfg:          cfg,
@@ -61,6 +68,8 @@ func NewAPIV1(
 		minerManager: mm,
 		pinMgr:       pinMgr,
 		log:          log,
+		shuttleMgr:   shuttleMgr,
+		transferMgr:  transferMgr,
 	}
 }
 
@@ -83,6 +92,7 @@ func NewAPIV1(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 
+	e.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.cfg.RateLimit)))
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
@@ -122,6 +132,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
+	content.GET("/contents", withUser(s.handleGetUserContents))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
 	content.GET("/list", withUser(s.handleListContent))
@@ -129,6 +140,8 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
 	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
+	content.GET("/staging-zones/:staging_zone", withUser(s.handleGetStagingZoneWithoutContents))
+	content.GET("/staging-zones/:staging_zone/contents", withUser(s.handleGetStagingZoneContents))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 
@@ -219,14 +232,12 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	admin.GET("/cm/progress", s.handleAdminGetProgress)
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
-	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.POST("/cm/gc", s.handleRunGc)
 	admin.POST("/cm/move", s.handleMoveContent)
-	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
