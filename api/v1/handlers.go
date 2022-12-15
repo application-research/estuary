@@ -157,6 +157,8 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
+// cacheKey returns a key based on the request being made, the user associated to it, and optional tags
+// this key is used when calling Get or Add from a cache
 func cacheKey(c echo.Context, u *util.User, tags ...string) string {
 	paramNames := strings.Join(c.ParamNames(), ",")
 	paramVals := strings.Join(c.ParamValues(), ",")
