@@ -94,6 +94,7 @@ type Content struct {
 	SplitFrom uint `json:"splitFrom"`
 
 	PinningStatus string `json:"pinningStatus" gorm:"-"`
+	DealStatus    string `json:"dealStatus" gorm:"-"`
 }
 
 type ContentWithPath struct {

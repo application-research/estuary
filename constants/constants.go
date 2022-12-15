@@ -7,6 +7,14 @@ import (
 	"github.com/filecoin-project/lotus/chain/types"
 )
 
+const CacheSize = 256 * 1024 * 1024 // 256MB
+const CacheDuration = time.Second * 10
+const CachePurgeEveryDuration = time.Minute * 5
+
+const ExtendedCacheSize = 16 * 1024 * 1024 // 16MB
+const ExtendedCacheDuration = time.Minute * 60
+const ExtendedCachePurgeEveryDuration = time.Minute * 120
+
 const ContentLocationLocal = "local"
 const TopMinerSel = 15
 const MinSafeDealLifetime = 2880 * 21 // three weeks

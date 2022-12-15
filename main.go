@@ -6,12 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	explru "github.com/paskal/golang-lru/simplelru"
+	"golang.org/x/time/rate"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
-
-	"golang.org/x/time/rate"
 
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/sanitycheck"
@@ -778,10 +778,13 @@ func main() {
 			}
 		}()
 
+		cacher := explru.NewExpirableLRU(constants.CacheSize, nil, constants.CacheDuration, constants.CachePurgeEveryDuration)
+		extendedCacher := explru.NewExpirableLRU(constants.ExtendedCacheSize, nil, constants.ExtendedCacheDuration, constants.ExtendedCachePurgeEveryDuration)
+
 		// stand up api server
 		apiTracer := otel.Tracer("api")
-		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
-		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, minerMgr, pinmgr, log, apiTracer)
 
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)

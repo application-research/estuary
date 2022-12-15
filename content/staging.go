@@ -3,6 +3,7 @@ package contentmgr
 import (
 	"context"
 	"fmt"
+	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"sort"
 	"time"
 
@@ -434,6 +435,10 @@ func (cm *ContentManager) GetStagingZoneContents(ctx context.Context, user uint,
 	var zoneConts []util.Content
 	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&zoneConts, "active and user_id = ? and aggregated_in = ?", user, zc.ContID).Error; err != nil {
 		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zc.ContID)
+	}
+
+	for i, c := range zoneConts {
+		zoneConts[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
 	}
 	return zoneConts, nil
 }

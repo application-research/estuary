@@ -15,28 +15,29 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/whyrusleeping/memo"
+	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type apiV1 struct {
-	cfg          *config.Estuary
-	DB           *gorm.DB
-	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
-	gwayHandler  *gateway.GatewayHandler
-	cacher       *memo.Cacher
-	minerManager miner.IMinerManager
-	pinMgr       *pinner.EstuaryPinManager
-	log          *zap.SugaredLogger
-	shuttleMgr   shuttle.IManager
-	transferMgr  transfer.IManager
+	cfg            *config.Estuary
+	DB             *gorm.DB
+	tracer         trace.Tracer
+	Node           *node.Node
+	FilClient      *filclient.FilClient
+	Api            api.Gateway
+	CM             *contentmgr.ContentManager
+	StagingMgr     *stagingbs.StagingBSMgr
+	gwayHandler    *gateway.GatewayHandler
+	cacher         *explru.ExpirableLRU
+	extendedCacher *explru.ExpirableLRU
+	minerManager   miner.IMinerManager
+	pinMgr         *pinner.EstuaryPinManager
+	log            *zap.SugaredLogger
+	shuttleMgr     shuttle.IManager
+	transferMgr    transfer.IManager
 }
 
 func NewAPIV1(
@@ -47,6 +48,8 @@ func NewAPIV1(
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
+	cacher *explru.ExpirableLRU,
+	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
@@ -55,21 +58,22 @@ func NewAPIV1(
 	transferMgr transfer.IManager,
 ) *apiV1 {
 	return &apiV1{
-		cfg:          cfg,
-		DB:           db,
-		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
-		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       memo.NewCacher(),
-		minerManager: mm,
-		pinMgr:       pinMgr,
-		log:          log,
-		shuttleMgr:   shuttleMgr,
-		transferMgr:  transferMgr,
+		cfg:            cfg,
+		DB:             db,
+		tracer:         trc,
+		Node:           nd,
+		FilClient:      fc,
+		Api:            gwApi,
+		CM:             cm,
+		StagingMgr:     sbm,
+		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
+		cacher:         cacher,
+		extendedCacher: extendedCacher,
+		minerManager:   mm,
+		pinMgr:         pinMgr,
+		log:            log,
+		shuttleMgr:     shuttleMgr,
+		transferMgr:    transferMgr,
 	}
 }
 

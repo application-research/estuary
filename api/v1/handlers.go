@@ -157,6 +157,17 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
+func cacheKey(c echo.Context, u *util.User, tags ...string) string {
+	paramNames := strings.Join(c.ParamNames(), ",")
+	paramVals := strings.Join(c.ParamValues(), ",")
+	tagsString := strings.Join(tags, ",")
+	if u != nil {
+		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s user=%d tags=%s", c.Request().URL, paramNames, paramVals, u.ID, tagsString)
+	} else {
+		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s tags=%s", c.Request().URL, paramNames, paramVals, tagsString)
+	}
+}
+
 // handleGetUserContents godoc
 // @Summary      Get user contents
 // @Description  This endpoint is used to get user contents
@@ -169,6 +180,11 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/contents [get]
 func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
 	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
 	if err != nil {
 		return err
@@ -183,6 +199,7 @@ func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
 		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
 	}
 
+	s.cacher.Add(key, contents)
 	return c.JSON(http.StatusOK, contents)
 }
 
@@ -3498,27 +3515,33 @@ type publicStatsResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
 func (s *apiV1) handlePublicStats(c echo.Context) error {
-	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
-		return s.computePublicStats()
-	})
-	if err != nil {
-		return err
+	key := cacheKey(c, nil)
+	val, ok := s.cacher.Get(key)
+	if !ok {
+		computedVal, err := s.computePublicStats()
+		val = computedVal
+		if err != nil {
+			return err
+		}
+		s.cacher.Add(key, val)
 	}
 
-	//	handle the extensive looks up differently. Cache them for 1 hour.
-	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
-		return s.computePublicStatsWithExtensiveLookups()
-	})
+	keyExt := cacheKey(c, nil, "ext")
+	valExt, ok := s.extendedCacher.Get(keyExt)
+	if !ok {
+		computedValExt, err := s.computePublicStatsWithExtensiveLookups()
+		valExt = computedValExt
+		if err != nil {
+			return err
+		}
+		s.extendedCacher.Add(keyExt, valExt)
+	}
 
 	// reuse the original stats and add the ones from the extensive lookup function.
 	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 	val.(*publicStatsResponse).TotalBytesUploaded = valExt.(*publicStatsResponse).TotalBytesUploaded
 	val.(*publicStatsResponse).TotalUsers = valExt.(*publicStatsResponse).TotalUsers
 	val.(*publicStatsResponse).TotalStorageMiner = valExt.(*publicStatsResponse).TotalStorageMiner
-
-	if err != nil {
-		return err
-	}
 
 	jsonResponse := map[string]interface{}{
 		"totalStorage":       val.(*publicStatsResponse).TotalStorage.Int64,
@@ -3583,16 +3606,22 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
 	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
 	if err != nil {
 		return err
 	}
 
-	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID, limit, offset)
+	zones, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID, limit, offset)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, res)
+	s.cacher.Add(key, zones)
+	return c.JSON(http.StatusOK, zones)
 }
 
 // handleGetStagingZoneWithoutContents godoc
@@ -3606,15 +3635,21 @@ func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error 
 // @Param        staging_zone   path      int  true  "Staging Zone Content ID"
 // @Router       /content/staging-zones/{staging_zone} [get]
 func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
 	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
 	if err != nil {
 		return err
 	}
-	contents, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
+	zone, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, contents)
+	s.cacher.Add(key, zone)
+	return c.JSON(http.StatusOK, zone)
 }
 
 // handleGetStagingZoneContents godoc
@@ -3630,6 +3665,11 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 // @Param        offset  query  string  true  "offset"
 // @Router       /content/staging-zones/{staging_zone}/contents [get]
 func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
 	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
 	if err != nil {
 		return err
@@ -3641,12 +3681,7 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	}
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
-	if err != nil {
-		return err
-	}
-	for i, c := range contents {
-		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
-	}
+	s.cacher.Add(key, contents)
 	return c.JSON(http.StatusOK, contents)
 }
 
@@ -3730,20 +3765,21 @@ type metricsDealJoin struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
-	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
-		return s.computeDealMetrics()
-	})
-
+	key := cacheKey(c, nil)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
+	val, err := s.computeDealMetrics()
 	if err != nil {
 		return err
 	}
-
 	//	Make sure we don't return a nil val.
-	dealMetrics := val.([]*dealMetricsInfo)
-	if len(dealMetrics) < 1 {
-		return c.JSON(http.StatusOK, []*dealMetricsInfo{})
+	if val == nil {
+		val = []*dealMetricsInfo{}
 	}
 
+	s.cacher.Add(key, val)
 	return c.JSON(http.StatusOK, val)
 }
 
