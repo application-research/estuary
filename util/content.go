@@ -63,14 +63,14 @@ type Content struct {
 	Description string      `json:"description"`
 	Size        int64       `json:"size"`
 	Type        ContentType `json:"type"`
-	Active      bool        `json:"active"`
+	Active      bool        `json:"active" gorm:"index"`
 	Offloaded   bool        `json:"offloaded"`
 	Replication int         `json:"replication"`
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
 	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
+	Aggregate    bool `json:"aggregate" gorm:"index"`
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
