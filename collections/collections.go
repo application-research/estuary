@@ -13,7 +13,7 @@ import (
 )
 
 type Collection struct {
-	ID        uint      `gorm:"primarykey" json:"-"`
+	ID        uint      `gorm:"primaryKey" json:"-"`
 	CreatedAt time.Time `json:"createdAt"`
 
 	UUID string `gorm:"index" json:"uuid"`

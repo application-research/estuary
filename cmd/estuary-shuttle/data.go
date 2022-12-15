@@ -8,7 +8,7 @@ import (
 )
 
 type Pin struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
+	ID        uint      `gorm:"primaryKey" json:"id"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 
@@ -35,7 +35,7 @@ type Pin struct {
 }
 
 type Object struct {
-	ID   uint       `gorm:"primarykey"`
+	ID   uint       `gorm:"primaryKey"`
 	Cid  util.DbCID `gorm:"index"`
 	Size int
 	//Reads      int
@@ -43,7 +43,7 @@ type Object struct {
 }
 
 type ObjRef struct {
-	ID     uint `gorm:"primarykey"`
+	ID     uint `gorm:"primaryKey"`
 	Pin    uint `gorm:"index"`
 	Object uint `gorm:"index"`
 	//Offloaded bool
