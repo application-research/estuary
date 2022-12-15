@@ -47,6 +47,7 @@ type deal struct {
 }
 
 func (cm *ContentManager) runDealWorker(ctx context.Context) {
+	cm.log.Infof("starting up deal worker")
 	// run the deal reconciliation and deal making worker
 	for {
 		select {

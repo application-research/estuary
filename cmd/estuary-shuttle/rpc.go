@@ -162,7 +162,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			return nil
 		}
 
-		if !existing.Pinning && existing.Active {
+		if existing.Active {
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
 
@@ -173,12 +173,6 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			}()
 			return nil
 		}
-
-		if !existing.Active && !existing.Pinning {
-			if err := d.DB.Model(Pin{}).Where("id = ?", existing.ID).UpdateColumn("pinning", true).Error; err != nil {
-				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
-			}
-		}
 	} else {
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
@@ -186,7 +180,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			Cid:     util.DbCID{CID: data},
 			UserID:  user,
 			Active:  false,
-			Pinning: true,
+			Pinning: false,
 		}
 
 		if err := d.DB.Create(pin).Error; err != nil {

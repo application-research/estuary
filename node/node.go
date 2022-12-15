@@ -118,6 +118,29 @@ type Node struct {
 	Config  *config.Node
 }
 
+func (n *Node) Origins() ([]*peer.AddrInfo, error) {
+	var fullP2pMultiAddrs []multiaddr.Multiaddr
+	for _, listenAddr := range n.Host.Addrs() {
+		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, n.Host.ID())
+		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
+		if err != nil {
+			return nil, err
+		}
+		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
+	}
+
+	// transform multiaddresses into AddrInfo objects
+	var origins []*peer.AddrInfo
+	for _, p := range fullP2pMultiAddrs {
+		ai, err := peer.AddrInfoFromP2pAddr(p)
+		if err != nil {
+			return nil, err
+		}
+		origins = append(origins, ai)
+	}
+	return origins, nil
+}
+
 func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckFn) (*Node, error) {
 	cfg := init.Config()
 

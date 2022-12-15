@@ -225,12 +225,12 @@ func (cm *ContentManager) UpdateContentPinStatus(contID uint, location string, s
 		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(updates).Error; err != nil {
 			cm.log.Errorf("failed to update content status as %s in database: %s", status, err)
 			return err
+		}
 
-			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
-			// we did not reset the flag so that consolidation will not be reattempted by the worker
-			if c.AggregatedIn > 0 {
-				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
-			}
+		// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
+		// we did not reset the flag so that consolidation will not be reattempted by the worker
+		if c.AggregatedIn > 0 {
+			return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
 		}
 		return nil
 	})

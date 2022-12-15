@@ -444,7 +444,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	origins, err := s.getOrigins()
+	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}
@@ -607,7 +607,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	origins, err := s.getOrigins()
+	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}
@@ -3206,7 +3206,7 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	origins, err := s.getOrigins()
+	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}

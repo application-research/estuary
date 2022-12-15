@@ -1354,28 +1354,19 @@ func (s *Shuttle) handleAddToShuttle(c echo.Context, u *User) error {
 		return err
 	}
 
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{CID: nd.Cid()},
-		UserID:  u.ID,
-		Active:  false,
-		Pinning: true,
-	}
-
-	if err := s.DB.Create(pin).Error; err != nil {
-		return err
-	}
-
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {})
-	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
-	}
-
 	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
+	origins, err := s.Node.Origins()
+	if err != nil {
+		return err
+	}
+
+	if err := s.addPin(ctx, contid, nd.Cid(), u.ID, origins, false); err != nil {
+		log.Errorf("failed to make pin op for content %d for user %d: %s", contid, u.ID, err)
+		return err
+	}
 
 	_ = s.Provide(ctx, nd.Cid())
 
@@ -1484,9 +1475,6 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
-	bserv := blockservice.New(bs, nil)
-	dserv := merkledag.NewDAGService(bserv)
-
 	root := header.Roots[0]
 
 	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
@@ -1497,28 +1485,19 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 		return err
 	}
 
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{CID: root},
-		UserID:  u.ID,
-		Active:  false,
-		Pinning: true,
-	}
-
-	if err := s.DB.Create(pin).Error; err != nil {
-		return err
-	}
-
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {})
-	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
-	}
-
 	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
+	origins, err := s.Node.Origins()
+	if err != nil {
+		return err
+	}
+
+	if err := s.addPin(ctx, contid, root, u.ID, origins, false); err != nil {
+		log.Errorf("failed to make pin op for content %d for user %d: %s", contid, u.ID, err)
+		return err
+	}
 
 	_ = s.Provide(ctx, root)
 
@@ -1823,7 +1802,7 @@ func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status types.P
 
 func (s *Shuttle) refreshPinQueue() error {
 	var toPin []Pin
-	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+	if err := s.DB.Find(&toPin, "not active and not failed").Error; err != nil {
 		return err
 	}
 
@@ -1858,14 +1837,6 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 		Status:  types.PinningStatusQueued,
 		Replace: replace,
 	}
-
-	/*
-
-		s.pinLk.Lock()
-		// TODO: check if we are overwriting anything here
-		s.pinJobs[cont.ID] = op
-		s.pinLk.Unlock()
-	*/
 
 	s.PinMgr.Add(op)
 }
