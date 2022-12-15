@@ -3766,7 +3766,7 @@ type metricsDealJoin struct {
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
 	key := cacheKey(c, nil)
-	cached, ok := s.cacher.Get(key)
+	cached, ok := s.extendedCacher.Get(key)
 	if ok {
 		return c.JSON(http.StatusOK, cached)
 	}
@@ -3779,7 +3779,7 @@ func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
 		val = []*dealMetricsInfo{}
 	}
 
-	s.cacher.Add(key, val)
+	s.extendedCacher.Add(key, val)
 	return c.JSON(http.StatusOK, val)
 }
 
