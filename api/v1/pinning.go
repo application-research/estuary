@@ -255,6 +255,17 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
+	// backwards compatibility to accept filename queryParam if name is not provided
+	if filename := e.QueryParam("filename"); filename != "" {
+		if pin.Name == "" {
+			pin.Name = filename
+		}
+	}
+	// if name is still empty, use cid as name
+	if pin.Name == "" {
+		pin.Name = pin.CID
+	}
+
 	var cols []*collections.CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
 		var srchCol collections.Collection
