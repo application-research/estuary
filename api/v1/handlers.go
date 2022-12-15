@@ -131,7 +131,10 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
 func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -166,7 +169,10 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/contents [get]
 func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -3577,7 +3583,12 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID)
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
+
+	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID, limit, offset)
 	if err != nil {
 		return err
 	}
@@ -3623,7 +3634,11 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	if err != nil {
 		return err
 	}
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
 	if err != nil {
@@ -3990,11 +4005,15 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 				break
 			}
 
-			if !s.CM.MarkStartedAggregating(cont.ID) {
-				// skip since it is already aggregating
-				return nil
+			var zone *model.StagingZone
+			if err := s.DB.First(&zone, "cont_id = ?", cont.AggregatedIn).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					s.log.Errorf("content %d's aggregatedIn zone %d not found in DB", cont.ID, cont.AggregatedIn)
+				}
+				return err
 			}
-			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
+
+			if err := s.CM.AggregateStagingZone(ctx, zone, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
@@ -4445,7 +4464,10 @@ func (s *apiV1) handleStorageFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *apiV1) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
-	limit, _, _ := s.getLimitAndOffset(c, 2000, 0)
+	limit, _, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
