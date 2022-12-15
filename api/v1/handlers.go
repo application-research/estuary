@@ -3605,7 +3605,7 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
-func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
+func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error {
 	key := cacheKey(c, u)
 	cached, ok := s.cacher.Get(key)
 	if ok {
