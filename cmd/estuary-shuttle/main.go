@@ -1249,6 +1249,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
+// @Param        ignore-dupes  query     string                  false  "Ignore Dupes"
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1311,7 +1312,7 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
-	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
+	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic, c.QueryParam("ignore-dupes"))
 	if err != nil {
 		return err
 	}
@@ -1386,6 +1387,8 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
+// @Param        ignore-dupes  query     string  false  "Ignore Dupes"
+// @Param        filename      query     string  false  "Filename"
 // @Router       /content/add-car [post]
 func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
@@ -1454,7 +1457,7 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
 		CollectionDir: c.QueryParam(ColDir),
-	})
+	}, c.QueryParam("ignore-dupes"))
 	if err != nil {
 		return err
 	}
@@ -1510,7 +1513,7 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection, ignoreDupes string) (uint, error) {
 	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
@@ -1532,6 +1535,10 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	if err != nil {
 		return 0, err
 	}
+
+	q := req.URL.Query()
+	q.Add("ignore-dupes", ignoreDupes)
+	req.URL.RawQuery = q.Encode()
 
 	req.Header.Set("Authorization", "Bearer "+u.AuthToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -2288,6 +2295,7 @@ type importDealBody struct {
 // @Success      200  {object}  string
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
+// @Param        ignore-dupes  query     string                  false  "Ignore Dupes"
 // @Param        body  body      main.importDealBody  true  "Import a deal"
 // @Router       /content/importdeal [post]
 func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
@@ -2351,7 +2359,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 		break
 	}
 
-	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInCollection)
+	contid, err := s.createContent(ctx, u, cc, body.Name, body.ContentInCollection, c.QueryParam("ignore-dupes"))
 	if err != nil {
 		return err
 	}
