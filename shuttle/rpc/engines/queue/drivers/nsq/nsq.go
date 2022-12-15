@@ -67,8 +67,9 @@ func registerEstuaryConsumers(log *zap.SugaredLogger, cfg *config.Estuary, handl
 
 				if err := handlerFn(msg, "queue"); err != nil {
 					log.Errorf("failed to process message: %s with error: %s", msg.Op, err)
+				} else {
+					nsqMsg.Finish()
 				}
-				nsqMsg.Finish()
 				return nil
 			}))
 
@@ -101,9 +102,9 @@ func registerShuttleConsumers(cfg *config.Shuttle, log *zap.SugaredLogger, handl
 
 				if err := handlerFn(msg, "queue"); err != nil {
 					log.Errorf("failed to process command with error: %s", err)
+				} else {
+					nsqMsg.Finish()
 				}
-
-				nsqMsg.Finish()
 				return nil
 			}))
 

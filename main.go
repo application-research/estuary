@@ -6,11 +6,12 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"golang.org/x/time/rate"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/sanitycheck"
@@ -843,6 +844,8 @@ func migrateSchemas(db *gorm.DB) error {
 		&autoretrieve.Autoretrieve{},
 		&model.SanityCheck{},
 		&autoretrieve.PublishedBatch{},
+		&model.StagingZone{},
+		&model.StagingZoneTracker{},
 	); err != nil {
 		return err
 	}

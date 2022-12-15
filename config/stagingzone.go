@@ -8,4 +8,5 @@ import "time"
 type StagingBucket struct {
 	Enabled           bool          `json:"enabled"`
 	AggregateInterval time.Duration `json:"aggregate_interval"`
+	CreationInterval  time.Duration `json:"creation_interval"`
 }

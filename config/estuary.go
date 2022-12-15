@@ -2,9 +2,10 @@ package config
 
 import (
 	"errors"
-	"golang.org/x/time/rate"
 	"path/filepath"
 	"time"
+
+	"golang.org/x/time/rate"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
@@ -109,8 +110,9 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:           false,
+			Enabled:           true,
 			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
+			CreationInterval:  time.Minute * 2, // aggregate staging buckets every 2 minutes
 		},
 
 		Pinning: Pinning{
