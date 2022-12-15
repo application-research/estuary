@@ -67,8 +67,9 @@ func registerEstuaryConsumers(log *zap.SugaredLogger, cfg *config.Estuary, handl
 
 				if err := handlerFn(msg, "queue"); err != nil {
 					log.Errorf("failed to process message: %s with error: %s", msg.Op, err)
+				} else {
+					nsqMsg.Finish()
 				}
-				nsqMsg.Finish()
 				return nil
 			}))
 

@@ -23,7 +23,6 @@ import (
 
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -239,7 +238,8 @@ func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpceve
 		m.log.Debugf("sending rpc message: %s, to shuttle: %s using websocket engine", cmd.Op, handle)
 		return d.SendMessage(ctx, cmd)
 	}
-	return websocketeng.ErrNoShuttleConnection
+	m.log.Warnf("failed to sending rpc message: %s, to shuttle: %s - shuttle is offline", cmd.Op, handle)
+	return nil
 }
 
 func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *rpcevent.ShuttleUpdate) error {
@@ -293,7 +293,11 @@ func (m *manager) handlePinUpdate(location string, contID uint, status types.Pin
 
 		var c util.Content
 		if err := m.db.First(&c, "id = ?", contID).Error; err != nil {
-			return errors.Wrap(err, "failed to look up content")
+			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+				return xerrors.Errorf("failed to look up content: %d (shuttle = %s): %w", contID, location, err)
+			}
+			m.log.Warnf("content: %d not found for pin update from shuttle: %s", contID, location)
+			return nil
 		}
 
 		// if content is already active, ignore it
@@ -327,7 +331,11 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 
 	var cont util.Content
 	if err := m.db.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
-		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return xerrors.Errorf("failed to look up content: %d (shuttle = %s): %w", pincomp.DBID, handle, err)
+		}
+		m.log.Warnf("content: %d not found for pin complete from shuttle: %s", pincomp.DBID, handle)
+		return nil
 	}
 
 	// if content already active, no need to add objects, just update location
