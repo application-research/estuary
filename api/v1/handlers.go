@@ -182,11 +182,6 @@ func cacheKey(c echo.Context, u *util.User, tags ...string) string {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/contents [get]
 func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
-	cached, ok := s.cacher.Get(key)
-	if ok {
-		return c.JSON(http.StatusOK, cached)
-	}
 	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
 	if err != nil {
 		return err
@@ -201,7 +196,6 @@ func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
 		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
 	}
 
-	s.cacher.Add(key, contents)
 	return c.JSON(http.StatusOK, contents)
 }
 
@@ -2541,6 +2535,18 @@ func (s *apiV1) handleReadLocalContent(c echo.Context) error {
 }
 
 func (s *apiV1) checkTokenAuth(token string) (*util.User, error) {
+	cached, ok := s.cacher.Get(token)
+	if ok && cached != nil {
+		user, ok := cached.(*util.User)
+		if !ok {
+			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", cached)
+		}
+		if user.AuthToken.Expiry.Before(time.Now()) {
+			s.cacher.Remove(token)
+		} else {
+			return user, nil
+		}
+	}
 	var authToken util.AuthToken
 	tokenHash := util.GetTokenHash(token)
 	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
@@ -2575,6 +2581,7 @@ func (s *apiV1) checkTokenAuth(token string) (*util.User, error) {
 	}
 
 	user.AuthToken = authToken
+	s.cacher.Add(token, &user)
 	return &user, nil
 }
 
@@ -2892,12 +2899,18 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
+
 	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, &util.ViewerResponse{
+	viewer := &util.ViewerResponse{
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
@@ -2914,7 +2927,10 @@ func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
 			Flags:                 u.Flags,
 		},
 		AuthExpiry: u.AuthToken.Expiry,
-	})
+	}
+
+	s.cacher.Add(key, viewer)
+	return c.JSON(http.StatusOK, viewer)
 }
 
 func (s *apiV1) getMinersOwnedByUser(u *util.User) []string {
@@ -3608,11 +3624,6 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
 func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
-	cached, ok := s.cacher.Get(key)
-	if ok {
-		return c.JSON(http.StatusOK, cached)
-	}
 	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
 	if err != nil {
 		return err
@@ -3622,7 +3633,6 @@ func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error
 	if err != nil {
 		return err
 	}
-	s.cacher.Add(key, zones)
 	return c.JSON(http.StatusOK, zones)
 }
 
@@ -3637,11 +3647,6 @@ func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error
 // @Param        staging_zone   path      int  true  "Staging Zone Content ID"
 // @Router       /content/staging-zones/{staging_zone} [get]
 func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
-	cached, ok := s.cacher.Get(key)
-	if ok {
-		return c.JSON(http.StatusOK, cached)
-	}
 	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
 	if err != nil {
 		return err
@@ -3650,7 +3655,6 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 	if err != nil {
 		return err
 	}
-	s.cacher.Add(key, zone)
 	return c.JSON(http.StatusOK, zone)
 }
 
@@ -3667,11 +3671,6 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 // @Param        offset  query  string  true  "offset"
 // @Router       /content/staging-zones/{staging_zone}/contents [get]
 func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
-	cached, ok := s.cacher.Get(key)
-	if ok {
-		return c.JSON(http.StatusOK, cached)
-	}
 	zoneID, err := strconv.Atoi(c.Param("staging_zone"))
 	if err != nil {
 		return err
@@ -3683,7 +3682,9 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	}
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
-	s.cacher.Add(key, contents)
+	if err != nil {
+		return err
+	}
 	return c.JSON(http.StatusOK, contents)
 }
 
