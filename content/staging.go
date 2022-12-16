@@ -361,7 +361,7 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 
 	dataByLoc := make(map[string]int64)
 	var contsBatch []util.Content
-	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).Select("size", "location").FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
+	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
 		for _, c := range contsBatch {
 			// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
 			if c.Location == constants.ContentLocationLocal {
