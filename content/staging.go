@@ -191,12 +191,11 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zoneCont util.
 			return err
 		}
 
-		go func() {
-			// sometimes this call just ends in sending the take content cmd
-			if err := cm.consolidateStagedContent(ctx, zoneCont); err != nil {
-				cm.log.Errorf("failed to consolidate staged content: %s", err)
-			}
-		}()
+		// sometimes this call just ends in sending the take content cmd
+		if err := cm.consolidateStagedContent(ctx, zoneCont); err != nil {
+			cm.log.Errorf("failed to consolidate staged content: %s", err)
+		}
+
 		return nil
 	}
 
