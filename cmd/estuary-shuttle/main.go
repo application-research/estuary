@@ -1058,7 +1058,7 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", val)
 		}
 
-		if usr.AuthExpiry.After(time.Now()) {
+		if usr.AuthExpiry.Before(time.Now()) {
 			d.authCache.Remove(token)
 		} else {
 			return usr, nil
