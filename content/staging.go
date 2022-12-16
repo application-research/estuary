@@ -360,14 +360,14 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 
 	dataByLoc := make(map[string]int64)
 	var contsBatch []util.Content
-	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
+	if err := cm.db.Where("active and aggregated_in = ?", zoneContID).FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
 		for _, c := range contsBatch {
+			dataByLoc[c.Location] = dataByLoc[c.Location] + c.Size
+
 			// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
 			if c.Location == constants.ContentLocationLocal {
 				continue
 			}
-
-			dataByLoc[c.Location] = dataByLoc[c.Location] + c.Size
 
 			canAddContent, err := cm.shuttleMgr.CanAddContent(c.Location)
 			if err != nil {
@@ -390,13 +390,8 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 
 	var toMove []util.Content
 	var toMoveBatch []util.Content
-	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).FindInBatches(&toMoveBatch, 500, func(tx *gorm.DB, batch int) error {
+	if err := cm.db.Where("active and aggregated_in = ?", zoneContID).FindInBatches(&toMoveBatch, 500, func(tx *gorm.DB, batch int) error {
 		for _, c := range toMoveBatch {
-			// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
-			if c.Location == constants.ContentLocationLocal {
-				continue
-			}
-
 			if c.Location != dstLocation {
 				toMove = append(toMove, c)
 			}
