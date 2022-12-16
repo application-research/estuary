@@ -480,9 +480,6 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-	s.CM.ToCheck(cont.ID, cont.Size)
-
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
 			s.log.Warnf("failed to announce providers: %s", err)
@@ -4893,8 +4890,6 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 	if err := s.DB.Create(content).Error; err != nil {
 		return err
 	}
-
-	s.CM.ToCheck(content.ID, content.Size)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,

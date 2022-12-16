@@ -350,7 +350,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 			}
 
 			// for now keep pushing to content queue
-			cm.queueMgr.ToCheck(zoneCont.ID, int64(size))
+			cm.queueMgr.ToCheck(zoneCont.ID, zoneCont.Size)
 			return nil
 		})
 	}

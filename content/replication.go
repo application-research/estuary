@@ -1114,12 +1114,12 @@ func (dfe *DealFailureError) Error() string {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) (int64, error) {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
 	if err := cm.db.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
+		return 0, xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
 	refs := make([]util.ObjRef, 0, len(objects))
@@ -1138,7 +1138,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 	)
 
 	if err := cm.db.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+		return 0, xerrors.Errorf("failed to create refs: %w", err)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
@@ -1147,9 +1147,9 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 		"pinning":  false,
 		"location": loc,
 	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
+		return 0, xerrors.Errorf("failed to update content in database: %w", err)
 	}
-	return nil
+	return totalSize, nil
 }
 
 func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []util.Content) error {
@@ -1274,13 +1274,14 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {}); err != nil {
+		cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {})
+		if err != nil {
 			return err
 		}
 
 		// queue splited contents
 		cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
-		cm.ToCheck(content.ID, content.Size)
+		cm.ToCheck(content.ID, cntSize)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
@@ -1296,7 +1297,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
+func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) (int64, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1374,7 +1375,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
@@ -1397,8 +1398,10 @@ func (cm *ContentManager) AddDatabaseTracking(ctx context.Context, u *util.User,
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
+	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {})
+	if err != nil {
 		return nil, err
 	}
+	content.Size = cntSize
 	return content, nil
 }

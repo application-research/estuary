@@ -265,12 +265,13 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
+	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb)
+	if err != nil {
 		return err
 	}
 
 	if op.MakeDeal {
-		cm.ToCheck(op.ContId, c.Size)
+		cm.ToCheck(op.ContId, cntSize)
 	}
 
 	// this provide call goes out immediately

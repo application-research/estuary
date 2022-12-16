@@ -92,7 +92,8 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	cm.log.Info("rebuilding contents queue .......")
 
 	var allcontent []util.Content
-	if err := cm.db.Where("active").FindInBatches(&allcontent, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
+	// select only active and not staged contents
+	if err := cm.db.Where("active and aggregated_in = 0").FindInBatches(&allcontent, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
 		for i, c := range allcontent {
 			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
 			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
