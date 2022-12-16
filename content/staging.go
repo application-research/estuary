@@ -3,9 +3,10 @@ package contentmgr
 import (
 	"context"
 	"fmt"
-	pinningtypes "github.com/application-research/estuary/pinner/types"
 	"sort"
 	"time"
+
+	pinningtypes "github.com/application-research/estuary/pinner/types"
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -41,7 +42,9 @@ func (cm *ContentManager) getStagingZoneTrackerLastContentID() (*model.StagingZo
 func (cm *ContentManager) addContentsToStagingZones(ctx context.Context, tracker *model.StagingZoneTracker) error {
 	var zoneContents []util.Content
 	return cm.db.Where("id > ? and size <= ?", tracker.LastContID, cm.cfg.Content.MinSize).Order("id asc").FindInBatches(&zoneContents, 500, func(tx *gorm.DB, batch int) error {
-		cm.log.Infof("trying to stage the next 500 contents from: %d above", tracker.LastContID)
+
+		cm.log.Infof("trying to stage the next 500 contents: %d - %d", zoneContents[0].ID, zoneContents[len(zoneContents)-1].ID)
+
 		for _, c := range zoneContents {
 			if c.Size == 0 {
 				// size = 0 are shuttle contents yet to be updated with their objects sizes, avoid them
