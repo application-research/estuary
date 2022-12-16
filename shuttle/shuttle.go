@@ -7,15 +7,17 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/net/websocket"
+	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/config"
 	rpc "github.com/application-research/estuary/shuttle/rpc"
+	"github.com/labstack/echo/v4"
 
 	contentqueue "github.com/application-research/estuary/content/queue"
 	dealstatus "github.com/application-research/estuary/deal/status"
@@ -38,13 +40,14 @@ var ErrNilParams = fmt.Errorf("shuttle message had nil params")
 var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
 type IManager interface {
-	Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error)
-	IsOnline(handle string) bool
-	CanAddContent(handle string) bool
-	HostName(handle string) string
+	Connect(c echo.Context, handle string, done chan struct{}) error
+	IsOnline(handle string) (bool, error)
+	CanAddContent(handle string) (bool, error)
+	HostName(handle string) (string, error)
+	StorageStats(handle string) (*util.ShuttleStorageStats, error)
+	AddrInfo(handle string) (*peer.AddrInfo, error)
+
 	GetShuttlesConfig(u *util.User) (interface{}, error)
-	StorageStats(handle string) *util.ShuttleStorageStats
-	AddrInfo(handle string) *peer.AddrInfo
 	StartTransfer(ctx context.Context, loc string, cd *model.ContentDeal, datacid cid.Cid) error
 	RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error
 	GetTransferStatus(ctx context.Context, contLoc string, d *model.ContentDeal) (*filclient.ChannelState, error)
@@ -89,61 +92,79 @@ func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.
 	}, nil
 }
 
-func (m *manager) IsOnline(handle string) bool {
-	sc, ok := m.rpcMgr.GetShuttleConnection(handle)
-	if !ok {
-		return false
+// replace this with ping
+func (m *manager) IsOnline(handle string) (bool, error) {
+	d, err := m.getConnectionByHandle(handle)
+	if err != nil {
+		return false, err
 	}
-
-	select {
-	case <-sc.Ctx.Done():
-		return false
-	default:
-		return true
+	if d == nil {
+		return false, err
 	}
+	// if connection not updated in the last 5 minutes
+	return time.Now().Add(-5 * time.Minute).Before(d.UpdatedAt), nil
 }
 
-func (m *manager) CanAddContent(handle string) bool {
-	d, ok := m.rpcMgr.GetShuttleConnection(handle)
-	if ok {
-		return !d.ContentAddingDisabled
+func (m *manager) CanAddContent(handle string) (bool, error) {
+	d, err := m.getConnectionByHandle(handle)
+	if err != nil {
+		return false, err
 	}
-	return true
+
+	if d != nil {
+		return !d.ContentAddingDisabled, nil
+	}
+	return true, nil
 }
 
-func (m *manager) AddrInfo(handle string) *peer.AddrInfo {
-	d, ok := m.rpcMgr.GetShuttleConnection(handle)
-	if !ok {
-		return nil
+func (m *manager) AddrInfo(handle string) (*peer.AddrInfo, error) {
+	d, err := m.getConnectionByHandle(handle)
+	if err != nil {
+		return nil, err
 	}
-	return &d.AddrInfo
+
+	if d == nil {
+		return nil, nil
+	}
+	return &d.AddrInfo.AddrInfo, nil
 }
 
-func (m *manager) HostName(handle string) string {
-	d, ok := m.rpcMgr.GetShuttleConnection(handle)
-	if ok {
-		return d.Hostname
+func (m *manager) HostName(handle string) (string, error) {
+	d, err := m.getConnectionByHandle(handle)
+	if err != nil {
+		return "", err
 	}
-	return ""
+
+	if d != nil {
+		return d.Hostname, nil
+	}
+	return "", nil
 }
 
-func (m *manager) StorageStats(handle string) *util.ShuttleStorageStats {
-	d, ok := m.rpcMgr.GetShuttleConnection(handle)
-	if !ok {
-		return nil
+func (m *manager) StorageStats(handle string) (*util.ShuttleStorageStats, error) {
+	d, err := m.getConnectionByHandle(handle)
+	if err != nil {
+		return nil, err
 	}
 
-	return &util.ShuttleStorageStats{
-		BlockstoreSize: d.BlockstoreSize,
-		BlockstoreFree: d.BlockstoreFree,
-		PinCount:       d.PinCount,
-		PinQueueLength: d.PinQueueLength,
+	if d != nil {
+		return &util.ShuttleStorageStats{
+			BlockstoreSize: d.BlockstoreSize,
+			BlockstoreFree: d.BlockstoreFree,
+			PinCount:       d.PinCount,
+			PinQueueLength: d.PinQueueLength,
+		}, nil
 	}
+	return nil, nil
 }
 
 func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 	var shts []interface{}
-	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	connectedShuttles, err := m.getConnections()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, sh := range connectedShuttles {
 		if sh.Hostname == "" {
 			m.log.Warnf("failed to get shuttle(%s) config, shuttle hostname is not set", sh.Handle)
@@ -197,8 +218,8 @@ func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *rpceve
 	return m.rpcMgr.SendRPCMessage(ctx, handle, cmd)
 }
 
-func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
-	return m.rpcMgr.Connect(ws, handle, done)
+func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) error {
+	return m.rpcMgr.Connect(c, handle, done)
 }
 
 func (m *manager) GetByAuth(auth string) (*model.Shuttle, error) {
@@ -207,4 +228,22 @@ func (m *manager) GetByAuth(auth string) (*model.Shuttle, error) {
 		return nil, err
 	}
 	return shuttle, nil
+}
+
+func (m *manager) getConnectionByHandle(handle string) (*model.ShuttleConnection, error) {
+	var shuttle *model.ShuttleConnection
+	if err := m.db.First(&shuttle, "handle = ?", handle).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+	}
+	return shuttle, nil
+}
+
+func (m *manager) getConnections() ([]*model.ShuttleConnection, error) {
+	var shuttles []*model.ShuttleConnection
+	if err := m.db.Find(&shuttles).Error; err != nil {
+		return nil, err
+	}
+	return shuttles, nil
 }

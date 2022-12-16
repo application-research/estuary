@@ -20,7 +20,11 @@ func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid ui
 	lowSpace := make(map[string]bool)
 	var activeShuttles []string
 
-	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	connectedShuttles, err := m.getConnections()
+	if err != nil {
+		return "", err
+	}
+
 	for _, sh := range connectedShuttles {
 		if !sh.Private && !sh.ContentAddingDisabled {
 			lowSpace[sh.Handle] = sh.SpaceLow
@@ -98,7 +102,11 @@ func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content
 	defer span.End()
 
 	var activeShuttles []string
-	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	connectedShuttles, err := m.getConnections()
+	if err != nil {
+		return "", err
+	}
+
 	for _, sh := range connectedShuttles {
 		if !sh.Private {
 			activeShuttles = append(activeShuttles, sh.Handle)
@@ -129,9 +137,12 @@ func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content
 
 // TODO: this should be a lotttttt smarter
 func (m *manager) GetPreferredUploadEndpoints(u *util.User) ([]string, error) {
-
 	var shuttles []model.Shuttle
-	connectedShuttles := m.rpcMgr.GetShuttleConnections()
+	connectedShuttles, err := m.getConnections()
+	if err != nil {
+		return nil, err
+	}
+
 	for _, sh := range connectedShuttles {
 		if sh.ContentAddingDisabled {
 			m.log.Debugf("shuttle %+v content adding is disabled", sh)

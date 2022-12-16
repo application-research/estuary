@@ -59,7 +59,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -4250,14 +4249,34 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 
 	var out []util.ShuttleListResponse
 	for _, d := range shuttles {
+		isOnlinne, err := s.shuttleMgr.IsOnline(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		addInf, err := s.shuttleMgr.AddrInfo(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		hn, err := s.shuttleMgr.HostName(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		sts, err := s.shuttleMgr.StorageStats(d.Handle)
+		if err != nil {
+			return err
+		}
+
 		out = append(out, util.ShuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.shuttleMgr.IsOnline(d.Handle),
-			AddrInfo:       s.shuttleMgr.AddrInfo(d.Handle),
-			Hostname:       s.shuttleMgr.HostName(d.Handle),
-			StorageStats:   s.shuttleMgr.StorageStats(d.Handle),
+			Online:         isOnlinne,
+			AddrInfo:       addInf,
+			Hostname:       hn,
+			StorageStats:   sts,
 		})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -4274,30 +4293,9 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	websocket.Handler(func(ws *websocket.Conn) {
-		ws.MaxPayloadBytes = 128 << 20
-
-		done := make(chan struct{})
-		defer close(done)
-		defer ws.Close()
-
-		readWebSocket, unreg, err := s.shuttleMgr.Connect(ws, shuttle.Handle, done)
-		if err != nil {
-			s.log.Errorf("failed to register shuttle: %s", err)
-			return
-		}
-		defer unreg()
-
-		go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
-
-		for {
-			if err := readWebSocket(); err != nil {
-				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
-				return
-			}
-		}
-	}).ServeHTTP(c.Response(), c.Request())
-	return nil
+	done := make(chan struct{})
+	go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle, done)
+	return s.shuttleMgr.Connect(c, shuttle.Handle, done)
 }
 
 // handleAutoretrieveInit godoc
@@ -5114,7 +5112,12 @@ func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (s
 		return "", nil
 	}
 
-	if !s.shuttleMgr.IsOnline(cont.Location) {
+	isOnline, err := s.shuttleMgr.IsOnline(cont.Location)
+	if err != nil {
+		return "", err
+	}
+
+	if !isOnline {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 
