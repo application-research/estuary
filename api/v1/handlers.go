@@ -4249,7 +4249,7 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 
 	var out []util.ShuttleListResponse
 	for _, d := range shuttles {
-		isOnlinne, err := s.shuttleMgr.IsOnline(d.Handle)
+		isOnline, err := s.shuttleMgr.IsOnline(d.Handle)
 		if err != nil {
 			return err
 		}
@@ -4273,7 +4273,7 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         isOnlinne,
+			Online:         isOnline,
 			AddrInfo:       addInf,
 			Hostname:       hn,
 			StorageStats:   sts,

@@ -241,7 +241,7 @@ func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, par
 		"pin_queue_length": int64(param.PinQueueSize),
 		"updated_at":       time.Now().UTC(),
 	}).Error; err != nil {
-		xerrors.Errorf("failed to update content in database: %w", err)
+		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
 	return nil
 }
