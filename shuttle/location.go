@@ -87,8 +87,8 @@ func (cm *manager) primaryStagingLocation(ctx context.Context, uid uint) string 
 	// TODO: maybe we could make this more complex, but for now, if we have a
 	// staging zone opened in a particular location, just keep using that one
 
-	var zone util.Content
-	if err := cm.db.First(&zone, "user_id = ? and aggregate and not active", uid).Error; err != nil {
+	var zone model.StagingZone
+	if err := cm.db.First(&zone, "user_id = ? and status = ?", uid, model.ZoneStatusOpen).Error; err != nil {
 		return ""
 	}
 	return zone.Location
