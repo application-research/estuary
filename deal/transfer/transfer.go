@@ -26,7 +26,7 @@ import (
 )
 
 type IManager interface {
-	RestartAllTransfersForLocation(ctx context.Context, loc string) error
+	RestartAllTransfersForLocation(ctx context.Context, loc string, done chan struct{}) error
 	RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error
 	GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error)
 	GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error)
@@ -59,7 +59,7 @@ func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, sh
 	}
 }
 
-func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string) error {
+func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string, done chan struct{}) error {
 	var deals []model.ContentDeal
 	if err := m.db.Model(model.ContentDeal{}).
 		Joins("left join contents on contents.id = content_deals.content").
@@ -70,6 +70,13 @@ func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string
 
 	go func() {
 		for _, d := range deals {
+			select {
+			case <-done:
+				return
+			default:
+
+			}
+
 			chid, err := d.ChannelID()
 			if err != nil {
 				// Only legacy (push) transfers need to be restarted by Estuary.

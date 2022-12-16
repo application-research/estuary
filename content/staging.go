@@ -225,7 +225,12 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneCont
 			continue
 		}
 
-		if ntot > curMax && cm.shuttleMgr.CanAddContent(loc) {
+		canAddContent, err := cm.shuttleMgr.CanAddContent(loc)
+		if err != nil {
+			return err
+		}
+
+		if ntot > curMax && canAddContent {
 			curMax = ntot
 			dstLocation = loc
 		}

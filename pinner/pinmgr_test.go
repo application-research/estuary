@@ -81,7 +81,7 @@ func TestEncodeDecode(t *testing.T) {
 		var originsUnmarshalled []*peer.AddrInfo
 		_ = json.Unmarshal([]byte(originsStr), &originsUnmarshalled)
 
-		po := &operation.PinningOperation{Peers: operation.SerializePeers(originsUnmarshalled), Name: "pinning operation name"}
+		po := &operation.PinningOperation{ContId: 1, Peers: operation.SerializePeers(originsUnmarshalled), Name: "pinning operation name"}
 		bytes, err := encodeMsgPack(po)
 		if err != nil {
 			assert.Nil(t, err, "encodeMsgPack should not fail")
@@ -157,7 +157,7 @@ func TestNUniqueNames(t *testing.T) {
 		mgr := newManager(&count)
 
 		go mgr.Run(0)
-		for i := 0; i < N; i++ {
+		for i := 1; i <= N; i++ {
 			pin := newPinData("name"+fmt.Sprint(i), i, i)
 			go mgr.Add(&pin)
 		}
@@ -173,7 +173,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 		var N = 20
 		mgr := newManager(&count)
 		go mgr.Run(5)
-		for i := 0; i < N; i++ {
+		for i := 1; i <= N; i++ {
 			pin := newPinData("name"+fmt.Sprint(i), i, i)
 			go mgr.Add(&pin)
 		}
@@ -191,7 +191,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 		mgr := newManager(&count)
 
 		for j := 0; j < N; j++ {
-			for i := 0; i < N; i++ {
+			for i := 1; i <= N; i++ {
 				pin := newPinData("name"+fmt.Sprint(i), i, i*N+j)
 				go mgr.Add(&pin)
 			}
@@ -215,7 +215,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 		go mgr.Run(0)
 		for j := 0; j < N; j++ {
 
-			for i := 0; i < N; i++ {
+			for i := 1; i <= N; i++ {
 				pin := newPinData("name"+fmt.Sprint(i), i, i)
 				go mgr.Add(&pin)
 			}
@@ -237,8 +237,8 @@ func TestNDuplicateNamesWorker(t *testing.T) {
 		go mgr.Add(&pin)
 		time.Sleep(100 * time.Millisecond)
 
-		for i := 0; i < N; i++ {
-			pin := newPinData("name", 0, 0)
+		for i := 1; i <= N; i++ {
+			pin := newPinData("name", 0, 1)
 			go mgr.Add(&pin)
 		}
 
@@ -258,8 +258,8 @@ func TestNDuplicateNames(t *testing.T) {
 		mgr := newManager(&count)
 		go mgr.Run(0)
 
-		for i := 0; i < N; i++ {
-			pin := newPinData("name", 0, 0)
+		for i := 1; i <= N; i++ {
+			pin := newPinData("name", 0, 1)
 			go mgr.Add(&pin)
 		}
 		sleepWhileWork(mgr, 1)
@@ -277,7 +277,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 		go mgr.Run(5)
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
-				for i := 0; i < N; i++ {
+				for i := 1; i <= N; i++ {
 					pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
 					go mgr.Add(&pin)
 				}
@@ -298,7 +298,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 		mgr := newManager(&count)
 		go mgr.Run(0)
 
-		for i := 0; i < N; i++ {
+		for i := 1; i <= N; i++ {
 			pin := newPinData("name"+fmt.Sprint(i), i, i)
 			go mgr.Add(&pin)
 		}
@@ -318,7 +318,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 		go mgr.Run(1)
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
-				for i := 0; i < N; i++ {
+				for i := 1; i <= N; i++ {
 					pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
 					go mgr.Add(&pin)
 				}
@@ -352,7 +352,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
-			for i := 0; i < N; i++ {
+			for i := 1; i <= N; i++ {
 				pin := newPinData("name"+fmt.Sprint(i), j, i)
 				go mgr.Add(&pin)
 			}
@@ -373,7 +373,7 @@ func TestResumeQueue(t *testing.T) {
 		go mgr.Run(0)
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
-				for i := 0; i < N; i++ {
+				for i := 1; i <= N; i++ {
 					pin := newPinData("name"+fmt.Sprint(i), j, j*N+i)
 					go mgr.Add(&pin)
 				}

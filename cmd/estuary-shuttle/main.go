@@ -892,8 +892,7 @@ type Shuttle struct {
 
 	shuttleConfig *config.Shuttle
 
-	apiQueueEngEnabled *bool
-	queueEng           queueng.IShuttleRpcEngine
+	queueEng queueng.IShuttleRpcEngine
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
@@ -942,12 +941,6 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	if err := websocket.JSON.Send(conn, hello); err != nil {
 		return err
 	}
-
-	var hi rpcevent.Hi
-	if err := websocket.JSON.Receive(conn, &hi); err != nil {
-		return err
-	}
-	d.apiQueueEngEnabled = &hi.QueueEngEnabled
 
 	go func() {
 		defer close(readDone)

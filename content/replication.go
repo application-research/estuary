@@ -205,8 +205,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		cm.log.Warnf("content shuttle: %s, is not online for deal making", content.Location)
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		done(time.Minute * 15)
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
+		cm.log.Warnf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
@@ -762,7 +768,12 @@ func (cm *ContentManager) CheckContentReadyForDealMaking(ctx context.Context, co
 	}
 
 	// if it's a shuttle content and the shuttle is not online, do not proceed
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
 		return fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
@@ -870,11 +881,20 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		// first check if shuttle is online
-		if !cm.shuttleMgr.IsOnline(contentLoc) {
+
+		isOnline, err := cm.shuttleMgr.IsOnline(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if !isOnline {
 			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
 		}
 
-		addrInfo := cm.shuttleMgr.AddrInfo(contentLoc)
+		addrInfo, err := cm.shuttleMgr.AddrInfo(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -892,7 +912,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
 		// so add an auth token for the data to the shuttle's auth DB
-		err := cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		err = cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
 		if err != nil {
 			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
 		}
@@ -1226,7 +1246,7 @@ func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrI
 			Addrs: cm.node.Host.Addrs(),
 		}, nil
 	}
-	return cm.shuttleMgr.AddrInfo(handle), nil
+	return cm.shuttleMgr.AddrInfo(handle)
 }
 
 func (cm *ContentManager) DealMakingDisabled() bool {

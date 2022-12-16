@@ -6,12 +6,13 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	explru "github.com/paskal/golang-lru/simplelru"
-	"golang.org/x/time/rate"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	explru "github.com/paskal/golang-lru/simplelru"
+	"golang.org/x/time/rate"
 
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/sanitycheck"
@@ -773,7 +774,7 @@ func main() {
 		// resume all resumable legacy data transfer for local contents
 		go func() {
 			time.Sleep(time.Second * 10)
-			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
+			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal, make(chan struct{})); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
@@ -849,6 +850,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&autoretrieve.PublishedBatch{},
 		&model.StagingZone{},
 		&model.StagingZoneTracker{},
+		&model.ShuttleConnection{},
 	); err != nil {
 		return err
 	}

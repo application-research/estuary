@@ -87,10 +87,6 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 	//mark shuttle content?
 }
 
-func (d *Shuttle) apiQueueIsEnabled() bool {
-	return d.apiQueueEngEnabled != nil
-}
-
 func (d *Shuttle) shuttleQueueIsEnabled() bool {
 	return d.queueEng != nil && d.shuttleConfig.RpcEngine.Queue.Enabled
 }
@@ -101,8 +97,8 @@ func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) err
 	msg.TraceCarrier = rpcevent.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
 	msg.Handle = d.shuttleHandle
 
-	// use queue engine for rpc if enabled by shuttle and api
-	if d.shuttleQueueIsEnabled() && d.apiQueueIsEnabled() {
+	// use queue engine for rpc if enabled by shuttle
+	if d.shuttleQueueIsEnabled() {
 		// error if operation is not a registered topic
 		if !rpcevent.MessageTopics[msg.Op] {
 			return fmt.Errorf("%s topic has not been registered properly", msg.Op)

@@ -8,6 +8,7 @@ import (
 	dealstatus "github.com/application-research/estuary/deal/status"
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/labstack/echo/v4"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
@@ -27,7 +28,6 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/net/websocket"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -42,10 +42,8 @@ type transferStatusRecord struct {
 }
 
 type IManager interface {
-	Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error)
+	Connect(c echo.Context, handle string, done chan struct{}) error
 	SendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error
-	GetShuttleConnections() []*websocketeng.Connection
-	GetShuttleConnection(handle string) (*websocketeng.Connection, bool)
 	GetTransferStatus(dealID uint) (*filclient.ChannelState, error)
 }
 
@@ -93,16 +91,8 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 	return rpcMgr, nil
 }
 
-func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
-	return m.websocketEng.Connect(ws, handle, done)
-}
-
-func (m *manager) GetShuttleConnection(handle string) (*websocketeng.Connection, bool) {
-	return m.websocketEng.GetShuttleConnection(handle)
-}
-
-func (m *manager) GetShuttleConnections() []*websocketeng.Connection {
-	return m.websocketEng.GetShuttleConnections()
+func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) error {
+	return m.websocketEng.Connect(c, handle, done)
 }
 
 func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error {
@@ -243,16 +233,16 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 }
 
 func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *rpcevent.ShuttleUpdate) error {
-	d, ok := m.websocketEng.GetShuttleConnection(handle)
-	if !ok {
-		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
+	if err := m.db.Model(model.ShuttleConnection{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
+		"space_low":        param.BlockstoreFree < (param.BlockstoreSize / 10),
+		"blockstore_free":  param.BlockstoreFree,
+		"blockstore_size":  param.BlockstoreSize,
+		"pin_count":        param.NumPins,
+		"pin_queue_length": int64(param.PinQueueSize),
+		"updated_at":       time.Now().UTC(),
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
-
-	d.SpaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
-	d.BlockstoreFree = param.BlockstoreFree
-	d.BlockstoreSize = param.BlockstoreSize
-	d.PinCount = param.NumPins
-	d.PinQueueLength = int64(param.PinQueueSize)
 	return nil
 }
 
