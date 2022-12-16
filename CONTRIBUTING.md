@@ -86,14 +86,14 @@ $ ./estuary shuttle-init
 {"handle":"<your_handle_printed_here>", "token":"<your_auth_token_printed_here>"}
 ```
 
-Using the ouxtput from the above command, start a shuttle node in development mode: 
+Using the output from the above command, start a shuttle node in development mode: 
 ```bash
-$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=SECRETfd17213b-48ad-4937-8d70-3946855920a2SECRET --handle=SHUTTLEd55cd9ee-7ad7-4978-b7f0-2b36f0fdfeffHANDLE --logging --host=localhost:3005
+$ ./estuary-shuttle --dev --estuary-api=localhost:3004 --auth-token=AUTH_TOKEN --handle=SHUTTLE_HANDLE --logging --host=localhost:3005
 ```
 output
 ```
 Wallet address is:  <your_estuary-shuttle_address_printed_here>
-2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.xo:145        start data-transfer module
+2021-09-16T14:47:54.353-0700    INFO    dt-impl impl/impl.go:145        start data-transfer module
 2021-09-16T14:47:54.416-0700    INFO    shuttle estuary-shuttle/main.go:1060    refreshing 0 pins
 
    ____    __
