@@ -55,6 +55,7 @@ func (m *manager) PinContent(ctx context.Context, loc string, cont util.Content,
 }
 
 func (m *manager) CommPContent(ctx context.Context, loc string, data cid.Cid) error {
+	m.log.Infof("sending commp")
 	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
 		Op: rpcevent.CMD_ComputeCommP,
 		Params: rpcevent.CmdParams{

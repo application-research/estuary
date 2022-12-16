@@ -126,7 +126,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		isCorrupt = nil
 	}
 	if isCorrupt != nil {
-		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
+		cm.log.Warnf("cnt: %d ignored due to missing blocks", content.ID)
 		return nil
 	}
 
@@ -205,7 +205,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
 	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
+		cm.log.Warnf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
@@ -241,7 +241,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.blockstore)
 			if err != nil {
 				if err == ErrWaitForRemoteCompute {
-					cm.log.Debugf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
+					cm.log.Warnf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
 				} else {
 					cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}

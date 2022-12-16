@@ -64,6 +64,7 @@ func (cm *ContentManager) runPieceCommCompute(ctx context.Context, data cid.Cid,
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
+		cm.log.Infof("calling commmp for cont: %d", cont.ID)
 		if err := cm.shuttleMgr.CommPContent(ctx, cont.Location, data); err != nil {
 			return cid.Undef, 0, 0, err
 		}
