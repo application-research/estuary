@@ -205,48 +205,9 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zoneCont util.
 }
 
 func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneContent util.Content) error {
-	var dstLocation string
-	var curMax int64
-	dataByLoc := make(map[string]int64)
-	contentByLoc, err := cm.getStagedContentsGroupedByLocation(ctx, zoneContent.ID)
+	dstLocation, toMove, curMax, err := cm.getStagedContentsGroupedByLocation(ctx, zoneContent.ID)
 	if err != nil {
 		return err
-	}
-
-	for loc, contents := range contentByLoc {
-		var ntot int64
-		for _, c := range contents {
-			ntot = dataByLoc[loc] + c.Size
-			dataByLoc[loc] = ntot
-		}
-
-		// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
-		if loc == constants.ContentLocationLocal {
-			continue
-		}
-
-		canAddContent, err := cm.shuttleMgr.CanAddContent(loc)
-		if err != nil {
-			return err
-		}
-
-		if ntot > curMax && canAddContent {
-			curMax = ntot
-			dstLocation = loc
-		}
-	}
-
-	//TODO (next pr) - update zone status
-	if dstLocation == "" {
-		return fmt.Errorf("zone: %d failed to consolidate as no destination location could be determined", zoneContent.ID)
-	}
-
-	// okay, move everything to 'primary'
-	var toMove []util.Content
-	for loc, conts := range contentByLoc {
-		if loc != dstLocation {
-			toMove = append(toMove, conts...)
-		}
 	}
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zoneContent.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
@@ -262,7 +223,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneCont
 			return err
 		}
 
-		// point content location to dstLocation
+		// point staging zone location to dstLocation
 		if err := tx.Model(model.StagingZone{}).
 			Where("cont_id = ?", zoneContent.ID).
 			UpdateColumn("location", dstLocation).Error; err != nil {
@@ -394,25 +355,58 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 }
 
 // getStagedContentsGroupedByLocation gets the active(pin) contents only for aggregation and consolidation
-func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneContID uint) (map[string][]util.Content, error) {
-	var conts []util.Content
+func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneContID uint) (string, []util.Content, int64, error) {
+	var dstLocation string
+	var curMax int64
+
+	dataByLoc := make(map[string]int64)
 	var contsBatch []util.Content
-	if err := cm.db.Where("active and aggregated_in = ?", zoneContID, 5, nil).Select("size", "location").FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
-		conts = append(conts, contsBatch...)
+	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).Select("size", "location").FindInBatches(&contsBatch, 500, func(tx *gorm.DB, batch int) error {
+		for _, c := range contsBatch {
+			// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
+			if c.Location == constants.ContentLocationLocal {
+				continue
+			}
+
+			dataByLoc[c.Location] = dataByLoc[c.Location] + c.Size
+
+			canAddContent, err := cm.shuttleMgr.CanAddContent(c.Location)
+			if err != nil {
+				return err
+			}
+
+			if dataByLoc[c.Location] > curMax && canAddContent {
+				curMax = dataByLoc[c.Location]
+				dstLocation = c.Location
+			}
+		}
 		return nil
 	}).Error; err != nil {
-		return nil, err
+		return "", nil, 0, err
 	}
 
-	out := make(map[string][]util.Content)
-	for _, c := range conts {
-		out[c.Location] = append(out[c.Location], c)
+	if dstLocation == "" {
+		return "", nil, 0, fmt.Errorf("zone: %d failed to consolidate as no destination location could be determined", zoneContID)
 	}
 
-	if len(out) == 0 {
-		return nil, fmt.Errorf("no location for staged contents")
+	var toMove []util.Content
+	var toMoveBatch []util.Content
+	if err := cm.db.Where("active and aggregated_in = ? and location <> ?", zoneContID, constants.ContentLocationLocal).FindInBatches(&toMoveBatch, 500, func(tx *gorm.DB, batch int) error {
+		for _, c := range toMoveBatch {
+			// temp: dont ever migrate content back to primary instance for aggregation, always prefer elsewhere
+			if c.Location == constants.ContentLocationLocal {
+				continue
+			}
+
+			if c.Location != dstLocation {
+				toMove = append(toMove, c)
+			}
+		}
+		return nil
+	}).Error; err != nil {
+		return "", nil, 0, err
 	}
-	return out, nil
+	return dstLocation, toMove, curMax, nil
 }
 
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, userID uint, limit int, offset int) ([]*model.StagingZone, error) {
