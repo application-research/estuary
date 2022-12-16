@@ -41,9 +41,9 @@ func (cm *ContentManager) getStagingZoneTrackerLastContentID() (*model.StagingZo
 
 func (cm *ContentManager) addContentsToStagingZones(ctx context.Context, tracker *model.StagingZoneTracker) error {
 	var zoneContents []util.Content
-	return cm.db.Where("id > ? and size <= ?", tracker.LastContID, cm.cfg.Content.MinSize).Order("id asc").FindInBatches(&zoneContents, 500, func(tx *gorm.DB, batch int) error {
+	return cm.db.Where("id > ? and size <= ?", tracker.LastContID, cm.cfg.Content.MinSize).Order("id asc").FindInBatches(&zoneContents, 2000, func(tx *gorm.DB, batch int) error {
 
-		cm.log.Infof("trying to stage the next 500 contents: %d - %d", zoneContents[0].ID, zoneContents[len(zoneContents)-1].ID)
+		cm.log.Infof("trying to stage the next 2000 contents: %d - %d", zoneContents[0].ID, zoneContents[len(zoneContents)-1].ID)
 
 		for _, c := range zoneContents {
 			if c.Size == 0 {

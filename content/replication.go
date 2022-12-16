@@ -109,6 +109,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// if content is offloaded, do not proceed - since it needs the blocks for commp and data transfer
 	if content.Offloaded {
+		cm.log.Warnf("cont: %d offloaded for deal making", content.ID)
 		go func() {
 			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
 				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
@@ -205,7 +206,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
 	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		cm.log.Warnf("content shuttle: %s, is not online", content.Location)
+		cm.log.Warnf("content shuttle: %s, is not online for deal making", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
@@ -230,6 +231,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	cm.log.Infof("getting commp for cont: %d", content.ID)
 	pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 	if err != nil {
 		return err
@@ -278,7 +280,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	go func() {
 		// make some more deals!
-		cm.log.Debugw("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
+		cm.log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
 		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, deals); err != nil {
 			cm.log.Errorf("failed to make more deals: %s", err)
 		}
