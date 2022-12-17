@@ -595,6 +595,33 @@ func main() {
 				}
 				return cfg.Save(configFile)
 			},
+		}, {
+			Name:  "shuttle-init",
+			Usage: "Initializes a shuttle node, returns handle and authorization token",
+			Action: func(cctx *cli.Context) error {
+				configFile := cctx.String("config")
+				if err := cfg.Load(configFile); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
+
+				db, err := setupDatabase(cfg.DatabaseConnString)
+				if err != nil {
+					return err
+				}
+
+				shuttle := &model.Shuttle{
+					Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
+					Token:  "SECRET" + uuid.New().String() + "SECRET",
+					Open:   false,
+				}
+
+				if err := db.Create(shuttle).Error; err != nil {
+					return err
+				}
+
+				log.Infof(`{"handle":"%s","token":"%s"}`, shuttle.Handle, shuttle.Token)
+				return nil
+			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
