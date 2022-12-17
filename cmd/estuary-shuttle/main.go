@@ -1191,6 +1191,10 @@ func (s *Shuttle) ServeAPI() error {
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
+	storageProvider := e.Group("/storage-provider")
+	storageProvider.Use(s.AuthRequired(util.PermLevelAdmin))
+	admin.GET("/list/:n", s.handleStorageProviderList)
+
 	return e.Start(s.shuttleConfig.ApiListen)
 }
 
@@ -2482,4 +2486,16 @@ func setupMetrics(metCtx context.Context) Metrics {
 		SendingTotalPendingAllocations: metrics.NewCtx(metCtx, "graphsync_sending_pending_allocations", "amount of block memory on hold from sending pending allocation").Gauge(),
 		SendingPeersPending:            metrics.NewCtx(metCtx, "graphsync_sending_peers_pending", "number of peers we can't send more data to cause of pending allocations").Gauge(),
 	}
+}
+
+func (s *Shuttle) handleStorageProviderList(e echo.Context) error {
+	n, err := strconv.Atoi(e.Param("n"))
+
+	if err != nil {
+		return err
+	}
+
+	resp := s.PPM.Result.GetTopPeers(n)
+
+	return e.JSON(http.StatusOK, resp)
 }
