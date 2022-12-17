@@ -1743,11 +1743,12 @@ func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
 }
 
 type minerResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
+	Addr            address.Address       `json:"addr"`
+	Name            string                `json:"name"`
+	Suspended       bool                  `json:"suspended"`
+	SuspendedReason string                `json:"suspendedReason,omitempty"`
+	Version         string                `json:"version"`
+	ChainInfo       *miner.MinerChainInfo `json:"chain_info"`
 }
 
 // handleAdminGetMiners godoc
@@ -1758,20 +1759,32 @@ type minerResp struct {
 // @Success      200  {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /public/miners [get]
+// @Param        params           path      bool  false   "set true to include on-chain miner info"
+// @Router       /public/miners/{lookup_chain} [get]
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
+	ctx := context.TODO()
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
 
+	lookupChain, _ := strconv.ParseBool(c.Param("lookup_chain"))
+
 	out := make([]minerResp, len(miners))
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
 		out[i].Version = m.Version
+
+		if lookupChain {
+			ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+			if err != nil {
+				out[i].ChainInfo = ci
+			}
+		}
 	}
 
 	return c.JSON(http.StatusOK, out)
