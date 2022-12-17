@@ -51,7 +51,7 @@ func (cm *ContentManager) addContentsToStagingZones(ctx context.Context, tracker
 				continue
 			}
 
-			// for backward compatibilty
+			// for backward compatibility
 			if c.Aggregate {
 				if c.Active {
 					if err := cm.db.Model(model.StagingZone{}).Where("cont_id = ?", c.ID).UpdateColumns(map[string]interface{}{
@@ -117,15 +117,16 @@ func (cm *ContentManager) runStagingZoneAggregationWorker(ctx context.Context) {
 			}
 
 			cm.log.Debugf("found: %d ready staging zones", len(readyZones))
+
 			for _, z := range readyZones {
 				var zc util.Content
 				if err := cm.db.First(&zc, "id = ?", z.ContID).Error; err != nil {
-					cm.log.Warnf("content aggregation failed get zone content: %d for processing, error: %s", z.ID, err)
+					cm.log.Warnf("zone %d aggregation failed to get zone content %d for processing - %s", z.ID, z.ContID, err)
 					continue
 				}
 
 				if err := cm.processStagingZone(ctx, zc, z); err != nil {
-					cm.log.Errorf("content aggregation failed (zone %d): %s", z.ID, err)
+					cm.log.Errorf("zone aggregation worker failed to process zone: %d - %s", z.ID, err)
 					continue
 				}
 			}
@@ -191,31 +192,29 @@ func (cm *ContentManager) processStagingZone(ctx context.Context, zoneCont util.
 			return err
 		}
 
-		// sometimes this call just ends in sending the take content cmd
-		if err := cm.consolidateStagedContent(ctx, zoneCont); err != nil {
+		if err := cm.consolidateStagedContent(ctx, zone.ID, zoneCont); err != nil {
 			cm.log.Errorf("failed to consolidate staged content: %s", err)
 		}
-
 		return nil
 	}
-
 	// if all contents are already in one location, proceed to aggregate them
 	return cm.AggregateStagingZone(ctx, zone, zoneCont, grpLocs[0])
 }
 
-func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneContent util.Content) error {
-	dstLocation, toMove, curMax, err := cm.getStagedContentsGroupedByLocation(ctx, zoneContent.ID)
+func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneID uint, zoneContent util.Content) error {
+	dstLocation, toMove, curMax, err := cm.getContentsAndDestinationLocationForConsolidation(ctx, zoneID, zoneContent.ID)
 	if err != nil {
 		return err
 	}
 
 	cm.log.Debugw("consolidating content to single location for aggregation", "user", zoneContent.UserID, "dstLocation", dstLocation, "numItems", len(toMove), "primaryWeight", curMax)
+
 	if dstLocation == constants.ContentLocationLocal {
 		return cm.migrateContentsToLocalNode(ctx, toMove)
 	}
 
 	if err := cm.db.Transaction(func(tx *gorm.DB) error {
-		// point content location to dstLocation
+		// point zone content location to dstLocation
 		if err := cm.db.Model(util.Content{}).
 			Where("id = ?", zoneContent.ID).
 			UpdateColumn("location", dstLocation).Error; err != nil {
@@ -242,9 +241,9 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 
 	cm.log.Debugf("aggregating zone: %d", zoneCont.ID)
 
-	// skip if zone is consolidating or already aggregating
+	// skip if zone is already beign aggregated by another process
 	if canProceed, err := cm.markZoneStatus(zone, model.ZoneStatuAggregating, model.ZoneMessageAggregating); err != nil || !canProceed {
-		cm.log.Debugf("could not proceed to aggregate zone: %d", zoneCont.ID)
+		cm.log.Debugf("could not proceed to aggregate zone: %d", zone.ID)
 		return err
 	}
 
@@ -293,7 +292,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 				return err
 			}
 
-			// mark content active
+			// mark zone content active
 			if err := cm.db.Model(util.Content{}).Where("id = ?", zoneCont.ID).UpdateColumns(map[string]interface{}{
 				"active":   true,
 				"pinning":  false,
@@ -346,6 +345,7 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 			return nil, err
 		}
 	}
+
 	dirNd, err := dir.GetNode()
 	if err != nil {
 		return nil, err
@@ -353,8 +353,9 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 	return dirNd, nil
 }
 
-// getStagedContentsGroupedByLocation gets the active(pin) contents only for aggregation and consolidation
-func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context, zoneContID uint) (string, []util.Content, int64, error) {
+func (cm *ContentManager) getContentsAndDestinationLocationForConsolidation(ctx context.Context, zoneID uint, zoneContID uint) (string, []util.Content, int64, error) {
+	// first determine the location(destination) to move contents to, that are not in that location over.
+	// Do this by checking what location has the largest contents.
 	var dstLocation string
 	var curMax int64
 
@@ -385,7 +386,7 @@ func (cm *ContentManager) getStagedContentsGroupedByLocation(ctx context.Context
 	}
 
 	if dstLocation == "" {
-		return "", nil, 0, fmt.Errorf("zone: %d failed to consolidate as no destination location could be determined", zoneContID)
+		return "", nil, 0, fmt.Errorf("zone %d failed to consolidate as no destination location could be determined", zoneID)
 	}
 
 	var toMove []util.Content
@@ -430,7 +431,7 @@ func (cm *ContentManager) GetStagingZoneContents(ctx context.Context, user uint,
 
 	var zoneConts []util.Content
 	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&zoneConts, "active and user_id = ? and aggregated_in = ?", user, zc.ContID).Error; err != nil {
-		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zc.ContID)
+		return nil, errors.Wrapf(err, "could not get contents for staging zone: %d", zc.ID)
 	}
 
 	for i, c := range zoneConts {
@@ -543,11 +544,13 @@ func (cm *ContentManager) tryAddNewContentToStagingZone(ctx context.Context, c u
 }
 
 func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, trackerID uint) error {
-	// create an aggregate content and a staging zone for tracking it
+	// create an aggregate content and a staging zone for this content
 	return cm.db.Transaction(func(tx *gorm.DB) error {
 		zoneContID := cont.AggregatedIn
 
-		// create zone content only for new contents (zoneContID=0)
+		// bakward compatibility feature
+		// only new contents will cont.AggregatedIn = 0, so create a zone content for it
+		// old contents already have zone contents
 		if zoneContID == 0 {
 			zoneCont := &util.Content{
 				Size:        cont.Size,
@@ -562,10 +565,18 @@ func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, tr
 			if err := cm.db.Create(zoneCont).Error; err != nil {
 				return err
 			}
+
+			// aggregate the content into the staging zone content ID
+			if err := tx.Model(util.Content{}).
+				Where("id = ?", cont.ID).
+				UpdateColumn("aggregated_in", zoneCont.ID).Error; err != nil {
+				return err
+			}
+
 			zoneContID = zoneCont.ID
 		}
 
-		// create zone
+		// create staging zone for both old and new contents
 		zone := &model.StagingZone{
 			CreatedAt: cont.CreatedAt,
 			MinSize:   cm.cfg.Content.MinSize,
@@ -580,15 +591,7 @@ func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, tr
 		if err := cm.db.Create(zone).Error; err != nil {
 			return err
 		}
-
-		// update content to zone content ID
-		if err := tx.Model(util.Content{}).
-			Where("id = ?", cont.ID).
-			UpdateColumn("aggregated_in", zoneContID).Error; err != nil {
-			return err
-		}
-
-		// update creation tracker
+		// update staging zone creation tracker
 		return tx.Model(model.StagingZoneTracker{}).Where("id = ?", trackerID).UpdateColumn("last_cont_id", cont.ID).Error
 	})
 }
