@@ -59,31 +59,30 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 }
 
 func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
+	out := make([]string, 0)
+
 	if cont.Location == constants.ContentLocationLocal {
-		var out []string
 		for _, a := range cm.node.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.node.Host.ID()))
 		}
 		return out
+	}
 
-	} else {
-		ai, err := cm.addrInfoForContentLocation(cont.Location)
-		if err != nil {
-			cm.log.Warnf("failed to get address info for shuttle %q: %s", cont.Location, err)
-			return nil
-		}
-
-		if ai == nil {
-			cm.log.Warnf("no address info for shuttle: %s", cont.Location)
-			return nil
-		}
-
-		var out []string
-		for _, a := range ai.Addrs {
-			out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
-		}
+	ai, err := cm.addrInfoForContentLocation(cont.Location)
+	if err != nil {
+		cm.log.Warnf("failed to get address info for shuttle %q: %s", cont.Location, err)
 		return out
 	}
+
+	if ai == nil {
+		cm.log.Warnf("no address info for shuttle: %s", cont.Location)
+		return out
+	}
+
+	for _, a := range ai.Addrs {
+		out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
+	}
+	return out
 }
 
 func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
