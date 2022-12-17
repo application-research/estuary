@@ -2131,9 +2131,14 @@ paths:
       tags:
         - public
         - metrics
-  /public/miners:
+  /public/miners/{lookup_chain}:
     get:
       description: This endpoint returns all miners
+      parameters:
+        - description: set true to include on-chain miner info
+          in: path
+          name: params
+          type: boolean
       produces:
         - application/json
       responses:

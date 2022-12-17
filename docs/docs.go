@@ -2797,39 +2797,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/public/miners": {
-            "get": {
-                "description": "This endpoint returns all miners",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public",
-                    "net"
-                ],
-                "summary": "Get all miners",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/public/miners/deals/{miner}": {
             "get": {
                 "description": "This endpoint returns all miners deals",
@@ -2979,6 +2946,47 @@ const docTemplate = `{
                         "name": "miner",
                         "in": "path",
                         "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/public/miners/{lookup_chain}": {
+            "get": {
+                "description": "This endpoint returns all miners",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public",
+                    "net"
+                ],
+                "summary": "Get all miners",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "set true to include on-chain miner info",
+                        "name": "params",
+                        "in": "path"
                     }
                 ],
                 "responses": {
