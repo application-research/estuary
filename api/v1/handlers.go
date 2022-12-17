@@ -2133,15 +2133,7 @@ type minerStatsResp struct {
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
 
-	ChainInfo *minerChainInfo `json:"chainInfo"`
-}
-
-type minerChainInfo struct {
-	PeerID    string   `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  string `json:"owner"`
-	Worker string `json:"worker"`
+	ChainInfo *miner.MinerChainInfo `json:"chainInfo"`
 }
 
 // handleGetMinerStats godoc
@@ -2163,25 +2155,9 @@ func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 		return err
 	}
 
-	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	ci, err := s.minerManager.GetMinerChainInfo(ctx, maddr)
 	if err != nil {
 		return err
-	}
-
-	ci := minerChainInfo{
-		Owner:  minfo.Owner.String(),
-		Worker: minfo.Worker.String(),
-	}
-
-	if minfo.PeerId != nil {
-		ci.PeerID = minfo.PeerId.String()
-	}
-	for _, a := range minfo.Multiaddrs {
-		ma, err := multiaddr.NewMultiaddrBytes(a)
-		if err != nil {
-			return err
-		}
-		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	var m model.StorageMiner
