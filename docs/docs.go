@@ -216,6 +216,20 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Add peers on Peering Service",
+                "parameters": [
+                    {
+                        "description": "Peering Peer array",
+                        "name": "req",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/peering.PeeringPeer"
+                            }
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -255,7 +269,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "boolean"
+                                "type": "string"
                             }
                         }
                     }
@@ -3530,6 +3544,23 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "peering.PeeringPeer": {
+            "type": "object",
+            "properties": {
+                "Addrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Connected": {
+                    "type": "boolean"
+                },
+                "ID": {
                     "type": "string"
                 }
             }
