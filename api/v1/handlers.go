@@ -203,6 +203,7 @@ func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
 // @Description  This endpoint can be used to add a Peer from the Peering Service
 // @Tags         admin
 // @Produce      json
+// @Param        req           body      []peering.PeeringPeer true   "Peering Peer array"
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
@@ -259,8 +260,6 @@ func (s *apiV1) handlePeeringPeersAdd(c echo.Context) error {
 	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{Message: "Added the following Peers on Peering", PeersAdd: params})
 }
 
-type peerID bool      // used for swagger
-type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
@@ -269,7 +268,7 @@ type peerIDs []peerID // used for swagger
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
 // @Failure      500     {object}  util.HttpError
-// @Param        peerIds  body      peerIDs  true  "Peer ids"
+// @Param        peerIds  body      []peer.ID  true  "Peer ids"
 // @Router       /admin/peering/peers [delete]
 func (s *apiV1) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
