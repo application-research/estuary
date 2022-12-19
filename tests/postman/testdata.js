@@ -5,7 +5,7 @@ const HOST = "http://localhost:3004"
 const APIKEY = `Bearer ${process.env.APIKEY}`
 
 
-const swagger = require(" ../../docs/swagger.json")
+const swagger = require("../../docs/swagger.json")
 
 var EstuaryClient = require('estuary-client');
 let defaultClient = EstuaryClient.ApiClient.instance;

@@ -1,5 +1,5 @@
 var path = require('path');
-const swagger_data = require(" ../../docs/swagger.json")
+const swagger_data = require("../../docs/swagger.json")
 
 var testdata = require("./testdata").data
 var testdata_module = require("./testdata")
