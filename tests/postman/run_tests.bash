@@ -1,5 +1,10 @@
 set -eu
 
+../../estuary &
+
+echo $APIKEY
+
+
 rm -f jstests/*
 
 node index.js

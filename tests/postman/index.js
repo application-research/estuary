@@ -12,6 +12,8 @@ if(!process.env.APIKEY){
 }
 const APIKEY = `Bearer ${process.env.APIKEY}`
 
+console.log(process.env.APIKEY)
+
 var langs = [ {language: "nodejs", variant: "axios", folder: "jstests", extension: ".js"}]
 
 var codegen = require('postman-code-generators'),

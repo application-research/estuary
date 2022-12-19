@@ -30,7 +30,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install hwloc libhwloc-dev jq ocl-icd-opencl-dev
+        sudo apt install -y hwloc libhwloc-dev jq ocl-icd-opencl-dev
 
     - name: Build
       run: make clean all
