@@ -1753,22 +1753,30 @@ type minerResp struct {
 
 // handleAdminGetMiners godoc
 // @Summary      Get all miners
-// @Description  This endpoint returns all miners
+// @Description  This endpoint returns all miners. Note: value may be cached
 // @Tags         admin,net
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Param        params           path      bool  false   "set true to include on-chain miner info"
-// @Router       /admin/miners/{lookup_chain} [get]
+// @Router       /admin/miners/ [get]
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
+	key := cacheKey(c, nil)
+
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]minerResp)
+		if !ok {
+			return xerrors.Errorf("value in miner cache was not a miner (got %T)", cached)
+		}
+		return c.JSON(http.StatusOK, out)
+	}
 	ctx := context.TODO()
+
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
-
-	lookupChain, _ := strconv.ParseBool(c.Param("lookup_chain"))
 
 	out := make([]minerResp, len(miners))
 
@@ -1779,13 +1787,13 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		out[i].Name = m.Name
 		out[i].Version = m.Version
 
-		if lookupChain {
-			ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
-			if err != nil {
-				out[i].ChainInfo = ci
-			}
+		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+		if err != nil {
+			out[i].ChainInfo = ci
 		}
 	}
+
+	s.extendedCacher.Add(key, out)
 
 	return c.JSON(http.StatusOK, out)
 }
@@ -2203,7 +2211,7 @@ func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
-		ChainInfo:       &ci,
+		ChainInfo:       ci,
 	})
 }
 
