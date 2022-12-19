@@ -1,9 +1,5 @@
 set -eu
 
-export APIKEY=$(cat APIKEY)
-
-#curl https://raw.githubusercontent.com/application-research/estuary/dev/docs/swagger.json -o swagger.json
-
 rm -f jstests/*
 
 node index.js

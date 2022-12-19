@@ -41,7 +41,7 @@ jobs:
         npm install
 
     - name: Setup
-      run: API_KEY=$(./estuary setup --username admin --password password  |  sed -e's/.*EST/EST/g' | tail -n1) >> $GITHUB_ENV
+      run: APIKEY=$(./estuary setup --username admin --password password  |  sed -e's/.*EST/EST/g' | tail -n1) >> $GITHUB_ENV
 
     - name: Run Estuary
       run: ./estuary &
@@ -50,3 +50,5 @@ jobs:
       run: |
         cd tests/postman
         ./run_tests.bash
+      env:
+        APIKEY: $APIKEY
