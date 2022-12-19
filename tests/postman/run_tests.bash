@@ -1,8 +1,6 @@
 set -eu
 
-../../estuary &
-
-echo $APIKEY
+echo $APIKEY | sed 's/./& /g'
 
 
 rm -f jstests/*

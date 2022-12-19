@@ -51,4 +51,4 @@ jobs:
         cd tests/postman
         ./run_tests.bash
       env:
-        APIKEY: $APIKEY
+        APIKEY: ${{env.APIKEY}}
