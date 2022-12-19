@@ -1754,13 +1754,13 @@ type minerResp struct {
 // handleAdminGetMiners godoc
 // @Summary      Get all miners
 // @Description  This endpoint returns all miners
-// @Tags         public,net
+// @Tags         admin,net
 // @Produce      json
 // @Success      200  {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Param        params           path      bool  false   "set true to include on-chain miner info"
-// @Router       /public/miners/{lookup_chain} [get]
+// @Router       /admin/miners/{lookup_chain} [get]
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	ctx := context.TODO()
 	var miners []model.StorageMiner
