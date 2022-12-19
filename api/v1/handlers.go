@@ -1763,6 +1763,16 @@ type minerResp struct {
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	ctx := context.TODO()
 
+	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
+	key := cacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]minerResp)
+		if ok {
+			return c.JSON(http.StatusOK, out)
+		}
+	}
+
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
@@ -1777,30 +1787,14 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		out[i].Name = m.Name
 		out[i].Version = m.Version
 
-		var ci *miner.MinerChainInfo
-
-		// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
-		key := cacheKey(c, nil, m.Address.Addr.String())
-		cached, ok := s.extendedCacher.Get(key)
-		if ok {
-			cachedCi, ok := cached.(*miner.MinerChainInfo)
-			if ok {
-				ci = cachedCi
-			} else {
-				newCi, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
-				if err != nil {
-					ci = newCi
-				}
-				// If the ChainInfo is `nil`, (not published), we should still cache it to ensure we don't keep looking it up
-				s.extendedCacher.Add(key, newCi)
-			}
-		}
-
-		if ci != nil {
+		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+		if err != nil {
 			out[i].ChainInfo = ci
 		}
+
 	}
 
+	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
 }
 
