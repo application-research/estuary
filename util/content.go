@@ -52,7 +52,7 @@ type ContentCreateResponse struct {
 }
 
 type Content struct {
-	ID        uint           `gorm:"primaryKey" json:"id"`
+	ID        uint           `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -103,7 +103,7 @@ type ContentWithPath struct {
 }
 
 type Object struct {
-	ID         uint  `gorm:"primaryKey"`
+	ID         uint  `gorm:"primarykey"`
 	Cid        DbCID `gorm:"index"`
 	Size       int
 	Reads      int
@@ -111,7 +111,7 @@ type Object struct {
 }
 
 type ObjRef struct {
-	ID        uint `gorm:"primaryKey"`
+	ID        uint `gorm:"primarykey"`
 	Content   uint `gorm:"index:,option:CONCURRENTLY"`
 	Object    uint `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint

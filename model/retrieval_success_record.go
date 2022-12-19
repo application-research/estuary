@@ -7,7 +7,7 @@ import (
 )
 
 type RetrievalSuccessRecord struct {
-	ID           uint       `gorm:"primaryKey" json:"-"`
+	ID           uint       `gorm:"primarykey" json:"-"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	Cid          util.DbCID `json:"cid"`
 	Miner        string     `json:"miner"`
