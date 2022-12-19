@@ -1783,9 +1783,9 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		key := cacheKey(c, nil, m.Address.Addr.String())
 		cached, ok := s.extendedCacher.Get(key)
 		if ok {
-			out, ok := cached.(*miner.MinerChainInfo)
+			cachedCi, ok := cached.(*miner.MinerChainInfo)
 			if ok {
-				ci = out
+				ci = cachedCi
 			} else {
 				newCi, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
 				if err != nil {
