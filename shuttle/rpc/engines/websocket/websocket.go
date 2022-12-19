@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"sync"
@@ -10,37 +11,26 @@ import (
 	"github.com/application-research/estuary/model"
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/shuttle/rpc/types"
-	"github.com/filecoin-project/go-address"
-	"github.com/libp2p/go-libp2p/core/peer"
-	"golang.org/x/net/websocket"
+	"github.com/application-research/estuary/util"
+	"github.com/labstack/echo/v4"
+	gwebsocket "golang.org/x/net/websocket"
 
 	"github.com/application-research/estuary/config"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var ErrNoShuttleConnection = fmt.Errorf("no connection to requested shuttle")
 
 type Connection struct {
-	Handle                string
-	Ctx                   context.Context
-	Hostname              string
-	AddrInfo              peer.AddrInfo
-	Address               address.Address
-	Private               bool
-	ContentAddingDisabled bool
-	SpaceLow              bool
-	BlockstoreSize        uint64
-	BlockstoreFree        uint64
-	PinCount              int64
-	PinQueueLength        int64
-	QueueEngEnabled       bool
-	cmds                  chan *rpcevent.Command
+	Handle string
+	Ctx    context.Context
+	cmds   chan *rpcevent.Command
 }
 
 type IEstuaryRpcEngine interface {
-	Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error)
-	GetShuttleConnections() []*Connection
+	Connect(c echo.Context, handle string, done chan struct{}) error
 	GetShuttleConnection(handle string) (*Connection, bool)
 }
 
@@ -67,93 +57,127 @@ func NewEstuaryRpcEngine(ctx context.Context, db *gorm.DB, cfg *config.Estuary, 
 	return wbsMgr
 }
 
-func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
-	var hello rpcevent.Hello
-	if err := websocket.JSON.Receive(ws, &hello); err != nil {
-		return nil, nil, err
-	}
+func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) error {
+	gwebsocket.Handler(func(ws *gwebsocket.Conn) {
+		ws.MaxPayloadBytes = 128 << 20
+		defer ws.Close()
+		defer close(done)
 
-	// tell shuttle if api support queue engine
-	if err := websocket.JSON.Send(ws, &rpcevent.Hi{QueueEngEnabled: m.cfg.RpcEngine.Queue.Enabled}); err != nil {
-		return nil, nil, err
-	}
-
-	_, err := url.Parse(hello.Host)
-	if err != nil {
-		m.log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
-		hello.Host = ""
-	}
-
-	if err := m.db.Model(model.Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
-		"host":            hello.Host,
-		"peer_id":         hello.AddrInfo.ID.String(),
-		"last_connection": time.Now(),
-		"private":         hello.Private,
-	}).Error; err != nil {
-		return nil, nil, err
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	sc := &Connection{
-		Handle:                handle,
-		Address:               hello.Address,
-		AddrInfo:              hello.AddrInfo,
-		Hostname:              hello.Host,
-		cmds:                  make(chan *rpcevent.Command, m.cfg.RpcEngine.Websocket.OutgoingQueueSize),
-		Ctx:                   ctx,
-		Private:               hello.Private,
-		ContentAddingDisabled: hello.ContentAddingDisabled,
-		QueueEngEnabled:       hello.QueueEngEnabled,
-	}
-
-	m.shuttlesLk.Lock()
-	m.shuttles[handle] = sc
-	m.shuttlesLk.Unlock()
-
-	closeConn := func() {
-		cancel()
-		m.shuttlesLk.Lock()
-		outd, ok := m.shuttles[handle]
-		if ok {
-			if outd == sc {
-				delete(m.shuttles, handle)
-			}
+		var helloBytes []byte
+		if err := gwebsocket.Message.Receive(ws, &helloBytes); err != nil {
+			return
 		}
-		m.shuttlesLk.Unlock()
-	}
 
-	writeWebsocket := func() {
-		for {
-			select {
-			case msg := <-sc.cmds:
-				// Write
-				err := websocket.JSON.Send(ws, msg)
-				if err != nil {
-					m.log.Errorf("failed to write command to shuttle: %s", err)
+		var hello rpcevent.Hello
+		if err := json.Unmarshal(helloBytes, &hello); err != nil {
+			return
+		}
+
+		if _, err := url.Parse(hello.Host); err != nil {
+			m.log.Errorf("shuttle had invalid hostname %q: %s", hello.Host, err)
+			hello.Host = ""
+		}
+
+		s := &model.ShuttleConnection{
+			Handle:                handle,
+			Address:               util.DbAddr{Addr: hello.Address},
+			AddrInfo:              util.DbAddrInfo{AddrInfo: hello.AddrInfo},
+			Hostname:              hello.Host,
+			Private:               hello.Private,
+			ContentAddingDisabled: hello.ContentAddingDisabled,
+			QueueEngEnabled:       hello.QueueEngEnabled,
+			UpdatedAt:             time.Now().UTC(),
+		}
+
+		if err := m.db.Clauses(&clause.OnConflict{
+			Columns:   []clause.Column{{Name: "handle"}},
+			DoUpdates: clause.AssignmentColumns([]string{"address", "addr_info", "hostname", "private", "content_adding_disabled", "queue_eng_enabled"}),
+		}).Create(&s).Error; err != nil {
+			return
+		}
+
+		if err := m.db.Model(model.Shuttle{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
+			"host":            hello.Host,
+			"peer_id":         hello.AddrInfo.ID.String(),
+			"last_connection": time.Now(),
+			"private":         hello.Private,
+		}).Error; err != nil {
+			return
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		sc := &Connection{
+			cmds: make(chan *rpcevent.Command, m.cfg.RpcEngine.Websocket.OutgoingQueueSize),
+			Ctx:  ctx,
+		}
+
+		m.shuttlesLk.Lock()
+		m.shuttles[handle] = sc
+		m.shuttlesLk.Unlock()
+
+		// clean up on exit
+		defer func() {
+			cancel()
+			m.shuttlesLk.Lock()
+			outd, ok := m.shuttles[handle]
+			if ok {
+				if outd == sc {
+					delete(m.shuttles, handle)
+				}
+			}
+			m.shuttlesLk.Unlock()
+		}()
+
+		// write to shuttles
+		go func() {
+			for {
+				select {
+				case msg := <-sc.cmds:
+					go func() {
+						msgBytes, err := json.Marshal(msg)
+						if err != nil {
+							m.log.Errorf("failed to serialize message: %s", err)
+							return
+						}
+
+						if err = gwebsocket.Message.Send(ws, msgBytes); err != nil {
+							m.log.Errorf("failed to write command to shuttle: %s", err)
+							return
+						}
+					}()
+				case <-done:
 					return
 				}
-			case <-done:
+			}
+		}()
+
+		readWebsocket := func() error {
+			var msgBytes []byte
+			if err := gwebsocket.Message.Receive(ws, &msgBytes); err != nil {
+				return err
+			}
+
+			var msg *rpcevent.Message
+			if err := json.Unmarshal(msgBytes, &msg); err != nil {
+				return err
+			}
+
+			msg.Handle = handle
+			go func() {
+				m.rpcWebsocket <- msg
+			}()
+			return nil
+		}
+
+		for {
+			if err := readWebsocket(); err != nil {
+				m.log.Errorf("failed to read message from shuttle: %s, %s", handle, err)
 				return
 			}
 		}
-	}
-
-	readWebsocket := func() error {
-		var msg *rpcevent.Message
-		if err := websocket.JSON.Receive(ws, &msg); err != nil {
-			return err
-		}
-		msg.Handle = handle
-		go func() {
-			m.rpcWebsocket <- msg
-		}()
-		return nil
-	}
-
-	go writeWebsocket()
-
-	return readWebsocket, closeConn, nil
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
 }
 
 func (sc *Connection) SendMessage(ctx context.Context, cmd *rpcevent.Command) error {
@@ -172,17 +196,6 @@ func (m *manager) GetShuttleConnection(handle string) (*Connection, bool) {
 	defer m.shuttlesLk.Unlock()
 	conn, isConnected := m.shuttles[handle]
 	return conn, isConnected
-}
-
-func (m *manager) GetShuttleConnections() []*Connection {
-	m.shuttlesLk.Lock()
-	defer m.shuttlesLk.Unlock()
-
-	shts := make([]*Connection, 0)
-	for _, sh := range m.shuttles {
-		shts = append(shts, sh)
-	}
-	return shts
 }
 
 func (m *manager) runWebsocketQueueProcessingWorkers(ctx context.Context, numHandlers int, handlerFn types.MessageHandlerFn) {

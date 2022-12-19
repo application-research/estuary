@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"golang.org/x/time/rate"
 	"path/filepath"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
@@ -28,6 +29,7 @@ type Shuttle struct {
 	Private            bool          `json:"private"`
 	Dev                bool          `json:"dev"`
 	NoReloadPinQueue   bool          `json:"no_reload_pin_queue"`
+	RateLimit          rate.Limit    `json:"rate_limit"`
 	Node               Node          `json:"node"`
 	Jaeger             Jaeger        `json:"jaeger"`
 	Content            Content       `json:"content"`
@@ -82,6 +84,7 @@ func NewShuttle(appVersion string) *Shuttle {
 		Private:            false,
 		Dev:                false,
 		NoReloadPinQueue:   false,
+		RateLimit:          rate.Limit(20),
 
 		Content: Content{
 			DisableLocalAdding: false,

@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	explru "github.com/paskal/golang-lru/simplelru"
+	"golang.org/x/time/rate"
+
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/estuary/shuttle"
@@ -222,6 +225,9 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 				return fmt.Errorf("failed to parse max-verified-price %s: %w", cctx.String("max-verified-price"), err)
 			}
 			cfg.Deal.MaxVerifiedPrice = abi.TokenAmount(maxVerifiedPrice)
+
+		case "rate-limit":
+			cfg.RateLimit = rate.Limit(cctx.Float64("rate-limit"))
 
 		default:
 		}
@@ -589,6 +595,33 @@ func main() {
 				}
 				return cfg.Save(configFile)
 			},
+		}, {
+			Name:  "shuttle-init",
+			Usage: "Initializes a shuttle node, returns handle and authorization token",
+			Action: func(cctx *cli.Context) error {
+				configFile := cctx.String("config")
+				if err := cfg.Load(configFile); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
+					return err
+				}
+
+				db, err := setupDatabase(cfg.DatabaseConnString)
+				if err != nil {
+					return err
+				}
+
+				shuttle := &model.Shuttle{
+					Handle: "SHUTTLE" + uuid.New().String() + "HANDLE",
+					Token:  "SECRET" + uuid.New().String() + "SECRET",
+					Open:   false,
+				}
+
+				if err := db.Create(shuttle).Error; err != nil {
+					return err
+				}
+
+				log.Infof(`{"handle":"%s","token":"%s"}`, shuttle.Handle, shuttle.Token)
+				return nil
+			},
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
@@ -703,7 +736,7 @@ func main() {
 			return err
 		}
 
-		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage)
+		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage, cfg.Content.MinSize)
 
 		// stand up shuttle manager
 		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr, cntQueueMgr)
@@ -768,15 +801,18 @@ func main() {
 		// resume all resumable legacy data transfer for local contents
 		go func() {
 			time.Sleep(time.Second * 10)
-			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal); err != nil {
+			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal, make(chan struct{})); err != nil {
 				log.Errorf("failed to restart transfers: %s", err)
 			}
 		}()
 
+		cacher := explru.NewExpirableLRU(constants.CacheSize, nil, constants.CacheDuration, constants.CachePurgeEveryDuration)
+		extendedCacher := explru.NewExpirableLRU(constants.ExtendedCacheSize, nil, constants.ExtendedCacheDuration, constants.ExtendedCachePurgeEveryDuration)
+
 		// stand up api server
 		apiTracer := otel.Tracer("api")
-		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
-		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, minerMgr, pinmgr, log, apiTracer)
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, minerMgr, pinmgr, log, apiTracer)
 
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)
@@ -839,6 +875,9 @@ func migrateSchemas(db *gorm.DB) error {
 		&autoretrieve.Autoretrieve{},
 		&model.SanityCheck{},
 		&autoretrieve.PublishedBatch{},
+		&model.StagingZone{},
+		&model.StagingZoneTracker{},
+		&model.ShuttleConnection{},
 	); err != nil {
 		return err
 	}

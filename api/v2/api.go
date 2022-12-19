@@ -11,7 +11,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
-	"github.com/whyrusleeping/memo"
+	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -27,7 +27,7 @@ type apiV2 struct {
 	CM           *contentmgr.ContentManager
 	StagingMgr   *stagingbs.StagingBSMgr
 	gwayHandler  *gateway.GatewayHandler
-	cacher       *memo.Cacher
+	cacher       *explru.ExpirableLRU
 	minerManager miner.IMinerManager
 	pinMgr       *pinner.EstuaryPinManager
 	log          *zap.SugaredLogger
@@ -41,6 +41,7 @@ func NewAPIV2(
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
+	cacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
@@ -56,7 +57,7 @@ func NewAPIV2(
 		CM:           cm,
 		StagingMgr:   sbm,
 		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       memo.NewCacher(),
+		cacher:       cacher,
 		minerManager: mm,
 		pinMgr:       pinMgr,
 		log:          log,

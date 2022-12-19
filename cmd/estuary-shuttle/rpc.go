@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
@@ -72,8 +71,6 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 }
 
 func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
-
-	spew.Dump("nkjnjnjnjknnnnlnnkjnnjnnkknnnnkjnl")
 	// send - tell estuary about a bad block on this shuttle
 	if err := s.sendRpcMessage(context.TODO(), &rpcevent.Message{
 		Op: rpcevent.OP_SanityCheck,
@@ -90,14 +87,18 @@ func (s *Shuttle) SendSanityCheck(cc cid.Cid, errMsg string) {
 	//mark shuttle content?
 }
 
+func (d *Shuttle) shuttleQueueIsEnabled() bool {
+	return d.queueEng != nil && d.shuttleConfig.RpcEngine.Queue.Enabled
+}
+
 func (d *Shuttle) sendRpcMessage(ctx context.Context, msg *rpcevent.Message) error {
 	// if a span is contained in `ctx` its SpanContext will be carried in the message, otherwise
 	// a noopspan context will be carried and ignored by the receiver.
 	msg.TraceCarrier = rpcevent.NewTraceCarrier(trace.SpanFromContext(ctx).SpanContext())
 	msg.Handle = d.shuttleHandle
 
-	// use queue engine for rpc if enabled by shuttle and api
-	if d.shuttleConfig.RpcEngine.Queue.Enabled && d.apiQueueEngEnabled && d.queueEng != nil {
+	// use queue engine for rpc if enabled by shuttle
+	if d.shuttleQueueIsEnabled() {
 		// error if operation is not a registered topic
 		if !rpcevent.MessageTopics[msg.Op] {
 			return fmt.Errorf("%s topic has not been registered properly", msg.Op)

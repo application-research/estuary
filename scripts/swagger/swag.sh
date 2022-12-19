@@ -81,7 +81,7 @@ echo "Running Swag"
 chmod +x ./scripts/swagger/echo-swag/swag
 chmod +x ./scripts/swagger/echo-swag/yq
 
-./scripts/swagger/echo-swag/swag init -g api/v1/api.go --parseDependency --parseInternal --parseDepth 1
+./scripts/swagger/echo-swag/swag init -g api/v1/api.go --parseDependency --parseInternal --parseDepth 1  --exclude cmd/
 
 ## workaround to add the security and host - this so we can add the Bearer token to the header
 ## Json 

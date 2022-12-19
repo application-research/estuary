@@ -60,11 +60,11 @@ func (cm *ContentManager) runDealWorker(ctx context.Context) {
 			}
 
 			err := cm.ensureStorage(context.TODO(), content, func(dur time.Duration) {
-				cm.queueMgr.Add(content.ID, dur)
+				cm.queueMgr.Add(content.ID, content.Size, dur)
 			})
 			if err != nil {
 				cm.log.Errorf("failed to ensure replication of content %d: %s", content.ID, err)
-				cm.queueMgr.Add(content.ID, time.Minute*5)
+				cm.queueMgr.Add(content.ID, content.Size, time.Minute*5)
 			}
 		}
 	}
@@ -109,6 +109,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// if content is offloaded, do not proceed - since it needs the blocks for commp and data transfer
 	if content.Offloaded {
+		cm.log.Warnf("cont: %d offloaded for deal making", content.ID)
 		go func() {
 			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
 				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
@@ -118,13 +119,15 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
-	// if content has any missing blocks, do not proceed
-	var sncks []model.SanityCheck
-	if err := cm.db.Find(&sncks, "content_id = ?", content.ID).Error; err != nil {
-		return err
+	var isCorrupt *model.SanityCheck
+	if err := cm.db.First(&isCorrupt, "content_id = ?", content.ID).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		isCorrupt = nil
 	}
-	if len(sncks) > 0 {
-		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
+	if isCorrupt != nil {
+		cm.log.Warnf("cnt: %d ignored due to missing blocks", content.ID)
 		return nil
 	}
 
@@ -139,11 +142,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-	}
-
-	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content) {
-		return cm.addContentToStagingZone(ctx, content)
 	}
 
 	// check on each of the existing deals, see if any needs fixing
@@ -207,8 +205,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		done(time.Minute * 15)
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
+		cm.log.Warnf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
@@ -233,6 +237,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	cm.log.Infof("getting commp for cont: %d", content.ID)
 	pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 	if err != nil {
 		return err
@@ -244,7 +249,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.blockstore)
 			if err != nil {
 				if err == ErrWaitForRemoteCompute {
-					cm.log.Debugf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
+					cm.log.Warnf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
 				} else {
 					cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}
@@ -281,7 +286,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	go func() {
 		// make some more deals!
-		cm.log.Debugw("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
+		cm.log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
 		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, deals); err != nil {
 			cm.log.Errorf("failed to make more deals: %s", err)
 		}
@@ -749,6 +754,32 @@ func (cm *ContentManager) repairDeal(d *model.ContentDeal) error {
 	return nil
 }
 
+func (cm *ContentManager) CheckContentReadyForDealMaking(ctx context.Context, content util.Content) error {
+	if !content.Active || content.Pinning {
+		return fmt.Errorf("cannot make deals for content that is not pinned")
+	}
+
+	if content.Offloaded {
+		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	}
+
+	if content.Size < cm.cfg.Content.MinSize {
+		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, cm.cfg.Content.MinSize)
+	}
+
+	// if it's a shuttle content and the shuttle is not online, do not proceed
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
+		return fmt.Errorf("content shuttle: %s, is not online", content.Location)
+	}
+
+	return nil
+}
+
 func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.Content, dealsToBeMade int, existingContDeals []model.ContentDeal) error {
 	ctx, span := cm.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
@@ -756,12 +787,8 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 	))
 	defer span.End()
 
-	if content.Size < cm.cfg.Content.MinSize {
-		return fmt.Errorf("content %d below individual deal size threshold. (size: %d, threshold: %d)", content.ID, content.Size, cm.cfg.Content.MinSize)
-	}
-
-	if content.Offloaded {
-		return fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
+	if err := cm.CheckContentReadyForDealMaking(ctx, content); err != nil {
+		return errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
 	}
 
 	_, _, pieceSize, err := cm.GetPieceCommitment(ctx, content.Cid.CID, cm.blockstore)
@@ -791,90 +818,11 @@ func (cm *ContentManager) makeDealsForContent(ctx context.Context, content util.
 
 	var readyDeals []deal
 	for _, m := range miners {
-		price := m.Ask.GetPrice(cm.cfg.Deal.IsVerified)
-		prop, err := cm.filClient.MakeDeal(ctx, m.Address, content.Cid.CID, price, m.Ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
-		if err != nil {
-			return xerrors.Errorf("failed to construct a deal proposal: %w", err)
-		}
-
-		dp, err := cm.putProposalRecord(prop.DealProposal)
+		cd, err := cm.MakeDealWithMiner(ctx, content, m.Address)
 		if err != nil {
 			return err
 		}
-
-		propnd, err := cborutil.AsIpld(prop.DealProposal)
-		if err != nil {
-			return xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
-		}
-
-		dealUUID := uuid.New()
-		cd := &model.ContentDeal{
-			Content:             content.ID,
-			PropCid:             util.DbCID{CID: propnd.Cid()},
-			DealUUID:            dealUUID.String(),
-			Miner:               m.Address.String(),
-			Verified:            cm.cfg.Deal.IsVerified,
-			UserID:              content.UserID,
-			DealProtocolVersion: m.DealProtocolVersion,
-			MinerVersion:        m.Ask.MinerVersion,
-		}
-
-		if err := cm.db.Create(cd).Error; err != nil {
-			return xerrors.Errorf("failed to create database entry for deal: %w", err)
-		}
-
-		// Send the deal proposal to the storage provider
-		var cleanupDealPrep func() error
-		var propPhase bool
-		isPushTransfer := m.DealProtocolVersion == filclient.DealProtocolv110
-
-		switch m.DealProtocolVersion {
-		case filclient.DealProtocolv110:
-			propPhase, err = cm.filClient.SendProposalV110(ctx, *prop, propnd.Cid())
-		case filclient.DealProtocolv120:
-			cleanupDealPrep, propPhase, err = cm.sendProposalV120(ctx, content.Location, *prop, propnd.Cid(), dealUUID, cd.ID)
-		default:
-			err = fmt.Errorf("unrecognized deal protocol %s", m.DealProtocolVersion)
-		}
-
-		if err != nil {
-			// Clean up the contentDeal database entry
-			if err := cm.db.Delete(&model.ContentDeal{}, cd).Error; err != nil {
-				return fmt.Errorf("failed to delete content deal from db: %w", err)
-			}
-
-			// Clean up the proposal database entry
-			if err := cm.db.Delete(&model.ProposalRecord{}, dp).Error; err != nil {
-				return fmt.Errorf("failed to delete deal proposal from db: %w", err)
-			}
-
-			// Clean up the preparation for deal request - deal protocol v120
-			if cleanupDealPrep != nil {
-				if err := cleanupDealPrep(); err != nil {
-					cm.log.Errorw("cleaning up deal prepared request", "error", err)
-				}
-			}
-
-			// Record a deal failure
-			phase := "send-proposal"
-			if propPhase {
-				phase = "propose"
-			}
-
-			if err = cm.recordDealFailure(&DealFailureError{
-				Miner:               m.Address,
-				Phase:               phase,
-				Message:             err.Error(),
-				Content:             content.ID,
-				UserID:              content.UserID,
-				DealProtocolVersion: m.DealProtocolVersion,
-				MinerVersion:        m.Ask.MinerVersion,
-			}); err != nil {
-				cm.log.Errorw("failed to record deal failure", "error", err)
-			}
-			continue
-		}
-
+		isPushTransfer := cd.DealProtocolVersion == filclient.DealProtocolv110
 		readyDeals = append(readyDeals, deal{minerAddr: m.Address, isPushTransfer: isPushTransfer, contentDeal: cd})
 		if len(readyDeals) >= dealsToBeMade {
 			break
@@ -933,11 +881,20 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		// first check if shuttle is online
-		if !cm.shuttleMgr.IsOnline(contentLoc) {
+
+		isOnline, err := cm.shuttleMgr.IsOnline(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if !isOnline {
 			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
 		}
 
-		addrInfo := cm.shuttleMgr.AddrInfo(contentLoc)
+		addrInfo, err := cm.shuttleMgr.AddrInfo(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -955,7 +912,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
 		// so add an auth token for the data to the shuttle's auth DB
-		err := cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		err = cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
 		if err != nil {
 			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
 		}
@@ -973,30 +930,16 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 	return cleanup, propPhase, err
 }
 
-func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Content, miner address.Address) (uint, error) {
+func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Content, miner address.Address) (*model.ContentDeal, error) {
 	ctx, span := cm.tracer.Start(ctx, "makeDealWithMiner", trace.WithAttributes(
 		attribute.Int64("content", int64(content.ID)),
 		attribute.Stringer("miner", miner),
 	))
 	defer span.End()
 
-	// if the content is not active or is in pinning state, do not proceed
-	if !content.Active || content.Pinning {
-		return 0, fmt.Errorf("cannot make deals for content that is not pinned")
-	}
-
-	if content.Offloaded {
-		return 0, fmt.Errorf("cannot make more deals for offloaded content, must retrieve first")
-	}
-
-	// if it's a shuttle content and the shuttle is not online, do not proceed
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		return 0, fmt.Errorf("content shuttle: %s, is not online", content.Location)
-	}
-
 	proto, err := cm.minerManager.GetDealProtocolForMiner(ctx, miner)
 	if err != nil {
-		return 0, cm.recordDealFailure(&DealFailureError{
+		return nil, cm.recordDealFailure(&DealFailureError{
 			Miner:   miner,
 			Phase:   "deal-protocol-version",
 			Message: err.Error(),
@@ -1017,30 +960,30 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 				UserID:              content.UserID,
 				DealProtocolVersion: proto,
 			}); err != nil {
-				return 0, xerrors.Errorf("failed to record deal failure: %w", err)
+				return nil, xerrors.Errorf("failed to record deal failure: %w", err)
 			}
 		}
-		return 0, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
+		return nil, xerrors.Errorf("failed to get ask for miner %s: %w", miner, err)
 	}
 
 	price := ask.GetPrice(cm.cfg.Deal.IsVerified)
 	if ask.PriceIsTooHigh(cm.cfg) {
-		return 0, fmt.Errorf("miners price is too high: %s %s", miner, price)
+		return nil, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
 	prop, err := cm.filClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
 	if err != nil {
-		return 0, xerrors.Errorf("failed to construct a deal proposal: %w", err)
+		return nil, xerrors.Errorf("failed to construct a deal proposal: %w", err)
 	}
 
 	dp, err := cm.putProposalRecord(prop.DealProposal)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
 	propnd, err := cborutil.AsIpld(prop.DealProposal)
 	if err != nil {
-		return 0, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
+		return nil, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
 	}
 
 	dealUUID := uuid.New()
@@ -1056,7 +999,7 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	}
 
 	if err := cm.db.Create(deal).Error; err != nil {
-		return 0, xerrors.Errorf("failed to create database entry for deal: %w", err)
+		return nil, xerrors.Errorf("failed to create database entry for deal: %w", err)
 	}
 
 	// Send the deal proposal to the storage provider
@@ -1076,12 +1019,12 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 	if err != nil {
 		// Clean up the database entry
 		if err := cm.db.Delete(&model.ContentDeal{}, deal).Error; err != nil {
-			return 0, fmt.Errorf("failed to delete content deal from db: %w", err)
+			return nil, fmt.Errorf("failed to delete content deal from db: %w", err)
 		}
 
 		// Clean up the proposal database entry
 		if err := cm.db.Delete(&model.ProposalRecord{}, dp).Error; err != nil {
-			return 0, fmt.Errorf("failed to delete deal proposal from db: %w", err)
+			return nil, fmt.Errorf("failed to delete deal proposal from db: %w", err)
 		}
 
 		// Clean up the preparation for deal request
@@ -1105,23 +1048,23 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 			DealProtocolVersion: proto,
 			MinerVersion:        ask.MinerVersion,
 		}); err != nil {
-			return 0, fmt.Errorf("failed to record deal failure: %w", err)
+			return nil, fmt.Errorf("failed to record deal failure: %w", err)
 		}
-		return 0, err
+		return nil, err
 	}
 
 	// If the data transfer is a pull transfer, we don't need to explicitly
 	// start the transfer (the Storage Provider will start pulling data as
 	// soon as it accepts the proposal)
 	if !isPushTransfer {
-		return deal.ID, nil
+		return deal, nil
 	}
 
 	// It's a push transfer, so start the data transfer
 	if err := cm.transferMgr.StartDataTransfer(ctx, deal); err != nil {
-		return 0, fmt.Errorf("failed to start data transfer: %w", err)
+		return nil, fmt.Errorf("failed to start data transfer: %w", err)
 	}
-	return deal.ID, nil
+	return deal, nil
 }
 
 func (cm *ContentManager) putProposalRecord(dealprop *marketv9.ClientDealProposal) (*model.ProposalRecord, error) {
@@ -1193,12 +1136,12 @@ func (dfe *DealFailureError) Error() string {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) (int64, error) {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
 	if err := cm.db.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
+		return 0, xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
 	refs := make([]util.ObjRef, 0, len(objects))
@@ -1217,7 +1160,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 	)
 
 	if err := cm.db.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+		return 0, xerrors.Errorf("failed to create refs: %w", err)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
@@ -1226,9 +1169,9 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 		"pinning":  false,
 		"location": loc,
 	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
+		return 0, xerrors.Errorf("failed to update content in database: %w", err)
 	}
-	return nil
+	return totalSize, nil
 }
 
 func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []util.Content) error {
@@ -1303,7 +1246,7 @@ func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrI
 			Addrs: cm.node.Host.Addrs(),
 		}, nil
 	}
-	return cm.shuttleMgr.AddrInfo(handle), nil
+	return cm.shuttleMgr.AddrInfo(handle)
 }
 
 func (cm *ContentManager) DealMakingDisabled() bool {
@@ -1353,15 +1296,14 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {}); err != nil {
+		cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {})
+		if err != nil {
 			return err
 		}
 
 		// queue splited contents
-		go func() {
-			cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
-			cm.ToCheck(content.ID)
-		}()
+		cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
+		cm.ToCheck(content.ID, cntSize)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
@@ -1377,7 +1319,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
+func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) (int64, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1455,7 +1397,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
@@ -1478,8 +1420,10 @@ func (cm *ContentManager) AddDatabaseTracking(ctx context.Context, u *util.User,
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
+	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {})
+	if err != nil {
 		return nil, err
 	}
+	content.Size = cntSize
 	return content, nil
 }

@@ -216,6 +216,20 @@ const docTemplate = `{
                     "admin"
                 ],
                 "summary": "Add peers on Peering Service",
+                "parameters": [
+                    {
+                        "description": "Peering Peer array",
+                        "name": "req",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/peering.PeeringPeer"
+                            }
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -255,7 +269,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "type": "boolean"
+                                "type": "string"
                             }
                         }
                     }
@@ -865,19 +879,67 @@ const docTemplate = `{
         },
         "/content/add": {
             "post": {
-                "description": "This endpoint uploads a file.",
+                "description": "This endpoint is used to upload new content.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload a file",
+                "summary": "Add new content",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File to upload",
+                        "name": "data",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename to use for upload",
+                        "name": "filename",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Replication value",
+                        "name": "replication",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes true/false",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Lazy Provide true/false",
+                        "name": "lazy-provide",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Directory",
+                        "name": "dir",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentAddResponse"
                         }
                     },
                     "400": {
@@ -897,19 +959,42 @@ const docTemplate = `{
         },
         "/content/add-car": {
             "post": {
-                "description": "This endpoint uploads content via a car file",
+                "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload content via a car file",
+                "summary": "Add Car object",
+                "parameters": [
+                    {
+                        "description": "Car",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename",
+                        "name": "filename",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentAddResponse"
                         }
                     },
                     "400": {
@@ -1113,6 +1198,54 @@ const docTemplate = `{
                 }
             }
         },
+        "/content/contents": {
+            "get": {
+                "description": "This endpoint is used to get user contents",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get user contents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/content/create": {
             "post": {
                 "description": "This endpoint adds a new content",
@@ -1290,49 +1423,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/content/importdeal": {
-            "post": {
-                "description": "This endpoint imports a deal into the shuttle.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Import a deal",
-                "parameters": [
-                    {
-                        "description": "Import a deal",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/main.importDealBody"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/content/list": {
             "get": {
                 "description": "This endpoint lists all content",
@@ -1365,21 +1455,53 @@ const docTemplate = `{
                 }
             }
         },
-        "/content/read/{cont}": {
+        "/content/staging-zones": {
             "get": {
-                "description": "This endpoint reads content from the blockstore",
+                "description": "This endpoint is used to get staging zone for user, excluding its contents.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Read content",
+                "summary": "Get staging zone for user, excluding its contents",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
+        "/content/staging-zones/{staging_zone}": {
+            "get": {
+                "description": "This endpoint is used to get a staging zone, excluding its contents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "content"
+                ],
+                "summary": "Get staging zone without its contents field populated",
                 "parameters": [
                     {
-                        "type": "string",
-                        "description": "CID",
-                        "name": "cont",
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
                         "in": "path",
                         "required": true
                     }
@@ -1406,16 +1528,39 @@ const docTemplate = `{
                 }
             }
         },
-        "/content/staging-zones": {
+        "/content/staging-zones/{staging_zone}/contents": {
             "get": {
-                "description": "This endpoint is used to get staging zone for user.",
+                "description": "This endpoint is used to get the contents for a staging zone",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Get staging zone for user",
+                "summary": "Get contents for a staging zone",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Staging Zone Content ID",
+                        "name": "staging_zone",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2270,38 +2415,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.emptyResp"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/net/addrs": {
-            "get": {
-                "description": "This endpoint is used to get net addrs",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "net"
-                ],
-                "summary": "Net Addrs",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
                         }
                     },
                     "400": {
@@ -3340,26 +3453,6 @@ const docTemplate = `{
                 }
             }
         },
-        "main.importDealBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dealIDs": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
         "miner.ClaimMinerBody": {
             "type": "object",
             "properties": {
@@ -3386,6 +3479,23 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "reason": {
+                    "type": "string"
+                }
+            }
+        },
+        "peering.PeeringPeer": {
+            "type": "object",
+            "properties": {
+                "Addrs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "Connected": {
+                    "type": "boolean"
+                },
+                "ID": {
                     "type": "string"
                 }
             }
@@ -3458,13 +3568,15 @@ const docTemplate = `{
                 "pinning",
                 "pinned",
                 "failed",
-                "queued"
+                "queued",
+                "offloaded"
             ],
             "x-enum-varnames": [
                 "PinningStatusPinning",
                 "PinningStatusPinned",
                 "PinningStatusFailed",
-                "PinningStatusQueued"
+                "PinningStatusQueued",
+                "PinningStatusOffloaded"
             ]
         },
         "util.ContentAddResponse": {

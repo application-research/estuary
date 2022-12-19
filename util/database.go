@@ -7,7 +7,35 @@ import (
 
 	"github.com/filecoin-project/go-address"
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p/core/peer"
 )
+
+type DbAddrInfo struct {
+	AddrInfo peer.AddrInfo
+}
+
+func (dba *DbAddrInfo) Scan(v interface{}) error {
+	b, ok := v.([]byte)
+	if !ok {
+		return fmt.Errorf("DbAddrInfo must be bytes")
+	}
+
+	if len(b) == 0 {
+		return nil
+	}
+
+	var addrInfo peer.AddrInfo
+	if err := json.Unmarshal(b, &addrInfo); err != nil {
+		return err
+	}
+
+	dba.AddrInfo = addrInfo
+	return nil
+}
+
+func (dba DbAddrInfo) Value() (driver.Value, error) {
+	return dba.AddrInfo.MarshalJSON()
+}
 
 type DbAddr struct {
 	Addr address.Address

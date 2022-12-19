@@ -10,6 +10,8 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"golang.org/x/time/rate"
+
 	//#nosec G108 - exposing the profiling endpoint is expected
 	httpprof "net/http/pprof"
 	"os"
@@ -86,7 +88,7 @@ const (
 	ColDir  = "dir"
 )
 
-//#nosec G104 - it's not common to treat SetLogLevel error return
+// #nosec G104 - it's not common to treat SetLogLevel error return
 func before(cctx *cli.Context) error {
 	level := util.LogLevel
 
@@ -196,6 +198,8 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 			cfg.RpcEngine.Queue.Enabled = cctx.Bool("queue-eng-enabled")
 		case "queue-eng-consumers":
 			cfg.RpcEngine.Queue.Consumers = cctx.Int("queue-eng-consumers")
+		case "rate-limit":
+			cfg.RateLimit = rate.Limit(cctx.Float64("rate-limit"))
 		default:
 		}
 	}
@@ -477,6 +481,7 @@ func main() {
 		}
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
+		s.PPM = NewPPM(nd)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
@@ -547,6 +552,19 @@ func main() {
 				return err
 			}
 			otel.SetTracerProvider(tp)
+		}
+
+		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
+			MaxActivePerUser: 30,
+			QueueDataDir:     cfg.DataDir,
+		})
+		go s.PinMgr.Run(300)
+
+		// only refresh pin queue if pin queue refresh and local adding are enabled
+		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
+			if err := s.refreshPinQueue(); err != nil {
+				log.Errorf("failed to refresh pin queue: %s", err)
+			}
 		}
 
 		if cfg.RpcEngine.Queue.Enabled {
@@ -685,19 +703,6 @@ func main() {
 		})
 		if err != nil {
 			return fmt.Errorf("failed subscribing to libp2p(boost) transfer manager: %w", err)
-		}
-
-		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
-			MaxActivePerUser: 30,
-			QueueDataDir:     cfg.DataDir,
-		})
-		go s.PinMgr.Run(300)
-
-		// only refresh pin queue if pin queue refresh and local adding are enabled
-		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
-			if err := s.refreshPinQueue(); err != nil {
-				log.Errorf("failed to refresh pin queue: %s", err)
-			}
 		}
 
 		go func() {
@@ -839,14 +844,14 @@ var backoffTimer = backoff.ExponentialBackOff{
 }
 
 type Shuttle struct {
-	Node       *node.Node
-	Api        api.Gateway
-	DB         *gorm.DB
-	PinMgr     *pinner.PinManager
-	Filc       *filclient.FilClient
-	StagingMgr *stagingbs.StagingBSMgr
-
+	Node        *node.Node
+	Api         api.Gateway
+	DB          *gorm.DB
+	PinMgr      *pinner.PinManager
+	Filc        *filclient.FilClient
+	StagingMgr  *stagingbs.StagingBSMgr
 	gwayHandler *gateway.GatewayHandler
+	PPM         *PeerPingManager
 
 	Tracer trace.Tracer
 
@@ -887,8 +892,7 @@ type Shuttle struct {
 
 	shuttleConfig *config.Shuttle
 
-	apiQueueEngEnabled bool
-	queueEng           queueng.IShuttleRpcEngine
+	queueEng queueng.IShuttleRpcEngine
 }
 
 func (d *Shuttle) isInflight(c cid.Cid) bool {
@@ -937,12 +941,6 @@ func (d *Shuttle) runRpc(conn *websocket.Conn) (err error) {
 	if err := websocket.JSON.Send(conn, hello); err != nil {
 		return err
 	}
-
-	var hi rpcevent.Hi
-	if err := websocket.JSON.Receive(conn, &hello); err != nil {
-		return err
-	}
-	d.apiQueueEngEnabled = hi.QueueEngEnabled
 
 	go func() {
 		defer close(readDone)
@@ -1053,7 +1051,7 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", val)
 		}
 
-		if usr.AuthExpiry.After(time.Now()) {
+		if usr.AuthExpiry.Before(time.Now()) {
 			d.authCache.Remove(token)
 		} else {
 			return usr, nil
@@ -1153,6 +1151,8 @@ func (s *Shuttle) ServeAPI() error {
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
 		e.Use(middleware.Logger())
 	}
+
+	e.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.shuttleConfig.RateLimit)))
 
 	e.Use(s.tracingMiddleware)
 	e.Use(util.AppVersionMiddleware(s.shuttleConfig.AppVersion))

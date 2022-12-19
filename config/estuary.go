@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/time/rate"
+
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
 	"github.com/application-research/estuary/build"
@@ -37,6 +39,7 @@ type Estuary struct {
 	Replication            int           `json:"replication"`
 	RpcEngine              RpcEngine     `json:"rpc_engine"`
 	Pinning                Pinning       `json:"pinning"`
+	RateLimit              rate.Limit    `json:"rate_limit"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -84,6 +87,7 @@ func NewEstuary(appVersion string) *Estuary {
 		DisableFilecoinStorage: false,
 		DisableSwaggerEndpoint: false,
 		DisableAutoRetrieve:    true,
+		RateLimit:              rate.Limit(20),
 
 		Deal: Deal{
 			IsDisabled:            false,
@@ -108,6 +112,7 @@ func NewEstuary(appVersion string) *Estuary {
 		StagingBucket: StagingBucket{
 			Enabled:           true,
 			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
+			CreationInterval:  time.Minute * 2, // aggregate staging buckets every 2 minutes
 		},
 
 		Pinning: Pinning{

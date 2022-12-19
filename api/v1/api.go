@@ -14,28 +14,30 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
-	"github.com/whyrusleeping/memo"
+	"github.com/labstack/echo/v4/middleware"
+	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
 type apiV1 struct {
-	cfg          *config.Estuary
-	DB           *gorm.DB
-	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
-	gwayHandler  *gateway.GatewayHandler
-	cacher       *memo.Cacher
-	minerManager miner.IMinerManager
-	pinMgr       *pinner.EstuaryPinManager
-	log          *zap.SugaredLogger
-	shuttleMgr   shuttle.IManager
-	transferMgr  transfer.IManager
+	cfg            *config.Estuary
+	DB             *gorm.DB
+	tracer         trace.Tracer
+	Node           *node.Node
+	FilClient      *filclient.FilClient
+	Api            api.Gateway
+	CM             *contentmgr.ContentManager
+	StagingMgr     *stagingbs.StagingBSMgr
+	gwayHandler    *gateway.GatewayHandler
+	cacher         *explru.ExpirableLRU
+	extendedCacher *explru.ExpirableLRU
+	minerManager   miner.IMinerManager
+	pinMgr         *pinner.EstuaryPinManager
+	log            *zap.SugaredLogger
+	shuttleMgr     shuttle.IManager
+	transferMgr    transfer.IManager
 }
 
 func NewAPIV1(
@@ -46,6 +48,8 @@ func NewAPIV1(
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
+	cacher *explru.ExpirableLRU,
+	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
@@ -54,21 +58,22 @@ func NewAPIV1(
 	transferMgr transfer.IManager,
 ) *apiV1 {
 	return &apiV1{
-		cfg:          cfg,
-		DB:           db,
-		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
-		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       memo.NewCacher(),
-		minerManager: mm,
-		pinMgr:       pinMgr,
-		log:          log,
-		shuttleMgr:   shuttleMgr,
-		transferMgr:  transferMgr,
+		cfg:            cfg,
+		DB:             db,
+		tracer:         trc,
+		Node:           nd,
+		FilClient:      fc,
+		Api:            gwApi,
+		CM:             cm,
+		StagingMgr:     sbm,
+		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
+		cacher:         cacher,
+		extendedCacher: extendedCacher,
+		minerManager:   mm,
+		pinMgr:         pinMgr,
+		log:            log,
+		shuttleMgr:     shuttleMgr,
+		transferMgr:    transferMgr,
 	}
 }
 
@@ -91,6 +96,7 @@ func NewAPIV1(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 
+	e.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.cfg.RateLimit)))
 	e.POST("/register", s.handleRegisterUser)
 	e.POST("/login", s.handleLoginUser)
 	e.GET("/health", s.handleHealth)
@@ -130,13 +136,16 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/:cont_id", withUser(s.handleGetContent))
 	content.GET("/stats", withUser(s.handleStats))
+	content.GET("/contents", withUser(s.handleGetUserContents))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", withUser(s.handleContentStatus))
 	content.GET("/list", withUser(s.handleListContent))
 	content.GET("/deals", withUser(s.handleListContentWithDeals))
 	content.GET("/failures/:content", withUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", withUser(s.handleGetContentBandwidth))
-	content.GET("/staging-zones", withUser(s.handleGetStagingZoneForUser))
+	content.GET("/staging-zones", withUser(s.handleGetStagingZonesForUser))
+	content.GET("/staging-zones/:staging_zone", withUser(s.handleGetStagingZoneWithoutContents))
+	content.GET("/staging-zones/:staging_zone/contents", withUser(s.handleGetStagingZoneContents))
 	content.GET("/aggregated/:content", withUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", withUser(s.handleGetAllDealsForUser))
 
@@ -227,14 +236,12 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	admin.GET("/cm/progress", s.handleAdminGetProgress)
 	admin.GET("/cm/all-deals", s.handleDebugGetAllDeals)
 	admin.GET("/cm/read/:content", s.handleReadLocalContent)
-	admin.GET("/cm/staging/all", s.handleAdminGetStagingZones)
 	admin.GET("/cm/offload/candidates", s.handleGetOffloadingCandidates)
 	admin.POST("/cm/offload/:content", s.handleOffloadContent)
 	admin.POST("/cm/offload/collect", s.handleRunOffloadingCollection)
 	admin.GET("/cm/refresh/:content", s.handleRefreshContent)
 	admin.POST("/cm/gc", s.handleRunGc)
 	admin.POST("/cm/move", s.handleMoveContent)
-	admin.GET("/cm/buckets", s.handleGetBucketDiag)
 	admin.GET("/cm/health/:id", s.handleContentHealthCheck)
 	admin.GET("/cm/health-by-cid/:cid", s.handleContentHealthCheckByCid)
 	admin.POST("/cm/dealmaking", s.handleSetDealMaking)
