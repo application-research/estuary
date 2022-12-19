@@ -108,21 +108,6 @@ definitions:
       updatedAt:
         type: string
     type: object
-  main.importDealBody:
-    properties:
-      coluuid:
-        type: string
-      dealIDs:
-        items:
-          type: integer
-        type: array
-      dir:
-        type: string
-      name:
-        type: string
-      overwrite:
-        type: boolean
-    type: object
   miner.ClaimMinerBody:
     properties:
       claim:
@@ -916,19 +901,42 @@ paths:
         - content
   /content/add:
     post:
-      description: This endpoint uploads a file.
+      consumes:
+        - multipart/form-data
+      description: This endpoint is used to upload new content.
       parameters:
-        - description: Overwrite files with the same path on same collection
-          in: query
-          name: overwrite
-          type: string
-        - description: Directory
-          in: query
-          name: dir
+        - description: File to upload
+          in: formData
+          name: data
+          required: true
+          type: file
+        - description: Filename to use for upload
+          in: formData
+          name: filename
           type: string
         - description: Collection UUID
           in: query
           name: coluuid
+          type: string
+        - description: Replication value
+          in: query
+          name: replication
+          type: integer
+        - description: Ignore Dupes true/false
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Overwrite files with the same path on same collection
+          in: query
+          name: overwrite
+          type: string
+        - description: Lazy Provide true/false
+          in: query
+          name: lazy-provide
+          type: string
+        - description: Directory
+          in: query
+          name: dir
           type: string
       produces:
         - application/json

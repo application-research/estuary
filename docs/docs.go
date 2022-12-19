@@ -900,8 +900,39 @@ const docTemplate = `{
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload a file",
+                "summary": "Add new content",
                 "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File to upload",
+                        "name": "data",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename to use for upload",
+                        "name": "filename",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Replication value",
+                        "name": "replication",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes true/false",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "Overwrite files with the same path on same collection",
@@ -910,14 +941,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Directory",
-                        "name": "dir",
+                        "description": "Lazy Provide true/false",
+                        "name": "lazy-provide",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
+                        "description": "Directory",
+                        "name": "dir",
                         "in": "query"
                     }
                 ],
@@ -3454,29 +3485,6 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
-                }
-            }
-        },
-        "main.importDealBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dealIDs": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "overwrite": {
-                    "type": "boolean"
                 }
             }
         },
