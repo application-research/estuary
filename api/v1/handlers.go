@@ -1761,15 +1761,6 @@ type minerResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /admin/miners/ [get]
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
-
-	cached, ok := s.extendedCacher.Get(key)
-	if ok {
-		out, ok := cached.([]minerResp)
-		if !ok {
-			return xerrors.Errorf("value in miner cache was not a miner (got %T)", cached)
-		}
-		return c.JSON(http.StatusOK, out)
-	}
 	ctx := context.TODO()
 
 	var miners []model.StorageMiner
