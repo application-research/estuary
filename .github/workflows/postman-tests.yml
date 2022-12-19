@@ -1,0 +1,52 @@
+name: Go
+
+on:
+  push:
+    branches: [ "master", "dev" ]
+  pull_request:
+    branches: [ "master", "dev" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Node
+      uses: actions/setup-node@v3
+    
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.18
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        default: true
+
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install hwloc libhwloc-dev jq ocl-icd-opencl-dev
+
+    - name: Build
+      run: make clean all
+
+    - name: Build deps for postman tests
+      run: |
+        cd tests/postman
+        npm install
+
+    - name: Setup
+      run: API_KEY=$(./estuary setup --username admin --password password  |  sed -e's/.*EST/EST/g' | tail -n1) >> $GITHUB_ENV
+
+    - name: Run Estuary
+      run: ./estuary &
+
+    - name: Test
+      run: |
+        cd tests/postman
+        ./run_tests.bash
