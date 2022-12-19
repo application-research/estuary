@@ -2,7 +2,9 @@ package shuttle
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"sort"
 	"strings"
 
@@ -89,6 +91,13 @@ func (cm *manager) primaryStagingLocation(ctx context.Context, uid uint) string 
 
 	var zone model.StagingZone
 	if err := cm.db.First(&zone, "user_id = ? and status = ?", uid, model.ZoneStatusOpen).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var oldZone util.Content
+			if err := cm.db.First(&oldZone, "user_id = ? and aggregate and not active", uid).Error; err != nil {
+				return ""
+			}
+			return oldZone.Location
+		}
 		return ""
 	}
 	return zone.Location
