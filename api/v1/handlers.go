@@ -59,7 +59,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	"golang.org/x/net/websocket"
 	"golang.org/x/sys/unix"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
@@ -131,7 +130,10 @@ func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/stats [get]
 func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -154,6 +156,19 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
+// cacheKey returns a key based on the request being made, the user associated to it, and optional tags
+// this key is used when calling Get or Add from a cache
+func cacheKey(c echo.Context, u *util.User, tags ...string) string {
+	paramNames := strings.Join(c.ParamNames(), ",")
+	paramVals := strings.Join(c.ParamValues(), ",")
+	tagsString := strings.Join(tags, ",")
+	if u != nil {
+		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s user=%d tags=%s", c.Request().URL, paramNames, paramVals, u.ID, tagsString)
+	} else {
+		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s tags=%s", c.Request().URL, paramNames, paramVals, tagsString)
+	}
+}
+
 // handleGetUserContents godoc
 // @Summary      Get user contents
 // @Description  This endpoint is used to get user contents
@@ -166,7 +181,10 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 // @Failure      500      {object}  util.HttpError
 // @Router       /content/contents [get]
 func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	var contents []util.Content
 	if err := s.DB.Limit(limit).Offset(offset).Order("created_at desc").Find(&contents, "user_id = ? and not aggregate", u.ID).Error; err != nil {
@@ -185,6 +203,7 @@ func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
 // @Description  This endpoint can be used to add a Peer from the Peering Service
 // @Tags         admin
 // @Produce      json
+// @Param        req           body      []peering.PeeringPeer true   "Peering Peer array"
 // @Success      200     {object}  string
 // @Failure      400      {object}  util.HttpError
 // @Failure      500      {object}  util.HttpError
@@ -241,8 +260,6 @@ func (s *apiV1) handlePeeringPeersAdd(c echo.Context) error {
 	return c.JSON(http.StatusOK, util.PeeringPeerAddMessage{Message: "Added the following Peers on Peering", PeersAdd: params})
 }
 
-type peerID bool      // used for swagger
-type peerIDs []peerID // used for swagger
 // handlePeeringPeersRemove godoc
 // @Summary      Remove peers on Peering Service
 // @Description  This endpoint can be used to remove a Peer from the Peering Service
@@ -251,7 +268,7 @@ type peerIDs []peerID // used for swagger
 // @Success      200      {object}  string
 // @Failure      400     {object}  util.HttpError
 // @Failure      500     {object}  util.HttpError
-// @Param        peerIds  body      peerIDs  true  "Peer ids"
+// @Param        peerIds  body      []peer.ID  true  "Peer ids"
 // @Router       /admin/peering/peers [delete]
 func (s *apiV1) handlePeeringPeersRemove(c echo.Context) error {
 	var params []peer.ID
@@ -461,9 +478,6 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
-
-	// TODO: we should probably have a queue to throw these in instead of putting them out in goroutines...
-	s.CM.ToCheck(cont.ID, cont.Size)
 
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
@@ -2519,6 +2533,18 @@ func (s *apiV1) handleReadLocalContent(c echo.Context) error {
 }
 
 func (s *apiV1) checkTokenAuth(token string) (*util.User, error) {
+	cached, ok := s.cacher.Get(token)
+	if ok && cached != nil {
+		user, ok := cached.(*util.User)
+		if !ok {
+			return nil, xerrors.Errorf("value in user auth cache was not a user (got %T)", cached)
+		}
+		if user.AuthToken.Expiry.Before(time.Now()) {
+			s.cacher.Remove(token)
+		} else {
+			return user, nil
+		}
+	}
 	var authToken util.AuthToken
 	tokenHash := util.GetTokenHash(token)
 	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
@@ -2553,6 +2579,7 @@ func (s *apiV1) checkTokenAuth(token string) (*util.User, error) {
 	}
 
 	user.AuthToken = authToken
+	s.cacher.Add(token, &user)
 	return &user, nil
 }
 
@@ -2870,12 +2897,18 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
+	key := cacheKey(c, u)
+	cached, ok := s.cacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
+
 	uep, err := s.shuttleMgr.GetPreferredUploadEndpoints(u)
 	if err != nil {
 		return err
 	}
 
-	return c.JSON(http.StatusOK, &util.ViewerResponse{
+	viewer := &util.ViewerResponse{
 		ID:       u.ID,
 		Username: u.Username,
 		Perms:    u.Perm,
@@ -2892,7 +2925,10 @@ func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
 			Flags:                 u.Flags,
 		},
 		AuthExpiry: u.AuthToken.Expiry,
-	})
+	}
+
+	s.cacher.Add(key, viewer)
+	return c.JSON(http.StatusOK, viewer)
 }
 
 func (s *apiV1) getMinersOwnedByUser(u *util.User) []string {
@@ -3484,27 +3520,33 @@ type publicStatsResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
 func (s *apiV1) handlePublicStats(c echo.Context) error {
-	val, err := s.cacher.Get("public/stats", time.Minute*2, func() (interface{}, error) {
-		return s.computePublicStats()
-	})
-	if err != nil {
-		return err
+	key := cacheKey(c, nil)
+	val, ok := s.cacher.Get(key)
+	if !ok {
+		computedVal, err := s.computePublicStats()
+		val = computedVal
+		if err != nil {
+			return err
+		}
+		s.cacher.Add(key, val)
 	}
 
-	//	handle the extensive looks up differently. Cache them for 1 hour.
-	valExt, err := s.cacher.Get("public/stats/ext", time.Minute*60, func() (interface{}, error) {
-		return s.computePublicStatsWithExtensiveLookups()
-	})
+	keyExt := cacheKey(c, nil, "ext")
+	valExt, ok := s.extendedCacher.Get(keyExt)
+	if !ok {
+		computedValExt, err := s.computePublicStatsWithExtensiveLookups()
+		valExt = computedValExt
+		if err != nil {
+			return err
+		}
+		s.extendedCacher.Add(keyExt, valExt)
+	}
 
 	// reuse the original stats and add the ones from the extensive lookup function.
 	val.(*publicStatsResponse).TotalObjectsRef = valExt.(*publicStatsResponse).TotalObjectsRef
 	val.(*publicStatsResponse).TotalBytesUploaded = valExt.(*publicStatsResponse).TotalBytesUploaded
 	val.(*publicStatsResponse).TotalUsers = valExt.(*publicStatsResponse).TotalUsers
 	val.(*publicStatsResponse).TotalStorageMiner = valExt.(*publicStatsResponse).TotalStorageMiner
-
-	if err != nil {
-		return err
-	}
 
 	jsonResponse := map[string]interface{}{
 		"totalStorage":       val.(*publicStatsResponse).TotalStorage.Int64,
@@ -3568,12 +3610,17 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /content/staging-zones [get]
-func (s *apiV1) handleGetStagingZoneForUser(c echo.Context, u *util.User) error {
-	res, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID)
+func (s *apiV1) handleGetStagingZonesForUser(c echo.Context, u *util.User) error {
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, res)
+
+	zones, err := s.CM.GetStagingZonesForUser(c.Request().Context(), u.ID, limit, offset)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, zones)
 }
 
 // handleGetStagingZoneWithoutContents godoc
@@ -3591,11 +3638,11 @@ func (s *apiV1) handleGetStagingZoneWithoutContents(c echo.Context, u *util.User
 	if err != nil {
 		return err
 	}
-	contents, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
+	zone, err := s.CM.GetStagingZoneWithoutContents(c.Request().Context(), u.ID, uint(zoneID))
 	if err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, contents)
+	return c.JSON(http.StatusOK, zone)
 }
 
 // handleGetStagingZoneContents godoc
@@ -3615,14 +3662,15 @@ func (s *apiV1) handleGetStagingZoneContents(c echo.Context, u *util.User) error
 	if err != nil {
 		return err
 	}
-	limit, offset, _ := s.getLimitAndOffset(c, 500, 0)
+
+	limit, offset, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return err
+	}
 
 	contents, err := s.CM.GetStagingZoneContents(c.Request().Context(), u.ID, uint(zoneID), limit, offset)
 	if err != nil {
 		return err
-	}
-	for i, c := range contents {
-		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
 	}
 	return c.JSON(http.StatusOK, contents)
 }
@@ -3707,20 +3755,21 @@ type metricsDealJoin struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
-	val, err := s.cacher.Get("public/metrics", time.Minute*2, func() (interface{}, error) {
-		return s.computeDealMetrics()
-	})
-
+	key := cacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		return c.JSON(http.StatusOK, cached)
+	}
+	val, err := s.computeDealMetrics()
 	if err != nil {
 		return err
 	}
-
 	//	Make sure we don't return a nil val.
-	dealMetrics := val.([]*dealMetricsInfo)
-	if len(dealMetrics) < 1 {
-		return c.JSON(http.StatusOK, []*dealMetricsInfo{})
+	if val == nil {
+		val = []*dealMetricsInfo{}
 	}
 
+	s.extendedCacher.Add(key, val)
 	return c.JSON(http.StatusOK, val)
 }
 
@@ -3982,11 +4031,15 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 				break
 			}
 
-			if !s.CM.MarkStartedAggregating(cont.ID) {
-				// skip since it is already aggregating
-				return nil
+			var zone *model.StagingZone
+			if err := s.DB.First(&zone, "cont_id = ?", cont.AggregatedIn).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					s.log.Errorf("content %d's aggregatedIn zone %d not found in DB", cont.ID, cont.AggregatedIn)
+				}
+				return err
 			}
-			if err := s.CM.AggregateStagingZone(ctx, cont, aggrLoc); err != nil {
+
+			if err := s.CM.AggregateStagingZone(ctx, zone, cont, aggrLoc); err != nil {
 				return err
 			}
 			fixedAggregateSize = true
@@ -4187,14 +4240,34 @@ func (s *apiV1) handleShuttleList(c echo.Context) error {
 
 	var out []util.ShuttleListResponse
 	for _, d := range shuttles {
+		isOnline, err := s.shuttleMgr.IsOnline(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		addInf, err := s.shuttleMgr.AddrInfo(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		hn, err := s.shuttleMgr.HostName(d.Handle)
+		if err != nil {
+			return err
+		}
+
+		sts, err := s.shuttleMgr.StorageStats(d.Handle)
+		if err != nil {
+			return err
+		}
+
 		out = append(out, util.ShuttleListResponse{
 			Handle:         d.Handle,
 			Token:          d.Token,
 			LastConnection: d.LastConnection,
-			Online:         s.shuttleMgr.IsOnline(d.Handle),
-			AddrInfo:       s.shuttleMgr.AddrInfo(d.Handle),
-			Hostname:       s.shuttleMgr.HostName(d.Handle),
-			StorageStats:   s.shuttleMgr.StorageStats(d.Handle),
+			Online:         isOnline,
+			AddrInfo:       addInf,
+			Hostname:       hn,
+			StorageStats:   sts,
 		})
 	}
 	return c.JSON(http.StatusOK, out)
@@ -4211,30 +4284,9 @@ func (s *apiV1) handleShuttleConnection(c echo.Context) error {
 		return err
 	}
 
-	websocket.Handler(func(ws *websocket.Conn) {
-		ws.MaxPayloadBytes = 128 << 20
-
-		done := make(chan struct{})
-		defer close(done)
-		defer ws.Close()
-
-		readWebSocket, unreg, err := s.shuttleMgr.Connect(ws, shuttle.Handle, done)
-		if err != nil {
-			s.log.Errorf("failed to register shuttle: %s", err)
-			return
-		}
-		defer unreg()
-
-		go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle)
-
-		for {
-			if err := readWebSocket(); err != nil {
-				s.log.Errorf("failed to read message from shuttle: %s, %s", shuttle.Handle, err)
-				return
-			}
-		}
-	}).ServeHTTP(c.Response(), c.Request())
-	return nil
+	done := make(chan struct{})
+	go s.transferMgr.RestartAllTransfersForLocation(context.TODO(), shuttle.Handle, done)
+	return s.shuttleMgr.Connect(c, shuttle.Handle, done)
 }
 
 // handleAutoretrieveInit godoc
@@ -4437,7 +4489,10 @@ func (s *apiV1) handleStorageFailures(c echo.Context, u *util.User) error {
 }
 
 func (s *apiV1) getStorageFailure(c echo.Context, u *util.User) ([]model.DfeRecord, error) {
-	limit, _, _ := s.getLimitAndOffset(c, 2000, 0)
+	limit, _, err := s.getLimitAndOffset(c, 500, 0)
+	if err != nil {
+		return nil, err
+	}
 
 	q := s.DB.Model(model.DfeRecord{}).Limit(limit).Order("created_at desc")
 	if u != nil {
@@ -4836,8 +4891,6 @@ func (s *apiV1) handleShuttleCreateContent(c echo.Context) error {
 		return err
 	}
 
-	s.CM.ToCheck(content.ID, content.Size)
-
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,
 	})
@@ -5006,7 +5059,12 @@ func (s *apiV1) checkGatewayRedirect(proto string, cc cid.Cid, segs []string) (s
 		return "", nil
 	}
 
-	if !s.shuttleMgr.IsOnline(cont.Location) {
+	isOnline, err := s.shuttleMgr.IsOnline(cont.Location)
+	if err != nil {
+		return "", err
+	}
+
+	if !isOnline {
 		return fmt.Sprintf("https://%s/%s/%s/%s", bestGateway, proto, cc, strings.Join(segs, "/")), nil
 	}
 

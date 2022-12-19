@@ -8,6 +8,7 @@ import (
 	dealstatus "github.com/application-research/estuary/deal/status"
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/labstack/echo/v4"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
@@ -23,12 +24,10 @@ import (
 
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/net/websocket"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -43,10 +42,8 @@ type transferStatusRecord struct {
 }
 
 type IManager interface {
-	Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error)
+	Connect(c echo.Context, handle string, done chan struct{}) error
 	SendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error
-	GetShuttleConnections() []*websocketeng.Connection
-	GetShuttleConnection(handle string) (*websocketeng.Connection, bool)
 	GetTransferStatus(dealID uint) (*filclient.ChannelState, error)
 }
 
@@ -94,16 +91,30 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 	return rpcMgr, nil
 }
 
-func (m *manager) Connect(ws *websocket.Conn, handle string, done chan struct{}) (func() error, func(), error) {
-	return m.websocketEng.Connect(ws, handle, done)
+func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) error {
+	return m.websocketEng.Connect(c, handle, done)
 }
 
-func (m *manager) GetShuttleConnection(handle string) (*websocketeng.Connection, bool) {
-	return m.websocketEng.GetShuttleConnection(handle)
-}
+func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error {
+	if handle == "" || handle == constants.ContentLocationLocal {
+		return fmt.Errorf("attempted to send command to empty shuttle handle or local")
+	}
 
-func (m *manager) GetShuttleConnections() []*websocketeng.Connection {
-	return m.websocketEng.GetShuttleConnections()
+	// if estuary has queue enabled, use it
+	if m.cfg.RpcEngine.Queue.Enabled && m.queueEng != nil {
+		if !rpcevent.CommandTopics[cmd.Op] {
+			return fmt.Errorf("%s topic has not been registered properly", cmd.Op)
+		}
+		m.log.Debugf("sending rpc message: %s, to shuttle: %s using queue engine", cmd.Op, handle)
+		return m.queueEng.SendMessage(cmd.Op, handle, cmd)
+	}
+
+	d, ok := m.websocketEng.GetShuttleConnection(handle)
+	if ok {
+		m.log.Debugf("sending rpc message: %s, to shuttle: %s using websocket engine", cmd.Op, handle)
+		return d.SendMessage(ctx, cmd)
+	}
+	return websocketeng.ErrNoShuttleConnection
 }
 
 func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
@@ -221,38 +232,17 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 	}
 }
 
-func (m *manager) SendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error {
-	if handle == "" || handle == constants.ContentLocationLocal {
-		return fmt.Errorf("attempted to send command to empty shuttle handle or local")
-	}
-
-	d, ok := m.websocketEng.GetShuttleConnection(handle)
-	if ok {
-		// if shutlle has rpc queue engine enabled and estuary has rpc queue enabled, use it
-		if d.QueueEngEnabled && m.queueEng != nil {
-			if !rpcevent.CommandTopics[cmd.Op] {
-				return fmt.Errorf("%s topic has not been registered properly", cmd.Op)
-			}
-			m.log.Debugf("sending rpc message: %s, to shuttle: %s using queue engine", cmd.Op, handle)
-			return m.queueEng.SendMessage(cmd.Op, handle, cmd)
-		}
-		m.log.Debugf("sending rpc message: %s, to shuttle: %s using websocket engine", cmd.Op, handle)
-		return d.SendMessage(ctx, cmd)
-	}
-	return websocketeng.ErrNoShuttleConnection
-}
-
 func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, param *rpcevent.ShuttleUpdate) error {
-	d, ok := m.websocketEng.GetShuttleConnection(handle)
-	if !ok {
-		return fmt.Errorf("shuttle connection not found while handling update for %q", handle)
+	if err := m.db.Model(model.ShuttleConnection{}).Where("handle = ?", handle).UpdateColumns(map[string]interface{}{
+		"space_low":        param.BlockstoreFree < (param.BlockstoreSize / 10),
+		"blockstore_free":  param.BlockstoreFree,
+		"blockstore_size":  param.BlockstoreSize,
+		"pin_count":        param.NumPins,
+		"pin_queue_length": int64(param.PinQueueSize),
+		"updated_at":       time.Now().UTC(),
+	}).Error; err != nil {
+		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
-
-	d.SpaceLow = param.BlockstoreFree < (param.BlockstoreSize / 10)
-	d.BlockstoreFree = param.BlockstoreFree
-	d.BlockstoreSize = param.BlockstoreSize
-	d.PinCount = param.NumPins
-	d.PinQueueLength = int64(param.PinQueueSize)
 	return nil
 }
 
@@ -293,7 +283,11 @@ func (m *manager) handlePinUpdate(location string, contID uint, status types.Pin
 
 		var c util.Content
 		if err := m.db.First(&c, "id = ?", contID).Error; err != nil {
-			return errors.Wrap(err, "failed to look up content")
+			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
+			}
+			m.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
+			return nil
 		}
 
 		// if content is already active, ignore it
@@ -302,21 +296,34 @@ func (m *manager) handlePinUpdate(location string, contID uint, status types.Pin
 		}
 
 		// if an aggregate zone is failing, zone is stuck
-		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		// TODO - revisit this later if it is actually happening
 		if c.Aggregate {
-			m.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
-			return nil
+			m.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
+
+			return m.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"status":  model.ZoneStatusStuck,
+				"message": model.ZoneMessageStuck,
+			}).Error
 		}
 
-		if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":        false,
-			"pinning":       false,
-			"failed":        true,
-			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
-		}).Error; err != nil {
-			m.log.Errorf("failed to mark content as failed in database: %s", err)
-			return err
-		}
+		return m.db.Transaction(func(tx *gorm.DB) error {
+			if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"active":        false,
+				"pinning":       false,
+				"failed":        true,
+				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
+			}).Error; err != nil {
+				m.log.Errorf("failed to mark content as failed in database: %s", err)
+				return err
+			}
+
+			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
+			// we did not reset the flag so that consolidation will not be reattempted by the worker
+			if c.AggregatedIn > 0 {
+				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
+			}
+			return nil
+		})
 	}
 	return nil
 }
@@ -327,7 +334,11 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 
 	var cont util.Content
 	if err := m.db.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
-		return xerrors.Errorf("got shuttle pin complete for unknown content %d (shuttle = %s): %w", pincomp.DBID, handle, err)
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return xerrors.Errorf("failed to look up content: %d (shuttle = %s): %w", pincomp.DBID, handle, err)
+		}
+		m.log.Warnf("content: %d not found for pin complete from shuttle: %s", pincomp.DBID, handle)
+		return nil
 	}
 
 	// if content already active, no need to add objects, just update location
@@ -348,32 +359,43 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			return fmt.Errorf("aggregate has more than 1 objects")
 		}
 
-		obj := &util.Object{
-			Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
-			Size: pincomp.Objects[0].Size,
-		}
-		if err := m.db.Create(obj).Error; err != nil {
-			return xerrors.Errorf("failed to create Object: %w", err)
-		}
+		return m.db.Transaction(func(tx *gorm.DB) error {
+			obj := &util.Object{
+				Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
+				Size: pincomp.Objects[0].Size,
+			}
+			if err := m.db.Create(obj).Error; err != nil {
+				return xerrors.Errorf("failed to create Object: %w", err)
+			}
 
-		if err := m.db.Create(&util.ObjRef{
-			Content: cont.ID,
-			Object:  obj.ID,
-		}).Error; err != nil {
-			return xerrors.Errorf("failed to create Object reference: %w", err)
-		}
+			if err := m.db.Create(&util.ObjRef{
+				Content: cont.ID,
+				Object:  obj.ID,
+			}).Error; err != nil {
+				return xerrors.Errorf("failed to create Object reference: %w", err)
+			}
 
-		if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"active":   false, //it will be activated by the staging worker
-			"pinning":  false,
-			"location": handle,
-			"cid":      util.DbCID{CID: pincomp.CID},
-			"size":     pincomp.Size,
-		}).Error; err != nil {
-			return xerrors.Errorf("failed to update content in database: %w", err)
-		}
-		m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
-		return nil
+			if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+				"active":   true,
+				"pinning":  false,
+				"cid":      util.DbCID{CID: pincomp.CID},
+				"location": handle,
+			}).Error; err != nil {
+				return xerrors.Errorf("failed to update content in database: %w", err)
+			}
+
+			if err := m.db.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+				"status":   model.ZoneStatusDone,
+				"message":  model.ZoneMessageDone,
+				"location": handle,
+			}).Error; err != nil {
+				return xerrors.Errorf("failed to update zone in database: %w", err)
+			}
+
+			// for now keep pushing to content queue
+			m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
+			return nil
+		})
 	}
 
 	// for individual content pin complete notification
@@ -388,7 +410,6 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 	if err := m.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
-	m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
 	return nil
 }
 
@@ -430,6 +451,8 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, contID uint, objects
 	}).Error; err != nil {
 		return xerrors.Errorf("failed to update content in database: %w", err)
 	}
+
+	m.cntQueueMgr.ToCheck(contID, totalSize)
 	return nil
 }
 

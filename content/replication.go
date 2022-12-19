@@ -109,6 +109,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// if content is offloaded, do not proceed - since it needs the blocks for commp and data transfer
 	if content.Offloaded {
+		cm.log.Warnf("cont: %d offloaded for deal making", content.ID)
 		go func() {
 			if err := cm.RefreshContent(context.Background(), content.ID); err != nil {
 				cm.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
@@ -126,7 +127,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		isCorrupt = nil
 	}
 	if isCorrupt != nil {
-		cm.log.Debugf("cnt: %d ignored due to missing blocks", content.ID)
+		cm.log.Warnf("cnt: %d ignored due to missing blocks", content.ID)
 		return nil
 	}
 
@@ -141,11 +142,6 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-	}
-
-	// if staging bucket is enabled, try to bucket the content
-	if cm.canStageContent(content) {
-		return cm.addContentToStagingZone(ctx, content)
 	}
 
 	// check on each of the existing deals, see if any needs fixing
@@ -209,8 +205,14 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	// after reconciling content deals,
 	// check If this is a shuttle content and that the shuttle is online and can start data transfer
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
-		cm.log.Debugf("content shuttle: %s, is not online", content.Location)
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		done(time.Minute * 15)
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
+		cm.log.Warnf("content shuttle: %s, is not online", content.Location)
 		done(time.Minute * 15)
 		return nil
 	}
@@ -235,6 +237,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 		return nil
 	}
 
+	cm.log.Infof("getting commp for cont: %d", content.ID)
 	pc, err := cm.lookupPieceCommRecord(content.Cid.CID)
 	if err != nil {
 		return err
@@ -246,7 +249,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 			_, _, _, err := cm.GetPieceCommitment(context.Background(), content.Cid.CID, cm.blockstore)
 			if err != nil {
 				if err == ErrWaitForRemoteCompute {
-					cm.log.Debugf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
+					cm.log.Warnf("waiting for shuttle: %s to finish commp for cont: %d", content.Location, content.ID)
 				} else {
 					cm.log.Errorf("failed to compute piece commitment for content %d: %s", content.ID, err)
 				}
@@ -283,7 +286,7 @@ func (cm *ContentManager) ensureStorage(ctx context.Context, content util.Conten
 
 	go func() {
 		// make some more deals!
-		cm.log.Debugw("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
+		cm.log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
 		if err := cm.makeDealsForContent(ctx, content, dealsToBeMade, deals); err != nil {
 			cm.log.Errorf("failed to make more deals: %s", err)
 		}
@@ -765,7 +768,12 @@ func (cm *ContentManager) CheckContentReadyForDealMaking(ctx context.Context, co
 	}
 
 	// if it's a shuttle content and the shuttle is not online, do not proceed
-	if content.Location != constants.ContentLocationLocal && !cm.shuttleMgr.IsOnline(content.Location) {
+	isOnline, err := cm.shuttleMgr.IsOnline(content.Location)
+	if err != nil {
+		return err
+	}
+
+	if content.Location != constants.ContentLocationLocal && !isOnline {
 		return fmt.Errorf("content shuttle: %s, is not online", content.Location)
 	}
 
@@ -873,11 +881,20 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		}
 	} else {
 		// first check if shuttle is online
-		if !cm.shuttleMgr.IsOnline(contentLoc) {
+
+		isOnline, err := cm.shuttleMgr.IsOnline(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
+
+		if !isOnline {
 			return nil, false, xerrors.Errorf("shuttle is not online: %s", contentLoc)
 		}
 
-		addrInfo := cm.shuttleMgr.AddrInfo(contentLoc)
+		addrInfo, err := cm.shuttleMgr.AddrInfo(contentLoc)
+		if err != nil {
+			return nil, false, err
+		}
 		// TODO: This is the address that the shuttle reports to the Estuary
 		// primary node, but is it ok if it's also the address reported
 		// as where to download files publically? If it's a public IP does
@@ -895,7 +912,7 @@ func (cm *ContentManager) sendProposalV120(ctx context.Context, contentLoc strin
 		// If the content is not on the primary estuary node (it's on a shuttle)
 		// The Storage Provider will pull the data from the shuttle,
 		// so add an auth token for the data to the shuttle's auth DB
-		err := cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
+		err = cm.shuttleMgr.PrepareForDataRequest(ctx, contentLoc, dbid, authToken, propCid, rootCid, size)
 		if err != nil {
 			return nil, false, xerrors.Errorf("sending prepare for data request command to shuttle: %w", err)
 		}
@@ -1119,12 +1136,12 @@ func (dfe *DealFailureError) Error() string {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) error {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) (int64, error) {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
 	if err := cm.db.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
+		return 0, xerrors.Errorf("failed to create objects in db: %w", err)
 	}
 
 	refs := make([]util.ObjRef, 0, len(objects))
@@ -1143,7 +1160,7 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 	)
 
 	if err := cm.db.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
+		return 0, xerrors.Errorf("failed to create refs: %w", err)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
@@ -1152,9 +1169,9 @@ func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint,
 		"pinning":  false,
 		"location": loc,
 	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
+		return 0, xerrors.Errorf("failed to update content in database: %w", err)
 	}
-	return nil
+	return totalSize, nil
 }
 
 func (cm *ContentManager) migrateContentsToLocalNode(ctx context.Context, toMove []util.Content) error {
@@ -1229,7 +1246,7 @@ func (cm *ContentManager) addrInfoForContentLocation(handle string) (*peer.AddrI
 			Addrs: cm.node.Host.Addrs(),
 		}, nil
 	}
-	return cm.shuttleMgr.AddrInfo(handle), nil
+	return cm.shuttleMgr.AddrInfo(handle)
 }
 
 func (cm *ContentManager) DealMakingDisabled() bool {
@@ -1279,13 +1296,14 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {}); err != nil {
+		cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, c, func(int64) {})
+		if err != nil {
 			return err
 		}
 
 		// queue splited contents
 		cm.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
-		cm.ToCheck(content.ID, content.Size)
+		cm.ToCheck(content.ID, cntSize)
 	}
 
 	if err := cm.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
@@ -1301,7 +1319,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
+func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) (int64, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1379,7 +1397,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 	}, root, cset.Visit, merkledag.Concurrent())
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
 }
@@ -1402,8 +1420,10 @@ func (cm *ContentManager) AddDatabaseTracking(ctx context.Context, u *util.User,
 		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
 	}
 
-	if err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {}); err != nil {
+	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {})
+	if err != nil {
 		return nil, err
 	}
+	content.Size = cntSize
 	return content, nil
 }

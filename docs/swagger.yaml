@@ -142,6 +142,17 @@ definitions:
       reason:
         type: string
     type: object
+  peering.PeeringPeer:
+    properties:
+      Addrs:
+        items:
+          type: string
+        type: array
+      Connected:
+        type: boolean
+      ID:
+        type: string
+    type: object
   types.IpfsListPinStatusResponse:
     properties:
       count:
@@ -416,7 +427,7 @@ paths:
           required: true
           schema:
             items:
-              type: boolean
+              type: string
             type: array
       produces:
         - application/json
@@ -458,6 +469,15 @@ paths:
         - admin
     post:
       description: This endpoint can be used to add a Peer from the Peering Service
+      parameters:
+        - description: Peering Peer array
+          in: body
+          name: req
+          required: true
+          schema:
+            items:
+              $ref: '#/definitions/peering.PeeringPeer'
+            type: array
       produces:
         - application/json
       responses:
@@ -916,7 +936,7 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/util.ContentAddResponse'
         "400":
           description: Bad Request
           schema:
@@ -925,19 +945,34 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Upload a file
+      summary: Add new content
       tags:
         - content
   /content/add-car:
     post:
-      description: This endpoint uploads content via a car file
+      description: This endpoint is used to add a car object to the network. The object can be a file or a directory.
+      parameters:
+        - description: Car
+          in: body
+          name: body
+          required: true
+          schema:
+            type: string
+        - description: Ignore Dupes
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Filename
+          in: query
+          name: filename
+          type: string
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/util.ContentAddResponse'
         "400":
           description: Bad Request
           schema:
@@ -946,7 +981,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Upload content via a car file
+      summary: Add Car object
       tags:
         - content
   /content/add-ipfs:
@@ -1224,34 +1259,6 @@ paths:
       summary: List all failures for a content
       tags:
         - content
-  /content/importdeal:
-    post:
-      description: This endpoint imports a deal into the shuttle.
-      parameters:
-        - description: Import a deal
-          in: body
-          name: body
-          required: true
-          schema:
-            $ref: '#/definitions/main.importDealBody'
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Import a deal
-      tags:
-        - content
   /content/list:
     get:
       description: This endpoint lists all content
@@ -1271,33 +1278,6 @@ paths:
           schema:
             $ref: '#/definitions/util.HttpError'
       summary: List all pinned content
-      tags:
-        - content
-  /content/read/{cont}:
-    get:
-      description: This endpoint reads content from the blockstore
-      parameters:
-        - description: CID
-          in: path
-          name: cont
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Read content
       tags:
         - content
   /content/staging-zones:
@@ -1917,27 +1897,6 @@ paths:
       summary: Unuspend Miner
       tags:
         - miner
-  /net/addrs:
-    get:
-      description: This endpoint is used to get net addrs
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Net Addrs
-      tags:
-        - net
   /pinning/pins:
     get:
       description: This endpoint lists all pin status objects

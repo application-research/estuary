@@ -15,7 +15,11 @@ func (m *manager) ConsolidateContent(ctx context.Context, loc string, contents [
 	for _, c := range contents {
 		prs := make([]*peer.AddrInfo, 0)
 
-		pr := m.AddrInfo(c.Location)
+		pr, err := m.AddrInfo(c.Location)
+		if err != nil {
+			continue
+		}
+
 		if pr != nil {
 			prs = append(prs, pr)
 		}
@@ -55,6 +59,7 @@ func (m *manager) PinContent(ctx context.Context, loc string, cont util.Content,
 }
 
 func (m *manager) CommPContent(ctx context.Context, loc string, data cid.Cid) error {
+	m.log.Infof("sending commp")
 	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
 		Op: rpcevent.CMD_ComputeCommP,
 		Params: rpcevent.CmdParams{

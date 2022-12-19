@@ -7,6 +7,7 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
@@ -17,6 +18,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -57,31 +59,30 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 }
 
 func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
+	out := make([]string, 0)
+
 	if cont.Location == constants.ContentLocationLocal {
-		var out []string
 		for _, a := range cm.node.Host.Addrs() {
 			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.node.Host.ID()))
 		}
 		return out
+	}
 
-	} else {
-		ai, err := cm.addrInfoForContentLocation(cont.Location)
-		if err != nil {
-			cm.log.Errorf("failed to get address info for shuttle %q: %s", cont.Location, err)
-			return nil
-		}
-
-		if ai == nil {
-			cm.log.Warnf("no address info for shuttle: %s", cont.Location)
-			return nil
-		}
-
-		var out []string
-		for _, a := range ai.Addrs {
-			out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
-		}
+	ai, err := cm.addrInfoForContentLocation(cont.Location)
+	if err != nil {
+		cm.log.Warnf("failed to get address info for shuttle %q: %s", cont.Location, err)
 		return out
 	}
+
+	if ai == nil {
+		cm.log.Warnf("no address info for shuttle: %s", cont.Location)
+		return out
+	}
+
+	for _, a := range ai.Addrs {
+		out = append(out, fmt.Sprintf("%s/p2p/%s", a, ai.ID))
+	}
+	return out
 }
 
 func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
@@ -189,7 +190,11 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 
 		var c util.Content
 		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
-			return errors.Wrap(err, "failed to look up content")
+			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
+			}
+			cm.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
+			return nil
 		}
 
 		// if content is already active, ignore it
@@ -198,21 +203,34 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 		}
 
 		// if an aggregate zone is failing, zone is stuck
-		// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
+		// TODO - revisit this later if it is actually happening
 		if c.Aggregate {
-			cm.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
-			return nil
+			cm.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
+
+			return cm.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"status":  model.ZoneStatusStuck,
+				"message": model.ZoneMessageStuck,
+			}).Error
 		}
 
-		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"active":        false,
-			"pinning":       false,
-			"failed":        true,
-			"aggregated_in": 0, // remove from staging zone so the zone can consolidate without it
-		}).Error; err != nil {
-			cm.log.Errorf("failed to mark content as failed in database: %s", err)
-			return err
-		}
+		return cm.db.Transaction(func(tx *gorm.DB) error {
+			if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+				"active":        false,
+				"pinning":       false,
+				"failed":        true,
+				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
+			}).Error; err != nil {
+				cm.log.Errorf("failed to mark content as failed in database: %s", err)
+				return err
+			}
+
+			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
+			// we did not reset the flag so that consolidation will not be reattempted by the worker
+			if c.AggregatedIn > 0 {
+				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
+			}
+			return nil
+		})
 	}
 	return nil
 }
@@ -246,12 +264,13 @@ func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOp
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb); err != nil {
+	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb)
+	if err != nil {
 		return err
 	}
 
 	if op.MakeDeal {
-		cm.ToCheck(op.ContId, c.Size)
+		cm.ToCheck(op.ContId, cntSize)
 	}
 
 	// this provide call goes out immediately

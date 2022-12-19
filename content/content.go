@@ -46,17 +46,6 @@ type ContentManager struct {
 	minerManager         miner.IMinerManager
 	log                  *zap.SugaredLogger
 	transferMgr          transfer.IManager
-
-	// consolidatingZonesLk is used to serialize reads and writes to consolidatingZones
-	consolidatingZonesLk sync.Mutex
-	// aggregatingZonesLk is used to serialize reads and writes to aggregatingZones
-	aggregatingZonesLk sync.Mutex
-	// addStagingContentLk is used to serialize content adds to staging zones
-	// otherwise, we'd risk creating multiple "initial" staging zones, or exceeding MaxDealContentSize
-	addStagingContentLk sync.Mutex
-
-	consolidatingZones map[uint]bool
-	aggregatingZones   map[uint]bool
 }
 
 func NewContentManager(
@@ -94,8 +83,6 @@ func NewContentManager(
 		minerManager:         minerManager,
 		log:                  log,
 		transferMgr:          transferMgr,
-		consolidatingZones:   make(map[uint]bool),
-		aggregatingZones:     make(map[uint]bool),
 		queueMgr:             queueMgr,
 	}
 	return cm, nil
@@ -105,7 +92,8 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	cm.log.Info("rebuilding contents queue .......")
 
 	var allcontent []util.Content
-	if err := cm.db.Where("active AND NOT aggregated_in > 0").FindInBatches(&allcontent, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
+	// select only active and not staged contents
+	if err := cm.db.Where("active and aggregated_in = 0").FindInBatches(&allcontent, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
 		for i, c := range allcontent {
 			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
 			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
