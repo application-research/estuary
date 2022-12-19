@@ -402,14 +402,9 @@ paths:
       summary: Create an Estuary invite
       tags:
         - content
-  /admin/miners/{lookup_chain}:
+  /admin/miners/:
     get:
-      description: This endpoint returns all miners
-      parameters:
-        - description: set true to include on-chain miner info
-          in: path
-          name: params
-          type: boolean
+      description: 'This endpoint returns all miners. Note: value may be cached'
       produces:
         - application/json
       responses:

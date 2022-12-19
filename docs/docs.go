@@ -176,9 +176,9 @@ const docTemplate = `{
                 }
             }
         },
-        "/admin/miners/{lookup_chain}": {
+        "/admin/miners/": {
             "get": {
-                "description": "This endpoint returns all miners",
+                "description": "This endpoint returns all miners. Note: value may be cached",
                 "produces": [
                     "application/json"
                 ],
@@ -187,14 +187,6 @@ const docTemplate = `{
                     "net"
                 ],
                 "summary": "Get all miners",
-                "parameters": [
-                    {
-                        "type": "boolean",
-                        "description": "set true to include on-chain miner info",
-                        "name": "params",
-                        "in": "path"
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
