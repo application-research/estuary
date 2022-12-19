@@ -28,7 +28,7 @@ stagingdata/
 *.key
 build/.*
 
-tests/postman/jstests
+tests/postman/jstests/*
 
 .vscode
 .envrc
