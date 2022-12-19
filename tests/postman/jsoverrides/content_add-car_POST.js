@@ -1,6 +1,6 @@
 var axios = require('axios');
 var fs = require('fs');
-var data = fs.createReadStream("/root/postman-codegen-tests/example.car")
+var data = fs.createReadStream("example.car")
 
 var config = {
   method: 'post',
