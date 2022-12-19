@@ -402,6 +402,33 @@ paths:
       summary: Create an Estuary invite
       tags:
         - content
+  /admin/miners/{lookup_chain}:
+    get:
+      description: This endpoint returns all miners
+      parameters:
+        - description: set true to include on-chain miner info
+          in: path
+          name: params
+          type: boolean
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get all miners
+      tags:
+        - admin
+        - net
   /admin/peering/peers:
     delete:
       description: This endpoint can be used to remove a Peer from the Peering Service
@@ -2131,33 +2158,6 @@ paths:
       tags:
         - public
         - metrics
-  /public/miners/{lookup_chain}:
-    get:
-      description: This endpoint returns all miners
-      parameters:
-        - description: set true to include on-chain miner info
-          in: path
-          name: params
-          type: boolean
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get all miners
-      tags:
-        - public
-        - net
   /public/miners/deals/{miner}:
     get:
       description: This endpoint returns all miners deals
