@@ -1832,7 +1832,7 @@ func (s *apiV1) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	if err := s.minerManager.SetMinerInfo(m, params, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, emptyResp{})
+	return c.JSON(http.StatusOK, map[string]string{})
 }
 
 func (s *apiV1) handleAdminRemoveMiner(c echo.Context) error {
@@ -1846,8 +1846,6 @@ func (s *apiV1) handleAdminRemoveMiner(c echo.Context) error {
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
 }
-
-type emptyResp struct{}
 
 // handleSuspendMiner godoc
 // @Summary      Suspend Miner
@@ -1874,7 +1872,7 @@ func (s *apiV1) handleSuspendMiner(c echo.Context, u *util.User) error {
 	if err := s.minerManager.SuspendMiner(m, body, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, emptyResp{})
+	return c.JSON(http.StatusOK, nil)
 }
 
 // handleUnsuspendMiner godoc
@@ -1896,7 +1894,7 @@ func (s *apiV1) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	if err := s.minerManager.UnSuspendMiner(m, u); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusOK, emptyResp{})
+	return c.JSON(http.StatusOK, nil)
 }
 
 func (s *apiV1) handleAdminAddMiner(c echo.Context) error {

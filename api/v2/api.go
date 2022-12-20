@@ -83,4 +83,15 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	_ = e.Group("/v2")
+
+	storageprovider := e.Group("/storage-providers")
+	storageprovider.POST("/miners/add/:miner", s.handleAdminAddMiner)
+	storageprovider.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
+	storageprovider.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
+	storageprovider.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
+	storageprovider.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
+	storageprovider.GET("/miners", s.handleAdminGetMiners)
+	storageprovider.GET("/miners/stats", s.handleAdminGetMinerStats)
+	storageprovider.GET("/miners/transfers/:miner", s.handleMinerTransferDiagnostics)
+
 }
