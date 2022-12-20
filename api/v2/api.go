@@ -7,6 +7,7 @@ import (
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
@@ -84,14 +85,16 @@ func NewAPIV2(
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	_ = e.Group("/v2")
 
-	storageprovider := e.Group("/storage-providers")
-	storageprovider.POST("/miners/add/:miner", s.handleAdminAddMiner)
-	storageprovider.POST("/miners/rm/:miner", s.handleAdminRemoveMiner)
-	storageprovider.POST("/miners/suspend/:miner", withUser(s.handleSuspendMiner))
-	storageprovider.PUT("/miners/unsuspend/:miner", withUser(s.handleUnsuspendMiner))
-	storageprovider.PUT("/miners/set-info/:miner", withUser(s.handleMinersSetInfo))
-	storageprovider.GET("/miners", s.handleAdminGetMiners)
-	storageprovider.GET("/miners/stats", s.handleAdminGetMinerStats)
-	storageprovider.GET("/miners/transfers/:miner", s.handleMinerTransferDiagnostics)
+	storageProvider := e.Group("/storage-providers")
+
+	// old admin endpoints
+	storageProvider.POST("/add/:sp", s.handleAddStorageProvider, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.POST("/rm/:sp", s.handleRemoveStorageProvider, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.POST("/suspend/:sp", util.WithUser(s.handleSuspendStorageProvider), s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.PUT("/unsuspend/:sp", util.WithUser(s.handleUnsuspendStorageProvider), s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.PUT("/set-info/:sp", util.WithUser(s.handleStorageProvidersSetInfo), s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/", s.handleGetStorageProvider, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/stats", s.handleGetStorageProviderStats, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/transfers/:sp", s.handleStorageProviderTransferDiagnostics, s.AuthRequired(util.PermLevelAdmin))
 
 }

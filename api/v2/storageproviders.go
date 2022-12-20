@@ -11,8 +11,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (s *apiV2) handleAdminAddMiner(c echo.Context) error {
-	m, err := address.NewFromString(c.Param("miner"))
+func (s *apiV2) handleAddStorageProvider(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -28,8 +28,8 @@ func (s *apiV2) handleAdminAddMiner(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-func (s *apiV2) handleAdminRemoveMiner(c echo.Context) error {
-	m, err := address.NewFromString(c.Param("miner"))
+func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -40,24 +40,24 @@ func (s *apiV2) handleAdminRemoveMiner(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-// handleSuspendMiner godoc
-// @Summary      Suspend Miner
-// @Description  This endpoint lets a user suspend a miner.
-// @Tags         miner
+// handleSuspendStorageProvider godoc
+// @Summary      Suspend Storage Provider
+// @Description  This endpoint lets a user suspend a storage provider.
+// @Tags         sp
 // @Produce      json
 // @Success      200  {object}  emptyResp
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        req           body      miner.SuspendMinerBody  true   "Suspend Miner Body"
-// @Param        miner           path      string  true   "Miner to suspend"
-// @Router       /miner/suspend/{miner} [post]
-func (s *apiV2) handleSuspendMiner(c echo.Context, u *util.User) error {
+// @Param        req           body      miner.SuspendMinerBody  true   "Suspend Storage Provider Body"
+// @Param        sp           path      string  true   "Storage Provider to suspend"
+// @Router       /storage-providers/suspend/{sp} [post]
+func (s *apiV2) handleSuspendStorageProvider(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
 	if err := c.Bind(&body); err != nil {
 		return err
 	}
 
-	m, err := address.NewFromString(c.Param("miner"))
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -68,18 +68,18 @@ func (s *apiV2) handleSuspendMiner(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-// handleUnsuspendMiner godoc
-// @Summary      Unuspend Miner
-// @Description  This endpoint lets a user unsuspend a miner.
-// @Tags         miner
+// handleUnsuspendStorageProvider godoc
+// @Summary      Unuspend Storage Provider
+// @Description  This endpoint lets a user unsuspend a Storage Provider.
+// @Tags         sp
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        miner           path      string  true   "Miner to unsuspend"
-// @Router       /miner/unsuspend/{miner} [put]
-func (s *apiV2) handleUnsuspendMiner(c echo.Context, u *util.User) error {
-	m, err := address.NewFromString(c.Param("miner"))
+// @Param        sp           path      string  true   "Storage Provider to unsuspend"
+// @Router      /storage-providers/unsuspend/{sp} [put]
+func (s *apiV2) handleUnsuspendStorageProvider(c echo.Context, u *util.User) error {
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -90,19 +90,19 @@ func (s *apiV2) handleUnsuspendMiner(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-// handleMinersSetInfo godoc
-// @Summary      Set Miner Info
-// @Description  This endpoint lets a user set miner info.
-// @Tags         miner
+// handleStorageProvidersSetInfo godoc
+// @Summary      Set Storage Provider Info
+// @Description  This endpoint lets a user set storage provider info.
+// @Tags         sp
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
-// @Param        params           body      miner.MinerSetInfoParams  true   "Miner set info params"
-// @Param        miner           path      string  true   "Miner to set info for"
-// @Router       /miner/set-info/{miner} [put]
-func (s *apiV2) handleMinersSetInfo(c echo.Context, u *util.User) error {
-	m, err := address.NewFromString(c.Param("miner"))
+// @Param        params           body      miner.MinerSetInfoParams  true   "Storage Provider set info params"
+// @Param        sp           path      string  true   "Storage Provider to set info for"
+// @Router       /storage-providers/set-info/{sp} [put]
+func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) error {
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (s *apiV2) handleMinersSetInfo(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-type minerResp struct {
+type storageProviderResp struct {
 	Addr            address.Address `json:"addr"`
 	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
@@ -126,22 +126,22 @@ type minerResp struct {
 	Version         string          `json:"version"`
 }
 
-// handleAdminGetMiners godoc
-// @Summary      Get all miners
-// @Description  This endpoint returns all miners
+// handleGetStorageProvider godoc
+// @Summary      Get all storage providers
+// @Description  This endpoint returns all storage providers
 // @Tags         public,net
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  []storageProviderResp
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /public/miners [get]
-func (s *apiV2) handleAdminGetMiners(c echo.Context) error {
+// @Router       /storage-providers [get]
+func (s *apiV2) handleGetStorageProvider(c echo.Context) error {
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
 
-	out := make([]minerResp, len(miners))
+	out := make([]storageProviderResp, len(miners))
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
@@ -153,7 +153,7 @@ func (s *apiV2) handleAdminGetMiners(c echo.Context) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-func (s *apiV2) handleAdminGetMinerStats(c echo.Context) error {
+func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	sml, err := s.minerManager.ComputeSortedMinerList()
 	if err != nil {
 		return err
@@ -161,8 +161,8 @@ func (s *apiV2) handleAdminGetMinerStats(c echo.Context) error {
 	return c.JSON(http.StatusOK, sml)
 }
 
-func (s *apiV2) handleMinerTransferDiagnostics(c echo.Context) error {
-	m, err := address.NewFromString(c.Param("miner"))
+func (s *apiV2) handleStorageProviderTransferDiagnostics(c echo.Context) error {
+	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
