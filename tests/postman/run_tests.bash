@@ -38,3 +38,12 @@ done
 echo "Total Successes" $success
 echo "Total Fails" $fails
 echo "Total Tests" $total
+
+
+if [ $success -ne $total ]; then
+	exit 1
+fi
+
+if [ $fails -gt  0 ]; then
+	exit 1
+fi
