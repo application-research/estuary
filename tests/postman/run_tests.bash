@@ -1,8 +1,5 @@
 set -eu
 
-echo $APIKEY | sed 's/./& /g'
-
-
 rm -f jstests/*
 mkdir -p jstests
 

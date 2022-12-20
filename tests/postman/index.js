@@ -12,8 +12,6 @@ if(!process.env.APIKEY){
 }
 const APIKEY = `Bearer ${process.env.APIKEY}`
 
-console.log(process.env.APIKEY)
-
 var langs = [ {language: "nodejs", variant: "axios", folder: "jstests", extension: ".js"}]
 
 var codegen = require('postman-code-generators'),
@@ -186,7 +184,6 @@ function process_body_urlencoded(request, item){
 */
 		for(var index in body){
       var key = body[index].key
-  console.log(key, get_value(key))
       request.body.urlencoded[index].value = get_value(key+"_url") // the autoretrieve init endpoint is the only thing currently using this data format and uniquely needs a comma separately list for addresses
     }
   }
