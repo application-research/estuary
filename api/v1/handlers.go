@@ -1784,7 +1784,7 @@ func (s *apiV1) handleAdminGetMinerStats(c echo.Context) error {
 // @Description  This endpoint lets a user set miner info.
 // @Tags         miner
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200  {object}  map[string]string{}
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        params           body      miner.MinerSetInfoParams  true   "Miner set info params"
@@ -1824,7 +1824,7 @@ func (s *apiV1) handleAdminRemoveMiner(c echo.Context) error {
 // @Description  This endpoint lets a user suspend a miner.
 // @Tags         miner
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200  {object}  map[string]string{}
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.SuspendMinerBody  true   "Suspend Miner Body"
@@ -1852,7 +1852,7 @@ func (s *apiV1) handleSuspendMiner(c echo.Context, u *util.User) error {
 // @Description  This endpoint lets a user unsuspend a miner.
 // @Tags         miner
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200  {object}  map[string]string{}
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        miner           path      string  true   "Miner to unsuspend"
