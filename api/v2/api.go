@@ -85,16 +85,18 @@ func NewAPIV2(
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	_ = e.Group("/v2")
 
+	// Storage Provider Endpoints
 	storageProvider := e.Group("/storage-providers")
-
-	// old admin endpoints
 	storageProvider.POST("/add/:sp", s.handleAddStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/rm/:sp", s.handleRemoveStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/suspend/:sp", util.WithUser(s.handleSuspendStorageProvider), s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.PUT("/unsuspend/:sp", util.WithUser(s.handleUnsuspendStorageProvider), s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.PUT("/set-info/:sp", util.WithUser(s.handleStorageProvidersSetInfo), s.AuthRequired(util.PermLevelAdmin))
-	storageProvider.GET("/", s.handleGetStorageProvider, s.AuthRequired(util.PermLevelAdmin))
-	storageProvider.GET("/stats", s.handleGetStorageProviderStats, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/stats", s.handleGetStorageProviderDealStats, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.GET("/transfers/:sp", s.handleStorageProviderTransferDiagnostics, s.AuthRequired(util.PermLevelAdmin))
-
+	storageProvider.GET("", s.handleGetStorageProviders)
+	storageProvider.GET("/failures/:sp", s.handleGetStorageProviderFailures)
+	storageProvider.GET("/deals/:sp", s.handleGetStorageProviderDeals)
+	storageProvider.GET("/stats/:sp", s.handleGetStorageProviderStats)
+	storageProvider.GET("/storage/query/:cid", s.handleStorageProviderQueryAsk)
 }
