@@ -51,7 +51,7 @@ func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
 // @Description  This endpoint lets a user suspend a storage provider.
 // @Tags         sp
 // @Produce      json
-// @Success      200  {object}  emptyResp
+// @Success      200  {object}  map[string]string{}
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.SuspendMinerBody  true   "Suspend Storage Provider Body"
