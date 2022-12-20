@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/hex"
 	"net/http"
 	"time"
 
@@ -371,4 +372,57 @@ func (s *apiV2) handleStorageProviderQueryAsk(c echo.Context) error {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, ask)
+}
+
+type claimResponse struct {
+	Success bool `json:"success"`
+}
+
+// handleClaimStorageProvider godoc
+// @Summary      Claim Storage Provider
+// @Description  This endpoint lets a user claim a storage provider
+// @Tags         sp
+// @Produce      json
+// @Success      200  {object}  claimResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        req           body      miner.ClaimMinerBody  true   "Claim Storage Provider Body"
+// @Router       /storage-providers/claim [post]
+func (s *apiV2) handleClaimStorageProvider(c echo.Context, u *util.User) error {
+	ctx := c.Request().Context()
+
+	var cmb miner.ClaimMinerBody
+	if err := c.Bind(&cmb); err != nil {
+		return err
+	}
+
+	if err := s.minerManager.ClaimMiner(ctx, cmb, u); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, claimResponse{Success: true})
+}
+
+type claimMsgResponse struct {
+	Hexmsg string `json:"hexmsg"`
+}
+
+// handleGetClaimStorageProviderMsg godoc
+// @Summary      Get Claim Storage Provider
+// @Description  This endpoint lets a user get the message in order to claim a storage provider
+// @Tags         sp
+// @Produce      json
+// @Success      200    {object}  claimMsgResponse
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Param        sp  path     string  true  "Storage Provider claim message"
+// @Router       /storage-providers/claim/{sp} [get]
+func (s *apiV2) handleGetClaimStorageProviderMsg(c echo.Context, u *util.User) error {
+	m, err := address.NewFromString(c.Param("sp"))
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, claimMsgResponse{
+		Hexmsg: hex.EncodeToString(s.minerManager.GetMsgForMinerClaim(m, u.ID)),
+	})
 }
