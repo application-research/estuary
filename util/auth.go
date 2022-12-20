@@ -5,6 +5,8 @@ import (
 	b64 "encoding/base64"
 	"fmt"
 	"net/http"
+
+	"github.com/labstack/echo/v4"
 )
 
 func isEntityOwner(uID, entityID uint, entity string) error {
@@ -49,4 +51,18 @@ func GetTokenHash(token string) string {
 	tokenHashBytes := sha256.Sum256([]byte(token))
 	// needs to be URL-encodable to send revoke token requests by hash
 	return b64.RawURLEncoding.EncodeToString(tokenHashBytes[:])
+}
+
+func WithUser(f func(echo.Context, *User) error) func(echo.Context) error {
+	return func(c echo.Context) error {
+		u, ok := c.Get("user").(*User)
+		if !ok {
+			return &HttpError{
+				Code:    http.StatusUnauthorized,
+				Reason:  ERR_INVALID_AUTH,
+				Details: "endpoint not called with proper authentication",
+			}
+		}
+		return f(c, u)
+	}
 }
