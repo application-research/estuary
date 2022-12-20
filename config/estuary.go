@@ -147,6 +147,8 @@ func NewEstuary(appVersion string) *Estuary {
 			IndexerURL:                   constants.DefaultIndexerURL,
 			IndexerAdvertisementInterval: time.Minute,
 
+			SPPingInterval: time.Minute,
+
 			ApiURL: "wss://api.chain.love",
 
 			Bitswap: Bitswap{

@@ -196,6 +196,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Estuary
 				return fmt.Errorf("failed to parse indexer advertisement interval: %v", err)
 			}
 			cfg.Node.IndexerAdvertisementInterval = value
+		case "sp-ping-interval":
+			value, err := time.ParseDuration(cctx.String("sp-ping-interval"))
+			if err != nil {
+				return fmt.Errorf("failed to parse SP ping interval: %v", err)
+			}
+			cfg.Node.SPPingInterval = value
 		case "advertise-offline-autoretrieves":
 			cfg.Node.AdvertiseOfflineAutoretrieves = cctx.Bool("advertise-offline-autoretrieves")
 		case "deal-protocol-version":

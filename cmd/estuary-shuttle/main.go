@@ -157,7 +157,12 @@ func overrideSetOptions(flags []cli.Flag, cctx *cli.Context, cfg *config.Shuttle
 				return fmt.Errorf("failed to parse peering addresses %s: %w", cctx.String("peering-peers"), err)
 			}
 			cfg.Node.PeeringPeers = append(cfg.Node.PeeringPeers, peers...)
-
+		case "sp-ping-interval":
+			value, err := time.ParseDuration(cctx.String("sp-ping-interval"))
+			if err != nil {
+				return fmt.Errorf("failed to parse SP ping interval: %v", err)
+			}
+			cfg.Node.SPPingInterval = value
 		case "host":
 			cfg.Hostname = cctx.String("host")
 		case "disable-local-content-adding":
@@ -366,6 +371,11 @@ func main() {
 			Name:  "bitswap-target-message-size",
 			Usage: "sets the bitswap target message size",
 			Value: cfg.Node.Bitswap.TargetMessageSize,
+		},
+		&cli.StringFlag{
+			Name:  "sp-ping-interval",
+			Usage: "sets the interval between SP pings using a Go time string (e.g. '1m30s')",
+			Value: cfg.Node.SPPingInterval.String(),
 		},
 		&cli.IntFlag{
 			Name:  "rpc-incoming-queue-size",

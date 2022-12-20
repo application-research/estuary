@@ -12,6 +12,7 @@ type Node struct {
 	AnnounceAddrs                 []string                 `json:"announce_addrs"`
 	PeeringPeers                  []peering.PeeringPeer    `json:"peering_peers"`
 	IndexerAdvertisementInterval  time.Duration            `json:"indexer_advertisement_interval"`
+	SPPingInterval                time.Duration            `json:"sp_ping_interval"`
 	AdvertiseOfflineAutoretrieves bool                     `json:"advertise_offline_autoretrieve"`
 	EnableWebsocketListenAddr     bool                     `json:"enable_websocket_listen_addr"`
 	HardFlushWriteLog             bool                     `json:"hard_flush_write_log"`
