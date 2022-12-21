@@ -64,7 +64,7 @@ func (s *apiV1) handleListPins(e echo.Context, u *util.User) error {
 		}
 	}
 
-	q := s.DB.Model(util.Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
+	q := s.db.Model(util.Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID
@@ -156,7 +156,7 @@ func (s *apiV1) handleListPins(e echo.Context, u *util.User) error {
 
 	out := make([]*types.IpfsPinStatusResponse, 0)
 	for _, c := range contents {
-		st, err := s.CM.PinStatus(c, nil)
+		st, err := s.cm.PinStatus(c, nil)
 		if err != nil {
 			return err
 		}
@@ -259,7 +259,7 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	var cols []*collections.CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
 		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
+		if err := s.db.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
 			return err
 		}
 
@@ -298,7 +298,7 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
+	status, pinOp, err := s.cm.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -339,7 +339,7 @@ func (s *apiV1) handleGetPin(e echo.Context, u *util.User) error {
 		return err
 	}
 
-	st, err := s.CM.PinStatus(content, nil)
+	st, err := s.cm.PinStatus(content, nil)
 	if err != nil {
 		return err
 	}
@@ -375,7 +375,7 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -405,7 +405,7 @@ func (s *apiV1) handleReplacePin(e echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
+	status, pinOp, err := s.cm.PinContent(e.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}
@@ -430,7 +430,7 @@ func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -447,7 +447,7 @@ func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 
 	if content.AggregatedIn > 0 {
 		var zone *model.StagingZone
-		if err := s.DB.First(&zone, "cont_id = ?", content.AggregatedIn).Error; err != nil {
+		if err := s.db.First(&zone, "cont_id = ?", content.AggregatedIn).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				s.log.Errorf("content %d's aggregatedIn zone %d not found in DB", content.ID, content.AggregatedIn)
 			}
@@ -460,13 +460,13 @@ func (s *apiV1) handleDeletePin(e echo.Context, u *util.User) error {
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore
-	if err := s.DB.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
+	if err := s.db.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
 		return err
 	}
 
 	// unpin async
 	go func() {
-		if err := s.CM.UnpinContent(e.Request().Context(), uint(pinID)); err != nil {
+		if err := s.cm.UnpinContent(e.Request().Context(), uint(pinID)); err != nil {
 			s.log.Errorf("could not unpinContent(%d): %s", err, pinID)
 		}
 	}()

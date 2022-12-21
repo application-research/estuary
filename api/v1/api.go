@@ -2,7 +2,10 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	contentmgr "github.com/application-research/estuary/content"
+	content "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/content/stagingzone"
+
+	"github.com/application-research/estuary/deal"
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
@@ -23,13 +26,13 @@ import (
 
 type apiV1 struct {
 	cfg            *config.Estuary
-	DB             *gorm.DB
+	db             *gorm.DB
 	tracer         trace.Tracer
-	Node           *node.Node
-	FilClient      *filclient.FilClient
-	Api            api.Gateway
-	CM             *contentmgr.ContentManager
-	StagingMgr     *stagingbs.StagingBSMgr
+	nd             *node.Node
+	fc             *filclient.FilClient
+	api            api.Gateway
+	cm             content.IManager
+	stagingBsMgr   *stagingbs.StagingBSMgr
 	gwayHandler    *gateway.GatewayHandler
 	cacher         *explru.ExpirableLRU
 	extendedCacher *explru.ExpirableLRU
@@ -38,6 +41,8 @@ type apiV1 struct {
 	log            *zap.SugaredLogger
 	shuttleMgr     shuttle.IManager
 	transferMgr    transfer.IManager
+	dealMgr        deal.IManager
+	stgZoneMgr     stagingzone.IManager
 }
 
 func NewAPIV1(
@@ -47,7 +52,7 @@ func NewAPIV1(
 	fc *filclient.FilClient,
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
-	cm *contentmgr.ContentManager,
+	cm content.IManager,
 	cacher *explru.ExpirableLRU,
 	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
@@ -56,16 +61,18 @@ func NewAPIV1(
 	trc trace.Tracer,
 	shuttleMgr shuttle.IManager,
 	transferMgr transfer.IManager,
+	dealMgr deal.IManager,
+	stgZoneMgr stagingzone.IManager,
 ) *apiV1 {
 	return &apiV1{
 		cfg:            cfg,
-		DB:             db,
+		db:             db,
 		tracer:         trc,
-		Node:           nd,
-		FilClient:      fc,
-		Api:            gwApi,
-		CM:             cm,
-		StagingMgr:     sbm,
+		nd:             nd,
+		fc:             fc,
+		api:            gwApi,
+		cm:             cm,
+		stagingBsMgr:   sbm,
 		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
 		cacher:         cacher,
 		extendedCacher: extendedCacher,
@@ -74,6 +81,8 @@ func NewAPIV1(
 		log:            log,
 		shuttleMgr:     shuttleMgr,
 		transferMgr:    transferMgr,
+		dealMgr:        dealMgr,
+		stgZoneMgr:     stgZoneMgr,
 	}
 }
 

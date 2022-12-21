@@ -21,8 +21,12 @@ import (
 
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
-	contentmgr "github.com/application-research/estuary/content"
-	contentqueue "github.com/application-research/estuary/content/queue"
+	content "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/content/commp"
+	"github.com/application-research/estuary/content/split"
+	"github.com/application-research/estuary/content/stagingzone"
+	"github.com/application-research/estuary/deal"
+
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
@@ -644,7 +648,7 @@ func main() {
 			return err
 		}
 
-		// stand up saninty check manager
+		// stand up sanity check manager
 		sanitycheckMgr := sanitycheck.NewManager(db, log)
 
 		init := Initializer{&cfg.Node, db, nil}
@@ -706,11 +710,6 @@ func main() {
 			otel.SetTracerProvider(tp)
 		}
 
-		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
-		if err != nil {
-			return err
-		}
-
 		var opts []func(*filclient.Config)
 		if cfg.LowMem {
 			opts = append(opts, func(cfg *filclient.Config) {
@@ -736,10 +735,8 @@ func main() {
 			return err
 		}
 
-		cntQueueMgr := contentqueue.NewQueueManager(cfg.DisableFilecoinStorage, cfg.Content.MinSize)
-
 		// stand up shuttle manager
-		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr, cntQueueMgr)
+		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr)
 		if err != nil {
 			return err
 		}
@@ -750,29 +747,48 @@ func main() {
 			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
 		}
 
+		// resume all resumable legacy data transfer for local contents
+		go func() {
+			time.Sleep(time.Second * 10)
+			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal, make(chan struct{})); err != nil {
+				log.Errorf("failed to restart transfers: %s", err)
+			}
+		}()
+
 		// stand up miner manager
 		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
 
 		// stand up content manager
-		cm, err := contentmgr.NewContentManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, cntQueueMgr)
-		if err != nil {
-			return err
-		}
-		fc.SetPieceCommFunc(cm.GetPieceCommitment)
+		contMgr := content.NewManager(db, fc, init.trackingBstore, nd, cfg, log, shuttleMgr)
+
+		// stand up staging zone manager
+		stgZoneMgr := stagingzone.NewManager(db, init.trackingBstore, nd, cfg, log, shuttleMgr)
+		stgZoneMgr.RunWorkers(cctx.Context)
+
+		// stand up split manager
+		splitMgr := split.NewManager(db, nd, cfg, log, shuttleMgr, contMgr)
+		splitMgr.RunWorker(cctx.Context)
+
+		// stand up commp manager
+		commpMgr := commp.NewManager(db, cfg, log, shuttleMgr)
+		fc.SetPieceCommFunc(commpMgr.GetOrRunPieceCommitment)
+		commpMgr.RunWorker(cctx.Context)
+
+		// stand up deal manager
+		dealMgr := deal.NewManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
+		dealMgr.RunWorkers(cctx.Context)
 
 		// stand up pin manager
-		pinmgr := pinner.NewEstuaryPinManager(cm.DoPinning, cm.UpdatePinStatus, &pinner.PinManagerOpts{
+		pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{
 			MaxActivePerUser: 20,
 			QueueDataDir:     cfg.DataDir,
-		}, cm, shuttleMgr)
+		}, contMgr, shuttleMgr)
 		go pinmgr.Run(50)
 		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
-		go cm.Run(cctx.Context) // deal making and deal reconciliation
-
 		// Start autoretrieve if not disabled
 		if !cfg.DisableAutoRetrieve {
-			init.trackingBstore.SetCidReqFunc(cm.RefreshContentForCid)
+			init.trackingBstore.SetCidReqFunc(contMgr.RefreshContentForCid)
 
 			ap, err := autoretrieve.NewProvider(
 				db,
@@ -798,21 +814,18 @@ func main() {
 			defer ap.Stop()
 		}
 
-		// resume all resumable legacy data transfer for local contents
-		go func() {
-			time.Sleep(time.Second * 10)
-			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal, make(chan struct{})); err != nil {
-				log.Errorf("failed to restart transfers: %s", err)
-			}
-		}()
+		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
+		if err != nil {
+			return err
+		}
 
 		cacher := explru.NewExpirableLRU(constants.CacheSize, nil, constants.CacheDuration, constants.CachePurgeEveryDuration)
 		extendedCacher := explru.NewExpirableLRU(constants.ExtendedCacheSize, nil, constants.ExtendedCacheDuration, constants.ExtendedCachePurgeEveryDuration)
 
 		// stand up api server
 		apiTracer := otel.Tracer("api")
-		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr)
-		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, cm, cacher, minerMgr, pinmgr, log, apiTracer)
+		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr, dealMgr, stgZoneMgr)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, minerMgr, pinmgr, log, apiTracer)
 
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)

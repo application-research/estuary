@@ -19,12 +19,12 @@ func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint) (map[a
 	defer span.End()
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ?", contid).Error; err != nil {
+	if err := s.db.First(&content, "id = ?", contid).Error; err != nil {
 		return nil, err
 	}
 
 	var deals []model.ContentDeal
-	if err := s.DB.Find(&deals, "content = ? and deal_id > 0", contid).Error; err != nil {
+	if err := s.db.Find(&deals, "content = ? and deal_id > 0", contid).Error; err != nil {
 		return nil, err
 	}
 
@@ -36,9 +36,9 @@ func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint) (map[a
 			return nil, err
 		}
 
-		resp, err := s.FilClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
+		resp, err := s.fc.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
-			if err := s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.cm.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -61,7 +61,7 @@ func (s *apiV1) retrieveContent(ctx context.Context, contid uint) error {
 	))
 	defer span.End()
 
-	content, err := s.CM.GetContent(contid)
+	content, err := s.cm.GetContent(contid)
 	if err != nil {
 		return err
 	}
@@ -76,9 +76,9 @@ func (s *apiV1) retrieveContent(ctx context.Context, contid uint) error {
 	}
 
 	for m, ask := range asks {
-		if err := s.CM.TryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
+		if err := s.cm.TryRetrieve(ctx, m, content.Cid.CID, ask); err != nil {
 			s.log.Errorw("failed to retrieve content", "miner", m, "content", content.Cid.CID, "err", err)
-			if err := s.CM.RecordRetrievalFailure(&util.RetrievalFailureRecord{
+			if err := s.cm.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   m.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),

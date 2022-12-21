@@ -22,13 +22,13 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
-	delegates := cm.PinDelegatesForContent(cont)
+func (m *manager) PinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error) {
+	delegates := m.PinDelegatesForContent(cont)
 
 	meta := make(map[string]interface{}, 0)
 	if cont.PinMeta != "" {
 		if err := json.Unmarshal([]byte(cont.PinMeta), &meta); err != nil {
-			cm.log.Warnf("content %d has invalid pinmeta: %s", cont, err)
+			m.log.Warnf("content %d has invalid pinmeta: %s", cont, err)
 		}
 	}
 
@@ -58,24 +58,24 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 	return ps, nil
 }
 
-func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
+func (m *manager) PinDelegatesForContent(cont util.Content) []string {
 	out := make([]string, 0)
 
 	if cont.Location == constants.ContentLocationLocal {
-		for _, a := range cm.node.Host.Addrs() {
-			out = append(out, fmt.Sprintf("%s/p2p/%s", a, cm.node.Host.ID()))
+		for _, a := range m.node.Host.Addrs() {
+			out = append(out, fmt.Sprintf("%s/p2p/%s", a, m.node.Host.ID()))
 		}
 		return out
 	}
 
-	ai, err := cm.addrInfoForContentLocation(cont.Location)
+	ai, err := m.addrInfoForContentLocation(cont.Location)
 	if err != nil {
-		cm.log.Warnf("failed to get address info for shuttle %q: %s", cont.Location, err)
+		m.log.Warnf("failed to get address info for shuttle %q: %s", cont.Location, err)
 		return out
 	}
 
 	if ai == nil {
-		cm.log.Warnf("no address info for shuttle: %s", cont.Location)
+		m.log.Warnf("no address info for shuttle: %s", cont.Location)
 		return out
 	}
 
@@ -85,15 +85,15 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	return out
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
-	loc, err := cm.shuttleMgr.GetLocationForStorage(ctx, obj, user)
+func (m *manager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+	loc, err := m.shuttleMgr.GetLocationForStorage(ctx, obj, user)
 	if err != nil {
 		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
-		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
+		if err := m.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
 			return nil, nil, err
 		}
 	}
@@ -121,13 +121,13 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Name:        filename,
 		UserID:      user,
 		Active:      false,
-		Replication: cm.cfg.Replication,
+		Replication: m.cfg.Replication,
 		Pinning:     true,
 		PinMeta:     metaStr,
 		Location:    loc,
 		Origins:     originsStr,
 	}
-	if err := cm.db.Create(&cont).Error; err != nil {
+	if err := m.db.Create(&cont).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -136,7 +136,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			c.Content = cont.ID
 		}
 
-		if err := cm.db.Clauses(clause.OnConflict{
+		if err := m.db.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "path"}, {Name: "collection"}},
 			DoUpdates: clause.AssignmentColumns([]string{"created_at", "content"}),
 		}).Create(cols).Error; err != nil {
@@ -146,23 +146,23 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 
 	var pinOp *operation.PinningOperation
 	if loc == constants.ContentLocationLocal {
-		pinOp = cm.GetPinOperation(cont, origins, replaceID, makeDeal)
+		pinOp = m.GetPinOperation(cont, origins, replaceID, makeDeal)
 	} else {
-		if err := cm.shuttleMgr.PinContent(ctx, loc, cont, origins); err != nil {
+		if err := m.shuttleMgr.PinContent(ctx, loc, cont, origins); err != nil {
 			return nil, nil, err
 		}
 	}
 
-	ipfsRes, err := cm.PinStatus(cont, origins)
+	ipfsRes, err := m.PinStatus(cont, origins)
 	if err != nil {
 		return nil, nil, err
 	}
 	return ipfsRes, pinOp, nil
 }
 
-func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
+func (m *manager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation {
 	if cont.Location != constants.ContentLocationLocal {
-		cm.log.Errorf("calling addPinToQueue on non-local content")
+		m.log.Errorf("calling addPinToQueue on non-local content")
 	}
 
 	return &operation.PinningOperation{
@@ -184,16 +184,16 @@ func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrI
 // the UpdatePinStatus only changes DB state for failed status
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
-func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status types.PinningStatus) error {
+func (m *manager) UpdatePinStatus(contID uint, location string, status types.PinningStatus) error {
 	if status == types.PinningStatusFailed {
-		cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
+		m.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 
 		var c util.Content
-		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
+		if err := m.db.First(&c, "id = ?", contID).Error; err != nil {
 			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
 			}
-			cm.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
+			m.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
 			return nil
 		}
 
@@ -205,22 +205,22 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 		// if an aggregate zone is failing, zone is stuck
 		// TODO - revisit this later if it is actually happening
 		if c.Aggregate {
-			cm.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
+			m.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
 
-			return cm.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+			return m.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 				"status":  model.ZoneStatusStuck,
 				"message": model.ZoneMessageStuck,
 			}).Error
 		}
 
-		return cm.db.Transaction(func(tx *gorm.DB) error {
-			if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+		return m.db.Transaction(func(tx *gorm.DB) error {
+			if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 				"active":        false,
 				"pinning":       false,
 				"failed":        true,
 				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
 			}).Error; err != nil {
-				cm.log.Errorf("failed to mark content as failed in database: %s", err)
+				m.log.Errorf("failed to mark content as failed in database: %s", err)
 				return err
 			}
 
@@ -235,52 +235,47 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 	return nil
 }
 
-func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
-	ctx, span := cm.tracer.Start(ctx, "doPinning")
+func (m *manager) DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
+	ctx, span := m.tracer.Start(ctx, "doPinning")
 	defer span.End()
 
 	// remove replacement async - move this out
 	if op.Replace > 0 {
 		go func() {
-			if err := cm.RemoveContent(ctx, op.Replace, true); err != nil {
-				cm.log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
+			if err := m.RemoveContent(ctx, op.Replace, true); err != nil {
+				m.log.Infof("failed to remove content in replacement: %d with: %d", op.Replace, op.ContId)
 			}
 		}()
 	}
 
-	var c util.Content
-	if err := cm.db.First(&c, "id = ?", op.ContId).Error; err != nil {
+	var c *util.Content
+	if err := m.db.First(&c, "id = ?", op.ContId).Error; err != nil {
 		return errors.Wrap(err, "failed to look up content for dopinning")
 	}
 
 	prs := operation.UnSerializePeers(op.Peers)
 	for _, pi := range prs {
-		if err := cm.node.Host.Connect(ctx, *pi); err != nil {
-			cm.log.Warnf("failed to connect to origin node for pinning operation: %s", err)
+		if err := m.node.Host.Connect(ctx, *pi); err != nil {
+			m.log.Warnf("failed to connect to origin node for pinning operation: %s", err)
 		}
 	}
 
-	bserv := blockservice.New(cm.node.Blockstore, cm.node.Bitswap)
+	bserv := blockservice.New(m.node.Blockstore, m.node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, op.ContId, dsess, op.Obj, cb)
-	if err != nil {
+	if err := m.AddDatabaseTrackingToContent(ctx, c, dsess, op.Obj, cb); err != nil {
 		return err
 	}
 
-	if op.MakeDeal {
-		cm.ToCheck(op.ContId, cntSize)
-	}
-
 	// this provide call goes out immediately
-	if err := cm.node.FullRT.Provide(ctx, op.Obj, true); err != nil {
-		cm.log.Warnf("provider broadcast failed: %s", err)
+	if err := m.node.FullRT.Provide(ctx, op.Obj, true); err != nil {
+		m.log.Warnf("provider broadcast failed: %s", err)
 	}
 
 	// this one adds to a queue
-	if err := cm.node.Provider.Provide(op.Obj); err != nil {
-		cm.log.Warnf("providing failed: %s", err)
+	if err := m.node.Provider.Provide(op.Obj); err != nil {
+		m.log.Warnf("providing failed: %s", err)
 	}
 	return nil
 }

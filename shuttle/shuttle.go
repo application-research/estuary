@@ -19,7 +19,6 @@ import (
 	rpc "github.com/application-research/estuary/shuttle/rpc"
 	"github.com/labstack/echo/v4"
 
-	contentqueue "github.com/application-research/estuary/content/queue"
 	dealstatus "github.com/application-research/estuary/deal/status"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/sanitycheck"
@@ -75,8 +74,14 @@ type manager struct {
 	rpcMgr                rpc.IManager
 }
 
-func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager, cntQueueMgr contentqueue.IQueueManager) (IManager, error) {
-	rpcMgr, err := rpc.NewEstuaryRpcManager(ctx, db, cfg, log, sanitycheckMgr, cntQueueMgr)
+func NewManager(
+	ctx context.Context,
+	db *gorm.DB,
+	cfg *config.Estuary,
+	log *zap.SugaredLogger,
+	sanitycheckMgr sanitycheck.IManager,
+) (IManager, error) {
+	rpcMgr, err := rpc.NewEstuaryRpcManager(ctx, db, cfg, log, sanitycheckMgr)
 	if err != nil {
 		return nil, err
 	}

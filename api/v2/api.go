@@ -2,7 +2,7 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	contentmgr "github.com/application-research/estuary/content"
+	content "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -19,13 +19,13 @@ import (
 
 type apiV2 struct {
 	cfg          *config.Estuary
-	DB           *gorm.DB
+	db           *gorm.DB
 	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
+	nd           *node.Node
+	fc           *filclient.FilClient
+	api          api.Gateway
+	cm           content.IManager
+	stagingBsMgr *stagingbs.StagingBSMgr
 	gwayHandler  *gateway.GatewayHandler
 	cacher       *explru.ExpirableLRU
 	minerManager miner.IMinerManager
@@ -40,25 +40,25 @@ func NewAPIV2(
 	fc *filclient.FilClient,
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
-	cm *contentmgr.ContentManager,
+	cm content.IManager,
 	cacher *explru.ExpirableLRU,
-	mm miner.IMinerManager,
+	minerManager miner.IMinerManager,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 ) *apiV2 {
 	return &apiV2{
 		cfg:          cfg,
-		DB:           db,
+		db:           db,
 		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
+		nd:           nd,
+		fc:           fc,
+		api:          gwApi,
+		cm:           cm,
+		stagingBsMgr: sbm,
 		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
 		cacher:       cacher,
-		minerManager: mm,
+		minerManager: minerManager,
 		pinMgr:       pinMgr,
 		log:          log,
 	}
