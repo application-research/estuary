@@ -10,9 +10,7 @@ import (
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/labstack/echo/v4"
-	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -136,7 +134,7 @@ type storageProviderResp struct {
 
 // handleGetStorageProviders godoc
 // @Summary      Get all storage providers
-// @Description  This endpoint returns all storage providers
+// @Description  This endpoint returns all storage providers. Note: Value may be cached
 // @Tags         sp
 // @Produce      json
 // @Success      200  {object}  []storageProviderResp
@@ -150,7 +148,7 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
-		out, ok := cached.([]minerResp)
+		out, ok := cached.([]storageProviderResp)
 		if ok {
 			return c.JSON(http.StatusOK, out)
 		}
@@ -288,15 +286,7 @@ type storageProviderStatsResp struct {
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
 
-	ChainInfo *storageProviderChainInfo `json:"chainInfo"`
-}
-
-type storageProviderChainInfo struct {
-	PeerID    string   `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  string `json:"owner"`
-	Worker string `json:"worker"`
+	ChainInfo *miner.MinerChainInfo `json:"chainInfo"`
 }
 
 // handleGetStorageProviderStats godoc
@@ -310,33 +300,17 @@ type storageProviderChainInfo struct {
 // @Param        sp  path      string  true  "Filter by storage provider"
 // @Router       /v2/storage-providers/stats/{sp} [get]
 func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
-	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviderStats")
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
 	defer span.End()
 
-	maddr, err := address.NewFromString(c.Param("sp"))
+	maddr, err := address.NewFromString(c.Param("miner"))
 	if err != nil {
 		return err
 	}
 
-	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	ci, err := s.minerManager.GetMinerChainInfo(ctx, maddr)
 	if err != nil {
 		return err
-	}
-
-	ci := storageProviderChainInfo{
-		Owner:  minfo.Owner.String(),
-		Worker: minfo.Worker.String(),
-	}
-
-	if minfo.PeerId != nil {
-		ci.PeerID = minfo.PeerId.String()
-	}
-	for _, a := range minfo.Multiaddrs {
-		ma, err := multiaddr.NewMultiaddrBytes(a)
-		if err != nil {
-			return err
-		}
-		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	var m model.StorageMiner
@@ -369,7 +343,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
-		ChainInfo:       &ci,
+		ChainInfo:       ci,
 	})
 }
 
