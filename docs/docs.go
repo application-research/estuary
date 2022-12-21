@@ -3422,6 +3422,29 @@ const docTemplate = `{
                 }
             }
         },
+        "api.storageProviderResp": {
+            "type": "object",
+            "properties": {
+                "addr": {
+                    "$ref": "#/definitions/address.Address"
+                },
+                "chain_info": {
+                    "$ref": "#/definitions/miner.MinerChainInfo"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "suspended": {
+                    "type": "boolean"
+                },
+                "suspendedReason": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "cid.Cid": {
             "type": "object"
         },
@@ -3498,6 +3521,26 @@ const docTemplate = `{
                     "$ref": "#/definitions/address.Address"
                 },
                 "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "miner.MinerChainInfo": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "peerId": {
+                    "type": "string"
+                },
+                "worker": {
                     "type": "string"
                 }
             }

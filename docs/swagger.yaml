@@ -64,6 +64,21 @@ definitions:
       primaryAddress:
         $ref: '#/definitions/address.Address'
     type: object
+  api.storageProviderResp:
+    properties:
+      addr:
+        $ref: '#/definitions/address.Address'
+      chain_info:
+        $ref: '#/definitions/miner.MinerChainInfo'
+      name:
+        type: string
+      suspended:
+        type: boolean
+      suspendedReason:
+        type: string
+      version:
+        type: string
+    type: object
   cid.Cid:
     type: object
   collections.CidType:
@@ -115,6 +130,19 @@ definitions:
       miner:
         $ref: '#/definitions/address.Address'
       name:
+        type: string
+    type: object
+  miner.MinerChainInfo:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      owner:
+        type: string
+      peerId:
+        type: string
+      worker:
         type: string
     type: object
   miner.MinerSetInfoParams:
