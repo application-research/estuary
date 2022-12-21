@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/hex"
 	"net/http"
 	"time"
@@ -142,20 +143,40 @@ type storageProviderResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
+	ctx := context.TODO()
+
+	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
+	key := cacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]minerResp)
+		if ok {
+			return c.JSON(http.StatusOK, out)
+		}
+	}
+
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
 
-	out := make([]storageProviderResp, len(miners))
+	out := make([]minerResp, len(miners))
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
 		out[i].Version = m.Version
+
+		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+		if err != nil {
+			out[i].ChainInfo = ci
+		}
+
 	}
 
+	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
 }
 

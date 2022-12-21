@@ -142,19 +142,6 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-// cacheKey returns a key based on the request being made, the user associated to it, and optional tags
-// this key is used when calling Get or Add from a cache
-func cacheKey(c echo.Context, u *util.User, tags ...string) string {
-	paramNames := strings.Join(c.ParamNames(), ",")
-	paramVals := strings.Join(c.ParamValues(), ",")
-	tagsString := strings.Join(tags, ",")
-	if u != nil {
-		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s user=%d tags=%s", c.Request().URL, paramNames, paramVals, u.ID, tagsString)
-	} else {
-		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s tags=%s", c.Request().URL, paramNames, paramVals, tagsString)
-	}
-}
-
 // handleGetUserContents godoc
 // @Summary      Get user contents
 // @Description  This endpoint is used to get user contents
@@ -1764,7 +1751,7 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	ctx := context.TODO()
 
 	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
 		out, ok := cached.([]minerResp)
@@ -2877,7 +2864,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
+	key := util.CacheKey(c, u)
 	cached, ok := s.cacher.Get(key)
 	if ok {
 		return c.JSON(http.StatusOK, cached)
@@ -3500,7 +3487,7 @@ type publicStatsResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
 func (s *apiV1) handlePublicStats(c echo.Context) error {
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	val, ok := s.cacher.Get(key)
 	if !ok {
 		computedVal, err := s.computePublicStats()
@@ -3511,7 +3498,7 @@ func (s *apiV1) handlePublicStats(c echo.Context) error {
 		s.cacher.Add(key, val)
 	}
 
-	keyExt := cacheKey(c, nil, "ext")
+	keyExt := util.CacheKey(c, nil, "ext")
 	valExt, ok := s.extendedCacher.Get(keyExt)
 	if !ok {
 		computedValExt, err := s.computePublicStatsWithExtensiveLookups()
@@ -3735,7 +3722,7 @@ type metricsDealJoin struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
 		return c.JSON(http.StatusOK, cached)
