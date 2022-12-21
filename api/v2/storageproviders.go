@@ -126,11 +126,12 @@ func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) erro
 }
 
 type storageProviderResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
+	Addr            address.Address       `json:"addr"`
+	Name            string                `json:"name"`
+	Suspended       bool                  `json:"suspended"`
+	SuspendedReason string                `json:"suspendedReason,omitempty"`
+	Version         string                `json:"version"`
+	ChainInfo       *miner.MinerChainInfo `json:"chain_info"`
 }
 
 // handleGetStorageProviders godoc
@@ -146,7 +147,7 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 	ctx := context.TODO()
 
 	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
 		out, ok := cached.([]minerResp)
@@ -160,7 +161,7 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 		return err
 	}
 
-	out := make([]minerResp, len(miners))
+	out := make([]storageProviderResp, len(miners))
 
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
