@@ -3296,15 +3296,14 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 // @Router       /collections/{coluuid} [get]
 func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
-
 	queryDir := c.QueryParam(ColDir)
-
-	col, err := collections.GetCollection(coluuid, s.DB, u)
-	if err != nil {
-		return err
-	}
 	
 	if queryDir == "" {
+		col, err := collections.GetCollection(coluuid, s.DB, u)
+		if err != nil {
+			return err
+		}
+		
 		refs := []collections.CollectionRef{}
 
 		if err := s.DB.Model(collections.CollectionRef{}).
