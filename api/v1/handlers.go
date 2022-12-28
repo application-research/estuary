@@ -3297,41 +3297,27 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 func (s *apiV1) handleGetCollectionContents(c echo.Context, u *util.User) error {
 	coluuid := c.Param("coluuid")
 
-	var col collections.Collection
-	if err := s.DB.First(&col, "uuid = ?", coluuid).Error; err != nil {
-		if xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return &util.HttpError{
-				Code:    http.StatusNotFound,
-				Reason:  util.ERR_RECORD_NOT_FOUND,
-				Details: fmt.Sprintf("collection: %s was not found", coluuid),
-			}
-		}
-		return err
-	}
-
-	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
-		return err
-	}
-
-	// TODO: optimize this a good deal
-	var refs []util.ContentWithPath
-	if err := s.DB.Model(collections.CollectionRef{}).
-		Where("collection = ?", col.ID).
-		Joins("left join contents on contents.id = collection_refs.content").
-		Select("contents.*, collection_refs.path as path").
-		Scan(&refs).Error; err != nil {
-		return err
-	}
-
 	queryDir := c.QueryParam(ColDir)
+
+	col, err := collections.GetCollection(coluuid, s.DB, u)
+	if err != nil {
+		return err
+	}
+	
 	if queryDir == "" {
+		refs := []collections.CollectionRef{}
+
+		if err := s.DB.Model(collections.CollectionRef{}).
+			Where("collection = ?", col.ID).
+			Scan(&refs).Error; err != nil {
+			return err
+		}
+
 		return c.JSON(http.StatusOK, refs)
 	}
+	
+	out, err = collections.GetContentsInPath(coluuid, path, s.DB, u)
 
-	// if queryDir is set, do the content listing
-	queryDir = filepath.Clean(queryDir)
-
-	out, err := collections.GetDirectoryContents(refs, queryDir, coluuid)
 	if err != nil {
 		return err
 	}
