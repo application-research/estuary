@@ -1193,7 +1193,7 @@ func (s *Shuttle) ServeAPI() error {
 
 	storageProvider := e.Group("/storage-provider")
 	storageProvider.Use(s.AuthRequired(util.PermLevelAdmin))
-	admin.GET("/list/:n", s.handleStorageProviderList)
+	storageProvider.GET("/list/:n", s.handleStorageProviderList)
 
 	return e.Start(s.shuttleConfig.ApiListen)
 }

@@ -300,10 +300,10 @@ type storageProviderStatsResp struct {
 // @Param        sp  path      string  true  "Filter by storage provider"
 // @Router       /v2/storage-providers/stats/{sp} [get]
 func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
-	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetMinerStats")
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviderStats")
 	defer span.End()
 
-	maddr, err := address.NewFromString(c.Param("miner"))
+	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}

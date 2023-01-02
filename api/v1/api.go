@@ -207,6 +207,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	netw.GET("/addrs", s.handleNetAddrs)
 
 	miners := public.Group("/miners")
+	miners.GET("", s.handleAdminGetMiners)
 	miners.GET("/failures/:miner", s.handleGetMinerFailures)
 	miners.GET("/deals/:miner", s.handleGetMinerDeals)
 	miners.GET("/stats/:miner", s.handleGetMinerStats)
