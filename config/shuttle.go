@@ -84,7 +84,7 @@ func NewShuttle(appVersion string) *Shuttle {
 		Private:            false,
 		Dev:                false,
 		NoReloadPinQueue:   false,
-		RateLimit:          rate.Limit(20),
+		RateLimit:          rate.Limit(200),
 
 		Content: Content{
 			DisableLocalAdding: false,
