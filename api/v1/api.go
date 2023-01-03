@@ -142,7 +142,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/deals", util.WithUser(s.handleListContentWithDeals))
 	content.GET("/failures/:content", util.WithUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", util.WithUser(s.handleGetContentBandwidth))
-	content.GET("/staging-zones", util.WithUser(s.handleGetStagingZoneForUser))
+	content.GET("/staging-zones", util.WithUser(s.handleGetStagingZonesForUser))
 	content.GET("/aggregated/:content", util.WithUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", util.WithUser(s.handleGetAllDealsForUser))
 
