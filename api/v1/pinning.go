@@ -266,7 +266,7 @@ func (s *apiV1) handleAddPin(e echo.Context, u *util.User) error {
 		var colpath *string
 		colp, ok := pin.Meta["colpath"].(string)
 		if ok {
-			p, err := util.SanitizePath(colp)
+			p, err := sanitizePath(colp)
 			if err != nil {
 				return err
 			}
