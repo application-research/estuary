@@ -612,10 +612,15 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Path to file",
-                        "name": "path",
-                        "in": "query",
-                        "required": true
+                        "description": "Directory inside collection",
+                        "name": "dir",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite file if already exists in path",
+                        "name": "overwrite",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -725,6 +730,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Directory",
                         "name": "dir",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files",
+                        "name": "overwrite",
                         "in": "query"
                     }
                 ],
@@ -924,6 +935,12 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
+                        "description": "Overwrite files with the same path on same collection",
+                        "name": "overwrite",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
                         "description": "Lazy Provide true/false",
                         "name": "lazy-provide",
                         "in": "query"
@@ -1036,6 +1053,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Ignore Dupes",
                         "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files in collections",
+                        "name": "overwrite",
                         "in": "query"
                     }
                 ],
@@ -2484,6 +2507,18 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/types.IpfsPin"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Overwrite conflicting files in collections",
+                        "name": "overwrite",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -3616,6 +3651,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "overwrite": {
+                    "type": "boolean"
                 },
                 "root": {
                     "type": "string"

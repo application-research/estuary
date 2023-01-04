@@ -57,6 +57,7 @@ const (
 	ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO = "ERR_INVALID_MINER_CLAIM_ASK_VERIFIED_PRICE_IS_NOT_ZERO"
 	ERR_INTERNAL_SERVER                                    = "ERR_INTERNAL_SERVER"
 	ERR_BAD_REQUEST                                        = "ERR_BAD_REQUEST"
+	ERR_CONTENT_IN_COLLECTION                              = "ERR_CONTENT_IN_COLLECTION"
 )
 
 const (

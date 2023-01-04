@@ -218,6 +218,8 @@ definitions:
         type: string
       name:
         type: string
+      overwrite:
+        type: boolean
       root:
         type: string
       type:
@@ -748,6 +750,10 @@ paths:
           in: query
           name: dir
           type: string
+        - description: Overwrite conflicting files
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:
@@ -840,10 +846,13 @@ paths:
           name: content
           required: true
           type: string
-        - description: Path to file
+        - description: Directory inside collection
           in: query
-          name: path
-          required: true
+          name: dir
+          type: string
+        - description: Overwrite file if already exists in path
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
@@ -916,6 +925,10 @@ paths:
         - description: Ignore Dupes true/false
           in: query
           name: ignore-dupes
+          type: string
+        - description: Overwrite files with the same path on same collection
+          in: query
+          name: overwrite
           type: string
         - description: Lazy Provide true/false
           in: query
@@ -992,6 +1005,10 @@ paths:
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
@@ -1920,6 +1937,14 @@ paths:
           required: true
           schema:
             $ref: '#/definitions/types.IpfsPin'
+        - description: Ignore Dupes
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:
