@@ -1,0 +1,17 @@
+{
+  "name": "estuary-postman",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.2.1",
+    "estuary-client": "^1.0.1",
+    "openapi-to-postmanv2": "^4.3.0",
+    "postman-code-generators": "^1.2.2"
+  }
+}
