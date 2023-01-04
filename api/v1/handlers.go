@@ -611,10 +611,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 
 	// see if there's already a file with that name/path on that collection
 	if col != nil {
-		pathInCollection, err := collections.Contains(col, fullPath, s.DB)
-		if err != nil {
-			return err
-		}
+		pathInCollection := collections.Contains(col, fullPath, s.DB)
 		if pathInCollection && !overwrite {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
@@ -4559,10 +4556,7 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		fullPath := filepath.Join(path, req.Name)
 
 		// check for file conflicts
-		pathInCollection, err := collections.Contains(&col, fullPath, s.DB)
-		if err != nil {
-			return err
-		}
+		pathInCollection := collections.Contains(&col, fullPath, s.DB)
 		if pathInCollection && !req.Overwrite {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,

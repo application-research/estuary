@@ -291,10 +291,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		}
 
 		// see if there's already a file with that name/path on that collection
-		pathInCollection, err := collections.Contains(&srchCol, fullPath, s.DB)
-		if err != nil {
-			return err
-		}
+		pathInCollection := collections.Contains(&srchCol, fullPath, s.DB)
 		if pathInCollection && !overwrite {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,

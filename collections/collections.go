@@ -97,13 +97,10 @@ func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) (
 	return selectedRefs, nil
 }
 
-func Contains(collection *Collection, fullPath string, db *gorm.DB) (bool, error) {
+func Contains(collection *Collection, fullPath string, db *gorm.DB) bool {
 	var colRef CollectionRef
 	err := db.First(&colRef, "collection = ? and path = ?", collection.ID, fullPath).Error
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return false, err
-	}
-	return true, nil
+	return !errors.Is(err, gorm.ErrRecordNotFound)
 }
 
 func AddContentToCollection(coluuid string, contentID string, dir string, overwrite bool, db *gorm.DB, u *util.User) error {
@@ -124,10 +121,7 @@ func AddContentToCollection(coluuid string, contentID string, dir string, overwr
 	fullPath := filepath.Join(path, content.Name)
 
 	// see if there's already a file with that name/path on that collection
-	pathInCollection, err := Contains(&col, fullPath, db)
-	if err != nil {
-		return err
-	}
+	pathInCollection := Contains(&col, fullPath, db)
 	if pathInCollection && !overwrite {
 		return xerrors.Errorf("file already exists in collection, specify 'overwrite=true' to overwrite")
 	}
