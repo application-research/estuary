@@ -3187,7 +3187,7 @@ func (s *apiV1) handleAddContentsToCollection(c echo.Context, u *util.User) erro
 	}
 
 	for _, cont := range contents {
-		err := collections.AddContentToCollection(col.UUID, string(cont.ID), dir, overwrite, s.DB, u)
+		err := collections.AddContentToCollection(col.UUID, strconv.Itoa(int(cont.ID)), dir, overwrite, s.DB, u)
 		if err != nil {
 			return err
 		}
