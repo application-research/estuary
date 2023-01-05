@@ -83,10 +83,10 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
-	_ = e.Group("/v2")
+	api := e.Group("/v2")
 
 	// Storage Provider Endpoints
-	storageProvider := e.Group("/storage-providers")
+	storageProvider := api.Group("/storage-providers")
 	storageProvider.POST("/add/:sp", s.handleAddStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/rm/:sp", s.handleRemoveStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/suspend/:sp", util.WithUser(s.handleSuspendStorageProvider))
