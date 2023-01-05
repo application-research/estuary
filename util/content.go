@@ -215,3 +215,38 @@ func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
 	}
 	return content, nil
 }
+
+func ConstructDirectoryPath(dir string) (string, error) {
+	defaultPath := "/"
+	path := defaultPath
+	if cp := dir; cp != "" {
+		sp, err := SanitizePath(cp)
+		if err != nil {
+			return "", err
+		}
+
+		path = sp
+	}
+	return path, nil
+}
+
+func SanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
+	if p[0] != '/' {
+		return "", fmt.Errorf("paths must start with /")
+	}
+
+	// TODO: prevent use of special weird characters
+
+	cleanPath := filepath.Clean(p)
+
+	// if original path ends in /, append / to cleaned path
+	// needed for full path vs dir+filename magic to work in handleAddIpfs
+	if strings.HasSuffix(p, "/") {
+		cleanPath = cleanPath + "/"
+	}
+	return cleanPath, nil
+}
