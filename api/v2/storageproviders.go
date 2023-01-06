@@ -56,7 +56,7 @@ func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.SuspendMinerBody  true   "Suspend Storage Provider Body"
 // @Param        sp           path      string  true   "Storage Provider to suspend"
-// @Router       /storage-providers/suspend/{sp} [post]
+// @Router       /v2/storage-providers/suspend/{sp} [post]
 func (s *apiV2) handleSuspendStorageProvider(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
 	if err := c.Bind(&body); err != nil {
@@ -83,7 +83,7 @@ func (s *apiV2) handleSuspendStorageProvider(c echo.Context, u *util.User) error
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp           path      string  true   "Storage Provider to unsuspend"
-// @Router      /storage-providers/unsuspend/{sp} [put]
+// @Router      /v2/storage-providers/unsuspend/{sp} [put]
 func (s *apiV2) handleUnsuspendStorageProvider(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *apiV2) handleUnsuspendStorageProvider(c echo.Context, u *util.User) err
 // @Failure      500  {object}  util.HttpError
 // @Param        params           body      miner.MinerSetInfoParams  true   "Storage Provider set info params"
 // @Param        sp           path      string  true   "Storage Provider to set info for"
-// @Router       /storage-providers/set-info/{sp} [put]
+// @Router       /v2/storage-providers/set-info/{sp} [put]
 func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -140,7 +140,7 @@ type storageProviderResp struct {
 // @Success      200  {object}  []storageProviderResp
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /storage-providers [get]
+// @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
@@ -190,7 +190,7 @@ func (s *apiV2) handleStorageProviderTransferDiagnostics(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  true  "Filter by storage provider"
-// @Router       /storage-providers/failures/{sp} [get]
+// @Router       /v2/storage-providers/failures/{sp} [get]
 func (s *apiV2) handleGetStorageProviderFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -233,7 +233,7 @@ type storageProviderDealsResp struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        sp          path      string  true   "Filter by storage provider"
 // @Param        ignore-failed  query     string  false  "Ignore Failed"
-// @Router       /storage-providers/deals/{sp} [get]
+// @Router       /v2/storage-providers/deals/{sp} [get]
 func (s *apiV2) handleGetStorageProviderDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -286,7 +286,7 @@ type storageProviderChainInfo struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  true  "Filter by storage provider"
-// @Router       /storage-providers/stats/{sp} [get]
+// @Router       /v2/storage-providers/stats/{sp} [get]
 func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviderStats")
 	defer span.End()
@@ -360,7 +360,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param        cid  path      string  true  "CID"
-// @router       /storage-providers/storage/query/{cid} [get]
+// @router       /v2/storage-providers/storage/query/{cid} [get]
 func (s *apiV2) handleStorageProviderQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -387,7 +387,7 @@ type claimResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.ClaimMinerBody  true   "Claim Storage Provider Body"
-// @Router       /storage-providers/claim [post]
+// @Router       /v2/storage-providers/claim [post]
 func (s *apiV2) handleClaimStorageProvider(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
@@ -415,7 +415,7 @@ type claimMsgResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path     string  true  "Storage Provider claim message"
-// @Router       /storage-providers/claim/{sp} [get]
+// @Router       /v2/storage-providers/claim/{sp} [get]
 func (s *apiV2) handleGetClaimStorageProviderMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
