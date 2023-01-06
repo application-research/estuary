@@ -104,20 +104,6 @@ type statsResp struct {
 	PinningStatus   pinningtypes.PinningStatus `json:"pinningStatus"`
 }
 
-func withUser(f func(echo.Context, *util.User) error) func(echo.Context) error {
-	return func(c echo.Context) error {
-		u, ok := c.Get("user").(*util.User)
-		if !ok {
-			return &util.HttpError{
-				Code:    http.StatusUnauthorized,
-				Reason:  util.ERR_INVALID_AUTH,
-				Details: "endpoint not called with proper authentication",
-			}
-		}
-		return f(c, u)
-	}
-}
-
 // handleStats godoc
 // @Summary      Get content statistics
 // @Description  This endpoint is used to get content statistics. Every content stored in the network (estuary) is tracked by a unique ID which can be used to get information about the content. This endpoint will allow the consumer to get the collected stats of a content
