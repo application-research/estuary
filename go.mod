@@ -18,7 +18,7 @@ require (
 	github.com/filecoin-project/go-data-transfer v1.15.2
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.25.1
-	github.com/filecoin-project/go-jsonrpc v0.1.8
+	github.com/filecoin-project/go-jsonrpc v0.1.9
 	github.com/filecoin-project/go-legs v0.4.9 // indirect
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.9.8
