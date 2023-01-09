@@ -88,7 +88,7 @@ require (
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f
 	gorm.io/driver/postgres v1.1.2
 	gorm.io/driver/sqlite v1.1.5
-	gorm.io/gorm v1.21.15
+	gorm.io/gorm v1.24.3
 )
 
 require (
@@ -243,7 +243,7 @@ require (
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/jessevdk/go-flags v1.4.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.2 // indirect
+	github.com/jinzhu/now v1.1.4 // indirect
 	github.com/joeshaw/multierror v0.0.0-20140124173710-69b34d4ec901 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
