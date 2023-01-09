@@ -2,7 +2,9 @@ package shuttle
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"gorm.io/gorm"
 	"sort"
 	"strings"
 
@@ -84,17 +86,21 @@ func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid ui
 }
 
 func (cm *manager) primaryStagingLocation(ctx context.Context, uid uint) string {
-	var zones []util.Content
-	if err := cm.db.First(&zones, "user_id = ? and aggregate and not active", uid).Error; err != nil {
-		return ""
-	}
-
 	// TODO: maybe we could make this more complex, but for now, if we have a
 	// staging zone opened in a particular location, just keep using that one
-	for _, z := range zones {
-		return z.Location
+
+	var zone model.StagingZone
+	if err := cm.db.First(&zone, "user_id = ? and status = ?", uid, model.ZoneStatusOpen).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			var oldZone util.Content
+			if err := cm.db.First(&oldZone, "user_id = ? and aggregate and not active", uid).Error; err != nil {
+				return ""
+			}
+			return oldZone.Location
+		}
+		return ""
 	}
-	return ""
+	return zone.Location
 }
 
 func (m *manager) GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error) {

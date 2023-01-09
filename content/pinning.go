@@ -86,11 +86,6 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 }
 
 func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
-	loc, err := cm.shuttleMgr.GetLocationForStorage(ctx, obj, user)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
-	}
-
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
@@ -114,6 +109,11 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 			return nil, nil, err
 		}
 		originsStr = string(b)
+	}
+
+	loc, err := cm.shuttleMgr.GetLocationForStorage(ctx, obj, user)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	cont := util.Content{
