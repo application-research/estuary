@@ -214,7 +214,7 @@ func (cm *ContentManager) UpdatePinStatus(contID uint, location string, status t
 		}
 
 		return cm.db.Transaction(func(tx *gorm.DB) error {
-			if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 				"active":        false,
 				"pinning":       false,
 				"failed":        true,
