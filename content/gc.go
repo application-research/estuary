@@ -136,6 +136,7 @@ func (cm *ContentManager) RemoveContent(ctx context.Context, contID uint, now bo
 		return err
 	}
 
+	defer rows.Close()
 	for rows.Next() {
 		var dbc util.DbCID
 		if err := rows.Scan(&dbc); err != nil {

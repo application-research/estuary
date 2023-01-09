@@ -3,6 +3,7 @@ package contentmgr
 import (
 	"context"
 	"fmt"
+	"github.com/ipfs/go-blockservice"
 	"sort"
 	"time"
 
@@ -11,7 +12,6 @@ import (
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
-	"github.com/ipfs/go-blockservice"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
 	uio "github.com/ipfs/go-unixfs/io"
@@ -215,7 +215,7 @@ func (cm *ContentManager) consolidateStagedContent(ctx context.Context, zoneID u
 
 	if err := cm.db.Transaction(func(tx *gorm.DB) error {
 		// point zone content location to dstLocation
-		if err := cm.db.Model(util.Content{}).
+		if err := tx.Model(util.Content{}).
 			Where("id = ?", zoneContent.ID).
 			UpdateColumn("location", dstLocation).Error; err != nil {
 			return err
@@ -277,11 +277,11 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 				Cid:  util.DbCID{CID: ncid},
 				Size: int(size),
 			}
-			if err := cm.db.Create(obj).Error; err != nil {
+			if err := tx.Create(obj).Error; err != nil {
 				return err
 			}
 
-			if err := cm.db.Create(&util.ObjRef{
+			if err := tx.Create(&util.ObjRef{
 				Content: zoneCont.ID,
 				Object:  obj.ID,
 			}).Error; err != nil {
@@ -293,7 +293,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 			}
 
 			// mark zone content active
-			if err := cm.db.Model(util.Content{}).Where("id = ?", zoneCont.ID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", zoneCont.ID).UpdateColumns(map[string]interface{}{
 				"active":   true,
 				"pinning":  false,
 				"cid":      util.DbCID{CID: ncid},
@@ -548,7 +548,7 @@ func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, tr
 	return cm.db.Transaction(func(tx *gorm.DB) error {
 		zoneContID := cont.AggregatedIn
 
-		// bakward compatibility feature
+		// backward compatibility feature
 		// only new contents will cont.AggregatedIn = 0, so create a zone content for it
 		// old contents already have zone contents
 		if zoneContID == 0 {
@@ -562,7 +562,7 @@ func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, tr
 				Aggregate:   true,
 				Location:    cont.Location,
 			}
-			if err := cm.db.Create(zoneCont).Error; err != nil {
+			if err := tx.Create(zoneCont).Error; err != nil {
 				return err
 			}
 
@@ -588,7 +588,7 @@ func (cm *ContentManager) newContentStagingZoneFromContent(cont util.Content, tr
 			Status:    model.ZoneStatusOpen,
 			Message:   model.ZoneMessageOpen,
 		}
-		if err := cm.db.Create(zone).Error; err != nil {
+		if err := tx.Create(zone).Error; err != nil {
 			return err
 		}
 		// update staging zone creation tracker
