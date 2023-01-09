@@ -136,3 +136,15 @@ We use swagger to document all of our endpoints and we require developers to ann
 
 - [echo-swagger](https://github.com/swaggo/echo-swagger)
 - Add comments to your API source code, See [Declarative Comments Format](https://github.com/swaggo/swag#declarative-comments-format).
+
+# Testing
+## Postman
+Run postman tests (these test API changes against swagger documentation)
+
+```
+export APIKEY=your_api_key
+./estuary &
+cd tests/postman
+npm install
+./run_tests.bash
+```
