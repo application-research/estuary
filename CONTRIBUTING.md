@@ -145,6 +145,26 @@ Run postman tests (these test API changes against swagger documentation)
 export APIKEY=your_api_key
 ./estuary &
 cd tests/postman
-npm install
+npm ci
 ./run_tests.bash
 ```
+
+Obs: also do the below if you're on macOS
+
+```
+brew install gsed
+brew info gsed
+# <copy the `export` command, i.e:
+PATH="/opt/homebrew/opt/gnu-sed/libexec/gnubin:$PATH"
+# to persist the change, put it in .rc file
+```
+To override a test, copy the generated test from `tests/postman/jstests` to `/tests/postman/jsoverrides`, and change the contents.
+
+To "comment out" or ignore the test, simply replace its contents with:
+
+```
+#!/usr/bin/env node
+console.log(process.argv[1])
+```
+
+Note: the filename is important here.
