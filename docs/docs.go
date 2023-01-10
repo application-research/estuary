@@ -890,15 +890,49 @@ const docTemplate = `{
         },
         "/content/add": {
             "post": {
-                "description": "This endpoint uploads a file.",
+                "description": "This endpoint is used to upload new content.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload a file",
+                "summary": "Add new content",
                 "parameters": [
+                    {
+                        "type": "file",
+                        "description": "File to upload",
+                        "name": "data",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename to use for upload",
+                        "name": "filename",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Collection UUID",
+                        "name": "coluuid",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Replication value",
+                        "name": "replication",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes true/false",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
                     {
                         "type": "string",
                         "description": "Overwrite files with the same path on same collection",
@@ -907,14 +941,14 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Directory",
-                        "name": "dir",
+                        "description": "Lazy Provide true/false",
+                        "name": "lazy-provide",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Collection UUID",
-                        "name": "coluuid",
+                        "description": "Directory",
+                        "name": "dir",
                         "in": "query"
                     }
                 ],
@@ -922,7 +956,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentAddResponse"
                         }
                     },
                     "400": {
@@ -942,19 +976,42 @@ const docTemplate = `{
         },
         "/content/add-car": {
             "post": {
-                "description": "This endpoint uploads content via a car file",
+                "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "content"
                 ],
-                "summary": "Upload content via a car file",
+                "summary": "Add Car object",
+                "parameters": [
+                    {
+                        "description": "Car",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Ignore Dupes",
+                        "name": "ignore-dupes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filename",
+                        "name": "filename",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/util.ContentAddResponse"
                         }
                     },
                     "400": {
@@ -1389,49 +1446,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/content/importdeal": {
-            "post": {
-                "description": "This endpoint imports a deal into the shuttle.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Import a deal",
-                "parameters": [
-                    {
-                        "description": "Import a deal",
-                        "name": "body",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/main.importDealBody"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
         "/content/list": {
             "get": {
                 "description": "This endpoint lists all content",
@@ -1442,47 +1456,6 @@ const docTemplate = `{
                     "content"
                 ],
                 "summary": "List all pinned content",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/content/read/{cont}": {
-            "get": {
-                "description": "This endpoint reads content from the blockstore",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "content"
-                ],
-                "summary": "Read content",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "CID",
-                        "name": "cont",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -2465,38 +2438,6 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/api.emptyResp"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad Request",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    },
-                    "500": {
-                        "description": "Internal Server Error",
-                        "schema": {
-                            "$ref": "#/definitions/util.HttpError"
-                        }
-                    }
-                }
-            }
-        },
-        "/net/addrs": {
-            "get": {
-                "description": "This endpoint is used to get net addrs",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "net"
-                ],
-                "summary": "Net Addrs",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "string"
                         }
                     },
                     "400": {
@@ -3544,29 +3485,6 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
-                }
-            }
-        },
-        "main.importDealBody": {
-            "type": "object",
-            "properties": {
-                "coluuid": {
-                    "type": "string"
-                },
-                "dealIDs": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
-                    }
-                },
-                "dir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "overwrite": {
-                    "type": "boolean"
                 }
             }
         },

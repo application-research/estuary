@@ -81,7 +81,7 @@ echo "Running Swag"
 chmod +x ./scripts/swagger/echo-swag/swag
 chmod +x ./scripts/swagger/echo-swag/yq
 
-./scripts/swagger/echo-swag/swag init -g api/v1/api.go --parseDependency --parseInternal --parseDepth 1  --exclude cmd/ --exclude api/v2/
+./scripts/swagger/echo-swag/swag init -g api/v1/api.go --parseDependency --parseInternal --parseDepth 1  --exclude cmd/,api/v2/
 
 ## workaround to add the security and host - this so we can add the Bearer token to the header
 ## Json 
@@ -97,7 +97,6 @@ jq '."security"=[{"bearerAuth":[]}]' ./docs/swagger_security.json > ./docs/swagg
 ##  Move the files back
 mv ./docs/swagger_temp.json ./docs/swagger.json
 mv ./docs/swagger_temp.yaml ./docs/swagger.yaml
-
 
 ## Clean up. 
 echo "Cleaning up"
