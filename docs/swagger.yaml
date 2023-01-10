@@ -11,6 +11,16 @@ definitions:
       responder:
         type: string
     type: object
+  api.claimMsgResponse:
+    properties:
+      hexmsg:
+        type: string
+    type: object
+  api.claimResponse:
+    properties:
+      success:
+        type: boolean
+    type: object
   api.createCollectionBody:
     properties:
       description:
@@ -53,19 +63,6 @@ definitions:
     properties:
       primaryAddress:
         $ref: '#/definitions/address.Address'
-    type: object
-  api.storageProviderResp:
-    properties:
-      addr:
-        $ref: '#/definitions/address.Address'
-      name:
-        type: string
-      suspended:
-        type: boolean
-      suspendedReason:
-        type: string
-      version:
-        type: string
     type: object
   cid.Cid:
     type: object
@@ -111,24 +108,19 @@ definitions:
       updatedAt:
         type: string
     type: object
-  github_com_application-research_estuary_api_v1.claimMsgResponse:
+  main.importDealBody:
     properties:
-      hexmsg:
+      coluuid:
         type: string
-    type: object
-  github_com_application-research_estuary_api_v1.claimResponse:
-    properties:
-      success:
-        type: boolean
-    type: object
-  github_com_application-research_estuary_api_v2.claimMsgResponse:
-    properties:
-      hexmsg:
+      dealIDs:
+        items:
+          type: integer
+        type: array
+      dir:
         type: string
-    type: object
-  github_com_application-research_estuary_api_v2.claimResponse:
-    properties:
-      success:
+      name:
+        type: string
+      overwrite:
         type: boolean
     type: object
   miner.ClaimMinerBody:
@@ -924,50 +916,27 @@ paths:
         - content
   /content/add:
     post:
-      consumes:
-        - multipart/form-data
-      description: This endpoint is used to upload new content.
+      description: This endpoint uploads a file.
       parameters:
-        - description: File to upload
-          in: formData
-          name: data
-          required: true
-          type: file
-        - description: Filename to use for upload
-          in: formData
-          name: filename
-          type: string
-        - description: Collection UUID
-          in: query
-          name: coluuid
-          type: string
-        - description: Replication value
-          in: query
-          name: replication
-          type: integer
-        - description: Ignore Dupes true/false
-          in: query
-          name: ignore-dupes
-          type: string
         - description: Overwrite files with the same path on same collection
           in: query
           name: overwrite
-          type: string
-        - description: Lazy Provide true/false
-          in: query
-          name: lazy-provide
           type: string
         - description: Directory
           in: query
           name: dir
           type: string
+        - description: Collection UUID
+          in: query
+          name: coluuid
+          type: string
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/util.ContentAddResponse'
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -976,34 +945,19 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Add new content
+      summary: Upload a file
       tags:
         - content
   /content/add-car:
     post:
-      description: This endpoint is used to add a car object to the network. The object can be a file or a directory.
-      parameters:
-        - description: Car
-          in: body
-          name: body
-          required: true
-          schema:
-            type: string
-        - description: Ignore Dupes
-          in: query
-          name: ignore-dupes
-          type: string
-        - description: Filename
-          in: query
-          name: filename
-          type: string
+      description: This endpoint uploads content via a car file
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/util.ContentAddResponse'
+            type: string
         "400":
           description: Bad Request
           schema:
@@ -1012,7 +966,7 @@ paths:
           description: Internal Server Error
           schema:
             $ref: '#/definitions/util.HttpError'
-      summary: Add Car object
+      summary: Upload content via a car file
       tags:
         - content
   /content/add-ipfs:
@@ -1290,6 +1244,34 @@ paths:
       summary: List all failures for a content
       tags:
         - content
+  /content/importdeal:
+    post:
+      description: This endpoint imports a deal into the shuttle.
+      parameters:
+        - description: Import a deal
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/main.importDealBody'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Import a deal
+      tags:
+        - content
   /content/list:
     get:
       description: This endpoint lists all content
@@ -1309,6 +1291,33 @@ paths:
           schema:
             $ref: '#/definitions/util.HttpError'
       summary: List all pinned content
+      tags:
+        - content
+  /content/read/{cont}:
+    get:
+      description: This endpoint reads content from the blockstore
+      parameters:
+        - description: CID
+          in: path
+          name: cont
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Read content
       tags:
         - content
   /content/staging-zones:
@@ -1796,7 +1805,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_application-research_estuary_api_v1.claimResponse'
+            $ref: '#/definitions/api.claimResponse'
         "400":
           description: Bad Request
           schema:
@@ -1823,7 +1832,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/github_com_application-research_estuary_api_v1.claimMsgResponse'
+            $ref: '#/definitions/api.claimMsgResponse'
         "400":
           description: Bad Request
           schema:
@@ -1928,6 +1937,27 @@ paths:
       summary: Unuspend Miner
       tags:
         - miner
+  /net/addrs:
+    get:
+      description: This endpoint is used to get net addrs
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Net Addrs
+      tags:
+        - net
   /pinning/pins:
     get:
       description: This endpoint lists all pin status objects
@@ -2352,287 +2382,6 @@ paths:
       summary: Public stats
       tags:
         - public
-  /storage-providers:
-    get:
-      description: This endpoint returns all storage providers
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            items:
-              $ref: '#/definitions/api.storageProviderResp'
-            type: array
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get all storage providers
-      tags:
-        - sp
-  /storage-providers/claim:
-    post:
-      description: This endpoint lets a user claim a storage provider
-      parameters:
-        - description: Claim Storage Provider Body
-          in: body
-          name: req
-          required: true
-          schema:
-            $ref: '#/definitions/miner.ClaimMinerBody'
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_application-research_estuary_api_v2.claimResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Claim Storage Provider
-      tags:
-        - sp
-  /storage-providers/claim/{sp}:
-    get:
-      description: This endpoint lets a user get the message in order to claim a storage provider
-      parameters:
-        - description: Storage Provider claim message
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/github_com_application-research_estuary_api_v2.claimMsgResponse'
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get Claim Storage Provider
-      tags:
-        - sp
-  /storage-providers/deals/{sp}:
-    get:
-      description: This endpoint returns all storage providers deals
-      parameters:
-        - description: Filter by storage provider
-          in: path
-          name: sp
-          required: true
-          type: string
-        - description: Ignore Failed
-          in: query
-          name: ignore-failed
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get all storage providers deals
-      tags:
-        - sp
-  /storage-providers/failures/{sp}:
-    get:
-      description: This endpoint returns all storage providers
-      parameters:
-        - description: Filter by storage provider
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get all storage providers
-      tags:
-        - sp
-  /storage-providers/set-info/{sp}:
-    put:
-      description: This endpoint lets a user set storage provider info.
-      parameters:
-        - description: Storage Provider set info params
-          in: body
-          name: params
-          required: true
-          schema:
-            $ref: '#/definitions/miner.MinerSetInfoParams'
-        - description: Storage Provider to set info for
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Set Storage Provider Info
-      tags:
-        - sp
-  /storage-providers/stats/{sp}:
-    get:
-      description: This endpoint returns storage provider stats
-      parameters:
-        - description: Filter by storage provider
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get storage provider stats
-      tags:
-        - sp
-  /storage-providers/storage/query/{cid}:
-    get:
-      description: This endpoint returns the ask for a given CID
-      parameters:
-        - description: CID
-          in: path
-          name: cid
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Query Ask
-      tags:
-        - deals
-  /storage-providers/suspend/{sp}:
-    post:
-      description: This endpoint lets a user suspend a storage provider.
-      parameters:
-        - description: Suspend Storage Provider Body
-          in: body
-          name: req
-          required: true
-          schema:
-            $ref: '#/definitions/miner.SuspendMinerBody'
-        - description: Storage Provider to suspend
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties:
-              type: string
-            type: object
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Suspend Storage Provider
-      tags:
-        - sp
-  /storage-providers/unsuspend/{sp}:
-    put:
-      description: This endpoint lets a user unsuspend a Storage Provider.
-      parameters:
-        - description: Storage Provider to unsuspend
-          in: path
-          name: sp
-          required: true
-          type: string
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Unuspend Storage Provider
-      tags:
-        - sp
   /user/api-keys:
     get:
       description: This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.

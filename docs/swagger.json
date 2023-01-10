@@ -883,49 +883,15 @@
     },
     "/content/add": {
       "post": {
-        "description": "This endpoint is used to upload new content.",
-        "consumes": [
-          "multipart/form-data"
-        ],
+        "description": "This endpoint uploads a file.",
         "produces": [
           "application/json"
         ],
         "tags": [
           "content"
         ],
-        "summary": "Add new content",
+        "summary": "Upload a file",
         "parameters": [
-          {
-            "type": "file",
-            "description": "File to upload",
-            "name": "data",
-            "in": "formData",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "Filename to use for upload",
-            "name": "filename",
-            "in": "formData"
-          },
-          {
-            "type": "string",
-            "description": "Collection UUID",
-            "name": "coluuid",
-            "in": "query"
-          },
-          {
-            "type": "integer",
-            "description": "Replication value",
-            "name": "replication",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "Ignore Dupes true/false",
-            "name": "ignore-dupes",
-            "in": "query"
-          },
           {
             "type": "string",
             "description": "Overwrite files with the same path on same collection",
@@ -934,14 +900,14 @@
           },
           {
             "type": "string",
-            "description": "Lazy Provide true/false",
-            "name": "lazy-provide",
+            "description": "Directory",
+            "name": "dir",
             "in": "query"
           },
           {
             "type": "string",
-            "description": "Directory",
-            "name": "dir",
+            "description": "Collection UUID",
+            "name": "coluuid",
             "in": "query"
           }
         ],
@@ -949,7 +915,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/util.ContentAddResponse"
+              "type": "string"
             }
           },
           "400": {
@@ -969,42 +935,19 @@
     },
     "/content/add-car": {
       "post": {
-        "description": "This endpoint is used to add a car object to the network. The object can be a file or a directory.",
+        "description": "This endpoint uploads content via a car file",
         "produces": [
           "application/json"
         ],
         "tags": [
           "content"
         ],
-        "summary": "Add Car object",
-        "parameters": [
-          {
-            "description": "Car",
-            "name": "body",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "type": "string",
-            "description": "Ignore Dupes",
-            "name": "ignore-dupes",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "Filename",
-            "name": "filename",
-            "in": "query"
-          }
-        ],
+        "summary": "Upload content via a car file",
         "responses": {
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/util.ContentAddResponse"
+              "type": "string"
             }
           },
           "400": {
@@ -1439,6 +1382,49 @@
         }
       }
     },
+    "/content/importdeal": {
+      "post": {
+        "description": "This endpoint imports a deal into the shuttle.",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Import a deal",
+        "parameters": [
+          {
+            "description": "Import a deal",
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/main.importDealBody"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
     "/content/list": {
       "get": {
         "description": "This endpoint lists all content",
@@ -1449,6 +1435,47 @@
           "content"
         ],
         "summary": "List all pinned content",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/content/read/{cont}": {
+      "get": {
+        "description": "This endpoint reads content from the blockstore",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "content"
+        ],
+        "summary": "Read content",
+        "parameters": [
+          {
+            "type": "string",
+            "description": "CID",
+            "name": "cont",
+            "in": "path",
+            "required": true
+          }
+        ],
         "responses": {
           "200": {
             "description": "OK",
@@ -2248,7 +2275,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/github_com_application-research_estuary_api_v1.claimResponse"
+              "$ref": "#/definitions/api.claimResponse"
             }
           },
           "400": {
@@ -2289,7 +2316,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/github_com_application-research_estuary_api_v1.claimMsgResponse"
+              "$ref": "#/definitions/api.claimMsgResponse"
             }
           },
           "400": {
@@ -2431,6 +2458,38 @@
             "description": "OK",
             "schema": {
               "$ref": "#/definitions/api.emptyResp"
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "schema": {
+              "$ref": "#/definitions/util.HttpError"
+            }
+          }
+        }
+      }
+    },
+    "/net/addrs": {
+      "get": {
+        "description": "This endpoint is used to get net addrs",
+        "produces": [
+          "application/json"
+        ],
+        "tags": [
+          "net"
+        ],
+        "summary": "Net Addrs",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "type": "string"
             }
           },
           "400": {
@@ -3088,433 +3147,6 @@
         }
       }
     },
-    "/storage-providers": {
-      "get": {
-        "description": "This endpoint returns all storage providers",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Get all storage providers",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/api.storageProviderResp"
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/claim": {
-      "post": {
-        "description": "This endpoint lets a user claim a storage provider",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Claim Storage Provider",
-        "parameters": [
-          {
-            "description": "Claim Storage Provider Body",
-            "name": "req",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/miner.ClaimMinerBody"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/github_com_application-research_estuary_api_v2.claimResponse"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/claim/{sp}": {
-      "get": {
-        "description": "This endpoint lets a user get the message in order to claim a storage provider",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Get Claim Storage Provider",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Storage Provider claim message",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "$ref": "#/definitions/github_com_application-research_estuary_api_v2.claimMsgResponse"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/deals/{sp}": {
-      "get": {
-        "description": "This endpoint returns all storage providers deals",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Get all storage providers deals",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Filter by storage provider",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          },
-          {
-            "type": "string",
-            "description": "Ignore Failed",
-            "name": "ignore-failed",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/failures/{sp}": {
-      "get": {
-        "description": "This endpoint returns all storage providers",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Get all storage providers",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Filter by storage provider",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/set-info/{sp}": {
-      "put": {
-        "description": "This endpoint lets a user set storage provider info.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Set Storage Provider Info",
-        "parameters": [
-          {
-            "description": "Storage Provider set info params",
-            "name": "params",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/miner.MinerSetInfoParams"
-            }
-          },
-          {
-            "type": "string",
-            "description": "Storage Provider to set info for",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/stats/{sp}": {
-      "get": {
-        "description": "This endpoint returns storage provider stats",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Get storage provider stats",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Filter by storage provider",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/storage/query/{cid}": {
-      "get": {
-        "description": "This endpoint returns the ask for a given CID",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "deals"
-        ],
-        "summary": "Query Ask",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "CID",
-            "name": "cid",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "string"
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/suspend/{sp}": {
-      "post": {
-        "description": "This endpoint lets a user suspend a storage provider.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Suspend Storage Provider",
-        "parameters": [
-          {
-            "description": "Suspend Storage Provider Body",
-            "name": "req",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "$ref": "#/definitions/miner.SuspendMinerBody"
-            }
-          },
-          {
-            "type": "string",
-            "description": "Storage Provider to suspend",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "schema": {
-              "type": "object",
-              "additionalProperties": {
-                "type": "string"
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
-    "/storage-providers/unsuspend/{sp}": {
-      "put": {
-        "description": "This endpoint lets a user unsuspend a Storage Provider.",
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "sp"
-        ],
-        "summary": "Unuspend Storage Provider",
-        "parameters": [
-          {
-            "type": "string",
-            "description": "Storage Provider to unsuspend",
-            "name": "sp",
-            "in": "path",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          },
-          "400": {
-            "description": "Bad Request",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
     "/user/api-keys": {
       "get": {
         "description": "This endpoint is used to get API keys for a user. In estuary, each user can be given multiple API keys (tokens). This endpoint can be used to retrieve all available API keys for a given user.",
@@ -3759,6 +3391,22 @@
         }
       }
     },
+    "api.claimMsgResponse": {
+      "type": "object",
+      "properties": {
+        "hexmsg": {
+          "type": "string"
+        }
+      }
+    },
+    "api.claimResponse": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "type": "boolean"
+        }
+      }
+    },
     "api.createCollectionBody": {
       "type": "object",
       "properties": {
@@ -3823,26 +3471,6 @@
       "properties": {
         "primaryAddress": {
           "$ref": "#/definitions/address.Address"
-        }
-      }
-    },
-    "api.storageProviderResp": {
-      "type": "object",
-      "properties": {
-        "addr": {
-          "$ref": "#/definitions/address.Address"
-        },
-        "name": {
-          "type": "string"
-        },
-        "suspended": {
-          "type": "boolean"
-        },
-        "suspendedReason": {
-          "type": "string"
-        },
-        "version": {
-          "type": "string"
         }
       }
     },
@@ -3912,34 +3540,25 @@
         }
       }
     },
-    "github_com_application-research_estuary_api_v1.claimMsgResponse": {
+    "main.importDealBody": {
       "type": "object",
       "properties": {
-        "hexmsg": {
+        "coluuid": {
           "type": "string"
-        }
-      }
-    },
-    "github_com_application-research_estuary_api_v1.claimResponse": {
-      "type": "object",
-      "properties": {
-        "success": {
-          "type": "boolean"
-        }
-      }
-    },
-    "github_com_application-research_estuary_api_v2.claimMsgResponse": {
-      "type": "object",
-      "properties": {
-        "hexmsg": {
+        },
+        "dealIDs": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "dir": {
           "type": "string"
-        }
-      }
-    },
-    "github_com_application-research_estuary_api_v2.claimResponse": {
-      "type": "object",
-      "properties": {
-        "success": {
+        },
+        "name": {
+          "type": "string"
+        },
+        "overwrite": {
           "type": "boolean"
         }
       }
