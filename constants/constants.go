@@ -41,6 +41,12 @@ const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days
 const TokenExpiryDurationDefault = time.Hour * 24 * 30          // 30 days
 const TokenExpiryDurationPermanent = time.Hour * 24 * 365 * 100 // 100 years
 
+var AdminUsernameAlphanumericRegex = regexp.MustCompile(`^[A-Za-z\d]{1,32}$`)
+
+func IsAdminUsernameValid(username string) bool {
+	return AdminUsernameAlphanumericRegex.MatchString(username)
+}
+
 var AdminPasswordLengthAndAlphanumericRegex = regexp.MustCompile(`^[A-Za-z\d]{8,}$`)
 var AdminPasswordContainsAlphaRegex = regexp.MustCompile(`[A-Za-z]`)
 var AdminPasswordContainsNumericRegex = regexp.MustCompile(`\d`)
