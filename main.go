@@ -570,21 +570,6 @@ func main() {
 				if err := db.Create(newUser).Error; err != nil {
 					return fmt.Errorf("admin user creation failed: %w", err)
 				}
-
-				token := "EST" + uuid.New().String() + "ARY"
-				authToken := &util.AuthToken{
-					Token:     token,
-					TokenHash: util.GetTokenHash(token),
-					Label:     TOKEN_LABEL_ADMIN,
-					User:      newUser.ID,
-					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
-					IsSession: false,
-				}
-				if err := db.Create(authToken).Error; err != nil {
-					return fmt.Errorf("admin token creation failed: %w", err)
-				}
-
-				fmt.Printf("Auth Token: %v\n", authToken.Token)
 				return nil
 			},
 		}, {
