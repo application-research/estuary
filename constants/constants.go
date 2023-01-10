@@ -41,7 +41,25 @@ const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days
 const TokenExpiryDurationDefault = time.Hour * 24 * 30          // 30 days
 const TokenExpiryDurationPermanent = time.Hour * 24 * 365 * 100 // 100 years
 
-var PasswordRegex = regexp.MustCompile(`^[A-Za-z\d]{8,}$`)
+var AdminPasswordLengthAndAlphanumericRegex = regexp.MustCompile(`^[A-Za-z\d]{8,}$`)
+var AdminPasswordContainsAlphaRegex = regexp.MustCompile(`[A-Za-z]`)
+var AdminPasswordContainsNumericRegex = regexp.MustCompile(`\d`)
+
+var AdminPasswordRegexes = []*regexp.Regexp{
+	AdminPasswordLengthAndAlphanumericRegex,
+	AdminPasswordContainsAlphaRegex,
+	AdminPasswordContainsNumericRegex,
+}
+
+func IsAdminPasswordValid(password string) bool {
+	for _, regex := range AdminPasswordRegexes {
+		ok := regex.MatchString(password)
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
 
 var DealMaxPrice abi.TokenAmount
 var VerifiedDealMaxPrice = abi.NewTokenAmount(0)

@@ -528,8 +528,8 @@ func main() {
 					return errors.New("setup password cannot be empty")
 				}
 
-				matched := constants.PasswordRegex.MatchString(password)
-				if !matched {
+				ok := constants.IsAdminPasswordValid(password)
+				if !ok {
 					return errors.New("password must be at least eight characters and contain at least one letter and one number")
 				}
 
