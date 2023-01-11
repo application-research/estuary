@@ -28,9 +28,9 @@ type Collection struct {
 type CollectionRef struct {
 	ID         uint `gorm:"primaryKey"`
 	CreatedAt  time.Time
-	Collection uint    `gorm:"index:,option:CONCURRENTLY; not null"`
+	Collection uint    `gorm:"index:,option:CONCURRENTLY;not null"`
 	Content    uint    `gorm:"index:,option:CONCURRENTLY;not null"`
-	Path       *string `gorm:"not null"`
+	Path       *string `gorm:"null"`
 }
 
 type CidType string
