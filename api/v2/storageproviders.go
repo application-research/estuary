@@ -143,6 +143,8 @@ type storageProviderResp struct {
 // @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 	ctx := context.TODO()
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviders")
+	defer span.End()
 
 	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
 	key := util.CacheKey(c, nil)
@@ -151,6 +153,12 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 		out, ok := cached.([]storageProviderResp)
 		if ok {
 			return c.JSON(http.StatusOK, out)
+		} else {
+			c.JSON(http.StatusInternalServerError, &util.HttpError{
+				Code:    http.StatusInternalServerError,
+				Reason:  util.ERR_INTERNAL_SERVER,
+				Details: "unable to read cached Storage Providers list",
+			})
 		}
 	}
 

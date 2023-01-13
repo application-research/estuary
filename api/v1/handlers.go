@@ -1743,7 +1743,7 @@ type minerResp struct {
 // @Description  This endpoint returns all miners. Note: value may be cached
 // @Tags         admin,net
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  minerResp
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
 // @Router       /admin/miners/ [get]
@@ -1757,6 +1757,12 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		out, ok := cached.([]minerResp)
 		if ok {
 			return c.JSON(http.StatusOK, out)
+		} else {
+			c.JSON(http.StatusInternalServerError, &util.HttpError{
+				Code:    http.StatusInternalServerError,
+				Reason:  util.ERR_INTERNAL_SERVER,
+				Details: "unable to read cached Storage Providers list",
+			})
 		}
 	}
 
