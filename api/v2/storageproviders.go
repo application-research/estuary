@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/hex"
 	"net/http"
 	"time"
@@ -142,7 +141,6 @@ type storageProviderResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
-	ctx := context.TODO()
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviders")
 	defer span.End()
 
