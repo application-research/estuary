@@ -154,7 +154,7 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 		if ok {
 			return c.JSON(http.StatusOK, out)
 		} else {
-			c.JSON(http.StatusInternalServerError, &util.HttpError{
+			return c.JSON(http.StatusInternalServerError, &util.HttpError{
 				Code:    http.StatusInternalServerError,
 				Reason:  util.ERR_INTERNAL_SERVER,
 				Details: "unable to read cached Storage Providers list",
