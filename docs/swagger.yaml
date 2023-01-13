@@ -1905,6 +1905,44 @@ paths:
       summary: Unuspend Miner
       tags:
         - miner
+  /pinning/batched-pins:
+    post:
+      consumes:
+        - application/json
+      description: This endpoint adds a pin to the IPFS daemon.
+      parameters:
+        - description: Pin Body {[cid:cid, name:name]}
+          in: body
+          name: pin
+          required: true
+          schema:
+            items:
+              $ref: '#/definitions/types.IpfsPin'
+            type: array
+        - description: Ignore Dupes
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
+          type: string
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            items:
+              $ref: '#/definitions/types.IpfsPinStatusResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Add and pin objects in batches
+      tags:
+        - pinning
   /pinning/pins:
     get:
       description: This endpoint lists all pin status objects
