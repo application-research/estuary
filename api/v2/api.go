@@ -101,4 +101,12 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	storageProvider.GET("/storage/query/:cid", s.handleStorageProviderQueryAsk)
 	storageProvider.POST("/claim", util.WithUser(s.handleClaimStorageProvider))
 	storageProvider.GET("/claim/:sp", util.WithUser(s.handleGetClaimStorageProviderMsg))
+
+	// Pinning
+	pinning := api.Group("/pinning")
+	pinning.POST("/batched-pins", util.WithUser(s.handleAddBatchedPins))
+}
+
+func (s *apiV2) isContentAddingDisabled(u *util.User) bool {
+	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
 }

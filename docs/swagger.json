@@ -2448,64 +2448,6 @@
         }
       }
     },
-    "/pinning/batched-pins": {
-      "post": {
-        "description": "This endpoint adds a pin to the IPFS daemon.",
-        "consumes": [
-          "application/json"
-        ],
-        "produces": [
-          "application/json"
-        ],
-        "tags": [
-          "pinning"
-        ],
-        "summary": "Add and pin objects in batches",
-        "parameters": [
-          {
-            "description": "Pin Body {[cid:cid, name:name]}",
-            "name": "pin",
-            "in": "body",
-            "required": true,
-            "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/types.IpfsPin"
-              }
-            }
-          },
-          {
-            "type": "string",
-            "description": "Ignore Dupes",
-            "name": "ignore-dupes",
-            "in": "query"
-          },
-          {
-            "type": "string",
-            "description": "Overwrite conflicting files in collections",
-            "name": "overwrite",
-            "in": "query"
-          }
-        ],
-        "responses": {
-          "202": {
-            "description": "Accepted",
-            "schema": {
-              "type": "array",
-              "items": {
-                "$ref": "#/definitions/types.IpfsPinStatusResponse"
-              }
-            }
-          },
-          "500": {
-            "description": "Internal Server Error",
-            "schema": {
-              "$ref": "#/definitions/util.HttpError"
-            }
-          }
-        }
-      }
-    },
     "/pinning/pins": {
       "get": {
         "description": "This endpoint lists all pin status objects",
