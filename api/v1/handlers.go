@@ -142,19 +142,6 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, out)
 }
 
-// cacheKey returns a key based on the request being made, the user associated to it, and optional tags
-// this key is used when calling Get or Add from a cache
-func cacheKey(c echo.Context, u *util.User, tags ...string) string {
-	paramNames := strings.Join(c.ParamNames(), ",")
-	paramVals := strings.Join(c.ParamValues(), ",")
-	tagsString := strings.Join(tags, ",")
-	if u != nil {
-		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s user=%d tags=%s", c.Request().URL, paramNames, paramVals, u.ID, tagsString)
-	} else {
-		return fmt.Sprintf("URL=%s ParamNames=%s ParamVals=%s tags=%s", c.Request().URL, paramNames, paramVals, tagsString)
-	}
-}
-
 // handleGetUserContents godoc
 // @Summary      Get user contents
 // @Description  This endpoint is used to get user contents
@@ -1743,37 +1730,64 @@ func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
 }
 
 type minerResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
+	Addr            address.Address       `json:"addr"`
+	Name            string                `json:"name"`
+	Suspended       bool                  `json:"suspended"`
+	SuspendedReason string                `json:"suspendedReason,omitempty"`
+	Version         string                `json:"version"`
+	ChainInfo       *miner.MinerChainInfo `json:"chain_info"`
 }
 
 // handleAdminGetMiners godoc
 // @Summary      Get all miners
-// @Description  This endpoint returns all miners
-// @Tags         public,net
+// @Description  This endpoint returns all miners. Note: value may be cached
+// @Tags         admin,net
 // @Produce      json
-// @Success      200  {object}  string
+// @Success      200  {object}  minerResp
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /public/miners [get]
+// @Router       /admin/miners/ [get]
 func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
+	ctx := context.TODO()
+
+	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
+	key := util.CacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]minerResp)
+		if ok {
+			return c.JSON(http.StatusOK, out)
+		} else {
+			return c.JSON(http.StatusInternalServerError, &util.HttpError{
+				Code:    http.StatusInternalServerError,
+				Reason:  util.ERR_INTERNAL_SERVER,
+				Details: "unable to read cached Storage Providers list",
+			})
+		}
+	}
+
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
 
 	out := make([]minerResp, len(miners))
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
 		out[i].Version = m.Version
+
+		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+		if err != nil {
+			out[i].ChainInfo = ci
+		}
+
 	}
 
+	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -2133,15 +2147,7 @@ type minerStatsResp struct {
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
 
-	ChainInfo *minerChainInfo `json:"chainInfo"`
-}
-
-type minerChainInfo struct {
-	PeerID    string   `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  string `json:"owner"`
-	Worker string `json:"worker"`
+	ChainInfo *miner.MinerChainInfo `json:"chainInfo"`
 }
 
 // handleGetMinerStats godoc
@@ -2163,25 +2169,9 @@ func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 		return err
 	}
 
-	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	ci, err := s.minerManager.GetMinerChainInfo(ctx, maddr)
 	if err != nil {
 		return err
-	}
-
-	ci := minerChainInfo{
-		Owner:  minfo.Owner.String(),
-		Worker: minfo.Worker.String(),
-	}
-
-	if minfo.PeerId != nil {
-		ci.PeerID = minfo.PeerId.String()
-	}
-	for _, a := range minfo.Multiaddrs {
-		ma, err := multiaddr.NewMultiaddrBytes(a)
-		if err != nil {
-			return err
-		}
-		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	var m model.StorageMiner
@@ -2214,7 +2204,7 @@ func (s *apiV1) handleGetMinerStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
-		ChainInfo:       &ci,
+		ChainInfo:       ci,
 	})
 }
 
@@ -2880,7 +2870,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 // @Failure 500 {object} util.HttpError
 // @Router /viewer [get]
 func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
-	key := cacheKey(c, u)
+	key := util.CacheKey(c, u)
 	cached, ok := s.cacher.Get(key)
 	if ok {
 		return c.JSON(http.StatusOK, cached)
@@ -3503,7 +3493,7 @@ type publicStatsResponse struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/stats [get]
 func (s *apiV1) handlePublicStats(c echo.Context) error {
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	val, ok := s.cacher.Get(key)
 	if !ok {
 		computedVal, err := s.computePublicStats()
@@ -3514,7 +3504,7 @@ func (s *apiV1) handlePublicStats(c echo.Context) error {
 		s.cacher.Add(key, val)
 	}
 
-	keyExt := cacheKey(c, nil, "ext")
+	keyExt := util.CacheKey(c, nil, "ext")
 	valExt, ok := s.extendedCacher.Get(keyExt)
 	if !ok {
 		computedValExt, err := s.computePublicStatsWithExtensiveLookups()
@@ -3738,7 +3728,7 @@ type metricsDealJoin struct {
 // @Failure      500  {object}  util.HttpError
 // @Router       /public/metrics/deals-on-chain [get]
 func (s *apiV1) handleMetricsDealOnChain(c echo.Context) error {
-	key := cacheKey(c, nil)
+	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
 		return c.JSON(http.StatusOK, cached)
