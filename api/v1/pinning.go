@@ -271,11 +271,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 
 	var cols []*collections.CollectionRef
 	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
-			return err
-		}
-
+		srchCol, err := collections.GetCollection(c, s.DB, u)
 		colp, _ := pin.Meta[ColDir].(string)
 		path, err := collections.ConstructDirectoryPath(colp)
 		if err != nil {

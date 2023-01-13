@@ -51,8 +51,8 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 
 		var cols []*collections.CollectionRef
 		if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-			var srchCol collections.Collection
-			if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
+			srchCol, err := collections.GetCollection(c, s.DB, u)
+			if err != nil {
 				return err
 			}
 
@@ -62,7 +62,6 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 				return err
 			}
 			fullPath := filepath.Join(path, filename)
-
 			cols = []*collections.CollectionRef{
 				{
 					Collection: srchCol.ID,
