@@ -59,6 +59,21 @@ definitions:
       tokenHash:
         type: string
     type: object
+  api.minerResp:
+    properties:
+      addr:
+        $ref: '#/definitions/address.Address'
+      chain_info:
+        $ref: '#/definitions/miner.MinerChainInfo'
+      name:
+        type: string
+      suspended:
+        type: boolean
+      suspendedReason:
+        type: string
+      version:
+        type: string
+    type: object
   api.publicNodeInfo:
     properties:
       primaryAddress:
@@ -115,6 +130,19 @@ definitions:
       miner:
         $ref: '#/definitions/address.Address'
       name:
+        type: string
+    type: object
+  miner.MinerChainInfo:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      owner:
+        type: string
+      peerId:
+        type: string
+      worker:
         type: string
     type: object
   miner.MinerSetInfoParams:
@@ -411,7 +439,7 @@ paths:
         "200":
           description: OK
           schema:
-            type: string
+            $ref: '#/definitions/api.minerResp'
         "400":
           description: Bad Request
           schema:
