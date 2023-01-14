@@ -105,6 +105,7 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	// Pinning
 	pinning := api.Group("/pinning")
 	pinning.POST("/batched-pins", util.WithUser(s.handleAddBatchedPins))
+	pinning.GET("/batched-pins", util.WithUser(s.handleGetBatchedPins))
 }
 
 func (s *apiV2) isContentAddingDisabled(u *util.User) bool {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"github.com/application-research/estuary/api/v1"
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/pinner/types"
@@ -8,9 +9,59 @@ import (
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 	"net/http"
 	"path/filepath"
 )
+
+type BatchedPinRequest struct {
+	ContentIdToPin string `json:"content_id"`
+}
+
+// handleGetBatchedPins  godoc
+// @Summary      Get a pin status object
+// @Description  This endpoint returns a pin status object.
+// @Tags         pinning
+// @Produce      json
+// @Success      200	{object}  []types.IpfsPinStatusResponse
+// @Failure      404	{object}  util.HttpError
+// @Failure      500    {object}  util.HttpError
+// @Param        pin           body      []api.BatchedPinRequest  true   "Pin Body {[content_id:"content_id_to_pin"]}"
+// @Router       /v2/pinning/batched-pins/ [get]
+func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
+
+	var pins []BatchedPinRequest
+	c.Bind(&pins)
+
+	var pinStatuses []*types.IpfsPinStatusResponse
+	for _, pinId := range pins {
+		contentId := pinId.ContentIdToPin
+		var content util.Content
+		if err := s.DB.First(&content, "id = ? AND not replace", contentId).Error; err != nil {
+			if xerrors.Is(err, gorm.ErrRecordNotFound) {
+				return &util.HttpError{
+					Code:    http.StatusNotFound,
+					Reason:  util.ERR_CONTENT_NOT_FOUND,
+					Details: fmt.Sprintf("content with ID(%d) was not found", contentId),
+				}
+			}
+			return err
+		}
+
+		if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+			return err
+		}
+
+		st, err := s.CM.PinStatus(content, nil)
+		pinStatuses = append(pinStatuses, st)
+		if err != nil {
+			return err
+		}
+	}
+
+	return c.JSON(http.StatusOK, pinStatuses)
+}
 
 // handleAddBatchedPins  godoc
 // @Summary      Add and pin objects in batches
@@ -24,7 +75,7 @@ import (
 // @Param        pin           body      []types.IpfsPin  true   "Pin Body {[cid:cid, name:name]}"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
-// @Router       /pinning/batched-pins [post]
+// @Router       /v2/pinning/batched-pins [post]
 func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 

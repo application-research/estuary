@@ -20,12 +20,12 @@ type IRegister interface {
 	RegisterRoutes(en *echo.Echo)
 }
 
-type apiEngine struct {
+type ApiEngine struct {
 	eng *echo.Echo
 	cfg *config.Estuary
 }
 
-func NewEngine(cfg *config.Estuary, tcr trace.Tracer) *apiEngine {
+func NewEngine(cfg *config.Estuary, tcr trace.Tracer) *ApiEngine {
 	e := echo.New()
 	e.Binder = new(util.Binder)
 	e.Pre(middleware.RemoveTrailingSlash())
@@ -76,13 +76,13 @@ func NewEngine(cfg *config.Estuary, tcr trace.Tracer) *apiEngine {
 	if !cfg.DisableSwaggerEndpoint {
 		e.GET("/swagger/*", echoSwagger.WrapHandler)
 	}
-	return &apiEngine{eng: e, cfg: cfg}
+	return &ApiEngine{eng: e, cfg: cfg}
 }
 
-func (apiEng *apiEngine) Start() error {
+func (apiEng *ApiEngine) Start() error {
 	return apiEng.eng.Start(apiEng.cfg.ApiListen)
 }
 
-func (apiEng *apiEngine) RegisterAPI(api IRegister) {
+func (apiEng *ApiEngine) RegisterAPI(api IRegister) {
 	api.RegisterRoutes(apiEng.eng)
 }
