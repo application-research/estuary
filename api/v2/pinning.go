@@ -32,7 +32,10 @@ type BatchedPinRequest struct {
 func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 
 	var pins []BatchedPinRequest
-	c.Bind(&pins)
+	err := c.Bind(&pins)
+	if err != nil {
+		return err
+	}
 
 	var pinStatuses []*types.IpfsPinStatusResponse
 	for _, pinId := range pins {
@@ -43,7 +46,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 				return &util.HttpError{
 					Code:    http.StatusNotFound,
 					Reason:  util.ERR_CONTENT_NOT_FOUND,
-					Details: fmt.Sprintf("content with ID(%d) was not found", contentId),
+					Details: fmt.Sprintf("Content with id %s not found", contentId),
 				}
 			}
 			return err
