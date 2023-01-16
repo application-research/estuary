@@ -19,19 +19,20 @@ import (
 )
 
 type apiV2 struct {
-	cfg          *config.Estuary
-	DB           *gorm.DB
-	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
-	gwayHandler  *gateway.GatewayHandler
-	cacher       *explru.ExpirableLRU
-	minerManager miner.IMinerManager
-	pinMgr       *pinner.EstuaryPinManager
-	log          *zap.SugaredLogger
+	cfg            *config.Estuary
+	DB             *gorm.DB
+	tracer         trace.Tracer
+	Node           *node.Node
+	FilClient      *filclient.FilClient
+	Api            api.Gateway
+	CM             *contentmgr.ContentManager
+	StagingMgr     *stagingbs.StagingBSMgr
+	gwayHandler    *gateway.GatewayHandler
+	cacher         *explru.ExpirableLRU
+	extendedCacher *explru.ExpirableLRU
+	minerManager   miner.IMinerManager
+	pinMgr         *pinner.EstuaryPinManager
+	log            *zap.SugaredLogger
 }
 
 func NewAPIV2(
@@ -43,25 +44,27 @@ func NewAPIV2(
 	sbm *stagingbs.StagingBSMgr,
 	cm *contentmgr.ContentManager,
 	cacher *explru.ExpirableLRU,
+	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 ) *apiV2 {
 	return &apiV2{
-		cfg:          cfg,
-		DB:           db,
-		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
-		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       cacher,
-		minerManager: mm,
-		pinMgr:       pinMgr,
-		log:          log,
+		cfg:            cfg,
+		DB:             db,
+		tracer:         trc,
+		Node:           nd,
+		FilClient:      fc,
+		Api:            gwApi,
+		CM:             cm,
+		StagingMgr:     sbm,
+		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
+		cacher:         cacher,
+		extendedCacher: extendedCacher,
+		minerManager:   mm,
+		pinMgr:         pinMgr,
+		log:            log,
 	}
 }
 

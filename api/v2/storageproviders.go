@@ -9,9 +9,7 @@ import (
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/labstack/echo/v4"
-	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -125,16 +123,17 @@ func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) erro
 }
 
 type storageProviderResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
+	Addr            address.Address       `json:"addr"`
+	Name            string                `json:"name"`
+	Suspended       bool                  `json:"suspended"`
+	SuspendedReason string                `json:"suspendedReason,omitempty"`
+	Version         string                `json:"version"`
+	ChainInfo       *miner.MinerChainInfo `json:"chain_info"`
 }
 
 // handleGetStorageProviders godoc
 // @Summary      Get all storage providers
-// @Description  This endpoint returns all storage providers
+// @Description  This endpoint returns all storage providers. Note: Value may be cached
 // @Tags         sp
 // @Produce      json
 // @Success      200  {object}  []storageProviderResp
@@ -142,20 +141,47 @@ type storageProviderResp struct {
 // @Failure      500           {object}  util.HttpError
 // @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviders")
+	defer span.End()
+
+	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
+	key := util.CacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]storageProviderResp)
+		if ok {
+			return c.JSON(http.StatusOK, out)
+		} else {
+			return c.JSON(http.StatusInternalServerError, &util.HttpError{
+				Code:    http.StatusInternalServerError,
+				Reason:  util.ERR_INTERNAL_SERVER,
+				Details: "unable to read cached Storage Providers list",
+			})
+		}
+	}
+
 	var miners []model.StorageMiner
 	if err := s.DB.Find(&miners).Error; err != nil {
 		return err
 	}
 
 	out := make([]storageProviderResp, len(miners))
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
 		out[i].Version = m.Version
+
+		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
+		if err != nil {
+			out[i].ChainInfo = ci
+		}
+
 	}
 
+	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -266,15 +292,7 @@ type storageProviderStatsResp struct {
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
 
-	ChainInfo *storageProviderChainInfo `json:"chainInfo"`
-}
-
-type storageProviderChainInfo struct {
-	PeerID    string   `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  string `json:"owner"`
-	Worker string `json:"worker"`
+	ChainInfo *miner.MinerChainInfo `json:"chainInfo"`
 }
 
 // handleGetStorageProviderStats godoc
@@ -296,25 +314,9 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 		return err
 	}
 
-	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	ci, err := s.minerManager.GetMinerChainInfo(ctx, maddr)
 	if err != nil {
 		return err
-	}
-
-	ci := storageProviderChainInfo{
-		Owner:  minfo.Owner.String(),
-		Worker: minfo.Worker.String(),
-	}
-
-	if minfo.PeerId != nil {
-		ci.PeerID = minfo.PeerId.String()
-	}
-	for _, a := range minfo.Multiaddrs {
-		ma, err := multiaddr.NewMultiaddrBytes(a)
-		if err != nil {
-			return err
-		}
-		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	var m model.StorageMiner
@@ -347,7 +349,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
-		ChainInfo:       &ci,
+		ChainInfo:       ci,
 	})
 }
 

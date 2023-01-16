@@ -33,6 +33,7 @@ type IMinerManager interface {
 	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error)
 	SetMinerInfo(m address.Address, params MinerSetInfoParams, u *util.User) error
 	GetMsgForMinerClaim(miner address.Address, uid uint) []byte
+	GetMinerChainInfo(ctx context.Context, maddr address.Address) (*MinerChainInfo, error)
 	ClaimMiner(ctx context.Context, params ClaimMinerBody, u *util.User) error
 	SuspendMiner(m address.Address, params SuspendMinerBody, u *util.User) error
 	UnSuspendMiner(m address.Address, u *util.User) error
