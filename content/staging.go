@@ -406,7 +406,7 @@ func (cm *ContentManager) getContentsAndDestinationLocationForConsolidation(ctx 
 
 func (cm *ContentManager) GetStagingZonesForUser(ctx context.Context, userID uint, limit int, offset int) ([]*model.StagingZone, error) {
 	var zones []*model.StagingZone
-	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&zones, "user_id = ?", userID, userID).Error; err != nil {
+	if err := cm.db.Limit(limit).Offset(offset).Order("created_at desc").Find(&zones, "user_id = ?", userID).Error; err != nil {
 		return nil, err
 	}
 	return zones, nil
