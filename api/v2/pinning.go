@@ -155,7 +155,7 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 				return err
 			}
 			if count > 0 {
-				return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
+				return c.JSON(http.StatusFound, map[string]string{"message": "content with given cid already preserved"})
 			}
 		}
 
