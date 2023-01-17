@@ -824,8 +824,9 @@ func main() {
 
 		// stand up api server
 		apiTracer := otel.Tracer("api")
+
 		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr, dealMgr, stgZoneMgr)
-		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, minerMgr, pinmgr, log, apiTracer)
+		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, minerMgr, extendedCacher, pinmgr, log, apiTracer)
 
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)

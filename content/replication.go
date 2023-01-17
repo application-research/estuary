@@ -69,7 +69,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 	return m.db.Transaction(func(tx *gorm.DB) error {
 		// create objects
-		if err := m.db.CreateInBatches(objects, 300).Error; err != nil {
+		if err := tx.CreateInBatches(objects, 300).Error; err != nil {
 			return xerrors.Errorf("failed to create objects in db: %w", err)
 		}
 
@@ -89,12 +89,12 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 		)
 
 		// create object refs
-		if err := m.db.CreateInBatches(refs, 500).Error; err != nil {
+		if err := tx.CreateInBatches(refs, 500).Error; err != nil {
 			return xerrors.Errorf("failed to create refs: %w", err)
 		}
 
 		// update content
-		if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := tx.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"size":     contSize,
 			"pinning":  false,

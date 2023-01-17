@@ -307,7 +307,7 @@ func (m *manager) handlePinUpdate(location string, contID uint, status types.Pin
 		}
 
 		return m.db.Transaction(func(tx *gorm.DB) error {
-			if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 				"active":        false,
 				"pinning":       false,
 				"failed":        true,
@@ -362,12 +362,12 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 				Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
 				Size: pincomp.Objects[0].Size,
 			}
-			if err := m.db.Create(obj).Error; err != nil {
+			if err := tx.Create(obj).Error; err != nil {
 				return xerrors.Errorf("failed to create Object: %w", err)
 			}
 
 			// create obj ref
-			if err := m.db.Create(&util.ObjRef{
+			if err := tx.Create(&util.ObjRef{
 				Content: cont.ID,
 				Object:  obj.ID,
 			}).Error; err != nil {
@@ -375,7 +375,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			}
 
 			// update aggregate content
-			if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 				"active":   true,
 				"pinning":  false,
 				"cid":      util.DbCID{CID: pincomp.CID},
@@ -385,7 +385,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			}
 
 			// update staging zone
-			if err := m.db.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 				"status":   model.ZoneStatusDone,
 				"message":  model.ZoneMessageDone,
 				"location": handle,
@@ -440,12 +440,12 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 		)
 
 		// create object refs
-		if err := m.db.CreateInBatches(refs, 500).Error; err != nil {
+		if err := tx.CreateInBatches(refs, 500).Error; err != nil {
 			return xerrors.Errorf("failed to create refs: %w", err)
 		}
 
 		// update content
-		if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+		if err := tx.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"active":   true,
 			"size":     contSize,
 			"pinning":  false,

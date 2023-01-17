@@ -7,6 +7,7 @@ import (
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
 	"github.com/application-research/estuary/stagingbs"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
@@ -18,19 +19,20 @@ import (
 )
 
 type apiV2 struct {
-	cfg          *config.Estuary
-	db           *gorm.DB
-	tracer       trace.Tracer
-	nd           *node.Node
-	fc           *filclient.FilClient
-	api          api.Gateway
-	cm           content.IManager
-	stagingBsMgr *stagingbs.StagingBSMgr
-	gwayHandler  *gateway.GatewayHandler
-	cacher       *explru.ExpirableLRU
-	minerManager miner.IMinerManager
-	pinMgr       *pinner.EstuaryPinManager
-	log          *zap.SugaredLogger
+	cfg            *config.Estuary
+	db             *gorm.DB
+	tracer         trace.Tracer
+	nd             *node.Node
+	fc             *filclient.FilClient
+	api            api.Gateway
+	cm             content.IManager
+	stagingBsMgr   *stagingbs.StagingBSMgr
+	gwayHandler    *gateway.GatewayHandler
+	cacher         *explru.ExpirableLRU
+	extendedCacher *explru.ExpirableLRU
+	minerManager   miner.IMinerManager
+	pinMgr         *pinner.EstuaryPinManager
+	log            *zap.SugaredLogger
 }
 
 func NewAPIV2(
@@ -43,24 +45,26 @@ func NewAPIV2(
 	cm content.IManager,
 	cacher *explru.ExpirableLRU,
 	minerManager miner.IMinerManager,
+	extendedCacher *explru.ExpirableLRU,
 	pinMgr *pinner.EstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 ) *apiV2 {
 	return &apiV2{
-		cfg:          cfg,
-		db:           db,
-		tracer:       trc,
-		nd:           nd,
-		fc:           fc,
-		api:          gwApi,
-		cm:           cm,
-		stagingBsMgr: sbm,
-		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       cacher,
-		minerManager: minerManager,
-		pinMgr:       pinMgr,
-		log:          log,
+		cfg:            cfg,
+		db:             db,
+		tracer:         trc,
+		nd:             nd,
+		fc:             fc,
+		api:            gwApi,
+		cm:             cm,
+		stagingBsMgr:   sbm,
+		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
+		cacher:         cacher,
+		extendedCacher: extendedCacher,
+		minerManager:   minerManager,
+		pinMgr:         pinMgr,
+		log:            log,
 	}
 }
 
@@ -82,5 +86,22 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
-	_ = e.Group("/v2")
+	api := e.Group("/v2")
+
+	// Storage Provider Endpoints
+	storageProvider := api.Group("/storage-providers")
+	storageProvider.POST("/add/:sp", s.handleAddStorageProvider, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.POST("/rm/:sp", s.handleRemoveStorageProvider, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.POST("/suspend/:sp", util.WithUser(s.handleSuspendStorageProvider))
+	storageProvider.PUT("/unsuspend/:sp", util.WithUser(s.handleUnsuspendStorageProvider))
+	storageProvider.PUT("/set-info/:sp", util.WithUser(s.handleStorageProvidersSetInfo))
+	storageProvider.GET("/stats", s.handleGetStorageProviderDealStats, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/transfers/:sp", s.handleStorageProviderTransferDiagnostics, s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("", s.handleGetStorageProviders)
+	storageProvider.GET("/failures/:sp", s.handleGetStorageProviderFailures)
+	storageProvider.GET("/deals/:sp", s.handleGetStorageProviderDeals)
+	storageProvider.GET("/stats/:sp", s.handleGetStorageProviderStats)
+	storageProvider.GET("/storage/query/:cid", s.handleStorageProviderQueryAsk)
+	storageProvider.POST("/claim", util.WithUser(s.handleClaimStorageProvider))
+	storageProvider.GET("/claim/:sp", util.WithUser(s.handleGetClaimStorageProviderMsg))
 }

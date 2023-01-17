@@ -752,26 +752,7 @@ func main() {
 		}()
 
 		// setup metrics...
-		ongoingTransfers := metrics.NewCtx(metCtx, "transfers_ongoing", "total number of ongoing data transfers").Gauge()
-		failedTransfers := metrics.NewCtx(metCtx, "transfers_failed", "total number of failed data transfers").Gauge()
-		cancelledTransfers := metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge()
-		requestedTransfers := metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge()
-		allTransfers := metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge()
-		dataReceived := metrics.NewCtx(metCtx, "transfer_received_bytes", "total bytes sent").Gauge()
-		dataSent := metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge()
-		receivingPeersCount := metrics.NewCtx(metCtx, "graphsync_receiving_peers", "number of peers we are receiving graphsync data from").Gauge()
-		receivingActiveCount := metrics.NewCtx(metCtx, "graphsync_receiving_active", "number of active receiving graphsync transfers").Gauge()
-		receivingCountCount := metrics.NewCtx(metCtx, "graphsync_receiving_pending", "number of pending receiving graphsync transfers").Gauge()
-		receivingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_receiving_total_allocated", "amount of block memory allocated for receiving graphsync data").Gauge()
-		receivingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_receiving_pending_allocations", "amount of block memory on hold being received pending allocation").Gauge()
-		receivingPeersPending := metrics.NewCtx(metCtx, "graphsync_receiving_peers_pending", "number of peers we can't receive more data from cause of pending allocations").Gauge()
-
-		sendingPeersCount := metrics.NewCtx(metCtx, "graphsync_sending_peers", "number of peers we are sending graphsync data to").Gauge()
-		sendingActiveCount := metrics.NewCtx(metCtx, "graphsync_sending_active", "number of active sending graphsync transfers").Gauge()
-		sendingCountCount := metrics.NewCtx(metCtx, "graphsync_sending_pending", "number of pending sending graphsync transfers").Gauge()
-		sendingTotalMemoryAllocated := metrics.NewCtx(metCtx, "graphsync_sending_total_allocated", "amount of block memory allocated for sending graphsync data").Gauge()
-		sendingTotalPendingAllocations := metrics.NewCtx(metCtx, "graphsync_sending_pending_allocations", "amount of block memory on hold from sending pending allocation").Gauge()
-		sendingPeersPending := metrics.NewCtx(metCtx, "graphsync_sending_peers_pending", "number of peers we can't send more data to cause of pending allocations").Gauge()
+		gauges := setupMetrics(metCtx)
 
 		go func() {
 			var beginSent, beginRec float64
@@ -784,7 +765,7 @@ func main() {
 					continue
 				}
 
-				allTransfers.Set(float64(len(txs)))
+				gauges.AllTransfers.Set(float64(len(txs)))
 
 				byState := make(map[datatransfer.Status]int)
 				var sent uint64
@@ -796,34 +777,34 @@ func main() {
 					received += xfer.Received
 				}
 
-				ongoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
-				failedTransfers.Set(float64(byState[datatransfer.Failed]))
-				requestedTransfers.Set(float64(byState[datatransfer.Requested]))
-				cancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
+				gauges.OngoingTransfers.Set(float64(byState[datatransfer.Ongoing]))
+				gauges.FailedTransfers.Set(float64(byState[datatransfer.Failed]))
+				gauges.RequestedTransfers.Set(float64(byState[datatransfer.Requested]))
+				gauges.CancelledTransfers.Set(float64(byState[datatransfer.Cancelled]))
 
 				if firstrun {
 					beginSent = float64(sent)
 					beginRec = float64(received)
 					firstrun = false
 				} else {
-					dataReceived.Set(float64(received) - beginSent)
-					dataSent.Set(float64(sent) - beginRec)
+					gauges.DataReceived.Set(float64(received) - beginSent)
+					gauges.DataSent.Set(float64(sent) - beginRec)
 				}
 
 				stats := s.Filc.GraphSyncStats()
-				receivingPeersCount.Set(float64(stats.OutgoingRequests.TotalPeers))
-				receivingActiveCount.Set(float64(stats.OutgoingRequests.Active))
-				receivingCountCount.Set(float64(stats.OutgoingRequests.Pending))
-				receivingTotalMemoryAllocated.Set(float64(stats.IncomingResponses.TotalAllocatedAllPeers))
-				receivingTotalPendingAllocations.Set(float64(stats.IncomingResponses.TotalPendingAllocations))
-				receivingPeersPending.Set(float64(stats.IncomingResponses.NumPeersWithPendingAllocations))
+				gauges.ReceivingPeersCount.Set(float64(stats.OutgoingRequests.TotalPeers))
+				gauges.ReceivingActiveCount.Set(float64(stats.OutgoingRequests.Active))
+				gauges.ReceivingCountCount.Set(float64(stats.OutgoingRequests.Pending))
+				gauges.ReceivingTotalMemoryAllocated.Set(float64(stats.IncomingResponses.TotalAllocatedAllPeers))
+				gauges.ReceivingTotalPendingAllocations.Set(float64(stats.IncomingResponses.TotalPendingAllocations))
+				gauges.ReceivingPeersPending.Set(float64(stats.IncomingResponses.NumPeersWithPendingAllocations))
 
-				sendingPeersCount.Set(float64(stats.IncomingRequests.TotalPeers))
-				sendingActiveCount.Set(float64(stats.IncomingRequests.Active))
-				sendingCountCount.Set(float64(stats.IncomingRequests.Pending))
-				sendingTotalMemoryAllocated.Set(float64(stats.OutgoingResponses.TotalAllocatedAllPeers))
-				sendingTotalPendingAllocations.Set(float64(stats.OutgoingResponses.TotalPendingAllocations))
-				sendingPeersPending.Set(float64(stats.OutgoingResponses.NumPeersWithPendingAllocations))
+				gauges.SendingPeersCount.Set(float64(stats.IncomingRequests.TotalPeers))
+				gauges.SendingActiveCount.Set(float64(stats.IncomingRequests.Active))
+				gauges.SendingCountCount.Set(float64(stats.IncomingRequests.Pending))
+				gauges.SendingTotalMemoryAllocated.Set(float64(stats.OutgoingResponses.TotalAllocatedAllPeers))
+				gauges.SendingTotalPendingAllocations.Set(float64(stats.OutgoingResponses.TotalPendingAllocations))
+				gauges.SendingPeersPending.Set(float64(stats.OutgoingResponses.NumPeersWithPendingAllocations))
 			}
 		}()
 
@@ -1210,6 +1191,10 @@ func (s *Shuttle) ServeAPI() error {
 	admin.GET("/net/rcmgr/stats", s.handleRcmgrStats)
 	admin.GET("/system/config", s.handleGetSystemConfig)
 
+	storageProvider := e.Group("/storage-provider")
+	storageProvider.Use(s.AuthRequired(util.PermLevelAdmin))
+	storageProvider.GET("/list/:n", s.handleStorageProviderList)
+
 	return e.Start(s.shuttleConfig.ApiListen)
 }
 
@@ -1288,12 +1273,22 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Description  This endpoint uploads a file.
 // @Tags         content
 // @Produce      json
+// @Param        overwrite	   query     string  false  "Overwrite files with the same path on same collection"
+// @Param        dir           query     string  false  "Directory"
+// @Param        coluuid       query     string  false  "Collection UUID"
 // @Success      200   {object}  string
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
 func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
+
+	overwrite := false
+	if c.QueryParam("overwrite") == "true" {
+		overwrite = true
+	}
+	dir := c.QueryParam(ColDir)
+	coluuid := c.QueryParam("coluuid")
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -1328,8 +1323,9 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 	defer fi.Close()
 
 	cic := util.ContentInCollection{
-		CollectionID:  c.QueryParam(ColUuid),
-		CollectionDir: c.QueryParam(ColDir),
+		CollectionID:  coluuid,
+		CollectionDir: dir,
+		Overwrite:     overwrite,
 	}
 
 	bsid, bs, err := s.StagingMgr.AllocNew()
@@ -1583,16 +1579,16 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
+		var out util.HttpErrorResponse
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 			return 0, err
 		}
-		return 0, fmt.Errorf("failed to request createContent: %s", bodyBytes)
+		return 0, &out.Error
 	}
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
-		return 0, errors.Wrap(err, "failed to decode resp body")
+		return 0, errors.Wrap(err, "failed to decode response body")
 	}
 	return rbody.ID, nil
 }
@@ -2440,5 +2436,73 @@ func (s *Shuttle) handleGetSystemConfig(e echo.Context) error {
 	resp := map[string]interface{}{
 		"data": s.shuttleConfig,
 	}
+	return e.JSON(http.StatusOK, resp)
+}
+
+type Metrics struct {
+	OngoingTransfers   metrics.Gauge
+	FailedTransfers    metrics.Gauge
+	CancelledTransfers metrics.Gauge
+	RequestedTransfers metrics.Gauge
+	AllTransfers       metrics.Gauge
+	DataReceived       metrics.Gauge
+	DataSent           metrics.Gauge
+
+	ReceivingPeersCount              metrics.Gauge
+	ReceivingActiveCount             metrics.Gauge
+	ReceivingCountCount              metrics.Gauge
+	ReceivingTotalMemoryAllocated    metrics.Gauge
+	ReceivingTotalPendingAllocations metrics.Gauge
+	ReceivingPeersPending            metrics.Gauge
+
+	SendingPeersCount              metrics.Gauge
+	SendingActiveCount             metrics.Gauge
+	SendingCountCount              metrics.Gauge
+	SendingTotalMemoryAllocated    metrics.Gauge
+	SendingTotalPendingAllocations metrics.Gauge
+	SendingPeersPending            metrics.Gauge
+}
+
+func setupMetrics(metCtx context.Context) Metrics {
+	return Metrics{
+		OngoingTransfers:                 metrics.NewCtx(metCtx, "transfers_ongoing", "total number of ongoing data transfers").Gauge(),
+		FailedTransfers:                  metrics.NewCtx(metCtx, "transfers_failed", "total number of failed data transfers").Gauge(),
+		CancelledTransfers:               metrics.NewCtx(metCtx, "transfers_cancelled", "total number of cancelled data transfers").Gauge(),
+		RequestedTransfers:               metrics.NewCtx(metCtx, "transfers_requested", "total number of requested data transfers").Gauge(),
+		AllTransfers:                     metrics.NewCtx(metCtx, "transfers_all", "total number of data transfers").Gauge(),
+		DataReceived:                     metrics.NewCtx(metCtx, "transfer_received_bytes", "total bytes sent").Gauge(),
+		DataSent:                         metrics.NewCtx(metCtx, "transfer_sent_bytes", "total bytes received").Gauge(),
+		ReceivingPeersCount:              metrics.NewCtx(metCtx, "graphsync_receiving_peers", "number of peers we are receiving graphsync data from").Gauge(),
+		ReceivingActiveCount:             metrics.NewCtx(metCtx, "graphsync_receiving_active", "number of active receiving graphsync transfers").Gauge(),
+		ReceivingCountCount:              metrics.NewCtx(metCtx, "graphsync_receiving_pending", "number of pending receiving graphsync transfers").Gauge(),
+		ReceivingTotalMemoryAllocated:    metrics.NewCtx(metCtx, "graphsync_receiving_total_allocated", "amount of block memory allocated for receiving graphsync data").Gauge(),
+		ReceivingTotalPendingAllocations: metrics.NewCtx(metCtx, "graphsync_receiving_pending_allocations", "amount of block memory on hold being received pending allocation").Gauge(),
+		ReceivingPeersPending:            metrics.NewCtx(metCtx, "graphsync_receiving_peers_pending", "number of peers we can't receive more data from cause of pending allocations").Gauge(),
+
+		SendingPeersCount:              metrics.NewCtx(metCtx, "graphsync_sending_peers", "number of peers we are sending graphsync data to").Gauge(),
+		SendingActiveCount:             metrics.NewCtx(metCtx, "graphsync_sending_active", "number of active sending graphsync transfers").Gauge(),
+		SendingCountCount:              metrics.NewCtx(metCtx, "graphsync_sending_pending", "number of pending sending graphsync transfers").Gauge(),
+		SendingTotalMemoryAllocated:    metrics.NewCtx(metCtx, "graphsync_sending_total_allocated", "amount of block memory allocated for sending graphsync data").Gauge(),
+		SendingTotalPendingAllocations: metrics.NewCtx(metCtx, "graphsync_sending_pending_allocations", "amount of block memory on hold from sending pending allocation").Gauge(),
+		SendingPeersPending:            metrics.NewCtx(metCtx, "graphsync_sending_peers_pending", "number of peers we can't send more data to cause of pending allocations").Gauge(),
+	}
+}
+
+// handleStorageProviderList godoc
+// @Summary      Get a list of the top storage providers
+// @Description  This endpoint returns a list of storage providers, sorted by lowest latency to this shuttle
+// @Tags         sp
+// @Produce      json
+// @Success      200  {object}  []peer.ID
+// @Param        n  query      int  true  "Number of top SPs to return"
+// @Router       /list/{n} [get]
+func (s *Shuttle) handleStorageProviderList(e echo.Context) error {
+	n, err := strconv.Atoi(e.Param("n"))
+	if err != nil {
+		return err
+	}
+
+	resp := s.PPM.Result.GetTopPeers(n)
+
 	return e.JSON(http.StatusOK, resp)
 }

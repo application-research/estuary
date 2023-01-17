@@ -59,6 +59,21 @@ definitions:
       tokenHash:
         type: string
     type: object
+  api.minerResp:
+    properties:
+      addr:
+        $ref: '#/definitions/address.Address'
+      chain_info:
+        $ref: '#/definitions/miner.MinerChainInfo'
+      name:
+        type: string
+      suspended:
+        type: boolean
+      suspendedReason:
+        type: string
+      version:
+        type: string
+    type: object
   api.publicNodeInfo:
     properties:
       primaryAddress:
@@ -115,6 +130,19 @@ definitions:
       miner:
         $ref: '#/definitions/address.Address'
       name:
+        type: string
+    type: object
+  miner.MinerChainInfo:
+    properties:
+      addresses:
+        items:
+          type: string
+        type: array
+      owner:
+        type: string
+      peerId:
+        type: string
+      worker:
         type: string
     type: object
   miner.MinerSetInfoParams:
@@ -218,6 +246,8 @@ definitions:
         type: string
       name:
         type: string
+      overwrite:
+        type: boolean
       root:
         type: string
       type:
@@ -400,6 +430,28 @@ paths:
       summary: Create an Estuary invite
       tags:
         - content
+  /admin/miners/:
+    get:
+      description: 'This endpoint returns all miners. Note: value may be cached'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.minerResp'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/util.HttpError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/util.HttpError'
+      summary: Get all miners
+      tags:
+        - admin
+        - net
   /admin/peering/peers:
     delete:
       description: This endpoint can be used to remove a Peer from the Peering Service
@@ -748,6 +800,10 @@ paths:
           in: query
           name: dir
           type: string
+        - description: Overwrite conflicting files
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:
@@ -840,10 +896,13 @@ paths:
           name: content
           required: true
           type: string
-        - description: Path to file
+        - description: Directory inside collection
           in: query
-          name: path
-          required: true
+          name: dir
+          type: string
+        - description: Overwrite file if already exists in path
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
@@ -916,6 +975,10 @@ paths:
         - description: Ignore Dupes true/false
           in: query
           name: ignore-dupes
+          type: string
+        - description: Overwrite files with the same path on same collection
+          in: query
+          name: overwrite
           type: string
         - description: Lazy Provide true/false
           in: query
@@ -992,6 +1055,10 @@ paths:
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
           type: string
       produces:
         - application/json
@@ -1920,6 +1987,14 @@ paths:
           required: true
           schema:
             $ref: '#/definitions/types.IpfsPin'
+        - description: Ignore Dupes
+          in: query
+          name: ignore-dupes
+          type: string
+        - description: Overwrite conflicting files in collections
+          in: query
+          name: overwrite
+          type: string
       produces:
         - application/json
       responses:
@@ -2106,28 +2181,6 @@ paths:
       tags:
         - public
         - metrics
-  /public/miners:
-    get:
-      description: This endpoint returns all miners
-      produces:
-        - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/util.HttpError'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/util.HttpError'
-      summary: Get all miners
-      tags:
-        - public
-        - net
   /public/miners/deals/{miner}:
     get:
       description: This endpoint returns all miners deals

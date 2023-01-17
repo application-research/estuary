@@ -109,7 +109,7 @@ func (m *manager) addNextContentToStagingZone(ctx context.Context, tracker *mode
 		if cont.Aggregate {
 			if err := m.db.Transaction(func(tx *gorm.DB) error {
 				if cont.Active {
-					if err := m.db.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+					if err := tx.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 						"status":     model.ZoneStatusDone,
 						"message":    model.ZoneMessageDone,
 						"created_at": cont.CreatedAt,
@@ -119,7 +119,7 @@ func (m *manager) addNextContentToStagingZone(ctx context.Context, tracker *mode
 				}
 
 				// move tracker forward
-				if err := m.db.Model(model.StagingZoneTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error; err != nil {
+				if err := tx.Model(model.StagingZoneTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error; err != nil {
 					return err
 				}
 				return nil
@@ -261,7 +261,7 @@ func (m *manager) newStagingZoneFromContent(cont *util.Content, contSize int64, 
 	return m.db.Transaction(func(tx *gorm.DB) error {
 		zoneContID := cont.AggregatedIn
 
-		// bakward compatibility feature
+		// backward compatibility feature
 		// only new contents will cont.AggregatedIn = 0, so create a zone content for it
 		// old contents already have zone contents
 		if zoneContID == 0 {
@@ -275,7 +275,7 @@ func (m *manager) newStagingZoneFromContent(cont *util.Content, contSize int64, 
 				Aggregate:   true,
 				Location:    cont.Location,
 			}
-			if err := m.db.Create(zoneCont).Error; err != nil {
+			if err := tx.Create(zoneCont).Error; err != nil {
 				return err
 			}
 
@@ -300,7 +300,7 @@ func (m *manager) newStagingZoneFromContent(cont *util.Content, contSize int64, 
 			Status:    model.ZoneStatusOpen,
 			Message:   model.ZoneMessageOpen,
 		}
-		if err := m.db.Create(zone).Error; err != nil {
+		if err := tx.Create(zone).Error; err != nil {
 			return err
 		}
 

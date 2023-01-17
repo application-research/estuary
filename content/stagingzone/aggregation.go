@@ -115,14 +115,14 @@ func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint, zon
 
 	if err := m.db.Transaction(func(tx *gorm.DB) error {
 		// point zone content location to dstLocation
-		if err := m.db.Model(util.Content{}).
+		if err := tx.Model(util.Content{}).
 			Where("id = ?", zoneContent.ID).
 			UpdateColumn("location", dstLocation).Error; err != nil {
 			return err
 		}
 
 		// point staging zone location to dstLocation
-		if err := tx.Model(model.StagingZone{}).
+		if err := tx.Model(util.Content{}).
 			Where("cont_id = ?", zoneContent.ID).
 			UpdateColumn("location", dstLocation).Error; err != nil {
 			return err
@@ -239,11 +239,11 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 				Cid:  util.DbCID{CID: ncid},
 				Size: int(size),
 			}
-			if err := m.db.Create(obj).Error; err != nil {
+			if err := tx.Create(obj).Error; err != nil {
 				return err
 			}
 
-			if err := m.db.Create(&util.ObjRef{
+			if err := tx.Create(&util.ObjRef{
 				Content: zoneCont.ID,
 				Object:  obj.ID,
 			}).Error; err != nil {
@@ -255,7 +255,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 			}
 
 			// mark zone content active
-			if err := m.db.Model(util.Content{}).Where("id = ?", zoneCont.ID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", zoneCont.ID).UpdateColumns(map[string]interface{}{
 				"active":   true,
 				"pinning":  false,
 				"cid":      util.DbCID{CID: ncid},

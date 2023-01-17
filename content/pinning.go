@@ -86,11 +86,6 @@ func (m *manager) PinDelegatesForContent(cont util.Content) []string {
 }
 
 func (m *manager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
-	loc, err := m.shuttleMgr.GetLocationForStorage(ctx, obj, user)
-	if err != nil {
-		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
-	}
-
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := m.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
@@ -114,6 +109,11 @@ func (m *manager) PinContent(ctx context.Context, user uint, obj cid.Cid, filena
 			return nil, nil, err
 		}
 		originsStr = string(b)
+	}
+
+	loc, err := m.shuttleMgr.GetLocationForStorage(ctx, obj, user)
+	if err != nil {
+		return nil, nil, xerrors.Errorf("selecting location for content failed: %w", err)
 	}
 
 	cont := util.Content{
@@ -214,7 +214,7 @@ func (m *manager) UpdatePinStatus(contID uint, location string, status types.Pin
 		}
 
 		return m.db.Transaction(func(tx *gorm.DB) error {
-			if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+			if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 				"active":        false,
 				"pinning":       false,
 				"failed":        true,
