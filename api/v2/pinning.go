@@ -13,7 +13,7 @@ type BatchedPinRequest struct {
 }
 
 // handleGetBatchedPins  godoc
-// @Summary      Get a pin status object
+// @Summary      Get the pin statuses of a given list of cids
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json

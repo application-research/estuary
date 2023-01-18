@@ -106,6 +106,7 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 
 	// Pinning
 	pinning := api.Group("/pinning")
+	pinning.Use(s.AuthRequired(util.PermLevelUser))
 	pinning.POST("/batched-pins", util.WithUser(s.handleAddBatchedPins))
 	pinning.GET("/batched-pins", util.WithUser(s.handleGetBatchedPins))
 }
