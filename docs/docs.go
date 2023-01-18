@@ -3403,6 +3403,9 @@ const docTemplate = `{
                 "expiry": {
                     "type": "string"
                 },
+                "isSession": {
+                    "type": "boolean"
+                },
                 "label": {
                     "type": "string"
                 },
