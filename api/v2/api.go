@@ -12,6 +12,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -84,6 +85,7 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	api := e.Group("/v2")
+	api.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.cfg.RateLimit)))
 
 	// Storage Provider Endpoints
 	storageProvider := api.Group("/storage-providers")
