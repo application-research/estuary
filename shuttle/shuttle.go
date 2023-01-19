@@ -51,12 +51,12 @@ type IManager interface {
 	StartTransfer(ctx context.Context, loc string, cd *model.ContentDeal, datacid cid.Cid) error
 	RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error
 	GetTransferStatus(ctx context.Context, contLoc string, d *model.ContentDeal) (*filclient.ChannelState, error)
-	UnpinContent(ctx context.Context, loc string, conts []uint) error
+	UnpinContent(ctx context.Context, loc string, conts []uint64) error
 	PinContent(ctx context.Context, loc string, cont util.Content, origins []*peer.AddrInfo) error
 	ConsolidateContent(ctx context.Context, loc string, contents []util.Content) error
 	AggregateContent(ctx context.Context, loc string, zone util.Content, zoneContents []util.Content) error
 	CommPContent(ctx context.Context, loc string, data cid.Cid) error
-	SplitContent(ctx context.Context, loc string, cont uint, size int64) error
+	SplitContent(ctx context.Context, loc string, cont uint64, size int64) error
 	GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error)
 	GetLocationForStorage(ctx context.Context, obj cid.Cid, uid uint) (string, error)
 	CleanupPreparedRequest(ctx context.Context, loc string, dbid uint, authToken string) error

@@ -30,7 +30,7 @@ const MinDealContentSize = int64(1_100_000_000)
 const MaxDealContentSize = int64(34_000_000_000)
 
 // how many contents to include per advertisement for autoretrieve
-const AutoretrieveProviderBatchSize = uint(25000)
+const AutoretrieveProviderBatchSize = uint64(25000)
 
 const DefaultIndexerURL = "https://cid.contact"
 

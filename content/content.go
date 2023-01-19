@@ -33,7 +33,7 @@ type ContentManager struct {
 	notifyBlockstore     *node.NotifyBlockstore
 	queueMgr             contentqueue.IQueueManager
 	retrLk               sync.Mutex
-	retrievalsInProgress map[uint]*util.RetrievalProgress
+	retrievalsInProgress map[uint64]*util.RetrievalProgress
 	contentLk            sync.RWMutex
 
 	dealDisabledLk       sync.Mutex
@@ -74,7 +74,7 @@ func NewContentManager(
 		blockstore:           tbs.Under().(node.EstuaryBlockstore),
 		node:                 nd,
 		notifyBlockstore:     nd.NotifBlockstore,
-		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
+		retrievalsInProgress: make(map[uint64]*util.RetrievalProgress),
 		remoteTransferStatus: cache,
 		shuttleMgr:           shuttleMgr,
 		inflightCids:         make(map[cid.Cid]uint),
@@ -109,6 +109,6 @@ func (cm *ContentManager) rebuildToCheckQueue() error {
 	return nil
 }
 
-func (cm *ContentManager) ToCheck(contID uint, contSize int64) {
+func (cm *ContentManager) ToCheck(contID uint64, contSize int64) {
 	cm.queueMgr.ToCheck(contID, contSize)
 }

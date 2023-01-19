@@ -25,7 +25,7 @@ func (s *apiV1) exportUserData(uid uint) (*DataExport, error) {
 		return nil, err
 	}
 
-	var conts []uint
+	var conts []uint64
 	for _, c := range contents {
 		conts = append(conts, c.ID)
 	}

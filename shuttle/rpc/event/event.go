@@ -98,7 +98,7 @@ type ComputeCommP struct {
 const CMD_AddPin = "AddPin"
 
 type AddPin struct {
-	DBID   uint
+	DBID   uint64
 	UserId uint
 	Cid    cid.Cid
 	Peers  []*peer.AddrInfo
@@ -113,13 +113,13 @@ type TakeContent struct {
 const CMD_AggregateContent = "AggregateContent"
 
 type AggregateContents struct {
-	DBID     uint
+	DBID     uint64
 	UserID   uint
 	Contents []AggregateContent
 }
 
 type AggregateContent struct {
-	ID   uint
+	ID   uint64
 	CID  cid.Cid
 	Name string
 }
@@ -128,7 +128,7 @@ const CMD_StartTransfer = "StartTransfer"
 
 type StartTransfer struct {
 	DealDBID  uint
-	ContentID uint
+	ContentID uint64
 	Miner     address.Address
 	PropCid   cid.Cid
 	DataCid   cid.Cid
@@ -161,7 +161,7 @@ type ReqTxStatus struct {
 const CMD_SplitContent = "SplitContent"
 
 type SplitContent struct {
-	Content uint
+	Content uint64
 	Size    int64
 }
 
@@ -174,7 +174,7 @@ type StorageDeal struct {
 
 type RetrieveContent struct {
 	UserID  uint
-	Content uint
+	Content uint64
 	Cid     cid.Cid
 	Deals   []StorageDeal
 }
@@ -182,7 +182,7 @@ type RetrieveContent struct {
 const CMD_UnpinContent = "UnpinContent"
 
 type UnpinContent struct {
-	Contents []uint
+	Contents []uint64
 }
 
 const CMD_RestartTransfer = "RestartTransfer"
@@ -190,11 +190,11 @@ const CMD_RestartTransfer = "RestartTransfer"
 type RestartTransfer struct {
 	ChanID    datatransfer.ChannelID
 	DealDBID  uint
-	ContentID uint
+	ContentID uint64
 }
 
 type ContentFetch struct {
-	ID     uint
+	ID     uint64
 	Cid    cid.Cid
 	UserID uint
 	Peers  []*peer.AddrInfo
@@ -221,19 +221,19 @@ type MsgParams struct {
 const OP_UpdatePinStatus = "UpdatePinStatus"
 
 type UpdatePinStatus struct {
-	DBID   uint
+	DBID   uint64
 	Status types.PinningStatus
 }
 
 type PinObj struct {
 	Cid  cid.Cid
-	Size int
+	Size uint64
 }
 
 const OP_PinComplete = "PinComplete"
 
 type PinComplete struct {
-	DBID    uint
+	DBID    uint64
 	Size    int64
 	CID     cid.Cid
 	Objects []PinObj
@@ -279,13 +279,13 @@ type ShuttleUpdate struct {
 const OP_GarbageCheck = "GarbageCheck"
 
 type GarbageCheck struct {
-	Contents []uint
+	Contents []uint64
 }
 
 const OP_SplitComplete = "SplitComplete"
 
 type SplitComplete struct {
-	ID uint
+	ID uint64
 }
 
 const OP_SanityCheck = "SanityCheck"

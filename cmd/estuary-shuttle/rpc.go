@@ -122,7 +122,7 @@ func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *rpcevent.AddPin) err
 	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, apo.Peers, false)
 }
 
-func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
 	ctx, span := d.Tracer.Start(ctx, "addPin", trace.WithAttributes(
 		attribute.Int64("contID", int64(contid)),
 		attribute.Int64("userID", int64(user)),
@@ -217,7 +217,7 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 	return nil
 }
 
-func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error) {
+func (s *Shuttle) objectsForPin(ctx context.Context, pin uint64) ([]*Object, error) {
 	_, span := s.Tracer.Start(ctx, "objectsForPin")
 	defer span.End()
 
@@ -267,7 +267,7 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 	})
 }
 
-func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
+func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
 	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
 		Op: rpcevent.OP_SplitComplete,
 		Params: rpcevent.MsgParams{
@@ -280,7 +280,7 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
 	}
 }
 
-func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size int64, objects []*Object, contCID cid.Cid) {
+func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint64, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
 
@@ -436,7 +436,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 	// mark it as active and change pinning status
 	obj := &Object{
 		Cid:  util.DbCID{CID: dirNd.Cid()},
-		Size: len(dirNd.RawData()),
+		Size: uint64(len(dirNd.RawData())),
 	}
 	if err := s.DB.Create(obj).Error; err != nil {
 		return err
@@ -577,7 +577,7 @@ func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *rpcevent.Re
 
 func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *rpcevent.UnpinContent) error {
 	for _, c := range req.Contents {
-		go func(cntID uint) {
+		go func(cntID uint64) {
 			if err := s.Unpin(ctx, cntID); err != nil {
 				log.Errorf("failed to unpin content %d: %s", cntID, err)
 			}
@@ -586,7 +586,7 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *rpcevent.Unpin
 	return nil
 }
 
-func (s *Shuttle) markStartUnpin(cont uint) bool {
+func (s *Shuttle) markStartUnpin(cont uint64) bool {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
 
@@ -598,13 +598,13 @@ func (s *Shuttle) markStartUnpin(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishUnpin(cont uint) {
+func (s *Shuttle) finishUnpin(cont uint64) {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
 	delete(s.unpinInProgress, cont)
 }
 
-func (s *Shuttle) markStartAggr(cont uint) bool {
+func (s *Shuttle) markStartAggr(cont uint64) bool {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
 
@@ -616,13 +616,13 @@ func (s *Shuttle) markStartAggr(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishAggr(cont uint) {
+func (s *Shuttle) finishAggr(cont uint64) {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
 	delete(s.aggrInProgress, cont)
 }
 
-func (s *Shuttle) markStartSplit(cont uint) bool {
+func (s *Shuttle) markStartSplit(cont uint64) bool {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 
@@ -634,7 +634,7 @@ func (s *Shuttle) markStartSplit(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishSplit(cont uint) {
+func (s *Shuttle) finishSplit(cont uint64) {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 	delete(s.splitsInProgress, cont)

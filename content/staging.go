@@ -275,7 +275,7 @@ func (cm *ContentManager) AggregateStagingZone(ctx context.Context, zone *model.
 		return cm.db.Transaction(func(tx *gorm.DB) error {
 			obj := &util.Object{
 				Cid:  util.DbCID{CID: ncid},
-				Size: int(size),
+				Size: size,
 			}
 			if err := tx.Create(obj).Error; err != nil {
 				return err
@@ -353,7 +353,7 @@ func (cm *ContentManager) CreateAggregate(ctx context.Context, conts []util.Cont
 	return dirNd, nil
 }
 
-func (cm *ContentManager) getContentsAndDestinationLocationForConsolidation(ctx context.Context, zoneID uint, zoneContID uint) (string, []util.Content, int64, error) {
+func (cm *ContentManager) getContentsAndDestinationLocationForConsolidation(ctx context.Context, zoneID uint, zoneContID uint64) (string, []util.Content, int64, error) {
 	// first determine the location(destination) to move contents to, that are not in that location over.
 	// Do this by checking what location has the largest contents.
 	var dstLocation string
