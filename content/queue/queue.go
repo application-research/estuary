@@ -10,16 +10,16 @@ import (
 )
 
 type IQueueManager interface {
-	ToCheck(contID uint, contSize int64)
-	Add(content uint, size int64, wait time.Duration)
-	NextContent() chan uint
+	ToCheck(contID uint64, contSize int64)
+	Add(content uint64, size int64, wait time.Duration)
+	NextContent() chan uint64
 	Len() int
 	NextEvent() time.Time
 }
 
 type queueManager struct {
 	queue *entryQueue
-	cb    func(uint, int64)
+	cb    func(uint64, int64)
 	qlk   sync.Mutex
 
 	nextEvent time.Time
@@ -28,13 +28,13 @@ type queueManager struct {
 	qsizeMetr metrics.Gauge
 	qnextMetr metrics.Gauge
 
-	toCheck       chan uint
+	toCheck       chan uint64
 	isDisabled    bool
 	dealSizeLimit int64
 }
 
 type queueEntry struct {
-	content   uint
+	content   uint64
 	size      int64
 	checkTime time.Time
 }
@@ -80,7 +80,7 @@ func NewQueueManager(isDisabled bool, dealSizeLimit int64) *queueManager {
 		qsizeMetr: qsizeMetr,
 		qnextMetr: qnextMetr,
 
-		toCheck:       make(chan uint, 100000),
+		toCheck:       make(chan uint64, 100000),
 		isDisabled:    isDisabled,
 		dealSizeLimit: dealSizeLimit,
 	}
@@ -90,7 +90,7 @@ func NewQueueManager(isDisabled bool, dealSizeLimit int64) *queueManager {
 	return qm
 }
 
-func (qm *queueManager) Add(content uint, size int64, wait time.Duration) {
+func (qm *queueManager) Add(content uint64, size int64, wait time.Duration) {
 	qm.qlk.Lock()
 	defer qm.qlk.Unlock()
 
@@ -138,7 +138,7 @@ func (qm *queueManager) processQueue() {
 	qm.nextEvent = time.Time{}
 }
 
-func (qm *queueManager) ToCheck(contID uint, contSize int64) {
+func (qm *queueManager) ToCheck(contID uint64, contSize int64) {
 	// if DisableFilecoinStorage is not enabled, queue content for deal making
 	if !qm.isDisabled && contSize >= qm.dealSizeLimit {
 		go func() {
@@ -147,7 +147,7 @@ func (qm *queueManager) ToCheck(contID uint, contSize int64) {
 	}
 }
 
-func (qm *queueManager) NextContent() chan uint {
+func (qm *queueManager) NextContent() chan uint64 {
 	return qm.toCheck
 }
 

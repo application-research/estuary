@@ -62,7 +62,7 @@ type PinningOperation struct {
 	Status types.PinningStatus
 
 	UserId  uint
-	ContId  uint
+	ContId  uint64
 	Replace uint
 
 	LastUpdate time.Time

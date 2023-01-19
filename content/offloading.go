@@ -70,7 +70,7 @@ func (cm *ContentManager) ClearUnused(ctx context.Context, spaceRequest int64, l
 	}
 
 	// go offload them all
-	var ids []uint
+	var ids []uint64
 	for _, tr := range toRemove {
 		ids = append(ids, tr.Content.ID)
 	}
@@ -122,13 +122,13 @@ func (cm *ContentManager) getLastAccessForContent(cont util.Content) (time.Time,
 	return obj.LastAccess, nil
 }
 
-func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint) (int, error) {
+func (cm *ContentManager) OffloadContents(ctx context.Context, conts []uint64) (int, error) {
 	ctx, span := cm.tracer.Start(ctx, "OffloadContents")
 	defer span.End()
 
-	var local []uint
+	var local []uint64
 
-	remote := make(map[string][]uint)
+	remote := make(map[string][]uint64)
 
 	cm.contentLk.Lock()
 	defer cm.contentLk.Unlock()
@@ -258,7 +258,7 @@ func (cm *ContentManager) GetRemovalCandidates(ctx context.Context, all bool, lo
 	return toOffload, nil
 }
 
-func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint) (int, int, int, error) {
+func (cm *ContentManager) contentIsProperlyReplicated(ctx context.Context, c uint64) (int, int, int, error) {
 	var contentDeals []model.ContentDeal
 	if err := cm.db.Find(&contentDeals, "content = ?", c).Error; err != nil {
 		return 0, 0, 0, err

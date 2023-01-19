@@ -8,11 +8,11 @@ import (
 )
 
 type Pin struct {
-	ID        uint      `gorm:"primarykey" json:"id"`
+	ID        uint64    `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time `json:"-"`
 	UpdatedAt time.Time `json:"-"`
 
-	Content uint `gorm:"index"`
+	Content uint64 `gorm:"index"`
 
 	Cid util.DbCID `json:"cid"`
 	//Name        string     `json:"name"`
@@ -30,22 +30,22 @@ type Pin struct {
 	PinMeta string `json:"pinMeta"`
 	Failed  bool   `json:"failed"`
 
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
+	DagSplit  bool   `json:"dagSplit"`
+	SplitFrom uint64 `json:"splitFrom"`
 }
 
 type Object struct {
-	ID   uint       `gorm:"primarykey"`
+	ID   uint64     `gorm:"primarykey"`
 	Cid  util.DbCID `gorm:"index"`
-	Size int
+	Size uint64
 	//Reads      int
 	LastAccess time.Time
 }
 
 type ObjRef struct {
-	ID     uint `gorm:"primarykey"`
-	Pin    uint `gorm:"index"`
-	Object uint `gorm:"index"`
+	ID     uint64 `gorm:"primarykey"`
+	Pin    uint64 `gorm:"index"`
+	Object uint64 `gorm:"index"`
 	//Offloaded bool
 }
 

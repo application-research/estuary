@@ -31,7 +31,7 @@ type StagingZone struct {
 	MaxSize   int64       `json:"maxSize"`
 	Size      int64       `gorm:"index:size_status;index:id_size_status;index:user_size_status;index;not null" json:"curSize"`
 	UserID    uint        `gorm:"index:user_size_status;index;not null" json:"user"`
-	ContID    uint        `gorm:"index;not null" json:"contentID"`
+	ContID    uint64      `gorm:"index;not null" json:"contentID"`
 	Location  string      `gorm:"index;not null" json:"location"`
 	Status    ZoneStatus  `gorm:"index:size_status;index:id_size_status;index:user_size_status;index:id_status" json:"status"`
 	Message   ZoneMessage `json:"message" gorm:"type:text"`

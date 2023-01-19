@@ -322,7 +322,7 @@ func (cm *ContentManager) splitContent(ctx context.Context, cont util.Content, s
 	}
 }
 
-func (cm *ContentManager) GetContent(id uint) (*util.Content, error) {
+func (cm *ContentManager) GetContent(id uint64) (*util.Content, error) {
 	var content util.Content
 	if err := cm.db.First(&content, "id = ?", id).Error; err != nil {
 		return nil, err
@@ -1109,7 +1109,7 @@ type DealFailureError struct {
 	DealUUID            string
 	Phase               string
 	Message             string
-	Content             uint
+	Content             uint64
 	UserID              uint
 	MinerAddress        string
 	DealProtocolVersion protocol.ID
@@ -1136,7 +1136,7 @@ func (dfe *DealFailureError) Error() string {
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint, objects []*util.Object, loc string) (int64, error) {
+func (cm *ContentManager) addObjectsToDatabase(ctx context.Context, contID uint64, objects []*util.Object, loc string) (int64, error) {
 	_, span := cm.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
@@ -1319,7 +1319,7 @@ func (cm *ContentManager) splitContentLocal(ctx context.Context, cont util.Conte
 
 var noDataTimeout = time.Minute * 10
 
-func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) (int64, error) {
+func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont uint64, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) (int64, error) {
 	ctx, span := cm.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1385,7 +1385,7 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 		objlk.Lock()
 		objects = append(objects, &util.Object{
 			Cid:  util.DbCID{CID: c},
-			Size: len(node.RawData()),
+			Size: uint64(len(node.RawData())),
 		})
 		objlk.Unlock()
 

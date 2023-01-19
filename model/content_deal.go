@@ -16,7 +16,7 @@ var ErrNoChannelID = fmt.Errorf("no data transfer channel id in deal")
 
 type ContentDeal struct {
 	gorm.Model
-	Content          uint       `json:"content" gorm:"index:,option:CONCURRENTLY"`
+	Content          uint64     `json:"content" gorm:"index:,option:CONCURRENTLY"`
 	UserID           uint       `json:"user_id" gorm:"index:,option:CONCURRENTLY"`
 	PropCid          util.DbCID `json:"propCid"`
 	DealUUID         string     `json:"dealUuid"`

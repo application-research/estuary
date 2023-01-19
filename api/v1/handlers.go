@@ -92,7 +92,7 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint                       `json:"id"`
+	ID              uint64                     `json:"id"`
 	Cid             cid.Cid                    `json:"cid"`
 	Filename        string                     `json:"name"`
 	Size            int64                      `json:"size"`
@@ -1073,7 +1073,7 @@ type getContentResponse struct {
 	Deals        []*model.ContentDeal `json:"deals"`
 }
 
-func (s *apiV1) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
+func (s *apiV1) calcSelector(aggregatedIn uint64, contentID uint64) (string, error) {
 	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
 	// to build the CAR sub-selector
 
@@ -1934,7 +1934,7 @@ func (s *apiV1) handleDealStats(c echo.Context) error {
 		return err
 	}
 
-	sbc := make(map[uint]*contentDealStats)
+	sbc := make(map[uint64]*contentDealStats)
 
 	for _, d := range alldeals {
 		maddr, err := d.MinerAddr()
@@ -2061,7 +2061,7 @@ func (s *apiV1) handleRetrievalCheck(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.retrieveContent(ctx, uint(contid)); err != nil {
+	if err := s.retrieveContent(ctx, uint64(contid)); err != nil {
 		return err
 	}
 
@@ -2408,7 +2408,7 @@ func (s *apiV1) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint{uint(cont)})
+	removed, err := s.CM.OffloadContents(c.Request().Context(), []uint64{uint64(cont)})
 	if err != nil {
 		return err
 	}
@@ -2457,7 +2457,7 @@ func (s *apiV1) handleRefreshContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.CM.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
+	if err := s.CM.RefreshContent(c.Request().Context(), uint64(cont)); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
