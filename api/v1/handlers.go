@@ -2673,7 +2673,7 @@ func (s *apiV1) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER)
+	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER, true)
 	if err != nil {
 		return err
 	}
@@ -2740,7 +2740,7 @@ func (s *apiV1) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN, true)
 	if err != nil {
 		return err
 	}
@@ -2828,7 +2828,7 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
+func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string, isSession bool) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -2853,6 +2853,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 		User:       user.ID,
 		Expiry:     expiry,
 		UploadOnly: uploadOnly,
+		IsSession:  isSession,
 	}
 	if err := s.DB.Create(authToken).Error; err != nil {
 		return nil, err
@@ -2930,6 +2931,7 @@ type getApiKeysResp struct {
 	TokenHash string    `json:"tokenHash"`
 	Label     string    `json:"label"`
 	Expiry    time.Time `json:"expiry"`
+	IsSession bool      `json:"isSession"`
 }
 
 // handleUserRevokeApiKey godoc
@@ -2986,7 +2988,7 @@ func (s *apiV1) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 
 	label := c.QueryParam("label")
 
-	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label)
+	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label, false)
 	if err != nil {
 		return err
 	}
@@ -2996,6 +2998,7 @@ func (s *apiV1) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 		TokenHash: authToken.TokenHash,
 		Label:     authToken.Label,
 		Expiry:    authToken.Expiry,
+		IsSession: authToken.IsSession,
 	})
 }
 
@@ -3022,6 +3025,7 @@ func (s *apiV1) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 			TokenHash: k.TokenHash,
 			Label:     k.Label,
 			Expiry:    k.Expiry,
+			IsSession: k.IsSession,
 		})
 	}
 
