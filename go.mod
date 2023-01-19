@@ -15,7 +15,7 @@ require (
 	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-data-transfer v1.15.2
+	github.com/filecoin-project/go-data-transfer v1.15.3
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.26.0
 	github.com/filecoin-project/go-jsonrpc v0.1.9
