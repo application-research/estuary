@@ -3,13 +3,12 @@ package api
 import (
 	"errors"
 	"fmt"
+	"github.com/application-research/estuary/pinner"
 	"net/http"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
@@ -248,7 +247,6 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /pinning/pins [post]
 func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
-	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -259,75 +257,36 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		overwrite = true
 	}
 
+	ignoreDuplicates := false
+	if c.QueryParam("ignore-dupes") == "true" {
+		ignoreDuplicates = true
+	}
+
 	var pin types.IpfsPin
 	if err := c.Bind(&pin); err != nil {
 		return err
 	}
 
-	filename := pin.Name
-	if filename == "" {
-		filename = pin.CID
+	// params
+	pinningParam := pinner.PinCidParam{
+		Ctx:              c,                // echo context to access echo specific vars
+		Db:               s.DB,             // the database instance for looking up collections
+		CM:               s.CM,             // the content manager either from v1 or v2
+		User:             u,                // the user
+		CidToPin:         pin,              // the pin object
+		Overwrite:        overwrite,        // the overwrite flag
+		IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 	}
 
-	var cols []*collections.CollectionRef
-	if c, ok := pin.Meta["collection"].(string); ok && c != "" {
-		var srchCol collections.Collection
-		if err := s.DB.First(&srchCol, "uuid = ? and user_id = ?", c, u.ID).Error; err != nil {
-			return err
-		}
-
-		colp, _ := pin.Meta[ColDir].(string)
-		path, err := collections.ConstructDirectoryPath(colp)
-		if err != nil {
-			return err
-		}
-		fullPath := filepath.Join(path, filename)
-
-		cols = []*collections.CollectionRef{
-			{
-				Collection: srchCol.ID,
-				Path:       &fullPath,
-			},
-		}
-
-		// see if there's already a file with that name/path on that collection
-		pathInCollection := collections.Contains(&srchCol, fullPath, s.DB)
-		if pathInCollection && !overwrite {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  util.ERR_CONTENT_IN_COLLECTION,
-				Details: "file already exists in collection, specify 'overwrite=true' to overwrite",
-			}
-		}
-	}
-
-	var origins []*peer.AddrInfo
-	for _, p := range pin.Origins {
-		ai, err := peer.AddrInfoFromString(p)
-		if err != nil {
-			s.log.Warnf("could not parse origin(%s): %s", p, err)
-			continue
-		}
-		origins = append(origins, ai)
-	}
-
-	obj, err := cid.Decode(pin.CID)
+	status, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
 	if err != nil {
-		return err
-	}
-
-	if c.QueryParam("ignore-dupes") == "true" {
-		var count int64
-		if err := s.DB.Model(util.Content{}).Where("cid = ? and user_id = ?", obj.Bytes(), u.ID).Count(&count).Error; err != nil {
-			return err
-		}
-		if count > 0 {
-			return c.JSON(302, map[string]string{"message": "content with given cid already preserved"})
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  err.(*pinner.PinningHelperError).Reason,
+			Details: err.(*pinner.PinningHelperError).Details,
 		}
 	}
 
-	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(ctx, u.ID, obj, pin.Name, cols, origins, 0, pin.Meta, makeDeal)
 	if err != nil {
 		return err
 	}

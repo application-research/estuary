@@ -817,6 +817,7 @@ func main() {
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)
 		apiEngine.RegisterAPI(apiV2)
+
 		return apiEngine.Start()
 	}
 	if err := app.Run(os.Args); err != nil {
