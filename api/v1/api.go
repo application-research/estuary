@@ -188,7 +188,6 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	pinning.DELETE("/pins/:pinid", util.WithUser(s.handleDeletePin))
 	pinning.Use(util.JSONPayloadMiddleware)
 	pinning.POST("/pins", util.WithUser(s.handleAddPin))
-	pinning.POST("/batched-pins", util.WithUser(s.handleAddPins))
 	pinning.POST("/pins/:pinid", util.WithUser(s.handleReplacePin))
 
 	// explicitly public, for now
