@@ -4,21 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner/progress"
-	"github.com/ipfs/go-blockservice"
-	"github.com/ipfs/go-merkledag"
-	"github.com/pkg/errors"
-	"gorm.io/gorm"
-
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/pinner/operation"
+	"github.com/application-research/estuary/pinner/progress"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
+	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-merkledag"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
+	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
@@ -181,11 +180,8 @@ func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrI
 	}
 }
 
-// even though there are 4 pin statuses, queued, pinning, pinned and failed
-// the UpdatePinStatus only changes DB state for failed status
-// when the content was added, status = pinning
-// when the pin process is complete, status = pinned
-func (cm *ContentManager) UpdateContentPinStatus(contID uint, location string, status types.PinningStatus) error {
+// UpdateContentPinStatus updates content pinning statuses in DB and removes the content from its zone if failed
+func (cm *ContentManager) UpdateContentPinStatus(contID uint64, location string, status types.PinningStatus) error {
 	cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 
 	var c util.Content
