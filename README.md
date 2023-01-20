@@ -25,8 +25,7 @@ To run locally in a 'dev' environment, first run:
 ./estuary setup --username=<uname> --password=<pword>
 ```
 
-Save the auth token that this outputs, you will need it for interacting with
-and controlling the node. This username and password won't work to log in using the front end (estuary-www), but the auth token will.
+Save the credentials you use here, you will need them to login to the estuary-www frontend.
 
 NOTE: if you want to use a different database than a sqlite instance stored in your local directory, you will need to configure that with the `--database` flag, like so: `./estuary setup --username=<uname> --password=<pword> --database=XXXXX`
 

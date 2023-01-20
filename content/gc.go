@@ -223,7 +223,7 @@ func (m *manager) deleteIfNotPinnedLock(ctx context.Context, o *util.Object) (bo
 }
 
 func (m *manager) clearUnreferencedObjects(ctx context.Context, objs []*util.Object) error {
-	var ids []uint
+	var ids []uint64
 	for _, o := range objs {
 		ids = append(ids, o.ID)
 	}
@@ -238,7 +238,7 @@ func (m *manager) clearUnreferencedObjects(ctx context.Context, objs []*util.Obj
 	return nil
 }
 
-func (m *manager) objectsForPin(ctx context.Context, cont uint) ([]*util.Object, error) {
+func (m *manager) objectsForPin(ctx context.Context, cont uint64) ([]*util.Object, error) {
 	var objects []*util.Object
 	if err := m.db.Model(util.ObjRef{}).Where("content = ?", cont).
 		Joins("left join objects on obj_refs.object = objects.id").

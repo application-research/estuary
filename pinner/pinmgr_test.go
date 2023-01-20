@@ -21,7 +21,7 @@ import (
 
 var countLock sync.Mutex
 
-func onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
+func onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
 	return nil
 }
 
@@ -102,7 +102,7 @@ func TestEncodeDecode(t *testing.T) {
 	})
 }
 
-func newPinData(name string, userid int, contid int) operation.PinningOperation {
+func newPinData(name string, userid int, contid uint64) operation.PinningOperation {
 	p := "/ip4/154.113.32.86/tcp/4001/p2p/12D3KooWCsxFFH242NZ4bjRMJEVc61La6Ha4yGVNXeEEwpf8KWCX"
 	ai, _ := peer.AddrInfoFromString(p)
 	prs := []*peer.AddrInfo{ai}
@@ -110,7 +110,7 @@ func newPinData(name string, userid int, contid int) operation.PinningOperation 
 		Name:   name,
 		Peers:  operation.SerializePeers(prs),
 		UserId: uint(userid),
-		ContId: uint(contid),
+		ContId: contid,
 	}
 }
 
@@ -123,7 +123,7 @@ func TestSend1Pin1worker(t *testing.T) {
 		var count = 0
 		mgr := newManager(&count)
 		go mgr.Run(1)
-		pin := newPinData("name"+fmt.Sprint(i), i, i)
+		pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 		go mgr.Add(&pin)
 
 		sleepWhileWork(mgr, 0)
@@ -140,7 +140,7 @@ func TestSend1Pin0workers(t *testing.T) {
 		var count = 0
 		mgr := newManager(&count)
 		go mgr.Run(0)
-		pin := newPinData("name"+fmt.Sprint(i), i, i)
+		pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 		go mgr.Add(&pin)
 
 		sleepWhileWork(mgr, 0)
@@ -158,7 +158,7 @@ func TestNUniqueNames(t *testing.T) {
 
 		go mgr.Run(0)
 		for i := 1; i <= N; i++ {
-			pin := newPinData("name"+fmt.Sprint(i), i, i)
+			pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 			go mgr.Add(&pin)
 		}
 		sleepWhileWork(mgr, N-1)
@@ -174,7 +174,7 @@ func TestNUniqueNamesWorker(t *testing.T) {
 		mgr := newManager(&count)
 		go mgr.Run(5)
 		for i := 1; i <= N; i++ {
-			pin := newPinData("name"+fmt.Sprint(i), i, i)
+			pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 			go mgr.Add(&pin)
 		}
 		sleepWhileWork(mgr, 0)
@@ -192,7 +192,7 @@ func TestNUniqueNamesSameUserWorker(t *testing.T) {
 
 		for j := 0; j < N; j++ {
 			for i := 1; i <= N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), i, i*N+j)
+				pin := newPinData("name"+fmt.Sprint(i), i, uint64(i*N+j))
 				go mgr.Add(&pin)
 			}
 		}
@@ -216,7 +216,7 @@ func TestNUniqueNamesSameUser(t *testing.T) {
 		for j := 0; j < N; j++ {
 
 			for i := 1; i <= N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), i, i)
+				pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 				go mgr.Add(&pin)
 			}
 		}
@@ -278,7 +278,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork5Workers(t *testing.T) {
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
 				for i := 1; i <= N; i++ {
-					pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
+					pin := newPinData("name"+fmt.Sprint(i), j, uint64(i*N+j))
 					go mgr.Add(&pin)
 				}
 			}
@@ -299,7 +299,7 @@ func TestNDuplicateNamesNDuplicateUsersNTime(t *testing.T) {
 		go mgr.Run(0)
 
 		for i := 1; i <= N; i++ {
-			pin := newPinData("name"+fmt.Sprint(i), i, i)
+			pin := newPinData("name"+fmt.Sprint(i), i, uint64(i))
 			go mgr.Add(&pin)
 		}
 
@@ -319,7 +319,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimeWork(t *testing.T) {
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
 				for i := 1; i <= N; i++ {
-					pin := newPinData("name"+fmt.Sprint(i), j, i*N+j)
+					pin := newPinData("name"+fmt.Sprint(i), j, uint64(i*N+j))
 					go mgr.Add(&pin)
 				}
 			}
@@ -353,7 +353,7 @@ func TestNDuplicateNamesNDuplicateUsersNTimes(t *testing.T) {
 	for k := 0; k < N; k++ {
 		for j := 0; j < N; j++ {
 			for i := 1; i <= N; i++ {
-				pin := newPinData("name"+fmt.Sprint(i), j, i)
+				pin := newPinData("name"+fmt.Sprint(i), j, uint64(i))
 				go mgr.Add(&pin)
 			}
 		}
@@ -374,7 +374,7 @@ func TestResumeQueue(t *testing.T) {
 		for k := 0; k < N; k++ {
 			for j := 0; j < N; j++ {
 				for i := 1; i <= N; i++ {
-					pin := newPinData("name"+fmt.Sprint(i), j, j*N+i)
+					pin := newPinData("name"+fmt.Sprint(i), j, uint64(j*N+i))
 					go mgr.Add(&pin)
 				}
 			}

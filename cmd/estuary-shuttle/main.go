@@ -460,9 +460,9 @@ func main() {
 			Tracer:             otel.Tracer(fmt.Sprintf("shuttle_%s", cfg.Hostname)),
 			trackingChannels:   make(map[string]*util.ChanTrack),
 			inflightCids:       make(map[cid.Cid]uint),
-			splitsInProgress:   make(map[uint]bool),
-			aggrInProgress:     make(map[uint]bool),
-			unpinInProgress:    make(map[uint]bool),
+			splitsInProgress:   make(map[uint64]bool),
+			aggrInProgress:     make(map[uint64]bool),
+			unpinInProgress:    make(map[uint64]bool),
 			outgoing:           make(chan *rpcevent.Message, cfg.RpcEngine.Websocket.OutgoingQueueSize),
 			authCache:          cache,
 			hostname:           cfg.Hostname,
@@ -840,13 +840,13 @@ type Shuttle struct {
 	trackingChannels map[string]*util.ChanTrack
 
 	splitLk          sync.Mutex
-	splitsInProgress map[uint]bool
+	splitsInProgress map[uint64]bool
 
 	aggrLk         sync.Mutex
-	aggrInProgress map[uint]bool
+	aggrInProgress map[uint64]bool
 
 	unpinLk         sync.Mutex
-	unpinInProgress map[uint]bool
+	unpinInProgress map[uint64]bool
 
 	addPinLk sync.Mutex
 
@@ -866,7 +866,7 @@ type Shuttle struct {
 	authCache *lru.TwoQueueCache
 
 	retrLk               sync.Mutex
-	retrievalsInProgress map[uint]*retrievalProgress
+	retrievalsInProgress map[uint64]*retrievalProgress
 
 	inflightCids   map[cid.Cid]uint
 	inflightCidsLk sync.Mutex
@@ -1546,7 +1546,7 @@ func (s *Shuttle) addrsForShuttle() []string {
 	return out
 }
 
-func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint, error) {
+func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, filename string, cic util.ContentInCollection) (uint64, error) {
 	log.Debugf("createContent> cid: %v, filename: %s, collection: %+v", root, filename, cic)
 
 	data, err := json.Marshal(util.ContentCreateBody{
@@ -1593,7 +1593,7 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 	return rbody.ID, nil
 }
 
-func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint) (uint, error) {
+func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.Cid, filename, collection string, dagsplitroot uint64) (uint64, error) {
 	var cols []string
 	if collection != "" {
 		cols = []string{collection}
@@ -1677,7 +1677,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint64, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
 	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1748,7 +1748,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 		objlk.Lock()
 		objects = append(objects, &Object{
 			Cid:  util.DbCID{CID: c},
-			Size: len(node.RawData()),
+			Size: uint64(len(node.RawData())),
 		})
 
 		totalSize += int64(len(node.RawData()))
@@ -1793,7 +1793,7 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint,
 	return totalSize, objects, nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint, location string, status types.PinningStatus) error {
+func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
 	if status == types.PinningStatusFailed {
 		log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
 
@@ -1923,7 +1923,7 @@ func (s *Shuttle) handleGetNetAddress(c echo.Context) error {
 	})
 }
 
-func (s *Shuttle) Unpin(ctx context.Context, contid uint) error {
+func (s *Shuttle) Unpin(ctx context.Context, contid uint64) error {
 	// only progress if unpin is not already in progress for this content
 	if !s.markStartUnpin(contid) {
 		return nil
@@ -2007,7 +2007,7 @@ func (s *Shuttle) clearUnreferencedObjects(ctx context.Context, objs []*Object) 
 	s.inflightCidsLk.Lock()
 	defer s.inflightCidsLk.Unlock()
 
-	var ids []uint
+	var ids []uint64
 	for _, o := range objs {
 		if !s.isInflight(o.Cid.CID) {
 			ids = append(ids, o.ID)
@@ -2279,7 +2279,7 @@ func (s *Shuttle) handleMinerTransferDiagnostics(c echo.Context) error {
 }
 
 type garbageCheckBody struct {
-	Contents []uint `json:"contents"`
+	Contents []uint64 `json:"contents"`
 }
 
 func (s *Shuttle) handleManualGarbageCheck(c echo.Context) error {

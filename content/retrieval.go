@@ -54,7 +54,7 @@ func (m *manager) RecordRetrievalSuccess(cc cid.Cid, ma address.Address, rstats 
 	}
 }
 
-func (m *manager) runRetrieval(ctx context.Context, contentToFetch uint) error {
+func (m *manager) runRetrieval(ctx context.Context, contentToFetch uint64) error {
 	ctx, span := m.tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
@@ -174,7 +174,7 @@ func (m *manager) sendRetrieveContentMessage(ctx context.Context, loc string, co
 	*/
 }
 
-func (m *manager) retrieveContent(ctx context.Context, contentToFetch uint) error {
+func (m *manager) retrieveContent(ctx context.Context, contentToFetch uint64) error {
 	ctx, span := m.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contentToFetch)),
 	))
@@ -215,7 +215,7 @@ func (m *manager) retrieveContent(ctx context.Context, contentToFetch uint) erro
 	return nil
 }
 
-func (m *manager) RefreshContent(ctx context.Context, cont uint) error {
+func (m *manager) RefreshContent(ctx context.Context, cont uint64) error {
 	ctx, span := m.tracer.Start(ctx, "refreshContent")
 	defer span.End()
 
@@ -267,7 +267,7 @@ func (m *manager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.B
 		return nil, err
 	}
 
-	var contentToFetch uint
+	var contentToFetch uint64
 	switch len(refs) {
 	case 0:
 		return nil, xerrors.Errorf("have no object references for object %d in database", obj.ID)
@@ -309,6 +309,6 @@ func (m *manager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.B
 	}
 }
 
-func (m *manager) indexForAggregate(ctx context.Context, aggregateID, contID uint) (int, error) {
+func (m *manager) indexForAggregate(ctx context.Context, aggregateID, contID uint64) (int, error) {
 	return 0, fmt.Errorf("selector based retrieval not yet implemented")
 }

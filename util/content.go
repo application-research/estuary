@@ -36,7 +36,7 @@ type ContentAddResponse struct {
 	Cid                 string   `json:"cid"`
 	RetrievalURL        string   `json:"retrieval_url"`
 	EstuaryRetrievalURL string   `json:"estuary_retrieval_url"`
-	EstuaryId           uint     `json:"estuaryId"`
+	EstuaryId           uint64   `json:"estuaryId"`
 	Providers           []string `json:"providers"`
 }
 
@@ -50,11 +50,11 @@ type ContentCreateBody struct {
 }
 
 type ContentCreateResponse struct {
-	ID uint `json:"id"`
+	ID uint64 `json:"id"`
 }
 
 type Content struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
+	ID        uint64         `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -71,8 +71,8 @@ type Content struct {
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
+	AggregatedIn uint64 `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
+	Aggregate    bool   `json:"aggregate"`
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
@@ -92,8 +92,8 @@ type Content struct {
 	// In such a case, the 'root' content should be advertised on the dht, but
 	// not have deals made for it, and the children should have deals made for
 	// them (unlike with aggregates)
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
+	DagSplit  bool   `json:"dagSplit"`
+	SplitFrom uint64 `json:"splitFrom"`
 
 	PinningStatus string `json:"pinningStatus" gorm:"-"`
 	DealStatus    string `json:"dealStatus" gorm:"-"`
@@ -105,17 +105,17 @@ type ContentWithPath struct {
 }
 
 type Object struct {
-	ID         uint  `gorm:"primarykey"`
-	Cid        DbCID `gorm:"index"`
-	Size       int
-	Reads      int
+	ID         uint64 `gorm:"primarykey"`
+	Cid        DbCID  `gorm:"index"`
+	Size       uint64
+	Reads      uint64
 	LastAccess time.Time
 }
 
 type ObjRef struct {
-	ID        uint `gorm:"primarykey"`
-	Content   uint `gorm:"index:,option:CONCURRENTLY"`
-	Object    uint `gorm:"index:,option:CONCURRENTLY"`
+	ID        uint64 `gorm:"primarykey"`
+	Content   uint64 `gorm:"index:,option:CONCURRENTLY"`
+	Object    uint64 `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint
 }
 

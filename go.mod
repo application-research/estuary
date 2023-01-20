@@ -15,13 +15,13 @@ require (
 	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
-	github.com/filecoin-project/go-data-transfer v1.15.2
+	github.com/filecoin-project/go-data-transfer v1.15.3
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.26.0
 	github.com/filecoin-project/go-jsonrpc v0.1.9
 	github.com/filecoin-project/go-legs v0.4.9 // indirect
 	github.com/filecoin-project/go-padreader v0.0.1
-	github.com/filecoin-project/go-state-types v0.9.8
+	github.com/filecoin-project/go-state-types v0.9.9
 	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
 	github.com/filecoin-project/lotus v1.18.1
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
@@ -50,7 +50,7 @@ require (
 	github.com/ipfs/go-merkledag v0.8.1
 	github.com/ipfs/go-metrics-interface v0.0.1
 	github.com/ipfs/go-path v0.3.0
-	github.com/ipfs/go-unixfs v0.4.1
+	github.com/ipfs/go-unixfs v0.4.2
 	github.com/ipfs/go-unixfsnode v1.5.1
 	github.com/ipld/go-car v0.5.0
 	github.com/ipld/go-codec-dagpb v1.5.0
@@ -197,7 +197,7 @@ require (
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/graph-gophers/graphql-go v1.2.0 // indirect
+	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/hako/durafmt v0.0.0-20200710122514-c0fb7b4da026 // indirect
 	github.com/hannahhoward/cbor-gen-for v0.0.0-20200817222906-ea96cece81f1 // indirect
 	github.com/hannahhoward/go-pubsub v0.0.0-20200423002714-8d62886cc36e // indirect
@@ -221,6 +221,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
 	github.com/ipfs/go-ipns v0.3.0 // indirect
+	github.com/ipfs/go-libipfs v0.1.0 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.0 // indirect
 	github.com/ipfs/go-verifcid v0.0.2 // indirect

@@ -35,15 +35,15 @@ type IManager interface {
 	PinDelegatesForContent(cont util.Content) []string
 	GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation
 	DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error
-	UpdatePinStatus(contID uint, location string, status types.PinningStatus) error
+	UpdatePinStatus(contID uint64, location string, status types.PinningStatus) error
 
-	RefreshContent(ctx context.Context, cont uint) error
-	OffloadContents(ctx context.Context, conts []uint) (int, error)
+	RefreshContent(ctx context.Context, cont uint64) error
+	OffloadContents(ctx context.Context, conts []uint64) (int, error)
 	ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error)
 	GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error)
 	UnpinContent(ctx context.Context, contid uint) error
 	PinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error)
-	GetContent(id uint) (*util.Content, error)
+	GetContent(id uint64) (*util.Content, error)
 	TryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error
 	RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error
 	RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error)
@@ -61,7 +61,7 @@ type manager struct {
 	tracer               trace.Tracer
 	notifyBlockstore     *node.NotifyBlockstore
 	retrLk               sync.Mutex
-	retrievalsInProgress map[uint]*util.RetrievalProgress
+	retrievalsInProgress map[uint64]*util.RetrievalProgress
 	contentLk            sync.RWMutex
 	inflightCids         map[cid.Cid]uint
 	inflightCidsLk       sync.Mutex
@@ -87,7 +87,7 @@ func NewManager(
 		stgZoneCreationMgr:   stgzonecreation.NewManager(db, cfg, log),
 		tracer:               otel.Tracer("content"),
 		notifyBlockstore:     nd.NotifBlockstore,
-		retrievalsInProgress: make(map[uint]*util.RetrievalProgress),
+		retrievalsInProgress: make(map[uint64]*util.RetrievalProgress),
 		inflightCids:         make(map[cid.Cid]uint),
 	}
 }

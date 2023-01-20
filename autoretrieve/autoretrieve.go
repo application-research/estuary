@@ -78,8 +78,8 @@ func (autoretrieve *Autoretrieve) AddrInfo() (*peer.AddrInfo, error) {
 type PublishedBatch struct {
 	gorm.Model
 
-	FirstContentID     uint
-	Count              uint
+	FirstContentID     uint64
+	Count              uint64
 	AutoretrieveHandle string
 }
 
@@ -113,17 +113,17 @@ type Provider struct {
 	db                    *gorm.DB
 	advertisementInterval time.Duration
 	advertiseOffline      bool
-	batchSize             uint
+	batchSize             uint64
 }
 
 type Iterator struct {
 	mhs            []multihash.Multihash
 	index          uint
-	firstContentID uint
-	count          uint
+	firstContentID uint64
+	count          uint64
 }
 
-func NewIterator(db *gorm.DB, firstContentID uint, count uint) (*Iterator, error) {
+func NewIterator(db *gorm.DB, firstContentID uint64, count uint64) (*Iterator, error) {
 
 	// Read CID strings for this content ID
 	var cidStrings []string
@@ -293,7 +293,7 @@ func (provider *Provider) Run(ctx context.Context) error {
 			}
 
 			// For each batch that should be advertised...
-			for firstContentID := uint(0); firstContentID <= lastContent.ID; firstContentID += provider.batchSize {
+			for firstContentID := uint64(0); firstContentID <= lastContent.ID; firstContentID += provider.batchSize {
 
 				// Find the amount of contents in this batch (likely less than
 				// the batch size if this is the last batch)
@@ -431,8 +431,8 @@ func (provider *Provider) Stop() error {
 
 type contextParams struct {
 	provider       peer.ID
-	firstContentID uint
-	count          uint
+	firstContentID uint64
+	count          uint64
 }
 
 // Content ID to context ID
@@ -458,7 +458,7 @@ func readContextID(contextID []byte) (contextParams, error) {
 
 	return contextParams{
 		provider:       peerID,
-		firstContentID: uint(binary.BigEndian.Uint32(contextID[0:4])),
-		count:          uint(binary.BigEndian.Uint32(contextID[4:8])),
+		firstContentID: uint64(uint(binary.BigEndian.Uint32(contextID[0:4]))),
+		count:          uint64(uint(binary.BigEndian.Uint32(contextID[4:8]))),
 	}, nil
 }

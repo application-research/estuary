@@ -1,6 +1,7 @@
 package constants
 
 import (
+	"regexp"
 	"time"
 
 	"github.com/filecoin-project/go-state-types/abi"
@@ -30,7 +31,7 @@ const MinDealContentSize = int64(1_100_000_000)
 const MaxDealContentSize = int64(34_000_000_000)
 
 // how many contents to include per advertisement for autoretrieve
-const AutoretrieveProviderBatchSize = uint(25000)
+const AutoretrieveProviderBatchSize = uint64(25000)
 
 const DefaultIndexerURL = "https://cid.contact"
 
@@ -39,6 +40,32 @@ const TokenExpiryDurationRegister = time.Hour * 24 * 7          // 1 week
 const TokenExpiryDurationLogin = time.Hour * 24 * 30            // 30 days
 const TokenExpiryDurationDefault = time.Hour * 24 * 30          // 30 days
 const TokenExpiryDurationPermanent = time.Hour * 24 * 365 * 100 // 100 years
+
+var AdminUsernameAlphanumericRegex = regexp.MustCompile(`^[A-Za-z\d]{1,32}$`)
+
+func IsAdminUsernameValid(username string) bool {
+	return AdminUsernameAlphanumericRegex.MatchString(username)
+}
+
+var AdminPasswordLengthAndAlphanumericRegex = regexp.MustCompile(`^[A-Za-z\d]{8,}$`)
+var AdminPasswordContainsAlphaRegex = regexp.MustCompile(`[A-Za-z]`)
+var AdminPasswordContainsNumericRegex = regexp.MustCompile(`\d`)
+
+var AdminPasswordRegexes = []*regexp.Regexp{
+	AdminPasswordLengthAndAlphanumericRegex,
+	AdminPasswordContainsAlphaRegex,
+	AdminPasswordContainsNumericRegex,
+}
+
+func IsAdminPasswordValid(password string) bool {
+	for _, regex := range AdminPasswordRegexes {
+		ok := regex.MatchString(password)
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
 
 var DealMaxPrice abi.TokenAmount
 var VerifiedDealMaxPrice = abi.NewTokenAmount(0)

@@ -13,7 +13,7 @@ type DealFailureError struct {
 	DealUUID            string
 	Phase               string
 	Message             string
-	Content             uint
+	Content             uint64
 	UserID              uint
 	MinerAddress        string
 	DealProtocolVersion protocol.ID

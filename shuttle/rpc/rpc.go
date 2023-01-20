@@ -247,7 +247,7 @@ func (m *manager) handleRpcShuttleUpdate(ctx context.Context, handle string, par
 }
 
 func (m *manager) handleRpcGarbageCheck(ctx context.Context, handle string, param *rpcevent.GarbageCheck) error {
-	var tounpin []uint
+	var tounpin []uint64
 	for _, c := range param.Contents {
 		var cont util.Content
 		if err := m.db.First(&cont, "id = ?", c).Error; err != nil {
@@ -277,7 +277,7 @@ func (m *manager) handleRpcGarbageCheck(ctx context.Context, handle string, para
 // the UpdatePinStatus only changes DB state for failed status
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
-func (m *manager) handlePinUpdate(location string, contID uint, status types.PinningStatus) error {
+func (m *manager) handlePinUpdate(location string, contID uint64, status types.PinningStatus) error {
 	if status == types.PinningStatusFailed {
 		m.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 

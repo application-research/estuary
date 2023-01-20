@@ -26,7 +26,7 @@ import (
 var log = logging.Logger("pinner")
 
 type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
-type PinStatusFunc func(contID uint, location string, status types.PinningStatus) error
+type PinStatusFunc func(contID uint64, location string, status types.PinningStatus) error
 
 func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm content.IManager, shuttleMgr shuttle.IManager) *EstuaryPinManager {
 	return &EstuaryPinManager{
@@ -42,7 +42,7 @@ func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOp
 
 func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
-		scf = func(contID uint, location string, status types.PinningStatus) error {
+		scf = func(contID uint64, location string, status types.PinningStatus) error {
 			return nil
 		}
 	}
@@ -110,7 +110,7 @@ type EstuaryPinManager struct {
 }
 
 type PinningOperationData struct {
-	ContId uint
+	ContId uint64
 }
 
 func getPinningData(po *operation.PinningOperation) PinningOperationData {

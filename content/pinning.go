@@ -184,7 +184,7 @@ func (m *manager) GetPinOperation(cont util.Content, peers []*peer.AddrInfo, rep
 // the UpdatePinStatus only changes DB state for failed status
 // when the content was added, status = pinning
 // when the pin process is complete, status = pinned
-func (m *manager) UpdatePinStatus(contID uint, location string, status types.PinningStatus) error {
+func (m *manager) UpdatePinStatus(contID uint64, location string, status types.PinningStatus) error {
 	if status == types.PinningStatusFailed {
 		m.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 

@@ -8,7 +8,7 @@ import (
 const (
 	name        = "a"
 	contentPath = "/dir1/dir2/dir3/a"
-	contentId   = uint(1)
+	contentId   = uint64(1)
 	coluuid     = "collection uuid"
 )
 

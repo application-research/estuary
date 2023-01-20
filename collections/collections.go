@@ -29,7 +29,7 @@ type CollectionRef struct {
 	ID         uint `gorm:"primaryKey"`
 	CreatedAt  time.Time
 	Collection uint    `gorm:"index:,option:CONCURRENTLY;not null"`
-	Content    uint    `gorm:"index:,option:CONCURRENTLY;not null"`
+	Content    uint64  `gorm:"index:,option:CONCURRENTLY;not null"`
 	Path       *string `gorm:"null"`
 }
 
@@ -39,7 +39,7 @@ type CollectionListResponse struct {
 	Name      string      `json:"name"`
 	Type      CidType     `json:"type"`
 	Size      int64       `json:"size"`
-	ContID    uint        `json:"contId"`
+	ContID    uint64      `json:"contId"`
 	Cid       *util.DbCID `json:"cid,omitempty"`
 	Dir       string      `json:"dir"`
 	ColUuid   string      `json:"coluuid"`

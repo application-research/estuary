@@ -12,6 +12,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -87,6 +88,7 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	api := e.Group("/v2")
+	api.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.cfg.RateLimit)))
 
 	// Storage Provider Endpoints
 	storageProvider := api.Group("/storage-providers")
@@ -104,4 +106,14 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	storageProvider.GET("/storage/query/:cid", s.handleStorageProviderQueryAsk)
 	storageProvider.POST("/claim", util.WithUser(s.handleClaimStorageProvider))
 	storageProvider.GET("/claim/:sp", util.WithUser(s.handleGetClaimStorageProviderMsg))
+
+	// Pinning
+	pinning := api.Group("/pinning")
+	pinning.Use(s.AuthRequired(util.PermLevelUser))
+	pinning.POST("/batched-pins", util.WithUser(s.handleAddBatchedPins))
+	pinning.GET("/batched-pins", util.WithUser(s.handleGetBatchedPins))
+}
+
+func (s *apiV2) isContentAddingDisabled(u *util.User) bool {
+	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
 }

@@ -52,7 +52,7 @@ func (m *manager) ensureStorage(ctx context.Context, content util.Content, done 
 	return nil
 }
 
-func (m *manager) GetContent(id uint) (*util.Content, error) {
+func (m *manager) GetContent(id uint64) (*util.Content, error) {
 	var content util.Content
 	if err := m.db.First(&content, "id = ?", id).Error; err != nil {
 		return nil, err
@@ -189,7 +189,7 @@ func (m *manager) AddDatabaseTrackingToContent(ctx context.Context, cont *util.C
 		objlk.Lock()
 		objects = append(objects, &util.Object{
 			Cid:  util.DbCID{CID: c},
-			Size: len(node.RawData()),
+			Size: uint64(len(node.RawData())),
 		})
 		objlk.Unlock()
 

@@ -92,7 +92,7 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint                       `json:"id"`
+	ID              uint64                     `json:"id"`
 	Cid             cid.Cid                    `json:"cid"`
 	Filename        string                     `json:"name"`
 	Size            int64                      `json:"size"`
@@ -1068,7 +1068,7 @@ type getContentResponse struct {
 	Deals        []*model.ContentDeal `json:"deals"`
 }
 
-func (s *apiV1) calcSelector(aggregatedIn uint, contentID uint) (string, error) {
+func (s *apiV1) calcSelector(aggregatedIn uint64, contentID uint64) (string, error) {
 	// sort the known content IDs aggregated in a CAR, and use the index in the sorted list
 	// to build the CAR sub-selector
 
@@ -1929,7 +1929,7 @@ func (s *apiV1) handleDealStats(c echo.Context) error {
 		return err
 	}
 
-	sbc := make(map[uint]*contentDealStats)
+	sbc := make(map[uint64]*contentDealStats)
 
 	for _, d := range alldeals {
 		maddr, err := d.MinerAddr()
@@ -2054,7 +2054,7 @@ func (s *apiV1) handleRetrievalCheck(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.retrieveContent(ctx, uint(contid)); err != nil {
+	if err := s.retrieveContent(ctx, uint64(contid)); err != nil {
 		return err
 	}
 
@@ -2401,7 +2401,7 @@ func (s *apiV1) handleOffloadContent(c echo.Context) error {
 		return err
 	}
 
-	removed, err := s.cm.OffloadContents(c.Request().Context(), []uint{uint(cont)})
+	removed, err := s.cm.OffloadContents(c.Request().Context(), []uint64{uint64(cont)})
 	if err != nil {
 		return err
 	}
@@ -2450,7 +2450,7 @@ func (s *apiV1) handleRefreshContent(c echo.Context) error {
 		return err
 	}
 
-	if err := s.cm.RefreshContent(c.Request().Context(), uint(cont)); err != nil {
+	if err := s.cm.RefreshContent(c.Request().Context(), uint64(cont)); err != nil {
 		return c.JSON(500, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -2666,7 +2666,7 @@ func (s *apiV1) handleRegisterUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER)
+	authToken, err := s.newAuthTokenForUser(newUser, time.Now().Add(constants.TokenExpiryDurationRegister), nil, TOKEN_LABEL_ON_REGISTER, true)
 	if err != nil {
 		return err
 	}
@@ -2733,7 +2733,7 @@ func (s *apiV1) handleLoginUser(c echo.Context) error {
 		}
 	}
 
-	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN)
+	authToken, err := s.newAuthTokenForUser(&user, time.Now().Add(constants.TokenExpiryDurationLogin), nil, TOKEN_LABEL_ON_LOGIN, true)
 	if err != nil {
 		return err
 	}
@@ -2821,7 +2821,7 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
-func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string) (*util.AuthToken, error) {
+func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string, isSession bool) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
 	}
@@ -2846,6 +2846,7 @@ func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []s
 		User:       user.ID,
 		Expiry:     expiry,
 		UploadOnly: uploadOnly,
+		IsSession:  isSession,
 	}
 	if err := s.db.Create(authToken).Error; err != nil {
 		return nil, err
@@ -2923,6 +2924,7 @@ type getApiKeysResp struct {
 	TokenHash string    `json:"tokenHash"`
 	Label     string    `json:"label"`
 	Expiry    time.Time `json:"expiry"`
+	IsSession bool      `json:"isSession"`
 }
 
 // handleUserRevokeApiKey godoc
@@ -2979,7 +2981,7 @@ func (s *apiV1) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 
 	label := c.QueryParam("label")
 
-	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label)
+	authToken, err := s.newAuthTokenForUser(u, expiry, perms, label, false)
 	if err != nil {
 		return err
 	}
@@ -2989,6 +2991,7 @@ func (s *apiV1) handleUserCreateApiKey(c echo.Context, u *util.User) error {
 		TokenHash: authToken.TokenHash,
 		Label:     authToken.Label,
 		Expiry:    authToken.Expiry,
+		IsSession: authToken.IsSession,
 	})
 }
 
@@ -3015,6 +3018,7 @@ func (s *apiV1) handleUserGetApiKeys(c echo.Context, u *util.User) error {
 			TokenHash: k.TokenHash,
 			Label:     k.Label,
 			Expiry:    k.Expiry,
+			IsSession: k.IsSession,
 		})
 	}
 

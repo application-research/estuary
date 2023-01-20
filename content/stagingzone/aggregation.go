@@ -101,7 +101,7 @@ func (m *manager) processStagingZone(ctx context.Context, zoneCont util.Content,
 	return m.AggregateStagingZone(ctx, zone, zoneCont, grpLocs[0])
 }
 
-func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint, zoneContent util.Content) error {
+func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint64, zoneContent util.Content) error {
 	dstLocation, toMove, curMax, err := m.getContentsAndDestinationLocationForConsolidation(ctx, zoneID, zoneContent.ID)
 	if err != nil {
 		return err
@@ -237,7 +237,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 		return m.db.Transaction(func(tx *gorm.DB) error {
 			obj := &util.Object{
 				Cid:  util.DbCID{CID: ncid},
-				Size: int(size),
+				Size: uint64(size),
 			}
 			if err := tx.Create(obj).Error; err != nil {
 				return err
@@ -312,7 +312,7 @@ func (m *manager) CreateAggregate(ctx context.Context, conts []util.Content) (ip
 	return dirNd, nil
 }
 
-func (m *manager) getContentsAndDestinationLocationForConsolidation(ctx context.Context, zoneID uint, zoneContID uint) (string, []util.Content, int64, error) {
+func (m *manager) getContentsAndDestinationLocationForConsolidation(ctx context.Context, zoneID uint64, zoneContID uint64) (string, []util.Content, int64, error) {
 	// first determine the location(destination) to move contents to, that are not in that location over.
 	// Do this by checking what location has the largest contents.
 	var dstLocation string

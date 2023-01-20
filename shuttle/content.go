@@ -70,7 +70,7 @@ func (m *manager) CommPContent(ctx context.Context, loc string, data cid.Cid) er
 	})
 }
 
-func (m *manager) UnpinContent(ctx context.Context, loc string, conts []uint) error {
+func (m *manager) UnpinContent(ctx context.Context, loc string, conts []uint64) error {
 	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
 		Op: rpcevent.CMD_UnpinContent,
 		Params: rpcevent.CmdParams{
@@ -99,7 +99,7 @@ func (m *manager) AggregateContent(ctx context.Context, loc string, zone util.Co
 	})
 }
 
-func (m *manager) SplitContent(ctx context.Context, loc string, cont uint, size int64) error {
+func (m *manager) SplitContent(ctx context.Context, loc string, cont uint64, size int64) error {
 	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{
 		Op: rpcevent.CMD_SplitContent,
 		Params: rpcevent.CmdParams{

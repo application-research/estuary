@@ -527,9 +527,19 @@ func main() {
 					return errors.New("setup username cannot be empty")
 				}
 
+				ok := constants.IsAdminUsernameValid(username)
+				if !ok {
+					return errors.New("username must be alphanumeric and 1-32 characters")
+				}
+
 				password := cctx.String("password")
 				if password == "" {
 					return errors.New("setup password cannot be empty")
+				}
+
+				ok = constants.IsAdminPasswordValid(password)
+				if !ok {
+					return errors.New("password must be at least eight characters and contain at least one letter and one number")
 				}
 
 				db, err := setupDatabase(cfg.DatabaseConnString)
@@ -831,6 +841,7 @@ func main() {
 		apiEngine := api.NewEngine(cfg, apiTracer)
 		apiEngine.RegisterAPI(apiV1)
 		apiEngine.RegisterAPI(apiV2)
+
 		return apiEngine.Start()
 	}
 	if err := app.Run(os.Args); err != nil {

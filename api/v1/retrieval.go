@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint) (map[address.Address]*retrievalmarket.QueryResponse, error) {
+func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint64) (map[address.Address]*retrievalmarket.QueryResponse, error) {
 	ctx, span := s.tracer.Start(ctx, "retrievalAsksForContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))
@@ -55,7 +55,7 @@ func (s *apiV1) retrievalAsksForContent(ctx context.Context, contid uint) (map[a
 	return out, nil
 }
 
-func (s *apiV1) retrieveContent(ctx context.Context, contid uint) error {
+func (s *apiV1) retrieveContent(ctx context.Context, contid uint64) error {
 	ctx, span := s.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contid)),
 	))

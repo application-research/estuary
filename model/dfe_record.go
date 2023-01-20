@@ -11,7 +11,7 @@ type DfeRecord struct {
 	DealUUID            string      `json:"deal_uuid"`
 	Phase               string      `json:"phase"`
 	Message             string      `json:"message"`
-	Content             uint        `json:"content" gorm:"index"`
+	Content             uint64      `json:"content" gorm:"index"`
 	MinerVersion        string      `json:"minerVersion"`
 	UserID              uint        `json:"user_id" gorm:"index"`
 	DealProtocolVersion protocol.ID `json:"deal_protocol_version"`
