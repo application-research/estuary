@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	"github.com/application-research/estuary/collections"
-	contentmgr "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
@@ -21,9 +20,6 @@ const (
 )
 
 type PinCidParam struct {
-	Ctx              echo.Context
-	CM               contentmgr.IManager
-	Db               *gorm.DB
 	User             *util.User
 	CidToPin         types.IpfsPin
 	Overwrite        bool
@@ -32,9 +28,6 @@ type PinCidParam struct {
 }
 
 type GetPinParam struct {
-	Ctx      echo.Context
-	CM       contentmgr.IManager
-	Db       *gorm.DB
 	User     *util.User
 	CidToGet string
 }
@@ -46,8 +39,8 @@ type PinningHelperError struct {
 }
 
 // PinCidAndQueue adds a cid to the pin queue, and pins it if possible
-func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
-	ctx := param.Ctx.Request().Context()
+func (pm *EstuaryPinManager) PinCidAndRequestMakeDeal(eCtx echo.Context, param PinCidParam) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+	ctx := eCtx.Request().Context()
 
 	// get the filename and set it to the cid if it's not set
 	filename := param.CidToPin.Name
@@ -58,7 +51,7 @@ func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, 
 	// get the related collections.
 	var cols []*collections.CollectionRef
 	if c, ok := param.CidToPin.Meta["collection"].(string); ok && c != "" {
-		srchCol, err := collections.GetCollection(c, param.Db, param.User)
+		srchCol, err := collections.GetCollection(c, pm.db, param.User)
 		colp, _ := param.CidToPin.Meta[ColDir].(string)
 		path, err := collections.ConstructDirectoryPath(colp)
 		if err != nil {
@@ -74,7 +67,7 @@ func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, 
 		}
 
 		// see if there's already a file with that name/path on that collection
-		pathInCollection := collections.Contains(&srchCol, fullPath, param.Db)
+		pathInCollection := collections.Contains(&srchCol, fullPath, pm.db)
 
 		// 	this helper is not in the context of HTTP request so we need to respect that
 		//	by returning a generic struct which can be casted by the caller.
@@ -108,16 +101,16 @@ func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, 
 	//	we should ignore it.
 	if param.IgnoreDuplicates {
 		var count int64
-		if err := param.Db.Model(util.Content{}).Where("cid = ? and user_id = ?", obj.Bytes(), param.User.ID).Count(&count).Error; err != nil {
+		if err := pm.db.Model(util.Content{}).Where("cid = ? and user_id = ?", obj.Bytes(), param.User.ID).Count(&count).Error; err != nil {
 			return nil, nil, err
 		}
 		if count > 0 {
-			return nil, nil, param.Ctx.JSON(302, map[string]string{"message": "content with given cid already preserved"})
+			return nil, nil, eCtx.JSON(302, map[string]string{"message": "content with given cid already preserved"})
 		}
 	}
 
-	//	 this is set to true by default but the param object has a way to override it.
-	status, pinOp, err := param.CM.PinContent(ctx, param.User.ID, obj, param.CidToPin.Name, cols, origins, 0, param.CidToPin.Meta, param.MakeDeal)
+	// this is set to true by default but the param object has a way to override it.
+	status, pinOp, err := pm.cm.PinContent(ctx, param.User.ID, obj, param.CidToPin.Name, cols, origins, 0, param.CidToPin.Meta, param.MakeDeal)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -125,10 +118,10 @@ func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, 
 }
 
 // GetPinStatus returns the status of a pin operation
-func GetPin(param GetPinParam) (*types.IpfsPinStatusResponse, error) {
+func (pm *EstuaryPinManager) GetPin(param GetPinParam) (*types.IpfsPinStatusResponse, error) {
 	contentId := param.CidToGet
 	var content util.Content
-	if err := param.Db.First(&content, "id = ? AND not replace", contentId).Error; err != nil {
+	if err := pm.db.First(&content, "id = ? AND not replace", contentId).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &PinningHelperError{
 				Reason:  util.ERR_CONTENT_NOT_FOUND,
@@ -142,7 +135,7 @@ func GetPin(param GetPinParam) (*types.IpfsPinStatusResponse, error) {
 		return nil, err
 	}
 
-	st, err := param.CM.PinStatus(content, nil)
+	st, err := pm.cm.PinStatus(content, nil)
 	if err != nil {
 		return nil, err
 	}

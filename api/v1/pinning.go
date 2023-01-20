@@ -248,6 +248,10 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /pinning/pins [post]
 func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
+	var pin types.IpfsPin
+	if err := c.Bind(&pin); err != nil {
+		return err
+	}
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -263,23 +267,14 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		ignoreDuplicates = true
 	}
 
-	var pin types.IpfsPin
-	if err := c.Bind(&pin); err != nil {
-		return err
-	}
-
-	// params
 	pinningParam := pinner.PinCidParam{
-		Ctx:              c,                // echo context to access echo specific vars
-		Db:               s.db,             // the database instance for looking up collections
-		CM:               s.cm,             // the content manager either from v1 or v2
 		User:             u,                // the user
 		CidToPin:         pin,              // the pin object
 		Overwrite:        overwrite,        // the overwrite flag
 		IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 	}
 
-	status, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
+	status, pinOp, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
 	if err != nil {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,

@@ -24,24 +24,21 @@ type BatchedPinRequest struct {
 // @Param        pin           body      []api.BatchedPinRequest  true   "Pin Body {[content_id:"content_id_to_pin"]}"
 // @Router       /v2/pinning/batched-pins/ [get]
 func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
-
 	var pins []BatchedPinRequest
-	err := c.Bind(&pins)
-	if err != nil {
+	if err := c.Bind(&pins); err != nil {
 		return err
 	}
 
 	var pinStatuses []*types.IpfsPinStatusResponse
-	for _, pinId := range pins {
+	for _, pin := range pins {
 		paramCidsToGet := pinner.GetPinParam{
-			Ctx:      c,                    // echo context to access echo specific vars
-			Db:       s.db,                 // the database instance for looking up collections
-			CM:       s.cm,                 // the content manager either from v1 or v2
-			User:     u,                    // the user
-			CidToGet: pinId.ContentIdToPin, // the pin object
-
+			User:     u,                  // the user
+			CidToGet: pin.ContentIdToPin, // the pin object
 		}
-		st, err := pinner.GetPin(paramCidsToGet)
+		st, err := s.pinMgr.GetPin(paramCidsToGet)
+		if err != nil {
+			return err
+		}
 
 		pinStatuses = append(pinStatuses, st)
 		if err != nil {
@@ -70,6 +67,10 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /v2/pinning/batched-pins [post]
 func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
+	var pins []types.IpfsPin
+	if err := c.Bind(&pins); err != nil {
+		return err
+	}
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -85,25 +86,15 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 		ignoreDuplicates = true
 	}
 
-	var pins []types.IpfsPin
-	if err := c.Bind(&pins); err != nil {
-		return err
-	}
-
 	var pinStatuses []*types.IpfsPinStatusResponse
 	for _, pin := range pins {
-		// params
 		pinningParam := pinner.PinCidParam{
-			Ctx:              c,                // echo context to access echo specific vars
-			Db:               s.db,             // the database instance for looking up collections
-			CM:               s.cm,             // the content manager either from v1 or v2
 			User:             u,                // the user
 			CidToPin:         pin,              // the pin object
 			Overwrite:        overwrite,        // the overwrite flag
 			IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 		}
-
-		pinnerAddStatus, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
+		pinnerAddStatus, pinOp, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
 		if err != nil {
 			return &util.HttpError{
 				Code:    http.StatusBadRequest,
@@ -118,6 +109,5 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 		}
 		s.pinMgr.Add(pinOp)
 	}
-
 	return c.JSON(http.StatusAccepted, pinStatuses)
 }

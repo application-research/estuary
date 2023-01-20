@@ -606,7 +606,7 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{
 		MaxActivePerUser: 20,
 		QueueDataDir:     cfg.DataDir,
-	}, contMgr, shuttleMgr)
+	}, contMgr, shuttleMgr, db)
 	go pinmgr.Run(50)
 	go pinmgr.RunPinningRetryWorker(ctx, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 

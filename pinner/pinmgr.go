@@ -17,6 +17,7 @@ import (
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/goque"
 	"github.com/vmihailenco/msgpack/v5"
+	"gorm.io/gorm"
 
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/pkg/errors"
@@ -28,10 +29,11 @@ var log = logging.Logger("pinner")
 type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
 type PinStatusFunc func(contID uint64, location string, status types.PinningStatus) error
 
-func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm content.IManager, shuttleMgr shuttle.IManager) *EstuaryPinManager {
+func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm content.IManager, shuttleMgr shuttle.IManager, db *gorm.DB) *EstuaryPinManager {
 	return &EstuaryPinManager{
 		PinManager: newPinManager(pinfunc, scf, opts),
 		cm:         cm,
+		db:         db,
 		shuttleMgr: shuttleMgr,
 	}
 }
@@ -106,6 +108,7 @@ type ShuttleManager struct {
 type EstuaryPinManager struct {
 	*PinManager
 	cm         content.IManager
+	db         *gorm.DB
 	shuttleMgr shuttle.IManager
 }
 
