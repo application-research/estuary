@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/multiformats/go-multiaddr"
+	"github.com/urfave/cli/v2"
+
 	explru "github.com/paskal/golang-lru/simplelru"
 	"golang.org/x/time/rate"
 
@@ -30,8 +33,6 @@ import (
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/multiformats/go-multiaddr"
-
 	"go.opencensus.io/stats/view"
 
 	"github.com/application-research/estuary/autoretrieve"
@@ -48,7 +49,6 @@ import (
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
-	"github.com/mitchellh/go-homedir"
 	"go.opentelemetry.io/otel"
 
 	"golang.org/x/xerrors"
@@ -59,8 +59,6 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
-	"github.com/urfave/cli/v2"
-
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
@@ -246,11 +244,6 @@ func main() {
 	utc, _ := time.LoadLocation("UTC")
 	time.Local = utc
 
-	hDir, err := homedir.Dir()
-	if err != nil {
-		log.Fatalf("could not determine homedir for estuary app: %+v", err)
-	}
-
 	cfg := config.NewEstuary(appVersion)
 
 	app := cli.NewApp()
@@ -258,261 +251,13 @@ func main() {
 	app.Usage = "Estuary server CLI"
 	app.Before = before
 
-	app.Flags = []cli.Flag{
-		util.FlagLogLevel,
-		&cli.StringFlag{
-			Name:  "repo",
-			Value: "~/.lotus",
-		},
-		&cli.StringFlag{
-			Name:    "node-api-url",
-			Value:   cfg.Node.ApiURL,
-			Usage:   "lotus api gateway url",
-			EnvVars: []string{"FULLNODE_API_INFO"},
-		},
-		&cli.StringFlag{
-			Name:  "config",
-			Usage: "specify configuration file location",
-			Value: filepath.Join(hDir, ".estuary"),
-		},
-		&cli.StringFlag{
-			Name:    "database",
-			Usage:   "specify connection string for estuary database",
-			Value:   cfg.DatabaseConnString,
-			EnvVars: []string{"ESTUARY_DATABASE"},
-		},
-		&cli.StringFlag{
-			Name:    "apilisten",
-			Usage:   "address for the api server to listen on",
-			Value:   cfg.ApiListen,
-			EnvVars: []string{"ESTUARY_API_LISTEN"},
-		},
-		&cli.StringFlag{
-			Name:    "announce",
-			Usage:   "announce address for the libp2p server to listen on",
-			EnvVars: []string{"ESTUARY_ANNOUNCE"},
-		},
-		&cli.StringFlag{
-			Name:  "peering-peers",
-			Usage: "peering addresses for the libp2p server to listen on",
-		},
-		&cli.StringFlag{
-			Name:    "datadir",
-			Usage:   "directory to store data in",
-			Value:   cfg.DataDir,
-			EnvVars: []string{"ESTUARY_DATADIR"},
-		},
-		&cli.StringFlag{
-			Name:   "write-log",
-			Usage:  "enable write log blockstore in specified directory",
-			Value:  cfg.Node.WriteLogDir,
-			Hidden: true,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-deals-storage",
-			Usage: "stops estuary from making new deals and updating existing deals, essentially runs as an ipfs node instead",
-			Value: cfg.DisableFilecoinStorage,
-		},
-		&cli.BoolFlag{
-			Name:  "logging",
-			Usage: "enable api endpoint logging",
-			Value: cfg.Logging.ApiEndpointLogging,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-auto-retrieve",
-			Usage: "disables autoretrieve",
-			Value: cfg.DisableAutoRetrieve,
-		},
-		&cli.StringFlag{
-			Name:    "lightstep-token",
-			Usage:   "specify lightstep access token for enabling trace exports",
-			EnvVars: []string{"ESTUARY_LIGHTSTEP_TOKEN"},
-			Value:   cfg.LightstepToken,
-		},
-		&cli.StringFlag{
-			Name:  "hostname",
-			Usage: "specify hostname this node will be reachable at",
-			Value: cfg.Hostname,
-		},
-		&cli.BoolFlag{
-			Name:  "fail-deals-on-transfer-failure",
-			Usage: "consider deals failed when the transfer to the miner fails",
-			Value: cfg.Deal.FailOnTransferFailure,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-new-deals",
-			Usage: "prevents the worker from making any new deals, but existing deals will still be updated/checked",
-			Value: cfg.Deal.IsDisabled,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-swagger-endpoint",
-			Usage: "do not create the /swagger/* endpoints",
-			Value: cfg.DisableSwaggerEndpoint,
-		},
-		&cli.BoolFlag{
-			Name:  "verified-deal",
-			Usage: "Defaults to makes deals as verified deal using datacap. Set to false to make deal as regular deal using real FIL(no datacap)",
-			Value: cfg.Deal.IsVerified,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-content-adding",
-			Usage: "disallow new content ingestion globally",
-			Value: cfg.Content.DisableGlobalAdding,
-		},
-		&cli.BoolFlag{
-			Name:  "disable-local-content-adding",
-			Usage: "disallow new content ingestion on this node (shuttles are unaffected)",
-			Value: cfg.Content.DisableLocalAdding,
-		},
-		&cli.StringFlag{
-			Name:  "blockstore",
-			Usage: "specify blockstore parameters",
-			Value: cfg.Node.Blockstore,
-		},
-		&cli.BoolFlag{
-			Name:  "write-log-truncate",
-			Usage: "enables log truncating",
-			Value: cfg.Node.WriteLogTruncate,
-		},
-		&cli.BoolFlag{
-			Name:  "write-log-flush",
-			Usage: "enable hard flushing blockstore",
-			Value: cfg.Node.HardFlushWriteLog,
-		},
-		&cli.BoolFlag{
-			Name:  "no-blockstore-cache",
-			Usage: "disable blockstore caching",
-			Value: cfg.Node.NoBlockstoreCache,
-		},
-		&cli.IntFlag{
-			Name:  "replication",
-			Usage: "sets replication factor",
-			Value: cfg.Replication,
-		},
-		&cli.BoolFlag{
-			Name:  "lowmem",
-			Usage: "TEMP: turns down certain parameters to attempt to use less memory (will be replaced by a more specific flag later)",
-			Value: cfg.LowMem,
-		},
-		&cli.BoolFlag{
-			Name:  "jaeger-tracing",
-			Usage: "enables jaeger tracing",
-			Value: cfg.Jaeger.EnableTracing,
-		},
-		&cli.StringFlag{
-			Name:  "jaeger-provider-url",
-			Usage: "sets the jaeger provider url",
-			Value: cfg.Jaeger.ProviderUrl,
-		},
-		&cli.Float64Flag{
-			Name:  "jaeger-sampler-ratio",
-			Usage: "If less than 1 probabilistic metrics will be used.",
-			Value: cfg.Jaeger.SamplerRatio,
-		},
-		&cli.Int64Flag{
-			Name:  "bitswap-max-work-per-peer",
-			Usage: "sets the bitswap max work per peer",
-			Value: cfg.Node.Bitswap.MaxOutstandingBytesPerPeer,
-		},
-		&cli.IntFlag{
-			Name:  "bitswap-target-message-size",
-			Usage: "sets the bitswap target message size",
-			Value: cfg.Node.Bitswap.TargetMessageSize,
-		},
-		&cli.IntFlag{
-			Name:  "rpc-incoming-queue-size",
-			Usage: "sets incoming rpc message queue size",
-			Value: cfg.RpcEngine.Websocket.IncomingQueueSize,
-		},
-		&cli.IntFlag{
-			Name:  "rpc-outgoing-queue-size",
-			Usage: "sets outgoing rpc message queue size",
-			Value: cfg.RpcEngine.Websocket.OutgoingQueueSize,
-		},
-		&cli.IntFlag{
-			Name:  "rpc-queue-handlers",
-			Usage: "sets rpc message handler count",
-			Value: cfg.RpcEngine.Websocket.QueueHandlers,
-		},
-		&cli.BoolFlag{
-			Name:  "queue-eng-enabled",
-			Usage: "enable queue engine for rpc",
-			Value: cfg.RpcEngine.Queue.Enabled,
-		},
-		&cli.IntFlag{
-			Name:  "queue-eng-consumers",
-			Usage: "sets number of consumers per topic",
-			Value: cfg.RpcEngine.Queue.Consumers,
-		},
-		&cli.StringFlag{
-			Name:  "queue-eng-driver",
-			Usage: "sets the type of queue",
-			Value: cfg.RpcEngine.Queue.Driver,
-		},
-		&cli.StringFlag{
-			Name:  "queue-eng-host",
-			Usage: "sets the host address for the queue",
-			Value: cfg.RpcEngine.Queue.Host,
-		},
-		&cli.BoolFlag{
-			Name:  "staging-bucket",
-			Usage: "enable staging bucket",
-			Value: cfg.StagingBucket.Enabled,
-		},
-		&cli.StringSliceFlag{
-			Name:  "deal-protocol-version",
-			Usage: "sets the deal protocol version. defaults to v110 (go-fil-markets) and v120 (boost)",
-		},
-		&cli.StringFlag{
-			Name:  "indexer-url",
-			Usage: "sets the indexer advertisement url",
-			Value: cfg.Node.IndexerURL,
-		},
-		&cli.StringFlag{
-			Name:  "indexer-advertisement-interval",
-			Usage: "sets the indexer advertisement interval using a Go time string (e.g. '1m30s')",
-			Value: cfg.Node.IndexerAdvertisementInterval.String(),
-		},
-		&cli.BoolFlag{
-			Name:  "advertise-offline-autoretrieves",
-			Usage: "if set, registered autoretrieves will be advertised even if they are not currently online",
-		},
-		&cli.StringFlag{
-			Name:  "max-price",
-			Usage: "sets the max price for non-verified deals",
-			Value: cfg.Deal.MaxPrice.String(),
-		},
-		&cli.StringFlag{
-			Name:  "max-verified-price",
-			Usage: "sets the max price for verified deals",
-			Value: cfg.Deal.MaxVerifiedPrice.String(),
-		},
-	}
+	app.Flags = getAppFlags(cfg)
+
 	app.Commands = []*cli.Command{
 		{
 			Name:  "setup",
 			Usage: "Creates an initial auth token under new user \"admin\"",
-			Flags: []cli.Flag{
-				&cli.StringFlag{
-					Name:  "username",
-					Usage: "specify setup username",
-				},
-				&cli.StringFlag{
-					Name:  "password",
-					Usage: "specify setup password",
-				},
-				&cli.StringFlag{
-					Name:  "config",
-					Usage: "specify configuration file location",
-					Value: filepath.Join(hDir, ".estuary"),
-				},
-				&cli.StringFlag{
-					Name:    "database",
-					Usage:   "specify connection string for estuary database",
-					Value:   cfg.DatabaseConnString,
-					EnvVars: []string{"ESTUARY_DATABASE"},
-				},
-			},
+			Flags: getSetupFlags(cfg),
 			Action: func(cctx *cli.Context) error {
 				if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // still want to report parsing errors
 					return err
@@ -541,59 +286,7 @@ func main() {
 				if !ok {
 					return errors.New("password must be at least eight characters and contain at least one letter and one number")
 				}
-
-				db, err := setupDatabase(cfg.DatabaseConnString)
-				if err != nil {
-					return err
-				}
-
-				quietdb := db.Session(&gorm.Session{
-					Logger: logger.Discard,
-				})
-
-				var exist *util.User
-				if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
-					if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-						return err
-					}
-					exist = nil
-				}
-
-				if exist != nil {
-					return fmt.Errorf("a user already exist for that username:%s", username)
-				}
-
-				//	work with bcrypt on cli defined password.
-				hashedPasswordBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
-				if err != nil {
-					return fmt.Errorf("hashing admin password failed: %w", err)
-				}
-
-				newUser := &util.User{
-					UUID:     uuid.New().String(),
-					Username: username,
-					Salt:     uuid.New().String(), // default salt.
-					PassHash: string(hashedPasswordBytes),
-					Perm:     100,
-				}
-				if err := db.Create(newUser).Error; err != nil {
-					return fmt.Errorf("admin user creation failed: %w", err)
-				}
-
-				token := "EST" + uuid.New().String() + "ARY"
-				authToken := &util.AuthToken{
-					Token:     token,
-					TokenHash: util.GetTokenHash(token),
-					Label:     TOKEN_LABEL_ADMIN,
-					User:      newUser.ID,
-					Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
-				}
-				if err := db.Create(authToken).Error; err != nil {
-					return fmt.Errorf("admin token creation failed: %w", err)
-				}
-
-				fmt.Printf("Auth Token: %v\n", authToken.Token)
-				return nil
+				return Setup(username, password, cfg)
 			},
 		}, {
 			Name:  "configure",
@@ -639,8 +332,6 @@ func main() {
 		},
 	}
 	app.Action = func(cctx *cli.Context) error {
-		log.Infof("estuary version: %s", appVersion)
-
 		if err := cfg.Load(cctx.String("config")); err != nil && err != config.ErrNotInitialized { // For backward compatibility, don't error if no config file
 			return err
 		}
@@ -648,201 +339,7 @@ func main() {
 		if err := overrideSetOptions(app.Flags, cctx, cfg); err != nil {
 			return err
 		}
-
-		if err := cfg.Validate(); err != nil {
-			return err
-		}
-
-		db, err := setupDatabase(cfg.DatabaseConnString)
-		if err != nil {
-			return err
-		}
-
-		// stand up sanity check manager
-		sanitycheckMgr := sanitycheck.NewManager(db, log)
-
-		init := Initializer{&cfg.Node, db, nil}
-		nd, err := node.Setup(cctx.Context, &init, sanitycheckMgr.HandleMissingBlocks)
-		if err != nil {
-			return err
-		}
-
-		for _, a := range nd.Host.Addrs() {
-			log.Infof("%s/p2p/%s\n", a, nd.Host.ID())
-		}
-
-		go func() {
-			for _, ai := range node.BootstrapPeers {
-				if err := nd.Host.Connect(cctx.Context, ai); err != nil {
-					log.Warnf("failed to connect to bootstrapper: %s", err)
-					continue
-				}
-			}
-
-			if err := nd.Dht.Bootstrap(cctx.Context); err != nil {
-				log.Warnf("dht bootstrapping failed: %s", err)
-			}
-		}()
-
-		if err = view.Register(metrics.DefaultViews...); err != nil {
-			log.Errorf("Cannot register the OpenCensus view: %s", err)
-			return err
-		}
-
-		walletAddr, err := nd.Wallet.GetDefault()
-		if err != nil {
-			return err
-		}
-
-		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
-		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
-		flset := flag.NewFlagSet("lotus", flag.ExitOnError)
-		flset.String("api-url", "", "node api url")
-		err = flset.Set("api-url", cfg.Node.ApiURL)
-		if err != nil {
-			return err
-		}
-
-		ncctx := cli.NewContext(cli.NewApp(), flset, nil)
-		gatewayApi, closer, err := lcli.GetGatewayAPI(ncctx)
-		if err != nil {
-			return err
-		}
-		defer closer()
-
-		// setup tracing to jaeger if enabled
-		if cfg.Jaeger.EnableTracing {
-			tp, err := metrics.NewJaegerTraceProvider("estuary",
-				cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
-			if err != nil {
-				return err
-			}
-			otel.SetTracerProvider(tp)
-		}
-
-		var opts []func(*filclient.Config)
-		if cfg.LowMem {
-			opts = append(opts, func(cfg *filclient.Config) {
-				cfg.GraphsyncOpts = []gsimpl.Option{
-					gsimpl.MaxInProgressIncomingRequests(100),
-					gsimpl.MaxInProgressOutgoingRequests(100),
-					gsimpl.MaxMemoryResponder(4 << 30),
-					gsimpl.MaxMemoryPerPeerResponder(16 << 20),
-					gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
-					gsimpl.MessageSendRetries(2),
-					gsimpl.SendMessageTimeout(2 * time.Minute),
-				}
-			})
-		}
-
-		opts = append(opts, func(config *filclient.Config) {
-			config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
-		})
-
-		rhost := routed.Wrap(nd.Host, nd.FilDht)
-		fc, err := filclient.NewClient(rhost, gatewayApi, nd.Wallet, walletAddr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
-		if err != nil {
-			return err
-		}
-
-		// stand up shuttle manager
-		shuttleMgr, err := shuttle.NewManager(cctx.Context, db, cfg, log, sanitycheckMgr)
-		if err != nil {
-			return err
-		}
-
-		// stand up transfer manager
-		transferMgr := transfer.NewManager(db, fc, log, shuttleMgr)
-		if err := transferMgr.SubscribeEventListener(cctx.Context); err != nil {
-			return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
-		}
-
-		// resume all resumable legacy data transfer for local contents
-		go func() {
-			time.Sleep(time.Second * 10)
-			if err := transferMgr.RestartAllTransfersForLocation(cctx.Context, constants.ContentLocationLocal, make(chan struct{})); err != nil {
-				log.Errorf("failed to restart transfers: %s", err)
-			}
-		}()
-
-		// stand up miner manager
-		minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
-
-		// stand up content manager
-		contMgr := content.NewManager(db, fc, init.trackingBstore, nd, cfg, log, shuttleMgr)
-
-		// stand up staging zone manager
-		stgZoneMgr := stagingzone.NewManager(db, init.trackingBstore, nd, cfg, log, shuttleMgr)
-		stgZoneMgr.RunWorkers(cctx.Context)
-
-		// stand up split manager
-		splitMgr := split.NewManager(db, nd, cfg, log, shuttleMgr, contMgr)
-		splitMgr.RunWorker(cctx.Context)
-
-		// stand up commp manager
-		commpMgr := commp.NewManager(db, cfg, log, shuttleMgr)
-		fc.SetPieceCommFunc(commpMgr.GetOrRunPieceCommitment)
-		commpMgr.RunWorker(cctx.Context)
-
-		// stand up deal manager
-		dealMgr := deal.NewManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
-		dealMgr.RunWorkers(cctx.Context)
-
-		// stand up pin manager
-		pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{
-			MaxActivePerUser: 20,
-			QueueDataDir:     cfg.DataDir,
-		}, contMgr, shuttleMgr)
-		go pinmgr.Run(50)
-		go pinmgr.RunPinningRetryWorker(cctx.Context, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
-
-		// Start autoretrieve if not disabled
-		if !cfg.DisableAutoRetrieve {
-			init.trackingBstore.SetCidReqFunc(contMgr.RefreshContentForCid)
-
-			ap, err := autoretrieve.NewProvider(
-				db,
-				cfg.Node.IndexerAdvertisementInterval,
-				cfg.Node.IndexerURL,
-				cfg.Node.AdvertiseOfflineAutoretrieves,
-			)
-			if err != nil {
-				return err
-			}
-
-			go func() {
-				defer func() {
-					if err := recover(); err != nil {
-						log.Errorf("Autoretrieve provide loop panicked, cancelling until the executable is restarted: %v", err)
-					}
-				}()
-
-				if err = ap.Run(context.Background()); err != nil {
-					log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
-				}
-			}()
-			defer ap.Stop()
-		}
-
-		sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
-		if err != nil {
-			return err
-		}
-
-		cacher := explru.NewExpirableLRU(constants.CacheSize, nil, constants.CacheDuration, constants.CachePurgeEveryDuration)
-		extendedCacher := explru.NewExpirableLRU(constants.ExtendedCacheSize, nil, constants.ExtendedCacheDuration, constants.ExtendedCachePurgeEveryDuration)
-
-		// stand up api server
-		apiTracer := otel.Tracer("api")
-
-		apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr, dealMgr, stgZoneMgr)
-		apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, minerMgr, extendedCacher, pinmgr, log, apiTracer)
-
-		apiEngine := api.NewEngine(cfg, apiTracer)
-		apiEngine.RegisterAPI(apiV1)
-		apiEngine.RegisterAPI(apiV2)
-
-		return apiEngine.Start()
+		return Run(cctx.Context, cfg)
 	}
 	if err := app.Run(os.Args); err != nil {
 		log.Fatalf("could not run estuary app: %+v", err)
@@ -907,4 +404,257 @@ func migrateSchemas(db *gorm.DB) error {
 		return err
 	}
 	return nil
+}
+
+func Setup(username, password string, cfg *config.Estuary) error {
+	db, err := setupDatabase(cfg.DatabaseConnString)
+	if err != nil {
+		return err
+	}
+
+	quietdb := db.Session(&gorm.Session{
+		Logger: logger.Discard,
+	})
+
+	var exist *util.User
+	if err := quietdb.First(&exist, "username = ?", username).Error; err != nil {
+		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		exist = nil
+	}
+
+	if exist != nil {
+		return fmt.Errorf("a user already exist for that username:%s", username)
+	}
+
+	//	work with bcrypt on cli defined password.
+	hashedPasswordBytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.MinCost)
+	if err != nil {
+		return fmt.Errorf("hashing admin password failed: %w", err)
+	}
+
+	newUser := &util.User{
+		UUID:     uuid.New().String(),
+		Username: username,
+		Salt:     uuid.New().String(), // default salt.
+		PassHash: string(hashedPasswordBytes),
+		Perm:     100,
+	}
+	if err := db.Create(newUser).Error; err != nil {
+		return fmt.Errorf("admin user creation failed: %w", err)
+	}
+
+	token := "EST" + uuid.New().String() + "ARY"
+	authToken := &util.AuthToken{
+		Token:     token,
+		TokenHash: util.GetTokenHash(token),
+		Label:     TOKEN_LABEL_ADMIN,
+		User:      newUser.ID,
+		Expiry:    time.Now().Add(constants.TokenExpiryDurationAdmin),
+	}
+	if err := db.Create(authToken).Error; err != nil {
+		return fmt.Errorf("admin token creation failed: %w", err)
+	}
+
+	fmt.Printf("Auth Token: %v\n", authToken.Token)
+	return nil
+}
+
+func Run(ctx context.Context, cfg *config.Estuary) error {
+
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+
+	db, err := setupDatabase(cfg.DatabaseConnString)
+	if err != nil {
+		return err
+	}
+
+	// stand up sanity check manager
+	sanitycheckMgr := sanitycheck.NewManager(db, log)
+
+	init := Initializer{&cfg.Node, db, nil}
+	nd, err := node.Setup(ctx, &init, sanitycheckMgr.HandleMissingBlocks)
+	if err != nil {
+		return err
+	}
+
+	for _, a := range nd.Host.Addrs() {
+		log.Infof("%s/p2p/%s\n", a, nd.Host.ID())
+	}
+
+	go func() {
+		for _, ai := range node.BootstrapPeers {
+			if err := nd.Host.Connect(ctx, ai); err != nil {
+				log.Warnf("failed to connect to bootstrapper: %s", err)
+				continue
+			}
+		}
+
+		if err := nd.Dht.Bootstrap(ctx); err != nil {
+			log.Warnf("dht bootstrapping failed: %s", err)
+		}
+	}()
+
+	if err = view.Register(metrics.DefaultViews...); err != nil {
+		log.Errorf("Cannot register the OpenCensus view: %s", err)
+		return err
+	}
+
+	walletAddr, err := nd.Wallet.GetDefault()
+	if err != nil {
+		return err
+	}
+
+	// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
+	// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
+	flset := flag.NewFlagSet("lotus", flag.ExitOnError)
+	flset.String("api-url", "", "node api url")
+	err = flset.Set("api-url", cfg.Node.ApiURL)
+	if err != nil {
+		return err
+	}
+
+	ncctx := cli.NewContext(cli.NewApp(), flset, nil)
+	gatewayApi, closer, err := lcli.GetGatewayAPI(ncctx)
+	if err != nil {
+		return err
+	}
+	defer closer()
+
+	// setup tracing to jaeger if enabled
+	if cfg.Jaeger.EnableTracing {
+		tp, err := metrics.NewJaegerTraceProvider("estuary",
+			cfg.Jaeger.ProviderUrl, cfg.Jaeger.SamplerRatio)
+		if err != nil {
+			return err
+		}
+		otel.SetTracerProvider(tp)
+	}
+
+	var opts []func(*filclient.Config)
+	if cfg.LowMem {
+		opts = append(opts, func(cfg *filclient.Config) {
+			cfg.GraphsyncOpts = []gsimpl.Option{
+				gsimpl.MaxInProgressIncomingRequests(100),
+				gsimpl.MaxInProgressOutgoingRequests(100),
+				gsimpl.MaxMemoryResponder(4 << 30),
+				gsimpl.MaxMemoryPerPeerResponder(16 << 20),
+				gsimpl.MaxInProgressIncomingRequestsPerPeer(10),
+				gsimpl.MessageSendRetries(2),
+				gsimpl.SendMessageTimeout(2 * time.Minute),
+			}
+		})
+	}
+
+	opts = append(opts, func(config *filclient.Config) {
+		config.Lp2pDTConfig.Server.ThrottleLimit = cfg.Node.Libp2pThrottleLimit
+	})
+
+	rhost := routed.Wrap(nd.Host, nd.FilDht)
+	fc, err := filclient.NewClient(rhost, gatewayApi, nd.Wallet, walletAddr, nd.Blockstore, nd.Datastore, cfg.DataDir, opts...)
+	if err != nil {
+		return err
+	}
+
+	// stand up shuttle manager
+	shuttleMgr, err := shuttle.NewManager(ctx, db, cfg, log, sanitycheckMgr)
+	if err != nil {
+		return err
+	}
+
+	// stand up transfer manager
+	transferMgr := transfer.NewManager(db, fc, log, shuttleMgr)
+	if err := transferMgr.SubscribeEventListener(ctx); err != nil {
+		return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+	}
+
+	// resume all resumable legacy data transfer for local contents
+	go func() {
+		time.Sleep(time.Second * 10)
+		if err := transferMgr.RestartAllTransfersForLocation(ctx, constants.ContentLocationLocal, make(chan struct{})); err != nil {
+			log.Errorf("failed to restart transfers: %s", err)
+		}
+	}()
+
+	// stand up miner manager
+	minerMgr := miner.NewMinerManager(db, fc, cfg, gatewayApi, log)
+
+	// stand up content manager
+	contMgr := content.NewManager(db, fc, init.trackingBstore, nd, cfg, log, shuttleMgr)
+
+	// stand up staging zone manager
+	stgZoneMgr := stagingzone.NewManager(db, init.trackingBstore, nd, cfg, log, shuttleMgr)
+	stgZoneMgr.RunWorkers(ctx)
+
+	// stand up split manager
+	splitMgr := split.NewManager(db, nd, cfg, log, shuttleMgr, contMgr)
+	splitMgr.RunWorker(ctx)
+
+	// stand up commp manager
+	commpMgr := commp.NewManager(db, cfg, log, shuttleMgr)
+	fc.SetPieceCommFunc(commpMgr.GetOrRunPieceCommitment)
+	commpMgr.RunWorker(ctx)
+
+	// stand up deal manager
+	dealMgr := deal.NewManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
+	dealMgr.RunWorkers(ctx)
+
+	// stand up pin manager
+	pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{
+		MaxActivePerUser: 20,
+		QueueDataDir:     cfg.DataDir,
+	}, contMgr, shuttleMgr)
+	go pinmgr.Run(50)
+	go pinmgr.RunPinningRetryWorker(ctx, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
+
+	// Start autoretrieve if not disabled
+	if !cfg.DisableAutoRetrieve {
+		init.trackingBstore.SetCidReqFunc(contMgr.RefreshContentForCid)
+
+		ap, err := autoretrieve.NewProvider(
+			db,
+			cfg.Node.IndexerAdvertisementInterval,
+			cfg.Node.IndexerURL,
+			cfg.Node.AdvertiseOfflineAutoretrieves,
+		)
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			defer func() {
+				if err := recover(); err != nil {
+					log.Errorf("Autoretrieve provide loop panicked, cancelling until the executable is restarted: %v", err)
+				}
+			}()
+
+			if err = ap.Run(context.Background()); err != nil {
+				log.Errorf("Autoretrieve provide loop failed, cancelling until the executable is restarted: %v", err)
+			}
+		}()
+		defer ap.Stop()
+	}
+
+	sbmgr, err := stagingbs.NewStagingBSMgr(cfg.StagingDataDir)
+	if err != nil {
+		return err
+	}
+
+	cacher := explru.NewExpirableLRU(constants.CacheSize, nil, constants.CacheDuration, constants.CachePurgeEveryDuration)
+	extendedCacher := explru.NewExpirableLRU(constants.ExtendedCacheSize, nil, constants.ExtendedCacheDuration, constants.ExtendedCachePurgeEveryDuration)
+
+	// stand up api server
+	apiTracer := otel.Tracer("api")
+
+	apiV1 := apiv1.NewAPIV1(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, extendedCacher, minerMgr, pinmgr, log, apiTracer, shuttleMgr, transferMgr, dealMgr, stgZoneMgr)
+	apiV2 := apiv2.NewAPIV2(cfg, db, nd, fc, gatewayApi, sbmgr, contMgr, cacher, minerMgr, extendedCacher, pinmgr, log, apiTracer)
+
+	apiEngine := api.NewEngine(cfg, apiTracer)
+	apiEngine.RegisterAPI(apiV1)
+	apiEngine.RegisterAPI(apiV2)
+
+	return apiEngine.Start()
 }
