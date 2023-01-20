@@ -121,7 +121,7 @@ func (m *manager) ensureStorage(ctx context.Context, content util.Content, done 
 		return nil
 	}
 
-	m.log.Infof("getting commp for cont: %d", content.ID)
+	m.log.Debugf("getting commp for cont: %d", content.ID)
 	_, _, _, err := m.commpMgr.GetOrRunPieceCommitment(context.Background(), content.Cid.CID, m.blockstore)
 	if err != nil {
 		return err

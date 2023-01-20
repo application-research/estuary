@@ -211,7 +211,8 @@ func (m *manager) TryAddNewContentToStagingZone(ctx context.Context, cont *util.
 					if err := tx.Exec("UPDATE contents SET size = size + ? WHERE id = ?", contSize, zone.ContID).Error; err != nil {
 						return err
 					}
-					// we added to a zone, track zone creation last content counter
+					// we added to a zone, track zone creation last content counter,
+					// will be none for new pinned contents
 					if tracker != nil {
 						return tx.Model(model.StagingZoneTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error
 					}
