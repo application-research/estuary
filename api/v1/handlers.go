@@ -444,12 +444,23 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
 	}
 
+	replication := s.cfg.Replication
+	replVal := c.FormValue("replication")
+	if replVal != "" {
+		parsed, err := strconv.Atoi(replVal)
+		if err != nil {
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+		} else {
+			replication = parsed
+		}
+	}
+
 	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}
 
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, false)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, replication, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
@@ -551,6 +562,17 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 
 	defer fi.Close()
 
+	replication := s.cfg.Replication
+	replVal := c.FormValue("replication")
+	if replVal != "" {
+		parsed, err := strconv.Atoi(replVal)
+		if err != nil {
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+		} else {
+			replication = parsed
+		}
+	}
+
 	coluuid := c.QueryParam("coluuid")
 	var col *collections.Collection
 	if coluuid != "" {
@@ -601,6 +623,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
+	// file uploads block objects will not be created by the pinner
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
 		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
 	}
@@ -610,7 +633,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, false)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, replication, false)
 	if err != nil {
 		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
@@ -3252,7 +3275,7 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, s.cfg.Replication, makeDeal)
 	if err != nil {
 		return err
 	}

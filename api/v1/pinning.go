@@ -276,6 +276,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		CidToPin:         pin,              // the pin object
 		Overwrite:        overwrite,        // the overwrite flag
 		IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
+		Replication:      s.cfg.Replication,
 	}
 
 	status, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
@@ -393,7 +394,7 @@ func (s *apiV1) handleReplacePin(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(c.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, makeDeal)
+	status, pinOp, err := s.CM.PinContent(c.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, s.cfg.Replication, makeDeal)
 	if err != nil {
 		return err
 	}

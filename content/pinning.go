@@ -85,7 +85,7 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	return out
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, replication int, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
@@ -121,7 +121,7 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Name:        filename,
 		UserID:      user,
 		Active:      false,
-		Replication: cm.cfg.Replication,
+		Replication: replication,
 		Pinning:     false,
 		PinMeta:     metaStr,
 		Location:    loc,

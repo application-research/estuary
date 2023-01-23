@@ -27,6 +27,7 @@ type PinCidParam struct {
 	CidToPin         types.IpfsPin
 	Overwrite        bool
 	IgnoreDuplicates bool
+	Replication      int
 	MakeDeal         bool `default:"true"`
 }
 
@@ -116,7 +117,7 @@ func PinCidAndRequestMakeDeal(param PinCidParam) (*types.IpfsPinStatusResponse, 
 	}
 
 	//	 this is set to true by default but the param object has a way to override it.
-	status, pinOp, err := param.CM.PinContent(ctx, param.User.ID, obj, param.CidToPin.Name, cols, origins, 0, param.CidToPin.Meta, param.MakeDeal)
+	status, pinOp, err := param.CM.PinContent(ctx, param.User.ID, obj, param.CidToPin.Name, cols, origins, 0, param.CidToPin.Meta, param.Replication, param.MakeDeal)
 	if err != nil {
 		return nil, nil, err
 	}

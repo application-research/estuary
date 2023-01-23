@@ -101,6 +101,7 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 			CidToPin:         pin,              // the pin object
 			Overwrite:        overwrite,        // the overwrite flag
 			IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
+			Replication:      s.cfg.Replication,
 		}
 
 		pinnerAddStatus, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
