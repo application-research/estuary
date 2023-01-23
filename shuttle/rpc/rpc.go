@@ -284,32 +284,24 @@ func (m *manager) handlePinUpdate(location string, contID uint64, status types.P
 	}
 
 	// if an aggregate zone is failing, zone is stuck
-	// TODO - not sure if this is happening, but we should look (next pr will have a zone status), ignore for now
-	if c.Aggregate && status == types.PinningStatusFailed {
-		m.log.Errorf("a zone is stuck, as an aggregate zone: %d, failed to aggregate(pin) on location: %s", c.ID, location)
-		return nil
-	}
-
-	updates := map[string]interface{}{
-		"active":    status == types.PinningStatusPinned,
-		"pinning":   status == types.PinningStatusPinning,
-		"failed":    status == types.PinningStatusFailed,
-		"offloaded": status == types.PinningStatusOffloaded,
-	}
-
-	if status == types.PinningStatusFailed {
-		updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
-	}
-
-	// if an aggregate zone is failing, zone is stuck
 	// TODO - revisit this later if it is actually happening
-	if c.Aggregate {
+	if c.Aggregate && status == types.PinningStatusFailed {
 		m.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
 
 		return m.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"status":  model.ZoneStatusStuck,
 			"message": model.ZoneMessageStuck,
 		}).Error
+	}
+
+	updates := map[string]interface{}{
+		"active":  status == types.PinningStatusPinned,
+		"pinning": status == types.PinningStatusPinning,
+		"failed":  status == types.PinningStatusFailed,
+	}
+
+	if status == types.PinningStatusFailed {
+		updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
 	}
 
 	return m.db.Transaction(func(tx *gorm.DB) error {

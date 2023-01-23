@@ -140,7 +140,7 @@ func (qm *queueManager) processQueue() {
 
 func (qm *queueManager) ToCheck(contID uint64, contSize int64) {
 	// if DisableFilecoinStorage is not enabled, queue content for deal making
-	if !qm.isDisabled {
+	if !qm.isDisabled && contSize >= qm.dealSizeLimit {
 		go func() {
 			qm.toCheck <- contID
 		}()
