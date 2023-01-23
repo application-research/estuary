@@ -441,7 +441,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	}
 
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
-		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	replication := s.cfg.Replication
@@ -625,7 +625,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 
 	// file uploads block objects will not be created by the pinner
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
-		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	origins, err := s.Node.Origins()

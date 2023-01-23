@@ -326,7 +326,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name: "announce-addr",
+			Name:  "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -1346,13 +1346,13 @@ func (s *Shuttle) handleAddToShuttle(c echo.Context, u *User) error {
 		return err
 	}
 
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
 	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
 	if err != nil {
 		return err
-	}
-
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	origins, err := s.Node.Origins()
@@ -1361,8 +1361,7 @@ func (s *Shuttle) handleAddToShuttle(c echo.Context, u *User) error {
 	}
 
 	if err := s.addPin(ctx, contid, nd.Cid(), u.ID, origins, false); err != nil {
-		log.Errorf("failed to make pin op for content %d for user %d: %s", contid, u.ID, err)
-		return err
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", contid, u.ID)
 	}
 
 	_ = s.Provide(ctx, nd.Cid())
@@ -1474,6 +1473,10 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 
 	root := header.Roots[0]
 
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
 	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
 		CollectionDir: c.QueryParam(ColDir),
@@ -1482,18 +1485,13 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 		return err
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
 	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}
 
 	if err := s.addPin(ctx, contid, root, u.ID, origins, false); err != nil {
-		log.Errorf("failed to make pin op for content %d for user %d: %s", contid, u.ID, err)
-		return err
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", contid, u.ID)
 	}
 
 	_ = s.Provide(ctx, root)
