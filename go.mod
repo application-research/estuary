@@ -73,7 +73,7 @@ require (
 	github.com/swaggo/echo-swagger v1.3.5
 	github.com/swaggo/swag v1.8.9
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
-	github.com/urfave/cli/v2 v2.23.7
+	github.com/urfave/cli/v2 v2.24.1
 	github.com/whyrusleeping/cbor-gen v0.0.0-20220514204315-f29c37e9c44c
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
 	go.opencensus.io v0.24.0
