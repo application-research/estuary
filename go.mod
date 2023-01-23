@@ -11,7 +11,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/facebookgo/atomicfile v0.0.0-20151019160806-2de1f203e7d5
-	github.com/filecoin-project/boost v1.5.1-rc2
+	github.com/filecoin-project/boost v1.5.1-rc3
 	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-bs-lmdb v1.0.6-0.20211215050109-9e2b984c988e
 	github.com/filecoin-project/go-cbor-util v0.0.1
@@ -60,7 +60,7 @@ require (
 	github.com/labstack/gommon v0.4.0
 	github.com/libp2p/go-libp2p v0.23.4
 	github.com/libp2p/go-libp2p-kad-dht v0.20.0
-	github.com/libp2p/go-libp2p-pubsub v0.8.0 // indirect
+	github.com/libp2p/go-libp2p-pubsub v0.8.1 // indirect
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/libp2p/go-libp2p-routing-helpers v0.6.0
 	github.com/mitchellh/go-homedir v1.1.0
@@ -104,9 +104,9 @@ require (
 
 require (
 	github.com/BurntSushi/toml v1.2.1 // indirect
-	github.com/DataDog/zstd v1.4.1 // indirect
+	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/GeertJohan/go.incremental v1.0.0 // indirect
-	github.com/GeertJohan/go.rice v1.0.2 // indirect
+	github.com/GeertJohan/go.rice v1.0.3 // indirect
 	github.com/Gurpartap/async v0.0.0-20180927173644-4f7f499dd9ee // indirect
 	github.com/Kubuxu/imtui v0.0.0-20210401140320-41663d68d0fa // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
@@ -132,7 +132,7 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/crackcomm/go-gitignore v0.0.0-20170627025303-887ab5e44cc3 // indirect
 	github.com/cskr/pubsub v1.0.2 // indirect
-	github.com/daaku/go.zipexe v1.0.0 // indirect
+	github.com/daaku/go.zipexe v1.0.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.1.0 // indirect
@@ -249,7 +249,7 @@ require (
 	github.com/libp2p/go-flow-metrics v0.1.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.2.0 // indirect
 	github.com/libp2p/go-libp2p-core v0.20.1 // indirect
-	github.com/libp2p/go-libp2p-gostream v0.4.1-0.20220720161416-e1952aede109 // indirect
+	github.com/libp2p/go-libp2p-gostream v0.5.0 // indirect
 	github.com/libp2p/go-libp2p-http v0.2.1 // indirect
 	github.com/libp2p/go-libp2p-kbucket v0.5.0 // indirect
 	github.com/libp2p/go-libp2p-peerstore v0.8.0 // indirect
