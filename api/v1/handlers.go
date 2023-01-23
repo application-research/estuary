@@ -441,7 +441,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	}
 
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
 	}
 
 	origins, err := s.Node.Origins()
@@ -451,8 +451,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 
 	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, false)
 	if err != nil {
-		s.log.Errorf("failed to make pin op for content %d for user %d: %s", pinstatus.Content.ID, u.ID, err)
-		return err
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
 	s.pinMgr.Add(pinOp)
 
@@ -603,8 +602,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	}
 
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
-		s.log.Errorf("failed to move data from staging to main blockstore: %w", err)
-		return err
+		return errors.Wrapf(err, "failed to move data from staging to main blockstore")
 	}
 
 	origins, err := s.Node.Origins()
@@ -614,10 +612,16 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 
 	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, false)
 	if err != nil {
-		s.log.Errorf("failed to make pin op for content %d for user %d: %s", pinstatus.Content.ID, u.ID, err)
-		return err
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
 	s.pinMgr.Add(pinOp)
+
+	if col != nil {
+		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, pinstatus.Content.ID)
+		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(pinstatus.Content.ID)), dir, overwrite, s.DB, u); err != nil {
+			return xerrors.Errorf("failed to add content to collection: %s", err)
+		}
+	}
 
 	if c.QueryParam("lazy-provide") != "true" {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -4920,29 +4924,6 @@ func (s *apiV1) handleShuttleRepinAll(c echo.Context) error {
 		}
 	}
 	return nil
-}
-
-func (s *apiV1) getOrigins() ([]*peer.AddrInfo, error) {
-	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
-	for _, listenAddr := range s.Node.Host.Addrs() {
-		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
-		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
-		if err != nil {
-			return nil, err
-		}
-		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
-	}
-
-	// transform multiaddresses into AddrInfo objects
-	var origins []*peer.AddrInfo
-	for _, p := range fullP2pMultiAddrs {
-		ai, err := peer.AddrInfoFromP2pAddr(p)
-		if err != nil {
-			return nil, err
-		}
-		origins = append(origins, ai)
-	}
-	return origins, nil
 }
 
 type CidType string
