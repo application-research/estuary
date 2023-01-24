@@ -218,7 +218,7 @@ type MsgParams struct {
 	SanityCheck      *SanityCheck               `json:",omitempty"`
 }
 
-const OP_UpdatePinStatus = "UpdatePinStatus"
+const OP_UpdatePinStatus = "UpdateContentPinStatus"
 
 type UpdatePinStatus struct {
 	DBID   uint64

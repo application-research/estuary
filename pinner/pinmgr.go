@@ -158,6 +158,9 @@ func (pm *PinManager) doPinning(op *operation.PinningOperation) error {
 	defer cancel()
 
 	op.SetStatus(types.PinningStatusPinning)
+	if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusPinning); err2 != nil {
+		return err2
+	}
 
 	if err := pm.RunPinFunc(ctx, op, func(size int64) {
 		op.UpdateProgress(size)

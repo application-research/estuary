@@ -440,17 +440,31 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		filename = qpname
 	}
 
-	bserv := blockservice.New(sbs, nil)
-	dserv := merkledag.NewDAGService(bserv)
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
 
-	cont, err := s.CM.AddDatabaseTracking(ctx, u, dserv, rootCID, filename, s.cfg.Replication)
+	replication := s.cfg.Replication
+	replVal := c.FormValue("replication")
+	if replVal != "" {
+		parsed, err := strconv.Atoi(replVal)
+		if err != nil {
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+		} else {
+			replication = parsed
+		}
+	}
+
+	origins, err := s.Node.Origins()
 	if err != nil {
 		return err
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, replication, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
+	s.pinMgr.Add(pinOp)
 
 	go func() {
 		if err := s.Node.Provider.Provide(rootCID); err != nil {
@@ -462,8 +476,8 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		Cid:                 rootCID.String(),
 		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
-		EstuaryId:           cont.ID,
-		Providers:           s.CM.PinDelegatesForContent(*cont),
+		EstuaryId:           pinstatus.Content.ID,
+		Providers:           s.CM.PinDelegatesForContent(pinstatus.Content),
 	})
 }
 
@@ -609,23 +623,28 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	content, err := s.CM.AddDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
-	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
-	}
-
-	if col != nil {
-		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, content.ID)
-		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(content.ID)), dir, overwrite, s.DB, u); err != nil {
-			return xerrors.Errorf("failed to add content to collection: %s", err)
-		}
-	}
-
+	// file uploads block objects will not be created by the pinner
 	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.Node.Blockstore); err != nil {
 		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
-	s.CM.ToCheck(content.ID, content.Size)
+	origins, err := s.Node.Origins()
+	if err != nil {
+		return err
+	}
+
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, replication, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
+	}
+	s.pinMgr.Add(pinOp)
+
+	if col != nil {
+		s.log.Infof("COLLECTION CREATION: %d, %d", col.ID, pinstatus.Content.ID)
+		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(pinstatus.Content.ID)), dir, overwrite, s.DB, u); err != nil {
+			return xerrors.Errorf("failed to add content to collection: %s", err)
+		}
+	}
 
 	if c.QueryParam("lazy-provide") != "true" {
 		subctx, cancel := context.WithTimeout(ctx, time.Second*10)
@@ -646,8 +665,8 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		Cid:                 nd.Cid().String(),
 		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
-		EstuaryId:           content.ID,
-		Providers:           s.CM.PinDelegatesForContent(*content),
+		EstuaryId:           pinstatus.Content.ID,
+		Providers:           s.CM.PinDelegatesForContent(pinstatus.Content),
 	})
 }
 
@@ -3214,26 +3233,9 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	// transform listen addresses (/ip/1.2.3.4/tcp/80) into full p2p multiaddresses
-	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
-	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
-	for _, listenAddr := range s.Node.Host.Addrs() {
-		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.Node.Host.ID())
-		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
-		if err != nil {
-			return err
-		}
-		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
-	}
-
-	// transform multiaddresses into AddrInfo objects
-	var origins []*peer.AddrInfo
-	for _, p := range fullP2pMultiAddrs {
-		ai, err := peer.AddrInfoFromP2pAddr(p)
-		if err != nil {
-			return err
-		}
-		origins = append(origins, ai)
+	origins, err := s.Node.Origins()
+	if err != nil {
+		return err
 	}
 
 	bserv := blockservice.New(s.Node.Blockstore, nil)
@@ -3273,7 +3275,7 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, pinOp, err := s.CM.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, s.cfg.Replication, makeDeal)
 	if err != nil {
 		return err
 	}

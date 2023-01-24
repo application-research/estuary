@@ -193,6 +193,8 @@ definitions:
     type: object
   types.IpfsPinStatusResponse:
     properties:
+      content:
+        $ref: '#/definitions/util.Content'
       created:
         type: string
       delegates:
@@ -223,6 +225,65 @@ definitions:
       - PinningStatusFailed
       - PinningStatusQueued
       - PinningStatusOffloaded
+  util.Content:
+    properties:
+      active:
+        type: boolean
+      aggregate:
+        type: boolean
+      aggregatedIn:
+        description: |-
+          TODO: shift most of the 'state' booleans in here into a single state
+          field, should make reasoning about things much simpler
+        type: integer
+      cid:
+        $ref: '#/definitions/util.DbCID'
+      createdAt:
+        type: string
+      dagSplit:
+        description: |-
+          If set, this content is part of a split dag.
+          In such a case, the 'root' content should be advertised on the dht, but
+          not have deals made for it, and the children should have deals made for
+          them (unlike with aggregates)
+        type: boolean
+      dealStatus:
+        type: string
+      description:
+        type: string
+      failed:
+        type: boolean
+      id:
+        type: integer
+      location:
+        type: string
+      name:
+        type: string
+      offloaded:
+        type: boolean
+      origins:
+        type: string
+      pinMeta:
+        type: string
+      pinning:
+        type: boolean
+      pinningStatus:
+        type: string
+      replace:
+        type: boolean
+      replication:
+        type: integer
+      size:
+        type: integer
+      splitFrom:
+        type: integer
+      type:
+        $ref: '#/definitions/util.ContentType'
+      updatedAt:
+        type: string
+      userId:
+        type: integer
+    type: object
   util.ContentAddResponse:
     properties:
       cid:

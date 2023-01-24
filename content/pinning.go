@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
 	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -52,6 +51,7 @@ func (cm *ContentManager) PinStatus(cont util.Content, origins []*peer.AddrInfo)
 			Meta:    meta,
 			Origins: originStrs,
 		},
+		Content:   cont,
 		Delegates: delegates,
 		Info:      make(map[string]interface{}, 0), // TODO: all sorts of extra info we could add...
 	}
@@ -85,7 +85,7 @@ func (cm *ContentManager) PinDelegatesForContent(cont util.Content) []string {
 	return out
 }
 
-func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
+func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, replication int, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error) {
 	if replaceID > 0 {
 		// mark as replace since it will removed and so it should not be fetched anymore
 		if err := cm.db.Model(&util.Content{}).Where("id = ?", replaceID).Update("replace", true).Error; err != nil {
@@ -121,8 +121,8 @@ func (cm *ContentManager) PinContent(ctx context.Context, user uint, obj cid.Cid
 		Name:        filename,
 		UserID:      user,
 		Active:      false,
-		Replication: cm.cfg.Replication,
-		Pinning:     true,
+		Replication: replication,
+		Pinning:     false,
 		PinMeta:     metaStr,
 		Location:    loc,
 		Origins:     originsStr,
@@ -180,59 +180,49 @@ func (cm *ContentManager) GetPinOperation(cont util.Content, peers []*peer.AddrI
 	}
 }
 
-// even though there are 4 pin statuses, queued, pinning, pinned and failed
-// the UpdatePinStatus only changes DB state for failed status
-// when the content was added, status = pinning
-// when the pin process is complete, status = pinned
-func (cm *ContentManager) UpdatePinStatus(contID uint64, location string, status types.PinningStatus) error {
-	if status == types.PinningStatusFailed {
-		cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
+// UpdateContentPinStatus updates content pinning statuses in DB and removes the content from its zone if failed
+func (cm *ContentManager) UpdateContentPinStatus(contID uint64, location string, status types.PinningStatus) error {
+	cm.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 
-		var c util.Content
-		if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
-			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
-			}
-			cm.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
-			return nil
-		}
-
-		// if content is already active, ignore it
-		if c.Active {
-			return nil
-		}
-
-		// if an aggregate zone is failing, zone is stuck
-		// TODO - revisit this later if it is actually happening
-		if c.Aggregate {
-			cm.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
-
-			return cm.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-				"status":  model.ZoneStatusStuck,
-				"message": model.ZoneMessageStuck,
-			}).Error
-		}
-
-		return cm.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-				"active":        false,
-				"pinning":       false,
-				"failed":        true,
-				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
-			}).Error; err != nil {
-				cm.log.Errorf("failed to mark content as failed in database: %s", err)
-				return err
-			}
-
-			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
-			// we did not reset the flag so that consolidation will not be reattempted by the worker
-			if c.AggregatedIn > 0 {
-				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
-			}
-			return nil
-		})
+	var c util.Content
+	if err := cm.db.First(&c, "id = ?", contID).Error; err != nil {
+		return errors.Wrap(err, "failed to look up content")
 	}
-	return nil
+
+	// if an aggregate zone is failing, zone is stuck
+	// TODO - revisit this later if it is actually happening
+	if c.Aggregate && status == types.PinningStatusFailed {
+		cm.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
+
+		return cm.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+			"status":  model.ZoneStatusStuck,
+			"message": model.ZoneMessageStuck,
+		}).Error
+	}
+
+	updates := map[string]interface{}{
+		"active":  status == types.PinningStatusPinned,
+		"pinning": status == types.PinningStatusPinning,
+		"failed":  status == types.PinningStatusFailed,
+	}
+
+	if status == types.PinningStatusFailed {
+		updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
+	}
+
+	return cm.db.Transaction(func(tx *gorm.DB) error {
+		if err := cm.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(updates).Error; err != nil {
+			cm.log.Errorf("failed to update content status as %s in database: %s", status, err)
+			return err
+		}
+
+		// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
+		// we did not reset the flag so that consolidation will not be reattempted by the worker
+		if c.AggregatedIn > 0 {
+			return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
+		}
+		return nil
+	})
 }
 
 func (cm *ContentManager) DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {

@@ -47,6 +47,7 @@ type deal struct {
 }
 
 func (cm *ContentManager) runDealWorker(ctx context.Context) {
+	cm.log.Infof("starting up deal worker")
 	// run the deal reconciliation and deal making worker
 	for {
 		select {
@@ -1400,30 +1401,4 @@ func (cm *ContentManager) AddDatabaseTrackingToContent(ctx context.Context, cont
 		return 0, err
 	}
 	return cm.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
-}
-
-func (cm *ContentManager) AddDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
-	ctx, span := cm.tracer.Start(ctx, "computeObjRefs")
-	defer span.End()
-
-	content := &util.Content{
-		Cid:         util.DbCID{CID: root},
-		Name:        filename,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: replication,
-		Location:    constants.ContentLocationLocal,
-	}
-
-	if err := cm.db.Create(content).Error; err != nil {
-		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	cntSize, err := cm.AddDatabaseTrackingToContent(ctx, content.ID, dserv, root, func(int64) {})
-	if err != nil {
-		return nil, err
-	}
-	content.Size = cntSize
-	return content, nil
 }
