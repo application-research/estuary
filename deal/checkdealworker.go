@@ -17,6 +17,11 @@ import (
 	"gorm.io/gorm"
 )
 
+func (m *manager) runDealCheckWorker(ctx context.Context) {
+	// one process at a time for now, next pr will do multiples
+
+}
+
 func (m *manager) ensureStorage(ctx context.Context, content util.Content, done func(time.Duration)) error {
 	ctx, span := m.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(content.ID)),
@@ -121,19 +126,18 @@ func (m *manager) ensureStorage(ctx context.Context, content util.Content, done 
 		return nil
 	}
 
-	m.log.Debugf("getting commp for cont: %d", content.ID)
-	_, _, _, err := m.commpMgr.GetOrRunPieceCommitment(context.Background(), content.Cid.CID, m.blockstore)
-	if err != nil {
-		return err
+	// if content is offloaded, do not proceed - since it needs the blocks for data transfer
+	if content.Offloaded {
+		m.log.Warnf("cont: %d offloaded for deal making", content.ID)
+		go func() {
+			if err := m.RefreshContent(context.Background(), content.ID); err != nil {
+				m.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
+			}
+			done(time.Second * 30)
+		}()
+		return nil
 	}
 
-	go func() {
-		// make some more deals!
-		m.log.Infow("making more deals for content", "content", content.ID, "curDealCount", len(deals), "newDeals", dealsToBeMade)
-		if err := m.makeDealsForContent(ctx, content, dealsToBeMade, deals); err != nil {
-			m.log.Errorf("failed to make more deals: %s", err)
-		}
-		done(time.Minute * 10)
-	}()
+	// update queue with metadata
 	return nil
 }

@@ -97,6 +97,8 @@ type Content struct {
 
 	PinningStatus string `json:"pinningStatus" gorm:"-"`
 	DealStatus    string `json:"dealStatus" gorm:"-"`
+
+	ZoneID uint64
 }
 
 type ContentWithPath struct {

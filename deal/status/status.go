@@ -1,4 +1,4 @@
-package status
+package dealstatus
 
 import (
 	"go.uber.org/zap"
@@ -14,7 +14,7 @@ type updater struct {
 	log *zap.SugaredLogger
 }
 
-func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) *updater {
+func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) IUpdater {
 	return &updater{
 		db:  db,
 		log: log,

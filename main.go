@@ -586,21 +586,17 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	contMgr := content.NewManager(db, fc, init.trackingBstore, nd, cfg, log, shuttleMgr)
 
 	// stand up staging zone manager
-	stgZoneMgr := stagingzone.NewManager(db, init.trackingBstore, nd, cfg, log, shuttleMgr)
-	stgZoneMgr.RunWorkers(ctx)
+	stgZoneMgr := stagingzone.NewManager(ctx, db, init.trackingBstore, nd, cfg, log, shuttleMgr)
 
 	// stand up split manager
-	splitMgr := split.NewManager(db, nd, cfg, log, shuttleMgr, contMgr)
-	splitMgr.RunWorker(ctx)
+	_ = split.NewManager(ctx, db, nd, cfg, log, shuttleMgr, contMgr)
 
 	// stand up commp manager
-	commpMgr := commp.NewManager(db, cfg, log, shuttleMgr)
-	fc.SetPieceCommFunc(commpMgr.GetOrRunPieceCommitment)
-	commpMgr.RunWorker(ctx)
+	commpMgr := commp.NewManager(ctx, db, cfg, log, shuttleMgr, init.trackingBstore)
+	fc.SetPieceCommFunc(commpMgr.GetPieceCommitment)
 
 	// stand up deal manager
-	dealMgr := deal.NewManager(db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
-	dealMgr.RunWorkers(ctx)
+	dealMgr := deal.NewManager(ctx, db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
 
 	// stand up pin manager
 	pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{

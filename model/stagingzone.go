@@ -35,4 +35,6 @@ type StagingZone struct {
 	Location  string      `gorm:"index;not null" json:"location"`
 	Status    ZoneStatus  `gorm:"index:size_status;index:id_size_status;index:user_size_status;index:id_status" json:"status"`
 	Message   ZoneMessage `json:"message" gorm:"type:text"`
+
+	IsNewContentZone bool // default soul be false
 }

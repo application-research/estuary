@@ -211,7 +211,6 @@ func (m *manager) retrieveContent(ctx context.Context, contentToFetch uint64) er
 		prog.EndErr = err
 		return err
 	}
-
 	return nil
 }
 

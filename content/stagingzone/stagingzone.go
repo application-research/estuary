@@ -5,6 +5,8 @@ import (
 
 	"github.com/application-research/estuary/config"
 	creation "github.com/application-research/estuary/content/stagingzone/creation"
+	dealqueuemgr "github.com/application-research/estuary/deal/queue"
+
 	"github.com/application-research/estuary/node"
 	pinningtypes "github.com/application-research/estuary/pinner/types"
 	shuttle "github.com/application-research/estuary/shuttle"
@@ -22,7 +24,6 @@ import (
 )
 
 type IManager interface {
-	RunWorkers(ctx context.Context)
 	CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error)
 	AggregateStagingZone(ctx context.Context, zone *model.StagingZone, zoneCont util.Content, loc string) error
 	GetStagingZoneContents(ctx context.Context, user uint, zoneID uint, limit int, offset int) ([]util.Content, error)
@@ -39,9 +40,11 @@ type manager struct {
 	shuttleMgr         shuttle.IManager
 	tracer             trace.Tracer
 	zoneCreationWorker creation.IManager
+	dealQueueMgr       dealqueuemgr.IManager
 }
 
 func NewManager(
+	ctx context.Context,
 	db *gorm.DB,
 	tbs *util.TrackingBlockstore,
 	nd *node.Node,
@@ -49,7 +52,7 @@ func NewManager(
 	log *zap.SugaredLogger,
 	shuttleMgr shuttle.IManager,
 ) IManager {
-	return &manager{
+	m := &manager{
 		db:                 db,
 		blockstore:         tbs.Under().(node.EstuaryBlockstore),
 		node:               nd,
@@ -58,18 +61,23 @@ func NewManager(
 		shuttleMgr:         shuttleMgr,
 		tracer:             otel.Tracer("stagingzone"),
 		zoneCreationWorker: creation.NewManager(db, cfg, log),
+		dealQueueMgr:       dealqueuemgr.NewManager(db, cfg, log),
 	}
+
+	m.runWorkers(ctx)
+	return m
 }
 
-func (m *manager) RunWorkers(ctx context.Context) {
+func (m *manager) runWorkers(ctx context.Context) {
 	// if staging zone is enabled, run the workers
 	if m.cfg.StagingBucket.Enabled {
 		m.log.Infof("starting up staging zone workers")
 
-		go m.zoneCreationWorker.Run(ctx)
+		// run staging zone backfill worker
+		go m.zoneCreationWorker.RunBackFillWorker(ctx)
 
 		// run staging zone aggregation/consoliation worker
-		go m.runStagingZoneAggregationWorker(ctx)
+		go m.runAggregationWorker(ctx)
 
 		m.log.Infof("spun up staging zone workers")
 	}

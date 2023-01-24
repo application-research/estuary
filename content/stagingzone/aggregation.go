@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (m *manager) runStagingZoneAggregationWorker(ctx context.Context) {
+func (m *manager) runAggregationWorker(ctx context.Context) {
 	timer := time.NewTicker(m.cfg.StagingBucket.AggregateInterval)
 	for {
 		select {
@@ -274,7 +274,8 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 				}).Error; err != nil {
 				return err
 			}
-			return nil
+			// queue aggregate content for deal making
+			return m.dealQueueMgr.QueueContent(ctx, zoneCont.ID, zoneCont.Cid, zoneCont.UserID)
 		})
 	}
 	// handle aggregate on shuttle

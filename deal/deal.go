@@ -7,8 +7,10 @@ import (
 	"sync"
 	"time"
 
+	dealqueuemgr "github.com/application-research/estuary/deal/queue"
 	"github.com/filecoin-project/go-state-types/big"
 	marketv9 "github.com/filecoin-project/go-state-types/builtin/v9/market"
+
 	"go.uber.org/zap"
 
 	"github.com/application-research/estuary/config"
@@ -58,7 +60,6 @@ type IManager interface {
 	MakeDealWithMiner(ctx context.Context, content util.Content, miner address.Address) (*model.ContentDeal, error)
 	DealMakingDisabled() bool
 	SetDealMakingEnabled(enable bool)
-	RunWorkers(ctx context.Context)
 }
 
 type deal struct {
@@ -83,9 +84,11 @@ type manager struct {
 	transferMgr          transfer.IManager
 	commpMgr             commp.IManager
 	dealStatusUpdater    dealstatus.IUpdater
+	dealQueueMgr         dealqueuemgr.IManager
 }
 
 func NewManager(
+	ctx context.Context,
 	db *gorm.DB,
 	api api.Gateway,
 	fc *filclient.FilClient,
@@ -98,7 +101,7 @@ func NewManager(
 	transferMgr transfer.IManager,
 	commpMgr commp.IManager,
 ) IManager {
-	return &manager{
+	m := &manager{
 		cfg:                  cfg,
 		db:                   db,
 		api:                  api,
@@ -113,15 +116,23 @@ func NewManager(
 		transferMgr:          transferMgr,
 		commpMgr:             commpMgr,
 		dealStatusUpdater:    dealstatus.NewUpdater(db, log),
+		dealQueueMgr:         dealqueuemgr.NewManager(db, cfg, log),
 	}
+
+	m.runWorkers(ctx)
+	return m
 }
 
-func (m *manager) RunWorkers(ctx context.Context) {
-	m.log.Infof("starting up split worker")
+func (m *manager) runWorkers(ctx context.Context) {
+	m.log.Infof("deal workers")
 
-	// go m.run(ctx)
+	go m.runDealBackFillWorker(ctx)
 
-	m.log.Infof("spun up split worker")
+	go m.runDealCheckWorker(ctx)
+
+	go m.runDealWorker(ctx)
+
+	m.log.Infof("spun up deal workers")
 }
 
 // first check deal protocol version 2, then check version 1
@@ -321,12 +332,12 @@ func (m *manager) checkDeal(ctx context.Context, d *model.ContentDeal, content u
 			return DEAL_CHECK_UNKNOWN, fmt.Errorf("failed to lookup deal on chain: %w", err)
 		}
 
-		pcr, err := m.commpMgr.GetPieceCommRecord(content.Cid.CID)
-		if err != nil || pcr == nil {
+		pCID, _, _, err := m.commpMgr.GetPieceCommitment(ctx, content.Cid.CID, m.blockstore)
+		if err != nil {
 			return DEAL_CHECK_UNKNOWN, xerrors.Errorf("failed to look up piece commitment for content: %w", err)
 		}
 
-		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pcr.Piece.CID {
+		if deal.Proposal.Provider != maddr || deal.Proposal.PieceCID != pCID {
 			m.log.Warnf("proposal in deal ID miner sent back did not match our expectations")
 			return DEAL_CHECK_UNKNOWN, nil
 		}
@@ -612,7 +623,7 @@ func (m *manager) makeDealsForContent(ctx context.Context, content util.Content,
 		return errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
 	}
 
-	_, _, pieceSize, err := m.commpMgr.GetOrRunPieceCommitment(ctx, content.Cid.CID, m.blockstore)
+	_, _, pieceSize, err := m.commpMgr.GetPieceCommitment(ctx, content.Cid.CID, m.blockstore)
 	if err != nil {
 		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}

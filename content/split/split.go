@@ -3,45 +3,46 @@ package split
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
 	content "github.com/application-research/estuary/content"
-	"github.com/application-research/estuary/model"
-
-	"github.com/application-research/estuary/node"
-	"github.com/application-research/estuary/shuttle"
-	"github.com/application-research/estuary/util"
+	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
+
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	"github.com/ipfs/go-merkledag"
+	"golang.org/x/xerrors"
+
+	"github.com/application-research/estuary/node"
+	"github.com/application-research/estuary/shuttle"
+	"github.com/application-research/estuary/util"
 	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
 
 type IManager interface {
-	RunWorker(ctx context.Context)
 	SplitContent(ctx context.Context, cont util.Content, size int64) error
 }
 
 type manager struct {
-	db         *gorm.DB
-	node       *node.Node
-	cfg        *config.Estuary
-	log        *zap.SugaredLogger
-	shuttleMgr shuttle.IManager
-	contMgr    content.IManager
-	tracer     trace.Tracer
+	db            *gorm.DB
+	node          *node.Node
+	cfg           *config.Estuary
+	log           *zap.SugaredLogger
+	shuttleMgr    shuttle.IManager
+	contMgr       content.IManager
+	tracer        trace.Tracer
+	splitQueueMgr splitqueuemgr.IManager
 }
 
 func NewManager(
+	ctx context.Context,
 	db *gorm.DB,
 	nd *node.Node,
 	cfg *config.Estuary,
@@ -49,74 +50,19 @@ func NewManager(
 	shuttleMgr shuttle.IManager,
 	cntMgr content.IManager,
 ) IManager {
-	return &manager{
-		db:         db,
-		node:       nd,
-		cfg:        cfg,
-		log:        log,
-		shuttleMgr: shuttleMgr,
-		contMgr:    cntMgr,
-		tracer:     otel.Tracer("replicator"),
-	}
-}
-
-func (m *manager) getSplitTrackerLastContentID() (*model.StagingZoneTracker, error) {
-	var trks []*model.StagingZoneTracker
-	if err := m.db.Find(&trks).Error; err != nil {
-		return nil, err
+	m := &manager{
+		db:            db,
+		node:          nd,
+		cfg:           cfg,
+		log:           log,
+		shuttleMgr:    shuttleMgr,
+		contMgr:       cntMgr,
+		tracer:        otel.Tracer("replicator"),
+		splitQueueMgr: splitqueuemgr.NewManager(db, log),
 	}
 
-	if len(trks) == 0 {
-		// for the first time it will be empty
-		trk := &model.StagingZoneTracker{LastContID: 0}
-		if err := m.db.Create(&trk).Error; err != nil {
-			return nil, err
-		}
-		return trk, nil
-	}
-	return trks[0], nil
-}
-
-func (m *manager) RunWorker(ctx context.Context) {
-	m.log.Infof("starting up split worker")
-
-	go m.run(ctx)
-
-	m.log.Infof("spun up split worker")
-}
-
-func (m *manager) run(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.CreationInterval)
-	for {
-		select {
-		case <-timer.C:
-			m.log.Debug("running split worker")
-
-			lastContID, err := m.getSplitTrackerLastContentID()
-			if err != nil {
-				m.log.Warnf("failed to get split tracker last content id - %s", err)
-				continue
-			}
-
-			if err := m.splitContents(ctx, lastContID); err != nil {
-				m.log.Warnf("failed to split contents - %s", err)
-			}
-		}
-	}
-}
-
-func (m *manager) splitContents(ctx context.Context, tracker *model.StagingZoneTracker) error {
-	var largeContents []util.Content
-	return m.db.Where("id > ? and size <= ?", tracker.LastContID, m.cfg.Content.MinSize).Order("id asc").FindInBatches(&largeContents, 2000, func(tx *gorm.DB, batch int) error {
-		m.log.Infof("trying to split the next sets of contents: %d - %d", largeContents[0].ID, largeContents[len(largeContents)-1].ID)
-
-		for _, c := range largeContents {
-			if err := m.SplitContent(ctx, c, m.cfg.Content.MaxSize); err != nil {
-				return err
-			}
-		}
-		return nil
-	}).Error
+	m.runWorkers(ctx)
+	return m
 }
 
 func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int64) error {
@@ -129,7 +75,8 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 	}
 
 	if !u.FlagSplitContent() {
-		return fmt.Errorf("user does not have content splitting enabled")
+		m.log.Warnf("user: %d does not have content splitting enabled", u.ID)
+		return nil
 	}
 
 	m.log.Debugf("splitting content %d (size: %d)", cont.ID, size)
@@ -138,6 +85,9 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 		go func() {
 			if err := m.splitContentLocal(ctx, cont, size); err != nil {
 				m.log.Errorw("failed to split local content", "cont", cont.ID, "size", size, "err", err)
+				m.splitQueueMgr.SplitFailed(cont.ID)
+			} else {
+				m.splitQueueMgr.SplitComplete(cont.ID)
 			}
 		}()
 		return nil

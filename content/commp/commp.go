@@ -3,11 +3,13 @@ package commp
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
+	commpstatus "github.com/application-research/estuary/content/commp/status"
 	"github.com/application-research/estuary/model"
+
+	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
@@ -19,89 +21,48 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var ErrWaitForRemoteCompute = fmt.Errorf("waiting for remote commP computation")
 
 type IManager interface {
-	GetOrRunPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error)
-	GetPieceCommRecord(data cid.Cid) (*model.PieceCommRecord, error)
+	GetPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error)
 	RunPieceCommCompute(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error)
-	RunWorker(ctx context.Context)
 }
 
 type manager struct {
-	db         *gorm.DB
-	cfg        *config.Estuary
-	log        *zap.SugaredLogger
-	shuttleMgr shuttle.IManager
-	tracer     trace.Tracer
+	db                 *gorm.DB
+	cfg                *config.Estuary
+	log                *zap.SugaredLogger
+	shuttleMgr         shuttle.IManager
+	tracer             trace.Tracer
+	blockstore         node.EstuaryBlockstore
+	commpStatusUpdater commpstatus.IUpdater
 }
 
-func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) IManager {
-	return &manager{
-		db:         db,
-		cfg:        cfg,
-		log:        log,
-		shuttleMgr: shuttleMgr,
-		tracer:     otel.Tracer("commp"),
-	}
-}
-
-func (m *manager) getSplitTrackerLastContentID() (*model.StagingZoneTracker, error) {
-	var trks []*model.StagingZoneTracker
-	if err := m.db.Find(&trks).Error; err != nil {
-		return nil, err
+func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, shuttleMgr shuttle.IManager, tbs *util.TrackingBlockstore) IManager {
+	m := &manager{
+		db:                 db,
+		cfg:                cfg,
+		log:                log,
+		shuttleMgr:         shuttleMgr,
+		tracer:             otel.Tracer("commp"),
+		blockstore:         tbs.Under().(node.EstuaryBlockstore),
+		commpStatusUpdater: commpstatus.NewUpdater(db, log),
 	}
 
-	if len(trks) == 0 {
-		// for the first time it will be empty
-		trk := &model.StagingZoneTracker{LastContID: 0}
-		if err := m.db.Create(&trk).Error; err != nil {
-			return nil, err
-		}
-		return trk, nil
-	}
-	return trks[0], nil
+	m.runWorker(ctx)
+	return m
 }
 
-func (m *manager) RunWorker(ctx context.Context) {
-	m.log.Infof("starting up commp worker")
-
-	go m.run(ctx)
-
-	m.log.Infof("spun up commp worker")
-}
-
-func (m *manager) run(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.CreationInterval)
-	for {
-		select {
-		case <-timer.C:
-			m.log.Debug("running staging zone creation worker")
-
-			// lastContID, err := m.getSplitTrackerLastContentID()
-			// if err != nil {
-			// 	m.log.Warnf("failed to get staging zone tracker last content id - %s", err)
-			// 	continue
-			// }
-
-			// if err := m.splitContents(ctx, lastContID); err != nil {
-			// 	m.log.Warnf("failed to add contents to staging zones - %s", err)
-			// }
-		}
-	}
-}
-
-func (m *manager) GetPieceCommRecord(data cid.Cid) (*model.PieceCommRecord, error) {
+func (m *manager) getPieceCommRecord(data cid.Cid) (*model.PieceCommRecord, error) {
 	var pcrs []model.PieceCommRecord
 	if err := m.db.Find(&pcrs, "data = ?", data.Bytes()).Error; err != nil {
 		return nil, err
 	}
 
 	if len(pcrs) == 0 {
-		return nil, nil
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	pcr := pcrs[0]
@@ -141,7 +102,7 @@ func (m *manager) RunPieceCommCompute(ctx context.Context, data cid.Cid, bs bloc
 	}
 
 	if cont.Location != constants.ContentLocationLocal {
-		m.log.Infof("calling commmp for cont: %d", cont.ID)
+		m.log.Debugf("requesting commmp for cont: %d from shuttle: %s", cont.ID, cont.Location)
 		if err := m.shuttleMgr.CommPContent(ctx, cont.Location, data); err != nil {
 			return cid.Undef, 0, 0, err
 		}
@@ -149,55 +110,42 @@ func (m *manager) RunPieceCommCompute(ctx context.Context, data cid.Cid, bs bloc
 	}
 
 	m.log.Debugw("computing piece commitment", "data", cont.Cid.CID)
-	return filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
+
+	pc, carSize, size, err := filclient.GeneratePieceCommitmentFFI(ctx, data, bs)
+	if err != nil {
+		return cid.Undef, 0, 0, err
+	}
+	return pc, carSize, size, nil
 }
 
-func (m *manager) GetOrRunPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
+func (m *manager) GetPieceCommitment(ctx context.Context, data cid.Cid, bs blockstore.Blockstore) (cid.Cid, uint64, abi.UnpaddedPieceSize, error) {
 	_, span := m.tracer.Start(ctx, "getPieceComm")
 	defer span.End()
 
 	// Get the piece comm record from the DB
-	pcr, err := m.GetPieceCommRecord(data)
+	pcr, err := m.getPieceCommRecord(data)
 	if err != nil {
 		return cid.Undef, 0, 0, err
 	}
 
-	if pcr != nil {
-		if pcr.CarSize > 0 {
-			return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
-		}
-
-		// The CAR size field was added later, so if it's not on the piece comm
-		// record, calculate it
-		carSize, err := m.calculateCarSize(ctx, data)
-		if err != nil {
-			return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
-		}
-		pcr.CarSize = carSize
-
-		// Save updated car size to DB
-		if err = m.db.Model(model.PieceCommRecord{}).Where("piece = ?", pcr.Piece).UpdateColumns(map[string]interface{}{
-			"car_size": carSize,
-		}).Error; err != nil {
-			return cid.Undef, 0, 0, err
-		}
+	if pcr.CarSize > 0 {
 		return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
 	}
 
-	// The piece comm record isn't in the DB so calculate it
-	pc, carSize, size, err := m.RunPieceCommCompute(ctx, data, bs)
+	// The CAR size field was added later, so if it's not on the piece comm
+	// record, calculate it
+	carSize, err := m.calculateCarSize(ctx, data)
 	if err != nil {
-		return cid.Undef, 0, 0, err
+		return cid.Undef, 0, 0, xerrors.Errorf("failed to calculate CAR size: %w", err)
 	}
+	pcr.CarSize = carSize
 
-	opcr := model.PieceCommRecord{
-		Data:    util.DbCID{CID: data},
-		Piece:   util.DbCID{CID: pc},
-		CarSize: carSize,
-		Size:    size,
-	}
-	if err := m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
+	// Save updated car size to DB
+	if err = m.db.Model(model.PieceCommRecord{}).Where("piece = ?", pcr.Piece).UpdateColumns(map[string]interface{}{
+		"car_size": carSize,
+	}).Error; err != nil {
 		return cid.Undef, 0, 0, err
 	}
-	return pc, carSize, size, nil
+	return pcr.Piece.CID, pcr.CarSize, pcr.Size, nil
+
 }

@@ -5,7 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	commpstatus "github.com/application-research/estuary/content/commp/status"
+	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
 	stgzonecreation "github.com/application-research/estuary/content/stagingzone/creation"
+	dealqueuemgr "github.com/application-research/estuary/deal/queue"
+
 	dealstatus "github.com/application-research/estuary/deal/status"
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
 	lru "github.com/hashicorp/golang-lru"
@@ -30,7 +34,6 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
@@ -59,6 +62,9 @@ type manager struct {
 	websocketEng          websocketeng.IEstuaryRpcEngine
 	queueEng              queue.IEstuaryRpcEngine
 	stgZoneCreationMgr    stgzonecreation.IManager
+	dealQueueMgr          dealqueuemgr.IManager
+	splitQueueMgr         splitqueuemgr.IManager
+	commpStatusUpdater    commpstatus.IUpdater
 }
 
 func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager) (IManager, error) {
@@ -77,6 +83,9 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		transferStatuses:      cache,
 		stgZoneCreationMgr:    stgzonecreation.NewManager(db, cfg, log),
+		dealQueueMgr:          dealqueuemgr.NewManager(db, cfg, log),
+		splitQueueMgr:         splitqueuemgr.NewManager(db, log),
+		commpStatusUpdater:    commpstatus.NewUpdater(db, log),
 	}
 
 	rpcMgr.websocketEng = websocketeng.NewEstuaryRpcEngine(ctx, db, cfg, log, rpcMgr.processMessage)
@@ -158,6 +167,16 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 			m.log.Errorf("handling commp complete message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
+	case rpcevent.OP_CommPFailed:
+		param := msg.Params.CommPFailed
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := m.handleRpcCommPFailed(ctx, msg.Handle, param); err != nil {
+			m.log.Errorf("handling commp failed message from shuttle %s: %s", msg.Handle, err)
+		}
+		return nil
 	case rpcevent.OP_TransferStarted:
 		param := msg.Params.TransferStarted
 		if param == nil {
@@ -216,6 +235,16 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 
 		if err := m.handleRpcSplitComplete(ctx, msg.Handle, param); err != nil {
 			m.log.Errorf("handling split complete message from shuttle %s: %s", msg.Handle, err)
+		}
+		return nil
+	case rpcevent.OP_SplitFailed:
+		param := msg.Params.SplitFailed
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := m.handleRpcSplitFailed(ctx, msg.Handle, param); err != nil {
+			m.log.Errorf("handling split failed message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
 	case rpcevent.OP_SanityCheck:
@@ -392,7 +421,9 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			}).Error; err != nil {
 				return xerrors.Errorf("failed to update zone in database: %w", err)
 			}
-			return nil
+
+			// queue aggregate content for deal making
+			return m.dealQueueMgr.QueueContent(ctx, cont.ID, cont.Cid, cont.UserID)
 		})
 	}
 
@@ -456,44 +487,48 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 		// if content can be staged, stage it
 		if contSize < m.cfg.Content.MinSize {
-			return m.stgZoneCreationMgr.TryAddNewContentToStagingZone(ctx, cont, contSize, nil)
+			return m.stgZoneCreationMgr.StageNewContent(ctx, cont, contSize)
 		}
-		return nil
+
+		// if it is too large, queue it for splitting.
+		// split worker will pick it up and split it,
+		// its children will be pinned and dealed
+		if contSize > m.cfg.Content.MaxSize {
+			return m.splitQueueMgr.QueueContent(ctx, cont.ID, cont.UserID)
+		}
+		// or queue it for deal making
+		return m.dealQueueMgr.QueueContent(ctx, cont.ID, cont.Cid, cont.UserID)
 	})
 }
 
+// shuttle split complete will only update the parent content
+// the childrent contents will come in as pincomplete and they will be queued for deal making
 func (m *manager) handleRpcSplitComplete(ctx context.Context, handle string, param *rpcevent.SplitComplete) error {
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
+	return m.splitQueueMgr.SplitComplete(param.ID)
+}
 
-	// TODO: do some sanity checks that the sub pieces were all made successfully...
-	if err := m.db.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
-		"dag_split": true,
-		"active":    false,
-		"size":      0,
-	}).Error; err != nil {
-		return fmt.Errorf("failed to update content for split complete: %w", err)
+func (m *manager) handleRpcSplitFailed(ctx context.Context, handle string, param *rpcevent.SplitFailed) error {
+	if param.ID == 0 {
+		return fmt.Errorf("split complete send with ID = 0")
 	}
-
-	if err := m.db.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
-		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
-	}
-	return nil
+	return m.splitQueueMgr.SplitFailed(param.ID)
 }
 
 func (m *manager) handleRpcCommPComplete(ctx context.Context, handle string, resp *rpcevent.CommPComplete) error {
 	_, span := m.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()
 
-	opcr := model.PieceCommRecord{
-		Data:    util.DbCID{CID: resp.Data},
-		Piece:   util.DbCID{CID: resp.CommP},
-		Size:    resp.Size,
-		CarSize: resp.CarSize,
-	}
+	return m.commpStatusUpdater.ComputeCompleted(resp.Data, resp.CommP, resp.Size, resp.CarSize)
+}
 
-	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
+func (m *manager) handleRpcCommPFailed(ctx context.Context, handle string, resp *rpcevent.CommPFailed) error {
+	_, span := m.tracer.Start(ctx, "handleRpcCommPFailed")
+	defer span.End()
+
+	return m.commpStatusUpdater.ComputeFailed(resp.Data)
 }
 
 func (m *manager) handleRpcTransferStarted(ctx context.Context, handle string, param *rpcevent.TransferStartedOrFinished) error {

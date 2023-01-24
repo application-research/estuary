@@ -62,7 +62,11 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 	case rpcevent.CMD_UnpinContent:
 		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
 	case rpcevent.CMD_SplitContent:
-		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		err := d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		if err != nil {
+			d.sendSplitContentFailed(ctx, cmd.Params.SplitContent.Content)
+		}
+		return err
 	case rpcevent.CMD_RestartTransfer:
 		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
@@ -246,7 +250,14 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 
 	res, err := d.commpMemo.Do(ctx, cmd.Data.String(), nil)
 	if err != nil {
-		return xerrors.Errorf("failed to compute commP for %s: %w", cmd.Data, err)
+		return d.sendRpcMessage(ctx, &rpcevent.Message{
+			Op: rpcevent.OP_CommPFailed,
+			Params: rpcevent.MsgParams{
+				CommPFailed: &rpcevent.CommPFailed{
+					Data: cmd.Data,
+				},
+			},
+		})
 	}
 
 	commpRes, ok := res.(*commpResult)
@@ -265,6 +276,19 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 			},
 		},
 	})
+}
+
+func (s *Shuttle) sendSplitContentFailed(ctx context.Context, cont uint64) {
+	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_SplitFailed,
+		Params: rpcevent.MsgParams{
+			SplitFailed: &rpcevent.SplitFailed{
+				ID: cont,
+			},
+		},
+	}); err != nil {
+		log.Errorf("failed to send split content failed message: %s", err)
+	}
 }
 
 func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
