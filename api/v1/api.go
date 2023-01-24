@@ -37,7 +37,7 @@ type apiV1 struct {
 	cacher         *explru.ExpirableLRU
 	extendedCacher *explru.ExpirableLRU
 	minerManager   miner.IMinerManager
-	pinMgr         *pinner.EstuaryPinManager
+	pinMgr         pinner.IEstuaryPinManager
 	log            *zap.SugaredLogger
 	shuttleMgr     shuttle.IManager
 	transferMgr    transfer.IManager
@@ -56,7 +56,7 @@ func NewAPIV1(
 	cacher *explru.ExpirableLRU,
 	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
-	pinMgr *pinner.EstuaryPinManager,
+	pinMgr pinner.IEstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 	shuttleMgr shuttle.IManager,

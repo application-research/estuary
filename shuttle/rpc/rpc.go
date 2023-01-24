@@ -18,7 +18,7 @@ import (
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/estuary/shuttle/rpc/engines/queue"
 	websocketeng "github.com/application-research/estuary/shuttle/rpc/engines/websocket"
@@ -61,10 +61,11 @@ type manager struct {
 	transferStatuses      *lru.ARCCache
 	websocketEng          websocketeng.IEstuaryRpcEngine
 	queueEng              queue.IEstuaryRpcEngine
-	stgZoneCreationMgr    stgzonecreation.IManager
+	stgZoneMgr            stgzonecreation.IManager
 	dealQueueMgr          dealqueuemgr.IManager
 	splitQueueMgr         splitqueuemgr.IManager
 	commpStatusUpdater    commpstatus.IUpdater
+	pinStatusUpdater      status.IUpdater
 }
 
 func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager) (IManager, error) {
@@ -82,10 +83,11 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		transferStatuses:      cache,
-		stgZoneCreationMgr:    stgzonecreation.NewManager(db, cfg, log),
+		stgZoneMgr:            stgzonecreation.NewManager(db, cfg, log),
 		dealQueueMgr:          dealqueuemgr.NewManager(db, cfg, log),
 		splitQueueMgr:         splitqueuemgr.NewManager(db, log),
 		commpStatusUpdater:    commpstatus.NewUpdater(db, log),
+		pinStatusUpdater:      status.NewUpdater(db, log),
 	}
 
 	rpcMgr.websocketEng = websocketeng.NewEstuaryRpcEngine(ctx, db, cfg, log, rpcMgr.processMessage)
@@ -302,59 +304,9 @@ func (m *manager) handleRpcGarbageCheck(ctx context.Context, handle string, para
 	})
 }
 
-// even though there are 4 pin statuses, queued, pinning, pinned and failed
-// the UpdatePinStatus only changes DB state for failed status
-// when the content was added, status = pinning
-// when the pin process is complete, status = pinned
-func (m *manager) handlePinUpdate(location string, contID uint64, status types.PinningStatus) error {
-	if status == types.PinningStatusFailed {
-		m.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
-
-		var c util.Content
-		if err := m.db.First(&c, "id = ?", contID).Error; err != nil {
-			if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-				return xerrors.Errorf("failed to look up content: %d (location = %s): %w", contID, location, err)
-			}
-			m.log.Warnf("content: %d not found for pin update from location: %s", contID, location)
-			return nil
-		}
-
-		// if content is already active, ignore it
-		if c.Active {
-			return nil
-		}
-
-		// if an aggregate zone is failing, zone is stuck
-		// TODO - revisit this later if it is actually happening
-		if c.Aggregate {
-			m.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
-
-			return m.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-				"status":  model.ZoneStatusStuck,
-				"message": model.ZoneMessageStuck,
-			}).Error
-		}
-
-		return m.db.Transaction(func(tx *gorm.DB) error {
-			if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-				"active":        false,
-				"pinning":       false,
-				"failed":        true,
-				"aggregated_in": 0, // reset, so if it was in a staging zone, the zone can consolidate without it
-			}).Error; err != nil {
-				m.log.Errorf("failed to mark content as failed in database: %s", err)
-				return err
-			}
-
-			// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
-			// we did not reset the flag so that consolidation will not be reattempted by the worker
-			if c.AggregatedIn > 0 {
-				return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
-			}
-			return nil
-		})
-	}
-	return nil
+// handlePinUpdate exactly copied from UpdateContentPinStatus
+func (m *manager) handlePinUpdate(location string, contID uint64, status status.PinningStatus) error {
+	return m.pinStatusUpdater.UpdateContentPinStatus(contID, location, status)
 }
 
 func (m *manager) handlePinningComplete(ctx context.Context, handle string, pincomp *rpcevent.PinComplete) error {
@@ -487,7 +439,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 		// if content can be staged, stage it
 		if contSize < m.cfg.Content.MinSize {
-			return m.stgZoneCreationMgr.StageNewContent(ctx, cont, contSize)
+			return m.stgZoneMgr.StageNewContent(ctx, cont, contSize)
 		}
 
 		// if it is too large, queue it for splitting.

@@ -34,7 +34,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/network"
 
 	"github.com/application-research/estuary/autoretrieve"
-	pinningtypes "github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient"
@@ -101,7 +101,7 @@ type statsResp struct {
 	TotalRequests   int64                      `json:"totalRequests"`
 	Offloaded       bool                       `json:"offloaded"`
 	AggregatedFiles int64                      `json:"aggregatedFiles"`
-	PinningStatus   pinningtypes.PinningStatus `json:"pinningStatus"`
+	PinningStatus   pinningstatus.PinningStatus `json:"pinningStatus"`
 }
 
 // handleStats godoc
@@ -134,7 +134,7 @@ func (s *apiV1) handleStats(c echo.Context, u *util.User) error {
 			Filename:      c.Name,
 			Size:          c.Size,
 			CreatedAt:     c.CreatedAt,
-			PinningStatus: pinningtypes.GetContentPinningStatus(c),
+			PinningStatus: pinningstatus.GetContentPinningStatus(c),
 		}
 		out = append(out, st)
 	}
@@ -165,7 +165,7 @@ func (s *apiV1) handleGetUserContents(c echo.Context, u *util.User) error {
 	}
 
 	for i, c := range contents {
-		contents[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
+		contents[i].PinningStatus = string(pinningstatus.GetContentPinningStatus(c))
 	}
 
 	return c.JSON(http.StatusOK, contents)
@@ -440,16 +440,29 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		filename = qpname
 	}
 
-	bserv := blockservice.New(sbs, nil)
-	dserv := merkledag.NewDAGService(bserv)
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.nd.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
 
-	cont, err := s.cm.AddDatabaseTracking(ctx, u, dserv, rootCID, filename, s.cfg.Replication)
+	replication := s.cfg.Replication
+	replVal := c.FormValue("replication")
+	if replVal != "" {
+		parsed, err := strconv.Atoi(replVal)
+		if err != nil {
+			s.log.Errorf("failed to parse replication value in form data, assuming default for now: %s", err)
+		} else {
+			replication = parsed
+		}
+	}
+
+	origins, err := s.nd.Origins()
 	if err != nil {
 		return err
 	}
 
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, sbs, s.nd.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	pinstatus, err := s.pinMgr.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, replication, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
 
 	go func() {
@@ -462,8 +475,8 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		Cid:                 rootCID.String(),
 		RetrievalURL:        util.CreateDwebRetrievalURL(rootCID.String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(rootCID.String()),
-		EstuaryId:           cont.ID,
-		Providers:           s.cm.PinDelegatesForContent(*cont),
+		EstuaryId:           pinstatus.Content.ID,
+		Providers:           s.pinMgr.PinDelegatesForContent(pinstatus.Content),
 	})
 }
 
@@ -609,19 +622,25 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		}
 	}
 
-	content, err := s.cm.AddDatabaseTracking(ctx, u, dserv, nd.Cid(), filename, replication)
+	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.nd.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
+	origins, err := s.nd.Origins()
 	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
+		return err
+	}
+
+	// file uploads block objects will not be created by the pinner
+	pinstatus, err := s.pinMgr.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, replication, false)
+	if err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
 	}
 
 	if col != nil {
-		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(content.ID)), dir, overwrite, s.db, u); err != nil {
+		if err := collections.AddContentToCollection(coluuid, strconv.Itoa(int(pinstatus.Content.ID)), dir, overwrite, s.db, u); err != nil {
 			return xerrors.Errorf("failed to add content to collection: %s", err)
 		}
-	}
-
-	if err := util.DumpBlockstoreTo(ctx, s.tracer, bs, s.nd.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
 	}
 
 	if c.QueryParam("lazy-provide") != "true" {
@@ -643,8 +662,8 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		Cid:                 nd.Cid().String(),
 		RetrievalURL:        util.CreateDwebRetrievalURL(nd.Cid().String()),
 		EstuaryRetrievalURL: util.CreateEstuaryRetrievalURL(nd.Cid().String()),
-		EstuaryId:           content.ID,
-		Providers:           s.cm.PinDelegatesForContent(*content),
+		EstuaryId:           pinstatus.Content.ID,
+		Providers:           s.pinMgr.PinDelegatesForContent(pinstatus.Content),
 	})
 }
 
@@ -3207,26 +3226,9 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	// transform listen addresses (/ip/1.2.3.4/tcp/80) into full p2p multiaddresses
-	// e.g. /ip/1.2.3.4/tcp/80/p2p/12D3KooWCVTKbuvrZ9ton6zma5LNhCEeZyuFtxcDzDTmWh2qPtWM
-	fullP2pMultiAddrs := []multiaddr.Multiaddr{}
-	for _, listenAddr := range s.nd.Host.Addrs() {
-		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, s.nd.Host.ID())
-		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
-		if err != nil {
-			return err
-		}
-		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
-	}
-
-	// transform multiaddresses into AddrInfo objects
-	var origins []*peer.AddrInfo
-	for _, p := range fullP2pMultiAddrs {
-		ai, err := peer.AddrInfoFromP2pAddr(p)
-		if err != nil {
-			return err
-		}
-		origins = append(origins, ai)
+	origins, err := s.nd.Origins()
+	if err != nil {
+		return err
 	}
 
 	bserv := blockservice.New(s.nd.Blockstore, nil)
@@ -3266,11 +3268,10 @@ func (s *apiV1) handleCommitCollection(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 	makeDeal := false
 
-	pinstatus, pinOp, err := s.cm.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, makeDeal)
+	pinstatus, err := s.pinMgr.PinContent(ctx, u.ID, collectionNode.Cid(), collectionNode.Cid().String(), nil, origins, 0, nil, s.cfg.Replication, makeDeal)
 	if err != nil {
 		return err
 	}
-	s.pinMgr.Add(pinOp)
 
 	return c.JSON(http.StatusOK, pinstatus)
 }

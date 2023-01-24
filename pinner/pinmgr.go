@@ -10,15 +10,26 @@ import (
 	"sync"
 	"time"
 
+	"github.com/application-research/estuary/collections"
+	"github.com/application-research/estuary/config"
 	content "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/progress"
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
+
 	"github.com/application-research/estuary/shuttle"
+	"github.com/application-research/estuary/util"
 	"github.com/application-research/goque"
+	"github.com/labstack/echo/v4"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/vmihailenco/msgpack/v5"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
+
+	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/pkg/errors"
 	"github.com/syndtr/goleveldb/leveldb"
@@ -26,16 +37,86 @@ import (
 
 var log = logging.Logger("pinner")
 
-type PinFunc func(context.Context, *operation.PinningOperation, progress.PinProgressCB) error
-type PinStatusFunc func(contID uint64, location string, status types.PinningStatus) error
+type PinFunc func(context.Context, *operation.PinningOperation) error
+type PinStatusFunc func(contID uint64, location string, status status.PinningStatus) error
 
-func NewEstuaryPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, cm content.IManager, shuttleMgr shuttle.IManager, db *gorm.DB) *EstuaryPinManager {
-	return &EstuaryPinManager{
-		PinManager: newPinManager(pinfunc, scf, opts),
-		cm:         cm,
-		db:         db,
-		shuttleMgr: shuttleMgr,
+type IPinManager interface {
+	PinQueueSize() int
+	Run(workers int)
+}
+
+type IEstuaryPinManager interface {
+	IPinManager
+	PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, replication int, makeDeal bool) (*IpfsPinStatusResponse, error)
+	PinDelegatesForContent(cont util.Content) []string
+	PinStatus(cont util.Content, origins []*peer.AddrInfo) (*IpfsPinStatusResponse, error)
+	PinCidAndRequestMakeDeal(eCtx echo.Context, param PinCidParam) (*IpfsPinStatusResponse, error)
+	GetPin(param GetPinParam) (*IpfsPinStatusResponse, error)
+	RunPinningRetryWorker(ctx context.Context, db *gorm.DB, cfg *config.Estuary)
+}
+
+var DefaultOpts = &PinManagerOpts{
+	MaxActivePerUser: 15,
+	QueueDataDir:     "/tmp/",
+}
+
+type PinManagerOpts struct {
+	MaxActivePerUser int
+	QueueDataDir     string
+}
+
+type PinManager struct {
+	pinQueueIn       chan *operation.PinningOperation
+	pinQueueOut      chan *operation.PinningOperation
+	pinComplete      chan *operation.PinningOperation
+	duplicateGuard   *leveldb.DB
+	activePins       map[uint]int // used to limit the number of pins per user
+	pinQueueCount    map[uint]int // keep track of queue count per user
+	pinQueue         *goque.PrefixQueue
+	pinQueueLk       sync.Mutex
+	RunPinFunc       PinFunc
+	StatusChangeFunc PinStatusFunc
+	maxActivePerUser int
+	QueueDataDir     string
+	tracer           trace.Tracer
+}
+
+type ShuttleManager struct {
+	*PinManager
+}
+
+type EstuaryPinManager struct {
+	*PinManager
+	cm               content.IManager
+	db               *gorm.DB
+	shuttleMgr       shuttle.IManager
+	log              *zap.SugaredLogger
+	nd               *node.Node
+	pinStatusUpdater status.IUpdater
+}
+
+type PinningOperationData struct {
+	ContId uint64
+}
+
+func NewEstuaryPinManager(
+	opts *PinManagerOpts,
+	cm content.IManager,
+	shuttleMgr shuttle.IManager,
+	db *gorm.DB,
+	nd *node.Node,
+	log *zap.SugaredLogger,
+) IEstuaryPinManager {
+	ePinMgr := &EstuaryPinManager{
+		cm:               cm,
+		db:               db,
+		shuttleMgr:       shuttleMgr,
+		log:              log,
+		pinStatusUpdater: status.NewUpdater(db, log),
 	}
+	ePinMgr.PinManager = newPinManager(ePinMgr.doPinning, ePinMgr.pinStatusUpdater.UpdateContentPinStatus, opts)
+
+	return ePinMgr
 }
 
 func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
@@ -44,7 +125,7 @@ func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOp
 
 func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *PinManager {
 	if scf == nil {
-		scf = func(contID uint64, location string, status types.PinningStatus) error {
+		scf = func(contID uint64, location string, status status.PinningStatus) error {
 			return nil
 		}
 	}
@@ -73,47 +154,8 @@ func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts) *Pi
 		StatusChangeFunc: scf,
 		maxActivePerUser: opts.MaxActivePerUser,
 		QueueDataDir:     opts.QueueDataDir,
+		tracer:           otel.Tracer("pinner"),
 	}
-}
-
-var DefaultOpts = &PinManagerOpts{
-	MaxActivePerUser: 15,
-	QueueDataDir:     "/tmp/",
-}
-
-type PinManagerOpts struct {
-	MaxActivePerUser int
-	QueueDataDir     string
-}
-
-type PinManager struct {
-	pinQueueIn       chan *operation.PinningOperation
-	pinQueueOut      chan *operation.PinningOperation
-	pinComplete      chan *operation.PinningOperation
-	duplicateGuard   *leveldb.DB
-	activePins       map[uint]int // used to limit the number of pins per user
-	pinQueueCount    map[uint]int // keep track of queue count per user
-	pinQueue         *goque.PrefixQueue
-	pinQueueLk       sync.Mutex
-	RunPinFunc       PinFunc
-	StatusChangeFunc PinStatusFunc
-	maxActivePerUser int
-	QueueDataDir     string
-}
-
-type ShuttleManager struct {
-	*PinManager
-}
-
-type EstuaryPinManager struct {
-	*PinManager
-	cm         content.IManager
-	db         *gorm.DB
-	shuttleMgr shuttle.IManager
-}
-
-type PinningOperationData struct {
-	ContId uint64
 }
 
 func getPinningData(po *operation.PinningOperation) PinningOperationData {
@@ -160,13 +202,14 @@ func (pm *PinManager) doPinning(op *operation.PinningOperation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
-	op.SetStatus(types.PinningStatusPinning)
+	op.SetStatus(status.PinningStatusPinning)
+	if err2 := pm.StatusChangeFunc(op.ContId, op.Location, status.PinningStatusPinning); err2 != nil {
+		return err2
+	}
 
-	if err := pm.RunPinFunc(ctx, op, func(size int64) {
-		op.UpdateProgress(size)
-	}); err != nil {
+	if err := pm.RunPinFunc(ctx, op); err != nil {
 		op.Fail(err)
-		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, types.PinningStatusFailed); err2 != nil {
+		if err2 := pm.StatusChangeFunc(op.ContId, op.Location, status.PinningStatusFailed); err2 != nil {
 			return err2
 		}
 		return errors.Wrap(err, "shuttle RunPinFunc failed")

@@ -131,7 +131,7 @@ func (m *manager) splitContentLocal(ctx context.Context, cont util.Content, size
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := m.contMgr.AddDatabaseTrackingToContent(ctx, content, dserv, c, func(int64) {}); err != nil {
+		if err := m.contMgr.AddDatabaseTrackingToContent(ctx, content, dserv, c); err != nil {
 			return err
 		}
 		m.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)

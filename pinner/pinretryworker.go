@@ -58,7 +58,7 @@ func (pm *EstuaryPinManager) pinContents(ctx context.Context, contents []util.Co
 			if c.Location == constants.ContentLocationLocal {
 				// if local content adding is enabled, retry local pin
 				if !cfg.Content.DisableLocalAdding {
-					pinOp := pm.cm.GetPinOperation(c, origins, 0, makeDeal)
+					pinOp := pm.getPinOperation(c, origins, 0, makeDeal)
 					pm.Add(pinOp)
 				}
 			} else {

@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -222,11 +222,11 @@ type MsgParams struct {
 	SanityCheck      *SanityCheck               `json:",omitempty"`
 }
 
-const OP_UpdatePinStatus = "UpdatePinStatus"
+const OP_UpdatePinStatus = "UpdateContentPinStatus"
 
 type UpdatePinStatus struct {
 	DBID   uint64
-	Status types.PinningStatus
+	Status status.PinningStatus
 }
 
 type PinObj struct {

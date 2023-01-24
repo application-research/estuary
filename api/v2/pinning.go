@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/application-research/estuary/pinner"
-	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/labstack/echo/v4"
 )
@@ -18,7 +17,7 @@ type BatchedPinRequest struct {
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200	{object}  []types.IpfsPinStatusResponse
+// @Success      200	{object}  []pinner.IpfsPinStatusResponse
 // @Failure      404	{object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Param        pin           body      []api.BatchedPinRequest  true   "Pin Body {[content_id:"content_id_to_pin"]}"
@@ -29,7 +28,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var pinStatuses []*types.IpfsPinStatusResponse
+	var pinStatuses []*pinner.IpfsPinStatusResponse
 	for _, pin := range pins {
 		paramCidsToGet := pinner.GetPinParam{
 			User:     u,                  // the user
@@ -42,11 +41,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 
 		pinStatuses = append(pinStatuses, st)
 		if err != nil {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  err.(*pinner.PinningHelperError).Reason,
-				Details: err.(*pinner.PinningHelperError).Details,
-			}
+			return err
 		}
 	}
 
@@ -59,7 +54,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 // @Tags         pinning
 // @Accept		 json
 // @Produce      json
-// @Success      202	{object}  []types.IpfsPinStatusResponse
+// @Success      202	{object}  []pinner.IpfsPinStatusResponse
 // @Failure      500    {object}  util.HttpError
 // @in           202,default  string  Token "token"
 // @Param        pin           body      []types.IpfsPin  true   "Pin Body {[cid:cid, name:name]}"
@@ -67,7 +62,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /v2/pinning/batched-pins [post]
 func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
-	var pins []types.IpfsPin
+	var pins []pinner.IpfsPin
 	if err := c.Bind(&pins); err != nil {
 		return err
 	}
@@ -86,28 +81,25 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 		ignoreDuplicates = true
 	}
 
-	var pinStatuses []*types.IpfsPinStatusResponse
+	var pinStatuses []*pinner.IpfsPinStatusResponse
 	for _, pin := range pins {
 		pinningParam := pinner.PinCidParam{
 			User:             u,                // the user
 			CidToPin:         pin,              // the pin object
 			Overwrite:        overwrite,        // the overwrite flag
 			IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
+			Replication:      s.cfg.Replication,
 		}
-		pinnerAddStatus, pinOp, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
+
+		pinnerAddStatus, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
 		if err != nil {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  err.(*pinner.PinningHelperError).Reason,
-				Details: err.(*pinner.PinningHelperError).Details,
-			}
+			return err
 		}
 
 		pinStatuses = append(pinStatuses, pinnerAddStatus) // collect the status
 		if err != nil {
 			return err
 		}
-		s.pinMgr.Add(pinOp)
 	}
 	return c.JSON(http.StatusAccepted, pinStatuses)
 }

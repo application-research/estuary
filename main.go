@@ -462,7 +462,6 @@ func Setup(username, password string, cfg *config.Estuary) error {
 }
 
 func Run(ctx context.Context, cfg *config.Estuary) error {
-
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -599,10 +598,8 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	dealMgr := deal.NewManager(ctx, db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
 
 	// stand up pin manager
-	pinmgr := pinner.NewEstuaryPinManager(contMgr.DoPinning, contMgr.UpdatePinStatus, &pinner.PinManagerOpts{
-		MaxActivePerUser: 20,
-		QueueDataDir:     cfg.DataDir,
-	}, contMgr, shuttleMgr, db)
+	pinOpts := &pinner.PinManagerOpts{MaxActivePerUser: 20, QueueDataDir: cfg.DataDir}
+	pinmgr := pinner.NewEstuaryPinManager(pinOpts, contMgr, shuttleMgr, db, nd, log)
 	go pinmgr.Run(50)
 	go pinmgr.RunPinningRetryWorker(ctx, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 

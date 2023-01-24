@@ -11,7 +11,6 @@ import (
 	"net/http"
 
 	"golang.org/x/time/rate"
-
 	//#nosec G108 - exposing the profiling endpoint is expected
 	httpprof "net/http/pprof"
 	"os"
@@ -21,17 +20,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/node/modules/peering"
-	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/progress"
-
-	"github.com/application-research/estuary/pinner/types"
-
 	"github.com/application-research/estuary/config"
 	estumetrics "github.com/application-research/estuary/metrics"
+	"github.com/application-research/estuary/node/modules/peering"
+	"github.com/application-research/estuary/pinner/operation"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/abi"
+	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lru "github.com/hashicorp/golang-lru"
+	exchange "github.com/ipfs/go-ipfs-exchange-interface"
+	offline "github.com/ipfs/go-ipfs-exchange-offline"
+	uio "github.com/ipfs/go-unixfs/io"
+	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/errors"
 	"go.opentelemetry.io/otel/codes"
@@ -55,26 +58,19 @@ import (
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/api"
-	lotusTypes "github.com/filecoin-project/lotus/chain/types"
 	lcli "github.com/filecoin-project/lotus/cli"
 	"github.com/ipfs/go-blockservice"
 	"github.com/ipfs/go-cid"
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
-	exchange "github.com/ipfs/go-ipfs-exchange-interface"
-	offline "github.com/ipfs/go-ipfs-exchange-offline"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log/v2"
 	"github.com/ipfs/go-merkledag"
 	"github.com/ipfs/go-metrics-interface"
-	uio "github.com/ipfs/go-unixfs/io"
 	"github.com/ipld/go-car"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 	routed "github.com/libp2p/go-libp2p/p2p/host/routed"
 	"github.com/whyrusleeping/memo"
 )
@@ -1171,8 +1167,8 @@ func (s *Shuttle) ServeAPI() error {
 
 	content := e.Group("/content")
 	content.Use(s.AuthRequired(util.PermLevelUpload))
-	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAdd)))
-	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
+	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAddToShuttle)))
+	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCarToShuttle)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
@@ -1268,7 +1264,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{})
 }
 
-// handleAdd godoc
+// handleAddToShuttle godoc
 // @Summary      Upload a file
 // @Description  This endpoint uploads a file.
 // @Tags         content
@@ -1280,7 +1276,7 @@ func (s *Shuttle) handleLogLevel(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add [post]
-func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
+func (s *Shuttle) handleAddToShuttle(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	overwrite := false
@@ -1349,33 +1345,23 @@ func (s *Shuttle) handleAdd(c echo.Context, u *User) error {
 		return err
 	}
 
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
+
 	contid, err := s.createContent(ctx, u, nd.Cid(), filename, cic)
 	if err != nil {
 		return err
 	}
 
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{CID: nd.Cid()},
-		UserID:  u.ID,
-		Active:  false,
-		Pinning: true,
-	}
-
-	if err := s.DB.Create(pin).Error; err != nil {
+	origins, err := s.Node.Origins()
+	if err != nil {
 		return err
 	}
 
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, nd.Cid(), func(int64) {})
-	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	if err := s.addPin(ctx, contid, nd.Cid(), u.ID, origins, false); err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", contid, u.ID)
 	}
-
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, nd.Cid())
 
 	_ = s.Provide(ctx, nd.Cid())
 
@@ -1416,7 +1402,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 	return nil
 }
 
-// handleAddCar godoc
+// handleAddCarToShuttle godoc
 // @Summary      Upload content via a car file
 // @Description  This endpoint uploads content via a car file
 // @Tags         content
@@ -1425,7 +1411,7 @@ func (s *Shuttle) Provide(ctx context.Context, c cid.Cid) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Router       /content/add-car [post]
-func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
+func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 	ctx := c.Request().Context()
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
@@ -1484,10 +1470,11 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		filename = qpname
 	}
 
-	bserv := blockservice.New(bs, nil)
-	dserv := merkledag.NewDAGService(bserv)
-
 	root := header.Roots[0]
+
+	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
+		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
+	}
 
 	contid, err := s.createContent(ctx, u, root, filename, util.ContentInCollection{
 		CollectionID:  c.QueryParam(ColUuid),
@@ -1497,28 +1484,14 @@ func (s *Shuttle) handleAddCar(c echo.Context, u *User) error {
 		return err
 	}
 
-	pin := &Pin{
-		Content: contid,
-		Cid:     util.DbCID{CID: root},
-		UserID:  u.ID,
-		Active:  false,
-		Pinning: true,
-	}
-
-	if err := s.DB.Create(pin).Error; err != nil {
+	origins, err := s.Node.Origins()
+	if err != nil {
 		return err
 	}
 
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, bs, root, func(int64) {})
-	if err != nil {
-		return xerrors.Errorf("encountered problem computing object references: %w", err)
+	if err := s.addPin(ctx, contid, root, u.ID, origins, false); err != nil {
+		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", contid, u.ID)
 	}
-
-	if err := util.DumpBlockstoreTo(ctx, s.Tracer, bs, s.Node.Blockstore); err != nil {
-		return xerrors.Errorf("failed to move data from staging to main blockstore: %w", err)
-	}
-
-	s.sendPinCompleteMessage(ctx, contid, totalSize, objects, root)
 
 	_ = s.Provide(ctx, root)
 
@@ -1648,7 +1621,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation) error {
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -1663,7 +1636,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj)
 	if err != nil {
 		return xerrors.Errorf("failed to addDatabaseTrackingToContent - contID(%d), cid(%s): %w", op.ContId, op.Obj.String(), err)
 	}
@@ -1677,7 +1650,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint64, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint64, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) (int64, []*Object, error) {
 	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1738,8 +1711,6 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 			return nil, fmt.Errorf("failed to Get CID node: %w", err)
 		}
 
-		cb(int64(len(node.RawData())))
-
 		select {
 		case gotData <- struct{}{}:
 		case <-ctx.Done():
@@ -1793,38 +1764,37 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 	return totalSize, objects, nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
-	if status == types.PinningStatusFailed {
-		log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
+func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status pinningstatus.PinningStatus) error {
+	log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
 
-		if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
-			"pinning": false,
-			"active":  false,
-			"failed":  true,
-		}).Error; err != nil {
-			log.Errorf("failed to mark pin as failed in database: %s", err)
-		}
-
-		go func() {
-			if err := d.sendRpcMessage(context.TODO(), &rpcevent.Message{
-				Op: rpcevent.OP_UpdatePinStatus,
-				Params: rpcevent.MsgParams{
-					UpdatePinStatus: &rpcevent.UpdatePinStatus{
-						DBID:   cont,
-						Status: status,
-					},
-				},
-			}); err != nil {
-				log.Errorf("failed to send pin status update: %s", err)
-			}
-		}()
+	if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
+		"active":  status == pinningstatus.PinningStatusPinned,
+		"pinning": status == pinningstatus.PinningStatusPinning,
+		"failed":  status == pinningstatus.PinningStatusFailed,
+	}).Error; err != nil {
+		log.Errorf("failed to update pin status for cont %d in database: %s", cont, err)
 	}
+
+	go func() {
+		if err := d.sendRpcMessage(context.TODO(), &rpcevent.Message{
+			Op: rpcevent.OP_UpdatePinStatus,
+			Params: rpcevent.MsgParams{
+				UpdatePinStatus: &rpcevent.UpdatePinStatus{
+					DBID:   cont,
+					Status: status,
+				},
+			},
+		}); err != nil {
+			log.Errorf("failed to send pin status update: %s", err)
+		}
+	}()
+
 	return nil
 }
 
 func (s *Shuttle) refreshPinQueue() error {
 	var toPin []Pin
-	if err := s.DB.Find(&toPin, "active = false and pinning = true").Error; err != nil {
+	if err := s.DB.Find(&toPin, "not active and not failed").Error; err != nil {
 		return err
 	}
 
@@ -1856,17 +1826,9 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 		Obj:     p.Cid.CID,
 		Peers:   operation.SerializePeers(peers),
 		Started: p.CreatedAt,
-		Status:  types.PinningStatusQueued,
+		Status:  pinningstatus.PinningStatusQueued,
 		Replace: replace,
 	}
-
-	/*
-
-		s.pinLk.Lock()
-		// TODO: check if we are overwriting anything here
-		s.pinJobs[cont.ID] = op
-		s.pinLk.Unlock()
-	*/
 
 	s.PinMgr.Add(op)
 }
@@ -2410,7 +2372,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	}
 
 	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc)
 	if err != nil {
 		return err
 	}

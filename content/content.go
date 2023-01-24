@@ -10,22 +10,17 @@ import (
 	"github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/ipfs/go-merkledag"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 
-	"github.com/application-research/estuary/collections"
 	"github.com/application-research/estuary/config"
 	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
 	stgzonecreation "github.com/application-research/estuary/content/stagingzone/creation"
 	dealqueuemgr "github.com/application-research/estuary/deal/queue"
 
 	"github.com/application-research/estuary/node"
-	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/progress"
-	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
@@ -37,22 +32,15 @@ import (
 )
 
 type IManager interface {
-	AddDatabaseTrackingToContent(ctx context.Context, cont *util.Content, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error
-	AddDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error)
+	AddDatabaseTrackingToContent(ctx context.Context, cont *util.Content, dserv ipld.NodeGetter, root cid.Cid) error
 	GarbageCollect(ctx context.Context) error
 
-	PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, makeDeal bool) (*types.IpfsPinStatusResponse, *operation.PinningOperation, error)
-	PinDelegatesForContent(cont util.Content) []string
-	GetPinOperation(cont util.Content, peers []*peer.AddrInfo, replaceID uint, makeDeal bool) *operation.PinningOperation
-	DoPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error
-	UpdatePinStatus(contID uint64, location string, status types.PinningStatus) error
-
+	RemoveContent(ctx context.Context, contID uint, now bool) error
 	RefreshContent(ctx context.Context, cont uint64) error
 	OffloadContents(ctx context.Context, conts []uint64) (int, error)
 	ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error)
 	GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error)
 	UnpinContent(ctx context.Context, contid uint) error
-	PinStatus(cont util.Content, origins []*peer.AddrInfo) (*types.IpfsPinStatusResponse, error)
 	GetContent(id uint64) (*util.Content, error)
 	TryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error
 	RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error
@@ -173,19 +161,9 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 	})
 }
 
-func (m *manager) addrInfoForContentLocation(handle string) (*peer.AddrInfo, error) {
-	if handle == constants.ContentLocationLocal {
-		return &peer.AddrInfo{
-			ID:    m.node.Host.ID(),
-			Addrs: m.node.Host.Addrs(),
-		}, nil
-	}
-	return m.shuttleMgr.AddrInfo(handle)
-}
-
 var noDataTimeout = time.Minute * 10
 
-func (m *manager) AddDatabaseTrackingToContent(ctx context.Context, cont *util.Content, dserv ipld.NodeGetter, root cid.Cid, cb func(int64)) error {
+func (m *manager) AddDatabaseTrackingToContent(ctx context.Context, cont *util.Content, dserv ipld.NodeGetter, root cid.Cid) error {
 	ctx, span := m.tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -241,8 +219,6 @@ func (m *manager) AddDatabaseTrackingToContent(ctx context.Context, cont *util.C
 			return nil, err
 		}
 
-		cb(int64(len(node.RawData())))
-
 		select {
 		case gotData <- struct{}{}:
 		case <-ctx.Done():
@@ -266,28 +242,4 @@ func (m *manager) AddDatabaseTrackingToContent(ctx context.Context, cont *util.C
 		return err
 	}
 	return m.addObjectsToDatabase(ctx, cont, objects, constants.ContentLocationLocal)
-}
-
-func (m *manager) AddDatabaseTracking(ctx context.Context, u *util.User, dserv ipld.NodeGetter, root cid.Cid, filename string, replication int) (*util.Content, error) {
-	ctx, span := m.tracer.Start(ctx, "computeObjRefs")
-	defer span.End()
-
-	content := &util.Content{
-		Cid:         util.DbCID{CID: root},
-		Name:        filename,
-		Active:      false,
-		Pinning:     true,
-		UserID:      u.ID,
-		Replication: replication,
-		Location:    constants.ContentLocationLocal,
-	}
-
-	if err := m.db.Create(content).Error; err != nil {
-		return nil, xerrors.Errorf("failed to track new content in database: %w", err)
-	}
-
-	if err := m.AddDatabaseTrackingToContent(ctx, content, dserv, root, func(int64) {}); err != nil {
-		return nil, err
-	}
-	return content, nil
 }

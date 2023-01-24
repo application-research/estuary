@@ -8,7 +8,7 @@ import (
 	dealqueuemgr "github.com/application-research/estuary/deal/queue"
 
 	"github.com/application-research/estuary/node"
-	pinningtypes "github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	shuttle "github.com/application-research/estuary/shuttle"
 
 	"go.opentelemetry.io/otel"
@@ -114,7 +114,7 @@ func (m *manager) GetStagingZoneContents(ctx context.Context, user uint, zoneID 
 	}
 
 	for i, c := range zoneConts {
-		zoneConts[i].PinningStatus = string(pinningtypes.GetContentPinningStatus(c))
+		zoneConts[i].PinningStatus = string(pinningstatus.GetContentPinningStatus(c))
 	}
 	return zoneConts, nil
 }

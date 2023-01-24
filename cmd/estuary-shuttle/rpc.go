@@ -10,7 +10,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
@@ -157,7 +157,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 				Params: rpcevent.MsgParams{
 					UpdatePinStatus: &rpcevent.UpdatePinStatus{
 						DBID:   contid,
-						Status: types.PinningStatusFailed,
+						Status: pinningstatus.PinningStatusFailed,
 					},
 				},
 			}); err != nil {
@@ -166,7 +166,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			return nil
 		}
 
-		if !existing.Pinning && existing.Active {
+		if existing.Active {
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
 
@@ -177,12 +177,6 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			}()
 			return nil
 		}
-
-		if !existing.Active && !existing.Pinning {
-			if err := d.DB.Model(Pin{}).Where("id = ?", existing.ID).UpdateColumn("pinning", true).Error; err != nil {
-				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
-			}
-		}
 	} else {
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
@@ -190,7 +184,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 			Cid:     util.DbCID{CID: data},
 			UserID:  user,
 			Active:  false,
-			Pinning: true,
+			Pinning: false,
 		}
 
 		if err := d.DB.Create(pin).Error; err != nil {
@@ -202,7 +196,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 		Obj:         data,
 		ContId:      contid,
 		UserId:      user,
-		Status:      types.PinningStatusQueued,
+		Status:      pinningstatus.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
 		Peers:       operation.SerializePeers(peers),
 	}
@@ -738,7 +732,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.Split
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c)
 		if err != nil {
 			return err
 		}
