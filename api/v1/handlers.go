@@ -349,7 +349,7 @@ func (s *apiV1) handlePeeringStatus(c echo.Context) error {
 // @Success      200           {object}  string
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Param        body          body      types.IpfsPin  true   "IPFS Body"
+// @Param        body          body      pinner.IpfsPin  true   "IPFS Body"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /content/add-ipfs [post]

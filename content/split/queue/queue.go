@@ -15,8 +15,8 @@ import (
 
 type IManager interface {
 	QueueContent(contID uint64, userID uint) error
-	SplitComplete(contID uint64) error
-	SplitFailed(contID uint64) error
+	SplitComplete(contID uint64)
+	SplitFailed(contID uint64)
 }
 
 type manager struct {
@@ -44,8 +44,8 @@ func (m *manager) QueueContent(contID uint64, userID uint) error {
 	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
 }
 
-func (m *manager) SplitComplete(contID uint64) error {
-	return m.db.Transaction(func(tx *gorm.DB) error {
+func (m *manager) SplitComplete(contID uint64) {
+	if err := m.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"dag_split": true,
 			"active":    false,
@@ -59,9 +59,13 @@ func (m *manager) SplitComplete(contID uint64) error {
 			return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 		}
 		return tx.Delete(&model.SplitQueue{}, "cont_id = ?", contID).Error
-	})
+	}); err != nil {
+		m.log.Errorf("failed to update split queue (SplitComplete) for cont %d - %s", contID, err)
+	}
 }
 
-func (m *manager) SplitFailed(contID uint64) error {
-	return m.db.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error
+func (m *manager) SplitFailed(contID uint64) {
+	if err := m.db.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
+		m.log.Errorf("failed to update split queue (SplitFaileds) for cont %d - %s", contID, err)
+	}
 }
