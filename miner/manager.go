@@ -75,7 +75,7 @@ func (mm *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize a
 	))
 	defer span.End()
 
-	miners, err := mm.PickMiners(ctx, repl, pieceSize, nil, false)
+	miners, err := mm.PickMiners(ctx, repl, pieceSize, nil, true)
 	if err != nil {
 		return nil, err
 	}
