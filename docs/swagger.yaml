@@ -168,16 +168,16 @@ definitions:
       ID:
         type: string
     type: object
-  types.IpfsListPinStatusResponse:
+  pinner.IpfsListPinStatusResponse:
     properties:
       count:
         type: integer
       results:
         items:
-          $ref: '#/definitions/types.IpfsPinStatusResponse'
+          $ref: '#/definitions/pinner.IpfsPinStatusResponse'
         type: array
     type: object
-  types.IpfsPin:
+  pinner.IpfsPin:
     properties:
       cid:
         type: string
@@ -191,7 +191,7 @@ definitions:
           type: string
         type: array
     type: object
-  types.IpfsPinStatusResponse:
+  pinner.IpfsPinStatusResponse:
     properties:
       content:
         $ref: '#/definitions/util.Content'
@@ -205,13 +205,13 @@ definitions:
         additionalProperties: true
         type: object
       pin:
-        $ref: '#/definitions/types.IpfsPin'
+        $ref: '#/definitions/pinner.IpfsPin'
       requestid:
         type: string
       status:
-        $ref: '#/definitions/types.PinningStatus'
+        $ref: '#/definitions/status.PinningStatus'
     type: object
-  types.PinningStatus:
+  status.PinningStatus:
     enum:
       - pinning
       - pinned
@@ -1114,7 +1114,7 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/types.IpfsPin'
+            $ref: '#/definitions/pinner.IpfsPin'
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
@@ -2027,7 +2027,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/types.IpfsListPinStatusResponse'
+            $ref: '#/definitions/pinner.IpfsListPinStatusResponse'
         "400":
           description: Bad Request
           schema:
@@ -2049,7 +2049,7 @@ paths:
           name: pin
           required: true
           schema:
-            $ref: '#/definitions/types.IpfsPin'
+            $ref: '#/definitions/pinner.IpfsPin'
         - description: Ignore Dupes
           in: query
           name: ignore-dupes
@@ -2064,7 +2064,7 @@ paths:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/types.IpfsPinStatusResponse'
+            $ref: '#/definitions/pinner.IpfsPinStatusResponse'
         "500":
           description: Internal Server Error
           schema:
@@ -2107,7 +2107,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/types.IpfsPinStatusResponse'
+            $ref: '#/definitions/pinner.IpfsPinStatusResponse'
         "404":
           description: Not Found
           schema:
@@ -2134,14 +2134,14 @@ paths:
           name: pin
           required: true
           schema:
-            $ref: '#/definitions/types.IpfsPin'
+            $ref: '#/definitions/pinner.IpfsPin'
       produces:
         - application/json
       responses:
         "202":
           description: Accepted
           schema:
-            $ref: '#/definitions/types.IpfsPinStatusResponse'
+            $ref: '#/definitions/pinner.IpfsPinStatusResponse'
         "404":
           description: Not Found
           schema:
