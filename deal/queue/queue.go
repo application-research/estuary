@@ -61,7 +61,7 @@ func (m *manager) QueueContent(cont *util.Content) error {
 	task := &model.DealQueue{
 		UserID:                 cont.UserID,
 		ContID:                 cont.ID,
-		ContCID:                cont.Cid,
+		ContCid:                cont.Cid,
 		CommpDone:              false, //it will be set by commp worker
 		CommpAttempted:         0,     //it will be set by commp worker
 		CommpNextAttemptAt:     time.Now().UTC(),

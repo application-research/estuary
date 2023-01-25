@@ -397,9 +397,14 @@ func migrateSchemas(db *gorm.DB) error {
 		&autoretrieve.Autoretrieve{},
 		&model.SanityCheck{},
 		&autoretrieve.PublishedBatch{},
+		&model.ShuttleConnection{},
 		&model.StagingZone{},
 		&model.StagingZoneQueueTracker{},
-		&model.ShuttleConnection{},
+		&model.StagingZoneQueue{},
+		&model.DealQueue{},
+		&model.DealQueueTracker{},
+		&model.SplitQueue{},
+		&model.SplitQueueTracker{},
 	); err != nil {
 		return err
 	}

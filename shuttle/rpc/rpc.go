@@ -459,14 +459,16 @@ func (m *manager) handleRpcSplitComplete(ctx context.Context, handle string, par
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
-	return m.splitQueueMgr.SplitComplete(param.ID)
+	m.splitQueueMgr.SplitComplete(param.ID)
+	return nil
 }
 
 func (m *manager) handleRpcSplitFailed(ctx context.Context, handle string, param *rpcevent.SplitFailed) error {
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
-	return m.splitQueueMgr.SplitFailed(param.ID)
+	m.splitQueueMgr.SplitFailed(param.ID)
+	return nil
 }
 
 func (m *manager) handleRpcCommPComplete(ctx context.Context, handle string, resp *rpcevent.CommPComplete) error {

@@ -58,7 +58,7 @@ func (m *manager) runSplitBackFillWorker(ctx context.Context) {
 				return
 			}
 
-			m.log.Debugf("trying to backfill split queue for starting from: %d", tracker.LastContID)
+			m.log.Debugf("trying to backfill split queue starting from content: %d", tracker.LastContID)
 
 			var largeContents []*util.Content
 			if err := m.db.Where("size > ? and not dag_split", m.cfg.Content.MaxSize).Order("id asc").FindInBatches(&largeContents, 2000, func(tx *gorm.DB, batch int) error {

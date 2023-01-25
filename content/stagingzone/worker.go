@@ -129,7 +129,7 @@ func (m *manager) runAggregationWorker(ctx context.Context) {
 				continue
 			}
 
-			m.log.Debugf("found: %d ready staging zones", len(readyZones))
+			m.log.Debugf("found: %d ready staging zones for aggregation", len(readyZones))
 
 			for _, z := range readyZones {
 				var zc *util.Content

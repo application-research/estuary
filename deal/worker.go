@@ -10,7 +10,7 @@ import (
 )
 
 func (m *manager) runWorkers(ctx context.Context) {
-	m.log.Infof("deal workers")
+	m.log.Infof("starting up deal workers")
 
 	go m.runDealBackFillWorker(ctx)
 
@@ -37,7 +37,7 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 				return
 			}
 
-			m.log.Debugf("trying to backfill deal queue for starting from: %d", tracker.LastContID)
+			m.log.Debugf("trying to backfill deal queue starting from content: %d", tracker.LastContID)
 
 			var contents []*util.Content
 			if err := m.db.Where("size > ? and size < ? and active", m.cfg.Content.MinSize, m.cfg.Content.MaxSize).Order("id asc").FindInBatches(&contents, 2000, func(tx *gorm.DB, batch int) error {
