@@ -92,15 +92,15 @@ func serveProfile(c echo.Context) error {
 }
 
 type statsResp struct {
-	ID              uint64                     `json:"id"`
-	Cid             cid.Cid                    `json:"cid"`
-	Filename        string                     `json:"name"`
-	Size            int64                      `json:"size"`
-	CreatedAt       time.Time                  `json:"createdAt"`
-	BWUsed          int64                      `json:"bwUsed"`
-	TotalRequests   int64                      `json:"totalRequests"`
-	Offloaded       bool                       `json:"offloaded"`
-	AggregatedFiles int64                      `json:"aggregatedFiles"`
+	ID              uint64                      `json:"id"`
+	Cid             cid.Cid                     `json:"cid"`
+	Filename        string                      `json:"name"`
+	Size            int64                       `json:"size"`
+	CreatedAt       time.Time                   `json:"createdAt"`
+	BWUsed          int64                       `json:"bwUsed"`
+	TotalRequests   int64                       `json:"totalRequests"`
+	Offloaded       bool                        `json:"offloaded"`
+	AggregatedFiles int64                       `json:"aggregatedFiles"`
 	PinningStatus   pinningstatus.PinningStatus `json:"pinningStatus"`
 }
 
@@ -1262,7 +1262,7 @@ func (s *apiV1) handleMakeDeal(c echo.Context, u *util.User) error {
 		}
 	}
 
-	var cont util.Content
+	var cont *util.Content
 	if err := s.db.First(&cont, "id = ?", req.ContentID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
@@ -3955,7 +3955,7 @@ func (s *apiV1) handleContentHealthCheck(c echo.Context) error {
 		return err
 	}
 
-	var cont util.Content
+	var cont *util.Content
 	if err := s.db.First(&cont, "id = ?", val).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{

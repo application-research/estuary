@@ -53,7 +53,7 @@ type IManager interface {
 	UnpinContent(ctx context.Context, loc string, conts []uint64) error
 	PinContent(ctx context.Context, loc string, cont util.Content, origins []*peer.AddrInfo) error
 	ConsolidateContent(ctx context.Context, loc string, contents []util.Content) error
-	AggregateContent(ctx context.Context, loc string, zone util.Content, zoneContents []util.Content) error
+	AggregateContent(ctx context.Context, loc string, zone *util.Content, zoneContents []util.Content) error
 	CommPContent(ctx context.Context, loc string, data cid.Cid) error
 	SplitContent(ctx context.Context, loc string, cont uint64, size int64) error
 	GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error)

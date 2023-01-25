@@ -18,21 +18,21 @@ func (m *manager) runWorker(ctx context.Context) {
 }
 
 func (m *manager) runCommpForContents(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.CreationInterval)
+	timer := time.NewTicker(m.cfg.WorkerIntervals.CommpInterval)
 	for {
 		select {
 		case <-timer.C:
 			// get contents grouped by cid, so one commp can work for all contents with same cid
 			var jobs []*model.DealQueue
-			if err := m.db.Where("not commp_done and commp_attempted <= 3 and commp_next_attempt_at < ? where cont_cid = ?", m.cfg.Content.MinSize, time.Now().UTC()).Order("id asc").Limit(10).Group("cont_cid").Find(&jobs).Error; err != nil {
-				m.log.Errorf("", err)
+			if err := m.db.Where("not commp_done and commp_attempted < 3 and commp_next_attempt_at < ?", time.Now().UTC()).Order("id asc").Limit(10).Group("cont_cid").Find(&jobs).Error; err != nil {
+				m.log.Warnf("failed to contents to commp - %s", err)
 				continue
 			}
 
 			for _, job := range jobs {
 				_, _, _, err := m.GetPieceCommitment(ctx, job.ContCID.CID, m.blockstore)
 				if err != nil && err != gorm.ErrRecordNotFound {
-					m.log.Errorf("", err)
+					m.log.Warnf("failed to get commp record - %s", err)
 					continue
 				}
 
@@ -43,7 +43,7 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 
 				// if commp already exist, update all contents where cid
 				if err := m.commpStatusUpdater.CommpExist(job.ContCID.CID); err != nil {
-					m.log.Errorf("", err)
+					m.log.Warnf("failed to update commp queue - %s", err)
 					continue
 				}
 			}

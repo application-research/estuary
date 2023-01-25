@@ -20,7 +20,7 @@ func (m *manager) runWorkers(ctx context.Context) {
 	m.log.Infof("spun up split workers")
 }
 
-func (m *manager) getSplitQueueBackFillTracker() (*model.SplitQueueTracker, error) {
+func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
 	var trackers []*model.SplitQueueTracker
 	if err := m.db.Find(&trackers).Error; err != nil {
 		return nil, err
@@ -28,7 +28,12 @@ func (m *manager) getSplitQueueBackFillTracker() (*model.SplitQueueTracker, erro
 
 	if len(trackers) == 0 {
 		// for the first time it will be empty
-		trk := &model.SplitQueueTracker{LastContID: 0}
+		var contents []*util.Content
+		if err := m.db.Order("id asc").Limit(1).Find(&contents).Error; err != nil {
+			return nil, err
+		}
+
+		trk := &model.SplitQueueTracker{LastContID: 0, StopAt: contents[0].ID}
 		if err := m.db.Create(&trk).Error; err != nil {
 			return nil, err
 		}
@@ -38,45 +43,51 @@ func (m *manager) getSplitQueueBackFillTracker() (*model.SplitQueueTracker, erro
 }
 
 func (m *manager) runSplitBackFillWorker(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.CreationInterval)
+	timer := time.NewTicker(m.cfg.WorkerIntervals.SplitInterval)
 	for {
 		select {
 		case <-timer.C:
-			tracker, err := m.getSplitQueueBackFillTracker()
+			tracker, err := m.getQueueTracker()
 			if err != nil {
-				m.log.Warnf("failed to get staging zone tracker last content id - %s", err)
+				m.log.Warnf("failed to get split queue tracker - %s", err)
 				continue
 			}
 
+			if tracker.LastContID > tracker.StopAt {
+				m.log.Info("split queue backfill is done")
+				return
+			}
+
+			m.log.Debugf("trying to backfill split queue for starting from: %d", tracker.LastContID)
+
 			var largeContents []*util.Content
 			if err := m.db.Where("size > ? and not dag_split", m.cfg.Content.MaxSize).Order("id asc").FindInBatches(&largeContents, 2000, func(tx *gorm.DB, batch int) error {
-				m.log.Debugf("trying to backfill split queue for the next sets of contents: %d - %d", largeContents[0].ID, largeContents[len(largeContents)-1].ID)
+				m.log.Debugf("trying to backfill split queue for total of %d contents", len(largeContents))
 
 				for _, c := range largeContents {
 					if err := m.backfill(ctx, c, tracker); err != nil {
-						m.log.Errorf("", err)
-						continue
+						return err
 					}
 				}
 				return nil
 			}).Error; err != nil {
-				m.log.Errorf("", err)
+				m.log.Warnf("failed to backfill split queue - %s", err)
 			}
 		}
 	}
 }
 
 func (m *manager) backfill(ctx context.Context, cont *util.Content, tracker *model.SplitQueueTracker) error {
-	return m.db.Transaction(func(tx *gorm.DB) error {
-		if err := m.splitQueueMgr.QueueContent(ctx, cont.ID, cont.UserID); err != nil {
-			return err
-		}
-		return tx.Model(model.SplitQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error
-	})
+	m.log.Debugf("trying to backfill split queue for content %d", cont.ID)
+
+	if err := m.splitQueueMgr.QueueContent(cont.ID, cont.UserID); err != nil {
+		return err
+	}
+	return m.db.Model(model.SplitQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error
 }
 
 func (m *manager) runSplitWorker(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.CreationInterval)
+	timer := time.NewTicker(m.cfg.WorkerIntervals.SplitInterval)
 	for {
 		select {
 		case <-timer.C:
@@ -90,9 +101,8 @@ func (m *manager) runSplitWorker(ctx context.Context) {
 
 func (m *manager) FindAndSplitLargeContents(ctx context.Context) error {
 	var tasks []*model.SplitQueue
-	return m.db.Where("size > ? and not dag_split", m.cfg.Content.MaxSize).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
-		m.log.Debugf("trying to split the next sets of contents: %d - %d", tasks[0].ID, tasks[len(tasks)-1].ID)
-
+	return m.db.Where("attempted < 3 and next_attempt_at < ?", time.Now().UTC()).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
+		m.log.Debugf("trying to split total of %d contents", len(tasks))
 		for _, tsk := range tasks {
 			var cont util.Content
 			if err := m.db.First(&cont, "id = ?", tsk.ContID).Error; err != nil {

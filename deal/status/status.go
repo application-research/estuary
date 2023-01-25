@@ -1,4 +1,4 @@
-package dealstatus
+package status
 
 import (
 	"go.uber.org/zap"

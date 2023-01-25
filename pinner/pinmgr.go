@@ -14,6 +14,7 @@ import (
 	"github.com/application-research/estuary/config"
 	content "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/node"
+	"github.com/application-research/estuary/pinner/block"
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/status"
 
@@ -89,10 +90,12 @@ type EstuaryPinManager struct {
 	*PinManager
 	cm               content.IManager
 	db               *gorm.DB
+	cfg              *config.Estuary
 	shuttleMgr       shuttle.IManager
 	log              *zap.SugaredLogger
 	nd               *node.Node
 	pinStatusUpdater status.IUpdater
+	blockMgr         block.IManager
 }
 
 type PinningOperationData struct {
@@ -100,8 +103,10 @@ type PinningOperationData struct {
 }
 
 func NewEstuaryPinManager(
+	ctx context.Context,
 	opts *PinManagerOpts,
 	cm content.IManager,
+	cfg *config.Estuary,
 	shuttleMgr shuttle.IManager,
 	db *gorm.DB,
 	nd *node.Node,
@@ -110,11 +115,16 @@ func NewEstuaryPinManager(
 	ePinMgr := &EstuaryPinManager{
 		cm:               cm,
 		db:               db,
+		cfg:              cfg,
 		shuttleMgr:       shuttleMgr,
 		log:              log,
 		pinStatusUpdater: status.NewUpdater(db, log),
+		blockMgr:         block.NewManager(db, cfg, log),
 	}
 	ePinMgr.PinManager = newPinManager(ePinMgr.doPinning, ePinMgr.pinStatusUpdater.UpdateContentPinStatus, opts)
+
+	go ePinMgr.Run(50)
+	go ePinMgr.RunPinningRetryWorker(ctx, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
 
 	return ePinMgr
 }

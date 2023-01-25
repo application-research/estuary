@@ -1,7 +1,6 @@
-package splitqueue
+package queue
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -11,10 +10,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type IManager interface {
-	QueueContent(ctx context.Context, contID uint64, userID uint) error
+	QueueContent(contID uint64, userID uint) error
 	SplitComplete(contID uint64) error
 	SplitFailed(contID uint64) error
 }
@@ -33,19 +33,15 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
 	}
 }
 
-func (m *manager) QueueContent(ctx context.Context, contID uint64, userID uint) error {
-	var u util.User
-	if err := m.db.First(&u, "id = ?", userID).Error; err != nil {
-		return fmt.Errorf("failed to load contents user from db: %w", err)
-	}
-
+func (m *manager) QueueContent(contID uint64, userID uint) error {
 	task := &model.SplitQueue{
-		UserID:        userID,
+		UserID:        uint64(userID),
 		ContID:        contID,
-		Enabled:       u.FlagSplitContent(),
+		Failing:       false,
+		Attempted:     0,
 		NextAttemptAt: time.Now().UTC(),
 	}
-	return m.db.Create(task).Error
+	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
 }
 
 func (m *manager) SplitComplete(contID uint64) error {
@@ -56,16 +52,16 @@ func (m *manager) SplitComplete(contID uint64) error {
 			"size":      0,
 			"pinning":   false,
 		}).Error; err != nil {
-			return fmt.Errorf("failed to update content for split complete: %w", err)
+			return fmt.Errorf("failed to update content for split complete - %w", err)
 		}
 
 		if err := tx.Delete(&util.ObjRef{}, "content = ?", contID).Error; err != nil {
 			return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 		}
-		return tx.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, done = ? WHERE cont_id = ?", false, true, contID).Error
+		return tx.Delete(&model.SplitQueue{}, "cont_id = ?", contID).Error
 	})
 }
 
 func (m *manager) SplitFailed(contID uint64) error {
-	return m.db.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, next_attempt_at = ? WHERE cont_id = ?", true, time.Now().Add(1*time.Hour), contID).Error
+	return m.db.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error
 }

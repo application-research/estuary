@@ -7,7 +7,7 @@ import (
 
 	commpstatus "github.com/application-research/estuary/content/commp/status"
 	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
-	stgzonecreation "github.com/application-research/estuary/content/stagingzone/creation"
+	stgzonequeuemgr "github.com/application-research/estuary/content/stagingzone/queue"
 	dealqueuemgr "github.com/application-research/estuary/deal/queue"
 
 	dealstatus "github.com/application-research/estuary/deal/status"
@@ -61,7 +61,7 @@ type manager struct {
 	transferStatuses      *lru.ARCCache
 	websocketEng          websocketeng.IEstuaryRpcEngine
 	queueEng              queue.IEstuaryRpcEngine
-	stgZoneMgr            stgzonecreation.IManager
+	stgZoneQueueMgr       stgzonequeuemgr.IManager
 	dealQueueMgr          dealqueuemgr.IManager
 	splitQueueMgr         splitqueuemgr.IManager
 	commpStatusUpdater    commpstatus.IUpdater
@@ -83,7 +83,7 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		transferStatuses:      cache,
-		stgZoneMgr:            stgzonecreation.NewManager(db, cfg, log),
+		stgZoneQueueMgr:       stgzonequeuemgr.NewManager(db, log),
 		dealQueueMgr:          dealqueuemgr.NewManager(db, cfg, log),
 		splitQueueMgr:         splitqueuemgr.NewManager(db, log),
 		commpStatusUpdater:    commpstatus.NewUpdater(db, log),
@@ -375,7 +375,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			}
 
 			// queue aggregate content for deal making
-			return m.dealQueueMgr.QueueContent(ctx, cont.ID, cont.Cid, cont.UserID)
+			return m.dealQueueMgr.QueueContent(cont)
 		})
 	}
 
@@ -439,17 +439,17 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 		// if content can be staged, stage it
 		if contSize < m.cfg.Content.MinSize {
-			return m.stgZoneMgr.StageNewContent(ctx, cont, contSize)
+			return m.stgZoneQueueMgr.QueueContent(cont, false)
 		}
 
 		// if it is too large, queue it for splitting.
 		// split worker will pick it up and split it,
 		// its children will be pinned and dealed
 		if contSize > m.cfg.Content.MaxSize {
-			return m.splitQueueMgr.QueueContent(ctx, cont.ID, cont.UserID)
+			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID)
 		}
 		// or queue it for deal making
-		return m.dealQueueMgr.QueueContent(ctx, cont.ID, cont.Cid, cont.UserID)
+		return m.dealQueueMgr.QueueContent(cont)
 	})
 }
 

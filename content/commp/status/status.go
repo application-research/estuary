@@ -1,4 +1,4 @@
-package commpstatus
+package status
 
 import (
 	"time"

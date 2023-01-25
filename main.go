@@ -398,7 +398,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&model.SanityCheck{},
 		&autoretrieve.PublishedBatch{},
 		&model.StagingZone{},
-		&model.StagingZoneTracker{},
+		&model.StagingZoneQueueTracker{},
 		&model.ShuttleConnection{},
 	); err != nil {
 		return err
@@ -595,13 +595,11 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	fc.SetPieceCommFunc(commpMgr.GetPieceCommitment)
 
 	// stand up deal manager
-	dealMgr := deal.NewManager(ctx, db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr)
+	dealMgr := deal.NewManager(ctx, db, gatewayApi, fc, init.trackingBstore, nd, cfg, minerMgr, log, shuttleMgr, transferMgr, commpMgr, contMgr)
 
 	// stand up pin manager
 	pinOpts := &pinner.PinManagerOpts{MaxActivePerUser: 20, QueueDataDir: cfg.DataDir}
-	pinmgr := pinner.NewEstuaryPinManager(pinOpts, contMgr, shuttleMgr, db, nd, log)
-	go pinmgr.Run(50)
-	go pinmgr.RunPinningRetryWorker(ctx, db, cfg) // pinning retry worker, re-attempt pinning contents, not yet pinned after a period of time
+	pinmgr := pinner.NewEstuaryPinManager(ctx, pinOpts, contMgr, cfg, shuttleMgr, db, nd, log)
 
 	// Start autoretrieve if not disabled
 	if !cfg.DisableAutoRetrieve {

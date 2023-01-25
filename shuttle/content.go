@@ -81,7 +81,7 @@ func (m *manager) UnpinContent(ctx context.Context, loc string, conts []uint64) 
 	})
 }
 
-func (m *manager) AggregateContent(ctx context.Context, loc string, zone util.Content, zoneContents []util.Content) error {
+func (m *manager) AggregateContent(ctx context.Context, loc string, zone *util.Content, zoneContents []util.Content) error {
 	var aggrConts []rpcevent.AggregateContent
 	for _, c := range zoneContents {
 		aggrConts = append(aggrConts, rpcevent.AggregateContent{ID: c.ID, Name: c.Name, CID: c.Cid.CID})

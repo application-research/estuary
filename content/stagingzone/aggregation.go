@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sort"
-	"time"
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -17,37 +16,6 @@ import (
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 )
-
-func (m *manager) runAggregationWorker(ctx context.Context) {
-	timer := time.NewTicker(m.cfg.StagingBucket.AggregateInterval)
-	for {
-		select {
-		case <-timer.C:
-			m.log.Debug("running staging zone aggregation worker")
-
-			readyZones, err := m.getReadyStagingZones()
-			if err != nil {
-				m.log.Errorf("failed to get ready staging zones: %s", err)
-				continue
-			}
-
-			m.log.Debugf("found: %d ready staging zones", len(readyZones))
-
-			for _, z := range readyZones {
-				var zc util.Content
-				if err := m.db.First(&zc, "id = ?", z.ContID).Error; err != nil {
-					m.log.Warnf("zone %d aggregation failed to get zone content %d for processing - %s", z.ID, z.ContID, err)
-					continue
-				}
-
-				if err := m.processStagingZone(ctx, zc, z); err != nil {
-					m.log.Errorf("zone aggregation worker failed to process zone: %d - %s", z.ID, err)
-					continue
-				}
-			}
-		}
-	}
-}
 
 // getReadyStagingZones gets zones that are done but have reasonable sizes
 func (m *manager) getReadyStagingZones() ([]*model.StagingZone, error) {
@@ -68,7 +36,7 @@ func (m *manager) markZoneStatus(zone *model.StagingZone, upSts model.ZoneStatus
 	return result.RowsAffected == 1, nil
 }
 
-func (m *manager) processStagingZone(ctx context.Context, zoneCont util.Content, zone *model.StagingZone) error {
+func (m *manager) processStagingZone(ctx context.Context, zoneCont *util.Content, zone *model.StagingZone) error {
 	ctx, span := m.tracer.Start(ctx, "aggregateContent")
 	defer span.End()
 
@@ -101,7 +69,7 @@ func (m *manager) processStagingZone(ctx context.Context, zoneCont util.Content,
 	return m.AggregateStagingZone(ctx, zone, zoneCont, grpLocs[0])
 }
 
-func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint64, zoneContent util.Content) error {
+func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint64, zoneContent *util.Content) error {
 	dstLocation, toMove, curMax, err := m.getContentsAndDestinationLocationForConsolidation(ctx, zoneID, zoneContent.ID)
 	if err != nil {
 		return err
@@ -197,7 +165,7 @@ func (m *manager) safeFetchData(ctx context.Context, c cid.Cid) (func(), error) 
 }
 
 // AggregateStagingZone assumes zone is already in consolidatingZones
-func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZone, zoneCont util.Content, loc string) error {
+func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZone, zoneCont *util.Content, loc string) error {
 	ctx, span := m.tracer.Start(ctx, "aggregateStagingZone")
 	defer span.End()
 
@@ -275,7 +243,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 				return err
 			}
 			// queue aggregate content for deal making
-			return m.dealQueueMgr.QueueContent(ctx, zoneCont.ID, zoneCont.Cid, zoneCont.UserID)
+			return m.dealQueueMgr.QueueContent(zoneCont)
 		})
 	}
 	// handle aggregate on shuttle

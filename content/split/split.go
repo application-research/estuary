@@ -8,6 +8,7 @@ import (
 	"github.com/application-research/estuary/constants"
 	content "github.com/application-research/estuary/content"
 	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
+	"github.com/application-research/estuary/pinner/block"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
 
 	"github.com/ipfs/go-blockservice"
@@ -31,14 +32,15 @@ type IManager interface {
 }
 
 type manager struct {
-	db            *gorm.DB
-	node          *node.Node
-	cfg           *config.Estuary
-	log           *zap.SugaredLogger
-	shuttleMgr    shuttle.IManager
-	contMgr       content.IManager
-	tracer        trace.Tracer
-	splitQueueMgr splitqueuemgr.IManager
+	db             *gorm.DB
+	node           *node.Node
+	cfg            *config.Estuary
+	log            *zap.SugaredLogger
+	shuttleMgr     shuttle.IManager
+	contMgr        content.IManager
+	tracer         trace.Tracer
+	splitQueueMgr  splitqueuemgr.IManager
+	pinnerBlockMgr block.IManager
 }
 
 func NewManager(
@@ -51,14 +53,15 @@ func NewManager(
 	cntMgr content.IManager,
 ) IManager {
 	m := &manager{
-		db:            db,
-		node:          nd,
-		cfg:           cfg,
-		log:           log,
-		shuttleMgr:    shuttleMgr,
-		contMgr:       cntMgr,
-		tracer:        otel.Tracer("replicator"),
-		splitQueueMgr: splitqueuemgr.NewManager(db, log),
+		db:             db,
+		node:           nd,
+		cfg:            cfg,
+		log:            log,
+		shuttleMgr:     shuttleMgr,
+		contMgr:        cntMgr,
+		tracer:         otel.Tracer("replicator"),
+		splitQueueMgr:  splitqueuemgr.NewManager(db, log),
+		pinnerBlockMgr: block.NewManager(db, cfg, log),
 	}
 
 	m.runWorkers(ctx)
@@ -131,7 +134,7 @@ func (m *manager) splitContentLocal(ctx context.Context, cont util.Content, size
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		if err := m.contMgr.AddDatabaseTrackingToContent(ctx, content, dserv, c); err != nil {
+		if err := m.pinnerBlockMgr.WalkAndSaveBlocks(ctx, content, dserv, c); err != nil {
 			return err
 		}
 		m.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)

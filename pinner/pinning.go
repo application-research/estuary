@@ -344,7 +344,7 @@ func (m *EstuaryPinManager) doPinning(ctx context.Context, op *operation.Pinning
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	if err := m.cm.AddDatabaseTrackingToContent(ctx, c, dsess, op.Obj); err != nil {
+	if err := m.blockMgr.WalkAndSaveBlocks(ctx, c, dsess, op.Obj); err != nil {
 		return err
 	}
 
