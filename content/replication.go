@@ -972,7 +972,7 @@ func (cm *ContentManager) MakeDealWithMiner(ctx context.Context, content util.Co
 		return nil, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
-	prop, err := cm.filClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified)
+	prop, err := cm.filClient.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, cm.cfg.Deal.Duration, cm.cfg.Deal.IsVerified, cm.cfg.Deal.RemoveUnsealed)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct a deal proposal: %w", err)
 	}
