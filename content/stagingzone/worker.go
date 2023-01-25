@@ -29,12 +29,12 @@ func (m *manager) runWorkers(ctx context.Context) {
 }
 
 func (m *manager) runBackFillWorker(ctx context.Context) {
-	m.log.Debug("running staging zone backfill worker")
-
 	timer := time.NewTicker(m.cfg.WorkerIntervals.StagingZoneInterval)
 	for {
 		select {
 		case <-timer.C:
+			m.log.Debug("running staging zone backfill worker")
+
 			tracker, err := m.getQueueTracker()
 			if err != nil {
 				m.log.Warnf("failed to get staging zone tracker - %s", err)
@@ -54,6 +54,7 @@ func (m *manager) runBackFillWorker(ctx context.Context) {
 			}
 
 			for _, cont := range contents {
+				m.log.Debugf("backfilling cont %d to staging zone queue", cont.ID)
 				// size = 0 are shuttle/cid pins contents, that are yet to be updated with their objects sizes, avoid them,
 				// pincomplete will queue them
 				if cont.Size > 0 {

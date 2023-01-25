@@ -72,6 +72,8 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 	ctx, span := m.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
+	m.log.Debugf("trying to split cont %d", cont.ID)
+
 	var u util.User
 	if err := m.db.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return fmt.Errorf("failed to load contents user from db: %w", err)

@@ -25,7 +25,7 @@ func (m *manager) stageBackfilledContent(ctx context.Context, cont *util.Content
 					"message":    model.ZoneMessageDone,
 					"created_at": cont.CreatedAt,
 				}).Error; err != nil {
-					return m.queueMgr.StageFailed(cont.ID)
+					return err
 				}
 			}
 			return m.queueMgr.StageComplete(cont.ID)

@@ -33,6 +33,8 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
 }
 
 func (m *manager) QueueContent(cont *util.Content, isBackfilled bool) error {
+	m.log.Debugf("adding cont %d to staging zone queue queue", cont.ID)
+
 	task := &model.StagingZoneQueue{
 		UserID:        uint64(cont.UserID),
 		ContID:        cont.ID,
@@ -43,6 +45,7 @@ func (m *manager) QueueContent(cont *util.Content, isBackfilled bool) error {
 }
 
 func (m *manager) StageComplete(contID uint64) error {
+	m.log.Debugf("cont %d staged successfully", contID)
 	return m.db.Delete(&model.StagingZoneQueue{}, "cont_id = ?", contID).Error
 }
 

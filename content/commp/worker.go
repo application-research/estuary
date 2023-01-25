@@ -22,14 +22,18 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 	for {
 		select {
 		case <-timer.C:
+			m.log.Debugf("running commp worker")
+
 			// get contents grouped by cid, so one commp can work for all contents with same cid
 			var jobs []*model.DealQueue
 			if err := m.db.Where("not commp_done and commp_attempted < 3 and commp_next_attempt_at < ?", time.Now().UTC()).Order("id asc").Limit(10).Group("cont_cid").Find(&jobs).Error; err != nil {
-				m.log.Warnf("failed to contents to commp - %s", err)
+				m.log.Warnf("failed to get contents to commp - %s", err)
 				continue
 			}
 
 			for _, job := range jobs {
+				m.log.Debugf("trying to generate commp for cid: %s", job.ContCID)
+
 				_, _, _, err := m.GetPieceCommitment(ctx, job.ContCID.CID, m.blockstore)
 				if err != nil && err != gorm.ErrRecordNotFound {
 					m.log.Warnf("failed to get commp record - %s", err)
