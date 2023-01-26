@@ -39,7 +39,7 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 
 				_, _, _, err := m.GetPieceCommitment(ctx, t.ContCid.CID, m.blockstore)
 				if err != nil && err != gorm.ErrRecordNotFound {
-					m.log.Warnf("failed to get commp record - %s", err)
+					m.log.Warnf("failed to get commp record for cid: %s - %s", t.ContCid.CID, err)
 					continue
 				}
 
@@ -47,12 +47,8 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 					m.runCommpForContent(context.Background(), t.ContCid.CID)
 					continue
 				}
-
 				// if commp already exist, update all contents where cid
-				if err := m.commpStatusUpdater.CommpExist(t.ContCid.CID); err != nil {
-					m.log.Warnf("failed to update commp queue - %s", err)
-					continue
-				}
+				m.commpStatusUpdater.CommpExist(t.ContCid.CID)
 			}
 		}
 	}
@@ -63,21 +59,14 @@ func (m *manager) runCommpForContent(ctx context.Context, data cid.Cid) {
 
 	pc, carSize, size, err := m.RunPieceCommCompute(ctx, data, m.blockstore)
 	if err != nil && err != ErrWaitForRemoteCompute {
-		m.log.Errorf("", err)
-		if err := m.commpStatusUpdater.ComputeFailed(data); err != nil {
-			m.log.Errorf("", err)
-		}
+		m.log.Errorf("failed to run commp for cid: %s - %s", data, err)
+		m.commpStatusUpdater.ComputeFailed(data)
 		return
 	}
 
 	if err != nil && err == ErrWaitForRemoteCompute {
-		if err := m.commpStatusUpdater.ComputeRequested(data); err != nil {
-			m.log.Errorf("", err)
-		}
+		m.commpStatusUpdater.ComputeRequested(data)
 		return
 	}
-
-	if err := m.commpStatusUpdater.ComputeCompleted(data, pc, size, carSize); err != nil {
-		m.log.Errorf("", err)
-	}
+	m.commpStatusUpdater.ComputeCompleted(data, pc, size, carSize)
 }

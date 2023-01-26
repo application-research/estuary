@@ -13,10 +13,10 @@ import (
 )
 
 type IUpdater interface {
-	ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.UnpaddedPieceSize, carSize uint64) error
-	ComputeFailed(cid cid.Cid) error
-	ComputeRequested(cid cid.Cid) error
-	CommpExist(data cid.Cid) error
+	ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.UnpaddedPieceSize, carSize uint64)
+	ComputeFailed(cid cid.Cid)
+	ComputeRequested(cid cid.Cid)
+	CommpExist(data cid.Cid)
 }
 
 type updater struct {
@@ -31,8 +31,8 @@ func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) IUpdater {
 	}
 }
 
-func (up *updater) ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.UnpaddedPieceSize, carSize uint64) error {
-	return up.db.Transaction(func(tx *gorm.DB) error {
+func (up *updater) ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.UnpaddedPieceSize, carSize uint64) {
+	if err := up.db.Transaction(func(tx *gorm.DB) error {
 		opcr := model.PieceCommRecord{
 			Data:    util.DbCID{CID: data},
 			Piece:   util.DbCID{CID: piece},
@@ -42,18 +42,26 @@ func (up *updater) ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.Unpadd
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
 			return err
 		}
-		return tx.Exec("UPDATE deal_queue SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error
-	})
+		return tx.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error
+	}); err != nil {
+		up.log.Errorf("failed to update deal queue (ComputeCompleted) for cid %d - %s", data, err)
+	}
 }
 
-func (up *updater) ComputeFailed(data cid.Cid) error {
-	return up.db.Exec("UPDATE deal_queue SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_next_attempt_at = ? WHERE cont_cid = ?", true, time.Now().Add(1*time.Hour), data).Error
+func (up *updater) ComputeFailed(data cid.Cid) {
+	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_next_attempt_at = ? WHERE cont_cid = ?", true, time.Now().Add(1*time.Hour), data).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (ComputeFailed) for cid %d - %s", data, err)
+	}
 }
 
-func (up *updater) ComputeRequested(data cid.Cid) error {
-	return up.db.Exec("UPDATE deal_queue SET commp_next_attempt_at = ? WHERE cont_cid = ?", time.Now().Add(1*time.Hour), data).Error
+func (up *updater) ComputeRequested(data cid.Cid) {
+	if err := up.db.Exec("UPDATE deal_queues SET commp_next_attempt_at = ? WHERE cont_cid = ?", time.Now().Add(1*time.Hour), data).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (ComputeRequested) for cid %d - %s", data, err)
+	}
 }
 
-func (up *updater) CommpExist(data cid.Cid) error {
-	return up.db.Exec("UPDATE deal_queue SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error
+func (up *updater) CommpExist(data cid.Cid) {
+	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (CommpExist) for cid %d - %s", data, err)
+	}
 }
