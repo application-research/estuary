@@ -88,7 +88,7 @@ func (m *manager) runDealWorker(ctx context.Context) {
 						m.dealQueueMgr.DealFailed(t.ContID)
 						continue
 					}
-					m.dealQueueMgr.DealFailed(t.ContID)
+					m.dealQueueMgr.DealComplete(t.ContID)
 				}
 				return nil
 			}).Error; err != nil {
@@ -112,11 +112,13 @@ func (m *manager) runDealCheckWorker(ctx context.Context) {
 			if err := m.db.Where("commp_done and not can_deal and deal_check_next_attempt_at < ?", time.Now().UTC()).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
 				m.log.Debugf("trying to check %d deals", len(tasks))
 				for _, t := range tasks {
-					if err := m.checkContentDeals(ctx, t.ContID); err != nil {
+					dealsToBeMade, err := m.checkContentDeals(ctx, t.ContID)
+					if err != nil {
 						m.log.Warnf("failed to check cont %d deals - %s", t.ContID, err)
 						m.dealQueueMgr.DealCheckFailed(t.ContID)
 						continue
 					}
+					m.dealQueueMgr.DealCheckComplete(t.ContID, dealsToBeMade)
 				}
 				return nil
 			}).Error; err != nil {

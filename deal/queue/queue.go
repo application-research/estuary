@@ -83,8 +83,13 @@ func (m *manager) DealComplete(contID uint64) {
 }
 
 func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int) {
+	canDeal := true
+	if dealsToBeMade == 0 { // if no new deal is needed
+		canDeal = false
+	}
+
 	if err := m.db.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-		"can_deal":                    true,
+		"can_deal":                    canDeal,
 		"deals_count":                 dealsToBeMade,
 		"deals_check_next_attempt_at": time.Now().Add(72 * time.Hour).UTC(),
 	}).Error; err != nil {

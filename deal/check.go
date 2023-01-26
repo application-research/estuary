@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
+func (m *manager) checkContentDeals(ctx context.Context, contID uint64) (int, error) {
 	ctx, span := m.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
 		attribute.Int("content", int(contID)),
 	))
@@ -32,14 +32,14 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
 
 	content, err := m.contMgr.GetContent(contID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// get content deals, if any
 	var deals []model.ContentDeal
 	if err := m.db.Find(&deals, "content = ? AND NOT failed", contID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return 0, err
 		}
 	}
 
@@ -99,7 +99,7 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
 		}
 	}
 	if retErr != nil {
-		return fmt.Errorf("deal check errored: %w", retErr)
+		return 0, fmt.Errorf("deal check errored: %w", retErr)
 	}
 
 	if content.Location != constants.ContentLocationLocal {
@@ -108,7 +108,7 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
 		isOnline, err := m.shuttleMgr.IsOnline(content.Location)
 		if err != nil || !isOnline {
 			m.log.Warnf("content shuttle: %s, is not online", content.Location)
-			return err
+			return 0, err
 		}
 	}
 
@@ -122,7 +122,8 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
 	goodDeals := numSealed + numPublished + numProgress
 	dealsToBeMade := replicationFactor - goodDeals
 	if dealsToBeMade <= 0 {
-		return nil
+		// no new deal is needed
+		return 0, nil
 	}
 
 	// if content is offloaded, do not proceed - since it needs the blocks for data transfer
@@ -132,11 +133,9 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) error {
 				m.log.Errorf("failed to retrieve content in need of repair %d: %s", content.ID, err)
 			}
 		}()
-		return fmt.Errorf("cont: %d offloaded for deal making", content.ID)
+		return 0, fmt.Errorf("cont: %d offloaded for deal making", content.ID)
 	}
-
-	m.dealQueueMgr.DealCheckComplete(content.ID, dealsToBeMade)
-	return nil
+	return dealsToBeMade, nil
 }
 
 func (m *manager) checkDeal(ctx context.Context, d *model.ContentDeal, content *util.Content) (int, error) {
