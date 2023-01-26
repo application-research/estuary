@@ -46,6 +46,7 @@ func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) IManag
 		cfg:             cfg,
 		log:             log,
 		tracer:          otel.Tracer("content"),
+		inflightCids:    make(map[cid.Cid]uint),
 		stgZoneQueueMgr: stgzonequeuemgr.NewManager(db, log),
 		dealQueueMgr:    dealqueuemgr.NewManager(db, cfg, log),
 		splitQueueMgr:   splitqueuemgr.NewManager(db, log),
