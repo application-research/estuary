@@ -485,7 +485,7 @@ func (m *manager) MakeDealWithMiner(ctx context.Context, content *util.Content, 
 		return nil, fmt.Errorf("miners price is too high: %s %s", miner, price)
 	}
 
-	prop, err := m.fc.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, m.cfg.Deal.Duration, m.cfg.Deal.IsVerified)
+	prop, err := m.fc.MakeDeal(ctx, miner, content.Cid.CID, price, ask.MinPieceSize, m.cfg.Deal.Duration, m.cfg.Deal.IsVerified, m.cfg.Deal.RemoveUnsealed)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to construct a deal proposal: %w", err)
 	}

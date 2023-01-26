@@ -94,6 +94,7 @@ func NewEstuary(appVersion string) *Estuary {
 			IsDisabled:            false,
 			FailOnTransferFailure: false,
 			IsVerified:            true,
+			RemoveUnsealed:        false,
 			Duration:              abi.ChainEpoch(constants.DealDuration), // Making default deal duration be three weeks less than the maximum to ensure miners who start their deals early dont run into issues
 			EnabledDealProtocolsVersions: map[protocol.ID]bool{
 				filclient.DealProtocolv110: true,
