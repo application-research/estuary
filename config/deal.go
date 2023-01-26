@@ -21,6 +21,7 @@ type Deal struct {
 	FailOnTransferFailure        bool                 `json:"fail_on_transfer_failure"`
 	IsDisabled                   bool                 `json:"disabled"`
 	IsVerified                   bool                 `json:"verified"`
+	RemoveUnsealed               bool                 `json:"remove_unsealed"`
 	Duration                     abi.ChainEpoch       `json:"duration"`
 	EnabledDealProtocolsVersions map[protocol.ID]bool `json:"enabled_deal_protocol_versions"`
 	MaxVerifiedPrice             big.Int              `json:"max_verified_price"`
