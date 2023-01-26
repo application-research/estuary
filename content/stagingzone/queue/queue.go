@@ -50,5 +50,5 @@ func (m *manager) StageComplete(contID uint64) error {
 }
 
 func (m *manager) StageFailed(contID uint64) error {
-	return m.db.Exec("UPDATE staging_zone_queue SET failing = ?, next_attempt_at = ? WHERE cont_id = ?", true, time.Now().Add(1*time.Hour), contID).Error
+	return m.db.Exec("UPDATE staging_zone_queues SET failing = ?, next_attempt_at = ? WHERE cont_id = ?", true, time.Now().Add(1*time.Hour), contID).Error
 }

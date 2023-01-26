@@ -155,8 +155,15 @@ func (m *manager) runAggregationWorker(ctx context.Context) {
 					continue
 				}
 
-				if err := m.processStagingZone(ctx, zc, z); err != nil {
+				err := m.processStagingZone(ctx, zc, z)
+				if err != nil && err != ErrWaitForRemoteAggregate {
 					m.log.Errorf("zone aggregation worker failed to process zone: %d - %s", z.ID, err)
+					m.processZoneFailed(z.ID)
+					continue
+				}
+
+				if err != nil && err == ErrWaitForRemoteAggregate {
+					m.processZoneRequested(z.ID)
 					continue
 				}
 			}

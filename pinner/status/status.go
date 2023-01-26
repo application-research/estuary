@@ -1,6 +1,8 @@
 package status
 
 import (
+	"time"
+
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/pkg/errors"
@@ -54,11 +56,12 @@ func (up *updater) UpdateContentPinStatus(contID uint64, location string, status
 	// TODO - revisit this later if it is actually happening
 	if c.Aggregate && status == PinningStatusFailed {
 		up.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
-
-		return up.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"status":  model.ZoneStatusStuck,
-			"message": model.ZoneMessageStuck,
-		}).Error
+		return up.db.Exec("UPDATE staging_zones SET attempted = attempted + 1, next_attempt_at = ?, status = ?, message = ? WHERE cont_id = ?",
+			time.Now().Add(2*time.Hour),
+			model.ZoneStatusStuck,
+			model.ZoneMessageStuck,
+			contID,
+		).Error
 	}
 
 	updates := map[string]interface{}{

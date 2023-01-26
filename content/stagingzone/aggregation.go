@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"time"
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -17,23 +18,16 @@ import (
 	"gorm.io/gorm"
 )
 
+var ErrWaitForRemoteAggregate = fmt.Errorf("waiting for remote content aggregation")
+
 // getReadyStagingZones gets zones that are done but have reasonable sizes
 func (m *manager) getReadyStagingZones() ([]*model.StagingZone, error) {
 	notReadyStatuses := []model.ZoneStatus{model.ZoneStatusDone, model.ZoneStatusStuck}
 	var readyZones []*model.StagingZone
-	if err := m.db.Model(&model.StagingZone{}).Where("size >= ? and status not in ? ", m.cfg.Content.MinSize, notReadyStatuses).Limit(500).Find(&readyZones).Error; err != nil {
+	if err := m.db.Model(&model.StagingZone{}).Where("size >= ? and status not in ? and attempted < 3 and next_attempt_at < ? ", m.cfg.Content.MinSize, notReadyStatuses, time.Now().UTC()).Limit(500).Find(&readyZones).Error; err != nil {
 		return nil, err
 	}
 	return readyZones, nil
-}
-
-func (m *manager) markZoneStatus(zone *model.StagingZone, upSts model.ZoneStatus, upMgs model.ZoneMessage) (bool, error) {
-	result := m.db.Exec("UPDATE staging_zones SET status = ?, message = ? WHERE id = ? and status <> ?", upSts, upMgs, zone.ID, upSts)
-	if result.Error != nil {
-		return false, result.Error
-	}
-	// claim state - a naive lock, using db conditinal write
-	return result.RowsAffected == 1, nil
 }
 
 func (m *manager) processStagingZone(ctx context.Context, zoneCont *util.Content, zone *model.StagingZone) error {
@@ -53,17 +47,8 @@ func (m *manager) processStagingZone(ctx context.Context, zoneCont *util.Content
 	// Need to migrate/consolidate the contents to the same location
 	// NB - we should avoid doing this, best we have staging by location - this process is just to expensive
 	if len(grpLocs) > 1 {
-		// Need to migrate content all to the same shuttle
-		// Only attempt consolidation on a zone if one is not ongoing, prevents re-consolidation request
-
-		if canProceed, err := m.markZoneStatus(zone, model.ZoneStatusConsolidating, model.ZoneMessageConsolidating); err != nil || !canProceed {
-			return err
-		}
-
-		if err := m.consolidateStagedContent(ctx, zone.ID, zoneCont); err != nil {
-			m.log.Errorf("failed to consolidate staged content: %s", err)
-		}
-		return nil
+		// Need to migrate all content the same shuttle
+		return m.consolidateStagedContent(ctx, zone.ID, zoneCont)
 	}
 	// if all contents are already in one location, proceed to aggregate them
 	return m.AggregateStagingZone(ctx, zone, zoneCont, grpLocs[0])
@@ -99,7 +84,10 @@ func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint64, z
 	}); err != nil {
 		return err
 	}
-	return m.shuttleMgr.ConsolidateContent(ctx, dstLocation, toMove)
+	if err := m.shuttleMgr.ConsolidateContent(ctx, dstLocation, toMove); err != nil {
+		return err
+	}
+	return ErrWaitForRemoteAggregate
 }
 
 func (m *manager) migrateContentsToLocalNode(ctx context.Context, toMove []util.Content) error {
@@ -171,12 +159,6 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 
 	m.log.Debugf("aggregating zone: %d", zoneCont.ID)
 
-	// skip if zone is already beign aggregated by another process
-	if canProceed, err := m.markZoneStatus(zone, model.ZoneStatuAggregating, model.ZoneMessageAggregating); err != nil || !canProceed {
-		m.log.Debugf("could not proceed to aggregate zone: %d", zone.ID)
-		return err
-	}
-
 	var zoneContents []util.Content
 	var zoneContentsBatch []util.Content
 	if err := m.db.Where("aggregated_in = ?", zoneCont.ID).FindInBatches(&zoneContentsBatch, 500, func(tx *gorm.DB, batch int) error {
@@ -247,7 +229,10 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 		})
 	}
 	// handle aggregate on shuttle
-	return m.shuttleMgr.AggregateContent(ctx, loc, zoneCont, zoneContents)
+	if err := m.shuttleMgr.AggregateContent(ctx, loc, zoneCont, zoneContents); err != nil {
+		return err
+	}
+	return ErrWaitForRemoteAggregate
 }
 
 func (m *manager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {
@@ -330,4 +315,16 @@ func (m *manager) getContentsAndDestinationLocationForConsolidation(ctx context.
 		return "", nil, 0, err
 	}
 	return dstLocation, toMove, curMax, nil
+}
+
+func (m *manager) processZoneFailed(zoneID uint64) {
+	if err := m.db.Exec("UPDATE staging_zones SET attempted = attempted + 1, next_attempt_at = ?, status = ?, message = ? WHERE id = ?", time.Now().Add(2*time.Hour), model.ZoneStatusStuck, model.ZoneMessageStuck, zoneID).Error; err != nil {
+		m.log.Errorf("failed to update staging zone (processZoneFailed) for zone %d - %s", zoneID, err)
+	}
+}
+
+func (m *manager) processZoneRequested(zoneID uint64) {
+	if err := m.db.Exec("UPDATE staging_zones SET next_attempt_at = ? WHERE id = ?", time.Now().Add(9*time.Hour), zoneID).Error; err != nil {
+		m.log.Errorf("failed to update staging zone (processZoneRequested) for zone %d - %s", zoneID, err)
+	}
 }
