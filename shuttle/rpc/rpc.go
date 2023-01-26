@@ -309,6 +309,7 @@ func (m *manager) handlePinUpdate(location string, contID uint64, status status.
 	return m.pinStatusUpdater.UpdateContentPinStatus(contID, location, status)
 }
 
+// TODO merge with handlePinUpdate
 func (m *manager) handlePinningComplete(ctx context.Context, handle string, pincomp *rpcevent.PinComplete) error {
 	ctx, span := m.tracer.Start(ctx, "handlePinningComplete")
 	defer span.End()
@@ -475,14 +476,16 @@ func (m *manager) handleRpcCommPComplete(ctx context.Context, handle string, res
 	_, span := m.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()
 
-	return m.commpStatusUpdater.ComputeCompleted(resp.Data, resp.CommP, resp.Size, resp.CarSize)
+	m.commpStatusUpdater.ComputeCompleted(resp.Data, resp.CommP, resp.Size, resp.CarSize)
+	return nil
 }
 
 func (m *manager) handleRpcCommPFailed(ctx context.Context, handle string, resp *rpcevent.CommPFailed) error {
 	_, span := m.tracer.Start(ctx, "handleRpcCommPFailed")
 	defer span.End()
 
-	return m.commpStatusUpdater.ComputeFailed(resp.Data)
+	m.commpStatusUpdater.ComputeFailed(resp.Data)
+	return nil
 }
 
 func (m *manager) handleRpcTransferStarted(ctx context.Context, handle string, param *rpcevent.TransferStartedOrFinished) error {
