@@ -462,7 +462,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 
 	pinstatus, err := s.pinMgr.PinContent(ctx, u.ID, rootCID, filename, nil, origins, 0, nil, replication, false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to make pin op for content %d for user %d", pinstatus.Content.ID, u.ID)
+		return err
 	}
 
 	go func() {
@@ -634,7 +634,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	// file uploads block objects will not be created by the pinner
 	pinstatus, err := s.pinMgr.PinContent(ctx, u.ID, nd.Cid(), filename, nil, origins, 0, nil, replication, false)
 	if err != nil {
-		return errors.Wrapf(err, "failed to make pin op for content for user %d", u.ID)
+		return err
 	}
 
 	if col != nil {
