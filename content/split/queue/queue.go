@@ -65,7 +65,7 @@ func (m *manager) SplitComplete(contID uint64) {
 }
 
 func (m *manager) SplitFailed(contID uint64) {
-	if err := m.db.Exec("UPDATE split_queue SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
+	if err := m.db.Exec("UPDATE split_queues SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
 		m.log.Errorf("failed to update split queue (SplitFaileds) for cont %d - %s", contID, err)
 	}
 }
