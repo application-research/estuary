@@ -104,7 +104,7 @@ func (m *manager) IsOnline(handle string) (bool, error) {
 		return false, err
 	}
 	if d == nil {
-		return false, err
+		return false, nil
 	}
 	// if connection not updated in the last 5 minutes
 	return time.Now().Add(-5 * time.Minute).Before(d.UpdatedAt), nil

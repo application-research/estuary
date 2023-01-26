@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"gorm.io/gorm"
 	"sort"
 	"strings"
+
+	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/constants"
 	"github.com/application-research/estuary/model"
@@ -36,9 +37,21 @@ func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid ui
 		}
 	}
 
-	var shuttles []model.Shuttle
-	if err := m.db.Order("priority desc").Find(&shuttles, "handle in ? and open", activeShuttles).Error; err != nil {
+	var dbShuttles []model.Shuttle
+	if err := m.db.Order("priority desc").Find(&dbShuttles, "handle in ? and open ", activeShuttles).Error; err != nil {
 		return "", err
+	}
+
+	shuttles := make([]model.Shuttle, 0)
+	for _, s := range dbShuttles {
+		isOnline, err := m.IsOnline(s.Handle)
+		if err != nil {
+			return "", err
+		}
+
+		if isOnline {
+			shuttles = append(shuttles, s)
+		}
 	}
 
 	// prefer shuttles that are not low on blockstore space
@@ -49,7 +62,6 @@ func (m *manager) GetLocationForStorage(ctx context.Context, obj cid.Cid, uid ui
 		if lsI == lsJ {
 			return false
 		}
-
 		return lsJ
 	})
 
