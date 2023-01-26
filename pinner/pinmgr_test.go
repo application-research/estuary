@@ -11,7 +11,7 @@ import (
 
 	"github.com/application-research/estuary/pinner/operation"
 	"github.com/application-research/estuary/pinner/status"
-
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -27,6 +27,7 @@ func onPinStatusUpdate(cont uint64, location string, status status.PinningStatus
 func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/duplicateGuard")
 	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
+	log := logging.Logger("pinner").With("app", "test")
 
 	return newPinManager(
 		func(ctx context.Context, op *operation.PinningOperation) error {
@@ -37,10 +38,12 @@ func newManager(count *int) *PinManager {
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     "/tmp/",
-		})
+		}, log)
 }
 
 func newManagerNoDelete(count *int) *PinManager {
+	log := logging.Logger("pinner").With("app", "test")
+
 	return newPinManager(
 		func(ctx context.Context, op *operation.PinningOperation) error {
 			countLock.Lock()
@@ -50,7 +53,7 @@ func newManagerNoDelete(count *int) *PinManager {
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     "/tmp/",
-		})
+		}, log)
 }
 
 func TestConstructMultiAddr(t *testing.T) {

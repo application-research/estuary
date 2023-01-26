@@ -88,7 +88,7 @@ func (pm *EstuaryPinManager) PinCidAndRequestMakeDeal(eCtx echo.Context, param P
 	for _, p := range param.CidToPin.Origins {
 		ai, err := peer.AddrInfoFromString(p)
 		if err != nil {
-			log.Warn("could not parse origin(%s): %s", p, err)
+			pm.log.Warn("could not parse origin(%s): %s", p, err)
 			continue
 		}
 		origins = append(origins, ai)
