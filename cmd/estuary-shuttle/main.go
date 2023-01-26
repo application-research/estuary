@@ -553,7 +553,7 @@ func main() {
 		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
-		})
+		}, log)
 		go s.PinMgr.Run(300)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled

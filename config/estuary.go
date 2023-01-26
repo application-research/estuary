@@ -209,10 +209,10 @@ func NewEstuary(appVersion string) *Estuary {
 			},
 		},
 		WorkerIntervals: WorkerIntervals{
-			StagingZoneInterval: time.Minute * 2,
-			SplitInterval:       time.Minute * 2,
-			CommpInterval:       time.Minute * 2,
-			DealInterval:        time.Minute * 2,
+			StagingZoneInterval: time.Minute * 1,
+			SplitInterval:       time.Minute * 1,
+			CommpInterval:       time.Minute * 1,
+			DealInterval:        time.Minute * 1,
 		},
 	}
 }

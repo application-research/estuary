@@ -399,7 +399,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&autoretrieve.PublishedBatch{},
 		&model.ShuttleConnection{},
 		&model.StagingZone{},
-		&model.StagingZoneQueueTracker{},
+		&model.StagingZoneTracker{},
 		&model.StagingZoneQueue{},
 		&model.DealQueue{},
 		&model.DealQueueTracker{},

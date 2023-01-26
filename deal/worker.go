@@ -25,32 +25,44 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 	timer := time.NewTicker(m.cfg.WorkerIntervals.DealInterval)
 	for {
 		select {
+		case <-ctx.Done():
+			m.log.Info("shutting down deal backfill worker")
+			return
 		case <-timer.C:
+			m.log.Debug("running deal backfill worker")
+
 			tracker, err := m.getQueueTracker()
 			if err != nil {
 				m.log.Warnf("failed to get deal queue tracker - %s", err)
 				continue
 			}
 
-			if tracker.LastContID > tracker.StopAt {
+			if tracker.LastContID >= tracker.StopAt {
 				m.log.Info("deal queue backfill is done")
 				return
 			}
 
-			m.log.Debugf("trying to backfill deal queue starting from content: %d", tracker.LastContID)
+			m.log.Debugf("trying to start deal queue backfill, starting from content: %d", tracker.LastContID)
 
 			var contents []*util.Content
-			if err := m.db.Where("size > ? and size < ? and active", m.cfg.Content.MinSize, m.cfg.Content.MaxSize).Order("id asc").FindInBatches(&contents, 2000, func(tx *gorm.DB, batch int) error {
-				m.log.Debugf("trying to backfill deal queue for total of %d contents", len(contents))
+			if err := m.db.Where("size >= ? and size <= ? and active", m.cfg.Content.MinSize, m.cfg.Content.MaxSize).Order("id asc").Limit(2000).Find(&contents).Error; err != nil {
+				m.log.Warnf("failed to get contents for deal queue backfill - %s", err)
+				continue
+			}
 
-				for _, c := range contents {
-					if err := m.backfillQueue(c, tracker); err != nil {
-						return err
-					}
+			m.log.Debugf("trying to backfill deal queue for total of %d contents", len(contents))
+			for _, c := range contents {
+				if err := m.backfillQueue(c, tracker); err != nil {
+					m.log.Warnf("failed to backfill deal queue for cont: %d - %s", c.ID, err)
+					break
 				}
-				return nil
-			}).Error; err != nil {
-				m.log.Warnf("failed to backfill deal queue - %s", err)
+			}
+
+			// if there are no more to backfill set stop
+			if len(contents) == 0 {
+				if err := m.db.Model(model.DealQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("stop_at", tracker.LastContID).Error; err != nil {
+					m.log.Warnf("failed to set stop_at for deal queue tracker - %s", err)
+				}
 			}
 		}
 	}
@@ -60,7 +72,12 @@ func (m *manager) runDealWorker(ctx context.Context) {
 	timer := time.NewTicker(m.cfg.WorkerIntervals.DealInterval)
 	for {
 		select {
+		case <-ctx.Done():
+			m.log.Info("shutting down deal check worker")
+			return
 		case <-timer.C:
+			m.log.Debug("running deal worker")
+
 			var tasks []*model.DealQueue
 			if err := m.db.Where("commp_done and can_deal and deal_next_attempt_at < ?", time.Now().UTC()).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
 				m.log.Debugf("trying to make deal for total of %d contents", len(tasks))
@@ -75,7 +92,7 @@ func (m *manager) runDealWorker(ctx context.Context) {
 				}
 				return nil
 			}).Error; err != nil {
-				m.log.Errorf("", err)
+				m.log.Warnf("failed to make content deals - %s", err)
 			}
 		}
 	}
@@ -85,7 +102,12 @@ func (m *manager) runDealCheckWorker(ctx context.Context) {
 	timer := time.NewTicker(m.cfg.WorkerIntervals.DealInterval)
 	for {
 		select {
+		case <-ctx.Done():
+			m.log.Info("shutting down deal check worker")
+			return
 		case <-timer.C:
+			m.log.Debug("running deal check worker")
+
 			var tasks []*model.DealQueue
 			if err := m.db.Where("commp_done and not can_deal and deal_check_next_attempt_at < ?", time.Now().UTC()).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
 				m.log.Debugf("trying to check %d deals", len(tasks))
@@ -98,7 +120,7 @@ func (m *manager) runDealCheckWorker(ctx context.Context) {
 				}
 				return nil
 			}).Error; err != nil {
-				m.log.Warnf("failed to check deals - %s", err)
+				m.log.Warnf("failed to check content deals - %s", err)
 			}
 		}
 	}
@@ -112,7 +134,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 
 	if len(trackers) == 0 {
 		var contents []*util.Content
-		if err := m.db.Order("id asc").Limit(1).Find(&contents).Error; err != nil {
+		if err := m.db.Order("id desc").Limit(1).Find(&contents).Error; err != nil {
 			return nil, err
 		}
 

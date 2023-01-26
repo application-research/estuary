@@ -21,6 +21,9 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 	timer := time.NewTicker(m.cfg.WorkerIntervals.CommpInterval)
 	for {
 		select {
+		case <-ctx.Done():
+			m.log.Info("shutting down commp worker")
+			return
 		case <-timer.C:
 			m.log.Debugf("running commp worker")
 
