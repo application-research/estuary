@@ -66,7 +66,7 @@ func (m *manager) stageNewContent(ctx context.Context, cont *util.Content, contS
 	// find most recent available zones
 	var openZones []*model.StagingZone
 	var openZonesBatch []*model.StagingZone
-	if err := m.db.Where("user_id = ? and size + ? <= ? and status = ? order by id desc", cont.UserID, contSize, m.cfg.Content.MaxSize, model.ZoneStatusOpen).FindInBatches(&openZonesBatch, 500, func(tx *gorm.DB, batch int) error {
+	if err := m.db.Where("user_id = ? and size + ? <= ? and status = ?", cont.UserID, contSize, m.cfg.Content.MaxSize, model.ZoneStatusOpen).Order("id desc").FindInBatches(&openZonesBatch, 500, func(tx *gorm.DB, batch int) error {
 		openZones = append(openZones, openZonesBatch...)
 		return nil
 	}).Error; err != nil {
