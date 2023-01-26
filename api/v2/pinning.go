@@ -89,14 +89,15 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 			Overwrite:        overwrite,        // the overwrite flag
 			IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 			Replication:      s.cfg.Replication,
+			MakeDeal:         true,
 		}
 
-		pinnerAddStatus, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
+		pinSts, err := s.pinMgr.PinCid(c, pinningParam)
 		if err != nil {
 			return err
 		}
 
-		pinStatuses = append(pinStatuses, pinnerAddStatus) // collect the status
+		pinStatuses = append(pinStatuses, pinSts)
 		if err != nil {
 			return err
 		}

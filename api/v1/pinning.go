@@ -273,9 +273,10 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		Overwrite:        overwrite,        // the overwrite flag
 		IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 		Replication:      s.cfg.Replication,
+		MakeDeal:         true,
 	}
 
-	status, err := s.pinMgr.PinCidAndRequestMakeDeal(c, pinningParam)
+	status, err := s.pinMgr.PinCid(c, pinningParam)
 	if err != nil {
 		return err
 	}

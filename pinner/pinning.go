@@ -42,7 +42,7 @@ type GetPinParam struct {
 }
 
 // PinCidAndQueue adds a cid to the pin queue, and pins it if possible
-func (pm *EstuaryPinManager) PinCidAndRequestMakeDeal(eCtx echo.Context, param PinCidParam) (*IpfsPinStatusResponse, error) {
+func (pm *EstuaryPinManager) PinCid(eCtx echo.Context, param PinCidParam) (*IpfsPinStatusResponse, error) {
 	ctx := eCtx.Request().Context()
 
 	// get the filename and set it to the cid if it's not set

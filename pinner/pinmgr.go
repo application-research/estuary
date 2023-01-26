@@ -46,9 +46,9 @@ type IPinManager interface {
 type IEstuaryPinManager interface {
 	IPinManager
 	PinContent(ctx context.Context, user uint, obj cid.Cid, filename string, cols []*collections.CollectionRef, origins []*peer.AddrInfo, replaceID uint, meta map[string]interface{}, replication int, makeDeal bool) (*IpfsPinStatusResponse, error)
+	PinCid(eCtx echo.Context, param PinCidParam) (*IpfsPinStatusResponse, error)
 	PinDelegatesForContent(cont util.Content) []string
 	PinStatus(cont util.Content, origins []*peer.AddrInfo) (*IpfsPinStatusResponse, error)
-	PinCidAndRequestMakeDeal(eCtx echo.Context, param PinCidParam) (*IpfsPinStatusResponse, error)
 	GetPin(param GetPinParam) (*IpfsPinStatusResponse, error)
 }
 
