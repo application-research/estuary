@@ -112,6 +112,7 @@ func NewEstuaryPinManager(
 	ePinMgr := &EstuaryPinManager{
 		cm:               cm,
 		db:               db,
+		nd:               nd,
 		cfg:              cfg,
 		shuttleMgr:       shuttleMgr,
 		log:              log.Named("pinner"),
