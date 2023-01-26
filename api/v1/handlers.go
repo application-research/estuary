@@ -2309,7 +2309,7 @@ func (s *apiV1) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	}
 
 	// select SUM(size * reads) from obj_refs left join objects on obj_refs.object = objects.id where obj_refs.content = 42;
-	var bw int64
+	var bw sql.NullInt64
 	if err := s.db.Model(util.ObjRef{}).
 		Select("SUM(size * reads)").
 		Where("obj_refs.content = ?", content.ID).
@@ -2319,7 +2319,7 @@ func (s *apiV1) handleGetContentBandwidth(c echo.Context, u *util.User) error {
 	}
 
 	return c.JSON(http.StatusOK, &bandwidthResponse{
-		TotalOut: bw,
+		TotalOut: bw.Int64,
 	})
 }
 
@@ -3557,7 +3557,7 @@ func (s *apiV1) computePublicStatsWithExtensiveLookups() (*publicStatsResponse, 
 		return nil, err
 	}
 
-	if err := s.db.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded.Int64).Error; err != nil {
+	if err := s.db.Table("objects").Select("SUM(size)").Find(&stats.TotalBytesUploaded).Error; err != nil {
 		return nil, err
 	}
 
