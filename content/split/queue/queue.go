@@ -58,7 +58,7 @@ func (m *manager) SplitComplete(contID uint64) {
 		if err := tx.Delete(&util.ObjRef{}, "content = ?", contID).Error; err != nil {
 			return fmt.Errorf("failed to delete object references for newly split object: %w", err)
 		}
-		return tx.Delete(&model.SplitQueue{}, "cont_id = ?", contID).Error
+		return tx.Unscoped().Delete(&model.SplitQueue{}, "cont_id = ?", contID).Error // delete permanently
 	}); err != nil {
 		m.log.Errorf("failed to update split queue (SplitComplete) for cont %d - %s", contID, err)
 	}

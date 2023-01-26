@@ -46,7 +46,7 @@ func (m *manager) QueueContent(cont *util.Content, isBackfilled bool) error {
 
 func (m *manager) StageComplete(contID uint64) error {
 	m.log.Debugf("cont: %d staged successfully", contID)
-	return m.db.Delete(&model.StagingZoneQueue{}, "cont_id = ?", contID).Error
+	return m.db.Unscoped().Delete(&model.StagingZoneQueue{}, "cont_id = ?", contID).Error // delete permanently
 }
 
 func (m *manager) StageFailed(contID uint64) error {
