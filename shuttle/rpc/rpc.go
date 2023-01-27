@@ -404,7 +404,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 	return m.db.Transaction(func(tx *gorm.DB) error {
 		// create objects
-		if err := m.db.CreateInBatches(objects, 300).Error; err != nil {
+		if err := tx.CreateInBatches(objects, 300).Error; err != nil {
 			return xerrors.Errorf("failed to create objects in db: %w", err)
 		}
 
