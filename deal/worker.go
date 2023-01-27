@@ -80,9 +80,10 @@ func (m *manager) runDealWorker(ctx context.Context) {
 
 			var tasks []*model.DealQueue
 			if err := m.db.Where("commp_done and can_deal and deal_next_attempt_at < ?", time.Now().UTC()).Order("id asc").FindInBatches(&tasks, 2000, func(tx *gorm.DB, batch int) error {
-				m.log.Debugf("trying to make deal for total of %d contents", len(tasks))
+				m.log.Debugf("trying to make deals for total of %d contents", len(tasks))
 				for _, t := range tasks {
-					m.log.Infow("making more deals for content", "content", t.ContID, "newDeals", t.DealCount)
+					m.log.Debugf("making %d deal(s) for content: %d", t.DealCount, t.ContID)
+
 					if err := m.makeDealsForContent(ctx, t.ContID, t.DealCount); err != nil {
 						m.log.Errorf("failed to make more deals for cont: %d - %s", t.ContID, err)
 						m.dealQueueMgr.DealFailed(t.ContID, m.db)

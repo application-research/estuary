@@ -87,7 +87,9 @@ func (m *manager) DealComplete(contID uint64, tx *gorm.DB) {
 		"deal_count": 0,
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealComplete) for cont %d - %s", contID, err)
+		return
 	}
+	m.log.Debugf("deal check complete for content: %d", contID)
 }
 
 func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB) {
