@@ -136,7 +136,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 
 	if len(trackers) == 0 {
 		var contents []*util.Content
-		if err := m.db.Order("id desc").Limit(1).Find(&contents).Error; err != nil {
+		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
 			return nil, err
 		}
 

@@ -29,7 +29,7 @@ func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
 	if len(trackers) == 0 {
 		// for the first time it will be empty
 		var contents []*util.Content
-		if err := m.db.Order("id desc").Limit(1).Find(&contents).Error; err != nil {
+		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
 			return nil, err
 		}
 
