@@ -97,7 +97,7 @@ func (m *manager) runSplitBackFillWorker(ctx context.Context) {
 func (m *manager) backfill(ctx context.Context, cont *util.Content, tracker *model.SplitQueueTracker) error {
 	m.log.Debugf("trying to backfill split queue for content: %d", cont.ID)
 
-	if err := m.splitQueueMgr.QueueContent(cont.ID, cont.UserID); err != nil {
+	if err := m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, m.db); err != nil {
 		return err
 	}
 	return m.db.Model(model.SplitQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error

@@ -105,7 +105,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 		// split worker will pick it up and split it,
 		// its children will be pinned and dealed
 		if contSize > m.cfg.Content.MaxSize {
-			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID)
+			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, tx)
 		}
 		// or queue it for deal making
 		return m.dealQueueMgr.QueueContent(cont)

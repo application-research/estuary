@@ -447,7 +447,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 		// split worker will pick it up and split it,
 		// its children will be pinned and dealed
 		if contSize > m.cfg.Content.MaxSize {
-			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID)
+			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, tx)
 		}
 		// or queue it for deal making
 		return m.dealQueueMgr.QueueContent(cont)
@@ -460,7 +460,7 @@ func (m *manager) handleRpcSplitComplete(ctx context.Context, handle string, par
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
-	m.splitQueueMgr.SplitComplete(param.ID)
+	m.splitQueueMgr.SplitComplete(param.ID, m.db)
 	return nil
 }
 
@@ -468,7 +468,7 @@ func (m *manager) handleRpcSplitFailed(ctx context.Context, handle string, param
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
-	m.splitQueueMgr.SplitFailed(param.ID)
+	m.splitQueueMgr.SplitFailed(param.ID, m.db)
 	return nil
 }
 

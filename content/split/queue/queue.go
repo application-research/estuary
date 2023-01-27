@@ -14,9 +14,9 @@ import (
 )
 
 type IManager interface {
-	QueueContent(contID uint64, userID uint) error
-	SplitComplete(contID uint64)
-	SplitFailed(contID uint64)
+	QueueContent(contID uint64, userID uint, tx *gorm.DB) error
+	SplitComplete(contID uint64, tx *gorm.DB)
+	SplitFailed(contID uint64, tx *gorm.DB)
 }
 
 type manager struct {
@@ -33,7 +33,7 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
 	}
 }
 
-func (m *manager) QueueContent(contID uint64, userID uint) error {
+func (m *manager) QueueContent(contID uint64, userID uint, tx *gorm.DB) error {
 	task := &model.SplitQueue{
 		UserID:        uint64(userID),
 		ContID:        contID,
@@ -41,11 +41,11 @@ func (m *manager) QueueContent(contID uint64, userID uint) error {
 		Attempted:     0,
 		NextAttemptAt: time.Now().UTC(),
 	}
-	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
 }
 
-func (m *manager) SplitComplete(contID uint64) {
-	if err := m.db.Transaction(func(tx *gorm.DB) error {
+func (m *manager) SplitComplete(contID uint64, tx *gorm.DB) {
+	if err := tx.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"dag_split": true,
 			"active":    false,
@@ -64,8 +64,8 @@ func (m *manager) SplitComplete(contID uint64) {
 	}
 }
 
-func (m *manager) SplitFailed(contID uint64) {
-	if err := m.db.Exec("UPDATE split_queues SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
+func (m *manager) SplitFailed(contID uint64, tx *gorm.DB) {
+	if err := tx.Exec("UPDATE split_queues SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
 		m.log.Errorf("failed to update split queue (SplitFaileds) for cont %d - %s", contID, err)
 	}
 }

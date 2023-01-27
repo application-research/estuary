@@ -90,9 +90,9 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 		go func() {
 			if err := m.splitContentLocal(ctx, cont, size); err != nil {
 				m.log.Errorw("failed to split local content", "cont", cont.ID, "size", size, "err", err)
-				m.splitQueueMgr.SplitFailed(cont.ID)
+				m.splitQueueMgr.SplitFailed(cont.ID, m.db)
 			} else {
-				m.splitQueueMgr.SplitComplete(cont.ID)
+				m.splitQueueMgr.SplitComplete(cont.ID, m.db)
 			}
 		}()
 		return nil
