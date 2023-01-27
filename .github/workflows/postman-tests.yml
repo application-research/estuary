@@ -47,6 +47,7 @@ jobs:
       run: |
         ./estuary configure
         sed -i ~/.estuary -e 's/.*rate_limit.*/  "rate_limit": 2000000000/'
+        cat ~/.estuary
         ./estuary &
 
     - name: Test
