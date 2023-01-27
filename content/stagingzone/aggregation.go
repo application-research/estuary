@@ -224,7 +224,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 				return err
 			}
 			// queue aggregate content for deal making
-			return m.dealQueueMgr.QueueContent(zoneCont, tx)
+			return m.dealQueueMgr.QueueContent(zoneCont.ID, tx)
 		})
 	}
 	// handle aggregate on shuttle
@@ -235,8 +235,6 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 }
 
 func (m *manager) CreateAggregate(ctx context.Context, conts []util.Content) (ipld.Node, error) {
-	m.log.Debug("aggregating contents in staging zone into new content")
-
 	bserv := blockservice.New(m.blockstore, m.node.Bitswap)
 	dserv := merkledag.NewDAGService(bserv)
 

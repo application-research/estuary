@@ -157,7 +157,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 func (m *manager) backfillQueue(cont *util.Content, tracker *model.DealQueueTracker) error {
 	m.log.Debugf("trying to backfill deal queue for content %d", cont.ID)
 
-	if err := m.dealQueueMgr.QueueContent(cont, m.db); err != nil {
+	if err := m.dealQueueMgr.QueueContent(cont.ID, m.db); err != nil {
 		return err
 	}
 	return m.db.Model(model.DealQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error

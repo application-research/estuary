@@ -166,6 +166,8 @@ func (m *manager) runAggregationWorker(ctx context.Context) {
 					m.processZoneRequested(z.ID)
 					continue
 				}
+
+				m.log.Debugf("zone: %d processed", z.ID)
 			}
 		}
 	}

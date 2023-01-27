@@ -14,7 +14,7 @@ import (
 )
 
 type IManager interface {
-	QueueContent(cont *util.Content, tx *gorm.DB) error
+	QueueContent(contID uint64, tx *gorm.DB) error
 	DealComplete(contID uint64, tx *gorm.DB)
 	DealFailed(contID uint64, tx *gorm.DB)
 	DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB)
@@ -36,24 +36,33 @@ func NewManager(cfg *config.Estuary, log *zap.SugaredLogger) IManager {
 	}
 }
 
-func (m *manager) QueueContent(cont *util.Content, tx *gorm.DB) error {
+func (m *manager) QueueContent(contID uint64, tx *gorm.DB) error {
+	var cont *util.Content
+	if err := tx.First(&cont, "id = ?", contID).Error; err != nil {
+		return err
+	}
+
 	// if the content is not active or is in pinning state, do not proceed
-	if !cont.Active || cont.Pinning {
+	if !cont.Active {
+		m.log.Debugf("cont: %d has not been pinned", contID)
 		return nil
 	}
 
 	// If this content is aggregated inside another piece of content, nothing to do here, that content will be processed
 	if cont.AggregatedIn > 0 {
+		m.log.Debugf("cont: %d is a staged content", contID)
 		return nil
 	}
 
 	// If this is the 'root' of a dag split, we dont need to process it, as the splits will be processed instead
 	if cont.DagSplit && cont.SplitFrom == 0 {
+		m.log.Debugf("cont: %d is a splitted content", contID)
 		return nil
 	}
 
 	// only queue content with dealable size
 	if cont.Size < m.cfg.Content.MinSize {
+		m.log.Debugf("cont: %d is below min deal content size", contID)
 		return nil
 	}
 

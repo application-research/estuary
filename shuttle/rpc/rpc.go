@@ -376,7 +376,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 			}
 
 			// queue aggregate content for deal making
-			return m.dealQueueMgr.QueueContent(cont, tx)
+			return m.dealQueueMgr.QueueContent(cont.ID, tx)
 		})
 	}
 
@@ -450,7 +450,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, tx)
 		}
 		// or queue it for deal making
-		return m.dealQueueMgr.QueueContent(cont, tx)
+		return m.dealQueueMgr.QueueContent(cont.ID, tx)
 	})
 }
 
