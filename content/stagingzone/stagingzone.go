@@ -60,8 +60,8 @@ func NewManager(
 		log:          log,
 		shuttleMgr:   shuttleMgr,
 		tracer:       otel.Tracer("stagingzone"),
-		queueMgr:     queuemgr.NewManager(db, log),
-		dealQueueMgr: dealqueuemgr.NewManager(db, cfg, log),
+		queueMgr:     queuemgr.NewManager(log),
+		dealQueueMgr: dealqueuemgr.NewManager(cfg, log),
 	}
 
 	m.runWorkers(ctx)

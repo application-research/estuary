@@ -20,14 +20,12 @@ type IManager interface {
 }
 
 type manager struct {
-	db     *gorm.DB
 	log    *zap.SugaredLogger
 	tracer trace.Tracer
 }
 
-func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
+func NewManager(log *zap.SugaredLogger) IManager {
 	return &manager{
-		db:     db,
 		log:    log,
 		tracer: otel.Tracer("deal"),
 	}

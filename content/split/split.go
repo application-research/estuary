@@ -60,7 +60,7 @@ func NewManager(
 		shuttleMgr:     shuttleMgr,
 		contMgr:        cntMgr,
 		tracer:         otel.Tracer("replicator"),
-		splitQueueMgr:  splitqueuemgr.NewManager(db, log),
+		splitQueueMgr:  splitqueuemgr.NewManager(log),
 		pinnerBlockMgr: block.NewManager(db, cfg, log),
 	}
 

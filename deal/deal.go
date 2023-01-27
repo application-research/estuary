@@ -118,7 +118,7 @@ func NewManager(
 		transferMgr:          transferMgr,
 		commpMgr:             commpMgr,
 		dealStatusUpdater:    dealstatus.NewUpdater(db, log),
-		dealQueueMgr:         dealqueuemgr.NewManager(db, cfg, log),
+		dealQueueMgr:         dealqueuemgr.NewManager(cfg, log),
 		contMgr:              contMgr,
 	}
 

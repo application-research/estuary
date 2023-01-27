@@ -28,9 +28,8 @@ type manager struct {
 	tracer trace.Tracer
 }
 
-func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) IManager {
+func NewManager(cfg *config.Estuary, log *zap.SugaredLogger) IManager {
 	return &manager{
-		db:     db,
 		cfg:    cfg,
 		log:    log,
 		tracer: otel.Tracer("deal"),
