@@ -97,9 +97,9 @@ func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.D
 	}
 
 	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-		"can_deal":                    canDeal,
-		"deals_count":                 dealsToBeMade,
-		"deals_check_next_attempt_at": time.Now().Add(72 * time.Hour).UTC(),
+		"can_deal":                   canDeal,
+		"deal_count":                 dealsToBeMade,
+		"deal_check_next_attempt_at": time.Now().Add(72 * time.Hour).UTC(),
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealCheckComplete) for cont %d - %s", contID, err)
 	}
@@ -115,7 +115,7 @@ func (m *manager) DealFailed(contID uint64, tx *gorm.DB) {
 
 func (m *manager) DealCheckFailed(contID uint64, tx *gorm.DB) {
 	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-		"deals_check_next_attempt_at": time.Now().Add(1 * time.Hour).UTC(),
+		"deal_check_next_attempt_at": time.Now().Add(1 * time.Hour).UTC(),
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealCheckFailed) for cont %d - %s", contID, err)
 	}
