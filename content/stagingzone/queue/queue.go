@@ -13,9 +13,9 @@ import (
 )
 
 type IManager interface {
-	QueueContent(cont *util.Content, isBackfilled bool) error
-	StageComplete(contID uint64) error
-	StageFailed(contID uint64) error
+	QueueContent(cont *util.Content, tx *gorm.DB, isBackfilled bool) error
+	StageComplete(contID uint64, tx *gorm.DB) error
+	StageFailed(contID uint64, tx *gorm.DB) error
 }
 
 type manager struct {
@@ -32,7 +32,7 @@ func NewManager(db *gorm.DB, log *zap.SugaredLogger) IManager {
 	}
 }
 
-func (m *manager) QueueContent(cont *util.Content, isBackfilled bool) error {
+func (m *manager) QueueContent(cont *util.Content, tx *gorm.DB, isBackfilled bool) error {
 	m.log.Debugf("adding cont: %d to staging zone queue", cont.ID)
 
 	task := &model.StagingZoneQueue{
@@ -41,14 +41,14 @@ func (m *manager) QueueContent(cont *util.Content, isBackfilled bool) error {
 		NextAttemptAt: time.Now().UTC(),
 		IsBackFilled:  isBackfilled,
 	}
-	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
 }
 
-func (m *manager) StageComplete(contID uint64) error {
+func (m *manager) StageComplete(contID uint64, tx *gorm.DB) error {
 	m.log.Debugf("cont: %d staged successfully", contID)
-	return m.db.Unscoped().Delete(&model.StagingZoneQueue{}, "cont_id = ?", contID).Error // delete permanently
+	return tx.Unscoped().Delete(&model.StagingZoneQueue{}, "cont_id = ?", contID).Error // delete permanently
 }
 
-func (m *manager) StageFailed(contID uint64) error {
-	return m.db.Exec("UPDATE staging_zone_queues SET failing = ?, next_attempt_at = ? WHERE cont_id = ?", true, time.Now().Add(1*time.Hour), contID).Error
+func (m *manager) StageFailed(contID uint64, tx *gorm.DB) error {
+	return tx.Exec("UPDATE staging_zone_queues SET failing = ?, next_attempt_at = ? WHERE cont_id = ?", true, time.Now().Add(1*time.Hour), contID).Error
 }

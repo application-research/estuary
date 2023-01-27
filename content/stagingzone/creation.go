@@ -28,7 +28,7 @@ func (m *manager) stageBackfilledContent(ctx context.Context, cont *util.Content
 					return err
 				}
 			}
-			return m.queueMgr.StageComplete(cont.ID)
+			return m.queueMgr.StageComplete(cont.ID, tx)
 		})
 	}
 
@@ -44,7 +44,7 @@ func (m *manager) stageBackfilledContent(ctx context.Context, cont *util.Content
 
 			if result.RowsAffected == 1 {
 				// we added to a zone, move on
-				return m.queueMgr.StageComplete(cont.ID)
+				return m.queueMgr.StageComplete(cont.ID, tx)
 			}
 			return ErrZoneCouldNotBeClaimed // old zone is probably not created yet
 		})
@@ -54,7 +54,7 @@ func (m *manager) stageBackfilledContent(ctx context.Context, cont *util.Content
 		}
 		return err
 	}
-	return m.queueMgr.StageComplete(cont.ID)
+	return m.queueMgr.StageComplete(cont.ID, m.db)
 }
 
 func (m *manager) stageNewContent(ctx context.Context, cont *util.Content, contSize int64) error {
@@ -97,7 +97,7 @@ func (m *manager) stageNewContent(ctx context.Context, cont *util.Content, contS
 						if err := tx.Exec("UPDATE contents SET size = size + ? WHERE id = ?", contSize, zone.ContID).Error; err != nil {
 							return err
 						}
-						return m.queueMgr.StageComplete(cont.ID)
+						return m.queueMgr.StageComplete(cont.ID, tx)
 					}
 				}
 				// zone could not be claimed either becuase content is not in same location or size is too large
@@ -123,7 +123,7 @@ func (m *manager) stageNewContent(ctx context.Context, cont *util.Content, contS
 			if err := tx.Exec("UPDATE contents SET size = size + ? WHERE id = ?", contSize, zone.ContID).Error; err != nil {
 				return err
 			}
-			return m.queueMgr.StageComplete(cont.ID)
+			return m.queueMgr.StageComplete(cont.ID, tx)
 		})
 		if err != nil {
 			if err == ErrZoneCouldNotBeClaimed { // since we could not claim a zone, try next
@@ -184,6 +184,6 @@ func (m *manager) newStagingZoneFromContent(cont *util.Content, contSize int64) 
 		if err := tx.Create(zone).Error; err != nil {
 			return err
 		}
-		return m.queueMgr.StageComplete(cont.ID)
+		return m.queueMgr.StageComplete(cont.ID, tx)
 	})
 }

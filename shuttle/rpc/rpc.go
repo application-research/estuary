@@ -440,7 +440,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 
 		// if content can be staged, stage it
 		if contSize < m.cfg.Content.MinSize {
-			return m.stgZoneQueueMgr.QueueContent(cont, false)
+			return m.stgZoneQueueMgr.QueueContent(cont, tx, false)
 		}
 
 		// if it is too large, queue it for splitting.

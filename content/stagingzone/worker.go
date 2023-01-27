@@ -61,7 +61,7 @@ func (m *manager) runBackFillWorker(ctx context.Context) {
 				// size = 0 are shuttle/cid pins contents, that are yet to be updated with their objects sizes, avoid them,
 				// pincomplete will queue them
 				if cont.Size > 0 {
-					if err := m.queueMgr.QueueContent(cont, true); err != nil {
+					if err := m.queueMgr.QueueContent(cont, m.db, true); err != nil {
 						m.log.Warnf("failed to queue content: %d in staging zone queue for backfill - %s", cont.ID, err)
 						break
 					}
@@ -121,7 +121,7 @@ func (m *manager) runCreationWorker(ctx context.Context) {
 
 				if err != nil {
 					m.log.Warnf("failed to stage content - %s", err)
-					if err = m.queueMgr.StageFailed(cont.ID); err != nil {
+					if err = m.queueMgr.StageFailed(cont.ID, m.db); err != nil {
 						m.log.Warnf("failed to update staging queue - %s", err)
 					}
 				}
