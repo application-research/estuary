@@ -156,7 +156,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 	ctx, span := m.tracer.Start(ctx, "aggregateStagingZone")
 	defer span.End()
 
-	m.log.Debugf("aggregating zone: %d", zoneCont.ID)
+	m.log.Debugf("aggregating zone: %d", zone.ID)
 
 	var zoneContents []util.Content
 	var zoneContentsBatch []util.Content

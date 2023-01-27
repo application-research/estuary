@@ -42,26 +42,26 @@ func (up *updater) ComputeCompleted(data cid.Cid, piece cid.Cid, size abi.Unpadd
 		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error; err != nil {
 			return err
 		}
-		return tx.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error
+		return tx.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_done = ? WHERE cont_cid = ?", true, data.Bytes()).Error
 	}); err != nil {
-		up.log.Errorf("failed to update deal queue (ComputeCompleted) for cid %d - %s", data, err)
+		up.log.Errorf("failed to update deal queue (ComputeCompleted) for cid %s - %s", data, err)
 	}
 }
 
 func (up *updater) ComputeFailed(data cid.Cid) {
-	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_next_attempt_at = ? WHERE cont_cid = ?", true, time.Now().Add(1*time.Hour), data).Error; err != nil {
-		up.log.Errorf("failed to update deal queue (ComputeFailed) for cid %d - %s", data, err)
+	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_next_attempt_at = ? WHERE cont_cid = ?", time.Now().Add(1*time.Hour), data.Bytes()).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (ComputeFailed) for cid %s - %s", data, err)
 	}
 }
 
 func (up *updater) ComputeRequested(data cid.Cid) {
-	if err := up.db.Exec("UPDATE deal_queues SET commp_next_attempt_at = ? WHERE cont_cid = ?", time.Now().Add(1*time.Hour), data).Error; err != nil {
-		up.log.Errorf("failed to update deal queue (ComputeRequested) for cid %d - %s", data, err)
+	if err := up.db.Exec("UPDATE deal_queues SET commp_next_attempt_at = ? WHERE cont_cid = ?", time.Now().Add(1*time.Hour), data.Bytes()).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (ComputeRequested) for cid %s - %s", data, err)
 	}
 }
 
 func (up *updater) CommpExist(data cid.Cid) {
-	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data).Error; err != nil {
-		up.log.Errorf("failed to update deal queue (CommpExist) for cid %d - %s", data, err)
+	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data.Bytes()).Error; err != nil {
+		up.log.Errorf("failed to update deal queue (CommpExist) for cid %s - %s", data, err)
 	}
 }

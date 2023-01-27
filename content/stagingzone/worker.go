@@ -200,7 +200,7 @@ func (m *manager) getQueueTracker() (*model.StagingZoneTracker, error) {
 		}
 
 		trk := trks[0]
-		if err := m.db.Model(&trk).Update("stop_at", contents[0].ID).Error; err != nil {
+		if err := m.db.Model(&trk).Update("stop_at", stopAt).Error; err != nil {
 			return nil, err
 		}
 		return trk, nil

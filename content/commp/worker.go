@@ -55,7 +55,7 @@ func (m *manager) runCommpForContents(ctx context.Context) {
 }
 
 func (m *manager) runCommpForContent(ctx context.Context, data cid.Cid) {
-	m.log.Debugf("generating commp for cid: %d", data)
+	m.log.Debugf("generating commp for cid: %s", data)
 
 	pc, carSize, size, err := m.RunPieceCommCompute(ctx, data, m.blockstore)
 	if err != nil && err != ErrWaitForRemoteCompute {
