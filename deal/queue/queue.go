@@ -14,11 +14,11 @@ import (
 )
 
 type IManager interface {
-	QueueContent(cont *util.Content) error
-	DealComplete(contID uint64)
-	DealFailed(contID uint64)
-	DealCheckComplete(contID uint64, dealsToBeMade int)
-	DealCheckFailed(contID uint64)
+	QueueContent(cont *util.Content, tx *gorm.DB) error
+	DealComplete(contID uint64, tx *gorm.DB)
+	DealFailed(contID uint64, tx *gorm.DB)
+	DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB)
+	DealCheckFailed(contID uint64, tx *gorm.DB)
 }
 
 type manager struct {
@@ -37,7 +37,7 @@ func NewManager(db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger) IManag
 	}
 }
 
-func (m *manager) QueueContent(cont *util.Content) error {
+func (m *manager) QueueContent(cont *util.Content, tx *gorm.DB) error {
 	// if the content is not active or is in pinning state, do not proceed
 	if !cont.Active || cont.Pinning {
 		return nil
@@ -70,11 +70,11 @@ func (m *manager) QueueContent(cont *util.Content) error {
 		DealCheckNextAttemptAt: time.Now().UTC(),
 		DealNextAttemptAt:      time.Now().UTC(),
 	}
-	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
+	return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&task).Error
 }
 
-func (m *manager) DealComplete(contID uint64) {
-	if err := m.db.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+func (m *manager) DealComplete(contID uint64, tx *gorm.DB) {
+	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"can_deal":   false,
 		"deal_count": 0,
 	}).Error; err != nil {
@@ -82,13 +82,13 @@ func (m *manager) DealComplete(contID uint64) {
 	}
 }
 
-func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int) {
+func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB) {
 	canDeal := true
 	if dealsToBeMade == 0 { // if no new deal is needed
 		canDeal = false
 	}
 
-	if err := m.db.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"can_deal":                    canDeal,
 		"deals_count":                 dealsToBeMade,
 		"deals_check_next_attempt_at": time.Now().Add(72 * time.Hour).UTC(),
@@ -97,16 +97,16 @@ func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int) {
 	}
 }
 
-func (m *manager) DealFailed(contID uint64) {
-	if err := m.db.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+func (m *manager) DealFailed(contID uint64, tx *gorm.DB) {
+	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"deal_next_attempt_at": time.Now().Add(1 * time.Hour).UTC(),
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealFailed) for cont %d - %s", contID, err)
 	}
 }
 
-func (m *manager) DealCheckFailed(contID uint64) {
-	if err := m.db.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
+func (m *manager) DealCheckFailed(contID uint64, tx *gorm.DB) {
+	if err := tx.Model(model.DealQueue{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 		"deals_check_next_attempt_at": time.Now().Add(1 * time.Hour).UTC(),
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealCheckFailed) for cont %d - %s", contID, err)

@@ -85,10 +85,10 @@ func (m *manager) runDealWorker(ctx context.Context) {
 					m.log.Infow("making more deals for content", "content", t.ContID, "newDeals", t.DealCount)
 					if err := m.makeDealsForContent(ctx, t.ContID, t.DealCount); err != nil {
 						m.log.Errorf("failed to make more deals for cont: %d - %s", t.ContID, err)
-						m.dealQueueMgr.DealFailed(t.ContID)
+						m.dealQueueMgr.DealFailed(t.ContID, m.db)
 						continue
 					}
-					m.dealQueueMgr.DealComplete(t.ContID)
+					m.dealQueueMgr.DealComplete(t.ContID, m.db)
 				}
 				return nil
 			}).Error; err != nil {
@@ -115,10 +115,10 @@ func (m *manager) runDealCheckWorker(ctx context.Context) {
 					dealsToBeMade, err := m.checkContentDeals(ctx, t.ContID)
 					if err != nil {
 						m.log.Warnf("failed to check cont %d deals - %s", t.ContID, err)
-						m.dealQueueMgr.DealCheckFailed(t.ContID)
+						m.dealQueueMgr.DealCheckFailed(t.ContID, m.db)
 						continue
 					}
-					m.dealQueueMgr.DealCheckComplete(t.ContID, dealsToBeMade)
+					m.dealQueueMgr.DealCheckComplete(t.ContID, dealsToBeMade, m.db)
 				}
 				return nil
 			}).Error; err != nil {
@@ -157,7 +157,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 func (m *manager) backfillQueue(cont *util.Content, tracker *model.DealQueueTracker) error {
 	m.log.Debugf("trying to backfill deal queue for content %d", cont.ID)
 
-	if err := m.dealQueueMgr.QueueContent(cont); err != nil {
+	if err := m.dealQueueMgr.QueueContent(cont, m.db); err != nil {
 		return err
 	}
 	return m.db.Model(model.DealQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("last_cont_id", cont.ID).Error

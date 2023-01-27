@@ -224,7 +224,7 @@ func (m *manager) AggregateStagingZone(ctx context.Context, zone *model.StagingZ
 				return err
 			}
 			// queue aggregate content for deal making
-			return m.dealQueueMgr.QueueContent(zoneCont)
+			return m.dealQueueMgr.QueueContent(zoneCont, tx)
 		})
 	}
 	// handle aggregate on shuttle

@@ -108,7 +108,7 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, tx)
 		}
 		// or queue it for deal making
-		return m.dealQueueMgr.QueueContent(cont)
+		return m.dealQueueMgr.QueueContent(cont, tx)
 	})
 }
 
