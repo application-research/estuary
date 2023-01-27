@@ -184,8 +184,13 @@ func (m *manager) getQueueTracker() (*model.StagingZoneTracker, error) {
 			return nil, err
 		}
 
+		stopAt := uint64(0)
+		if len(contents) > 0 {
+			stopAt = contents[0].ID
+		}
+
 		if len(trks) == 0 {
-			trk := &model.StagingZoneTracker{LastContID: 0, StopAt: contents[0].ID}
+			trk := &model.StagingZoneTracker{LastContID: 0, StopAt: stopAt}
 			if err := m.db.Create(&trk).Error; err != nil {
 				return nil, err
 			}

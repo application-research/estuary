@@ -140,7 +140,12 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 			return nil, err
 		}
 
-		trk := &model.DealQueueTracker{LastContID: 0, StopAt: contents[0].ID}
+		stopAt := uint64(0)
+		if len(contents) > 0 {
+			stopAt = contents[0].ID
+		}
+
+		trk := &model.DealQueueTracker{LastContID: 0, StopAt: stopAt}
 		if err := m.db.Create(&trk).Error; err != nil {
 			return nil, err
 		}
