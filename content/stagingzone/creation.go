@@ -150,7 +150,7 @@ func (m *manager) newStagingZoneFromContent(cont *util.Content, contSize int64) 
 				Size:        contSize,
 				Name:        "aggregate",
 				Active:      false,
-				Pinning:     true,
+				Pinning:     false,
 				UserID:      cont.UserID,
 				Replication: m.cfg.Replication,
 				Aggregate:   true,

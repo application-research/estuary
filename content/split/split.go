@@ -124,7 +124,7 @@ func (m *manager) splitContentLocal(ctx context.Context, cont util.Content, size
 			Cid:         util.DbCID{CID: c},
 			Name:        fmt.Sprintf("%s-%d", cont.Name, i),
 			Active:      false, // will be active after it's blocks are saved
-			Pinning:     true,
+			Pinning:     false,
 			UserID:      cont.UserID,
 			Replication: cont.Replication,
 			Location:    constants.ContentLocationLocal,
