@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/facebookgo/atomicfile"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/facebookgo/atomicfile"
 )
 
 var ErrNotInitialized = errors.New("node not initialized, please run configure")

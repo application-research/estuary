@@ -40,7 +40,7 @@ type Estuary struct {
 	RpcEngine              RpcEngine       `json:"rpc_engine"`
 	Pinning                Pinning         `json:"pinning"`
 	RateLimit              rate.Limit      `json:"rate_limit"`
-	WorkerIntervals        WorkerIntervals `json:worker_intervals`
+	WorkerIntervals        WorkerIntervals `json:"worker_intervals"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
