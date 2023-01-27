@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 
 	"golang.org/x/time/rate"
@@ -475,6 +474,10 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		shtc := NewShuttleHttpClient(cfg.EstuaryRemote.Api, cfg.Dev)
+		s.HtClient = shtc
+
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
 		s.PPM = NewPPM(nd)
@@ -829,6 +832,7 @@ type Shuttle struct {
 	StagingMgr  *stagingbs.StagingBSMgr
 	gwayHandler *gateway.GatewayHandler
 	PPM         *PeerPingManager
+	HtClient    *ShuttleHttpClient
 
 	Tracer trace.Tracer
 
@@ -1035,30 +1039,9 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	scheme := "https"
-	if d.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("GET", scheme+"://"+d.estuaryHost+"/viewer", nil)
+	resp, err := d.HtClient.MakeRequest("GET", "/viewer", nil, token)
 	if err != nil {
 		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var out util.HttpErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return nil, err
-		}
-		return nil, &out.Error
 	}
 
 	var out util.ViewerResponse
@@ -1532,31 +1515,9 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 		return 0, err
 	}
 
-	scheme := "https"
-	if s.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/content/create", bytes.NewReader(data))
+	resp, err := s.HtClient.MakeRequest("POST", "/content/create", bytes.NewReader(data), u.AuthToken)
 	if err != nil {
 		return 0, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+u.AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, errors.Wrap(err, "failed to Do createContent")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var out util.HttpErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return 0, err
-		}
-		return 0, &out.Error
 	}
 
 	var rbody util.ContentCreateResponse
@@ -1586,31 +1547,9 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 		return 0, err
 	}
 
-	scheme := "https"
-	if s.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/shuttle/content/create", bytes.NewReader(data))
+	resp, err := s.HtClient.MakeRequest("POST", "/shuttle/cojntent/create", bytes.NewReader(data), s.shuttleToken)
 	if err != nil {
 		return 0, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+s.shuttleToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, errors.Wrap(err, "failed to do shuttle content create request")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return 0, err
-		}
-		return 0, fmt.Errorf("request to create shuttle content failed: %s", bodyBytes)
 	}
 
 	var rbody util.ContentCreateResponse
