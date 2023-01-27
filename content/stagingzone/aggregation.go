@@ -22,9 +22,8 @@ var ErrWaitForRemoteAggregate = fmt.Errorf("waiting for remote content aggregati
 
 // getReadyStagingZones gets zones that are done but have reasonable sizes
 func (m *manager) getReadyStagingZones() ([]*model.StagingZone, error) {
-	notReadyStatuses := []model.ZoneStatus{model.ZoneStatusDone, model.ZoneStatusStuck}
 	var readyZones []*model.StagingZone
-	if err := m.db.Model(&model.StagingZone{}).Where("size >= ? and status not in ? and attempted < 3 and next_attempt_at < ? ", m.cfg.Content.MinSize, notReadyStatuses, time.Now().UTC()).Limit(500).Find(&readyZones).Error; err != nil {
+	if err := m.db.Model(&model.StagingZone{}).Where("size >= ? and status <> ? and attempted < 3 and next_attempt_at < ? ", m.cfg.Content.MinSize, model.ZoneStatusDone, time.Now().UTC()).Limit(500).Find(&readyZones).Error; err != nil {
 		return nil, err
 	}
 	return readyZones, nil
