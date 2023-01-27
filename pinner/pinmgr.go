@@ -115,7 +115,7 @@ func NewEstuaryPinManager(
 		nd:               nd,
 		cfg:              cfg,
 		shuttleMgr:       shuttleMgr,
-		log:              log.Named("pinner"),
+		log:              log,
 		pinStatusUpdater: status.NewUpdater(db, log),
 		blockMgr:         block.NewManager(db, cfg, log),
 	}
@@ -132,8 +132,6 @@ func NewShuttlePinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOp
 }
 
 func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, log *zap.SugaredLogger) *PinManager {
-	log = log.Named("pinner")
-
 	if scf == nil {
 		scf = func(contID uint64, location string, status status.PinningStatus) error {
 			return nil
