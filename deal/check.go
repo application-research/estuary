@@ -43,6 +43,16 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) (int, er
 		}
 	}
 
+	replicationFactor := m.cfg.Replication
+	if content.Replication > 0 {
+		replicationFactor = content.Replication
+	}
+
+	// for new contents, there will be no deals
+	if len(deals) == 0 {
+		return replicationFactor, nil
+	}
+
 	// check on each of the existing deals, see if any needs fixing
 	var countLk sync.Mutex
 	var numSealed, numPublished, numProgress int
@@ -110,11 +120,6 @@ func (m *manager) checkContentDeals(ctx context.Context, contID uint64) (int, er
 			m.log.Warnf("content shuttle: %s, is not online", content.Location)
 			return 0, err
 		}
-	}
-
-	replicationFactor := m.cfg.Replication
-	if content.Replication > 0 {
-		replicationFactor = content.Replication
 	}
 
 	// check if content has enough good deals after reconcialiation,
