@@ -22,6 +22,16 @@ func (m *manager) runWorkers(ctx context.Context) {
 }
 
 func (m *manager) runDealBackFillWorker(ctx context.Context) {
+	// init tracker before work starts
+	tracker, err := m.getQueueTracker()
+	if err != nil {
+		m.log.Warnf("failed to get deal queue tracker - %s", err)
+	}
+
+	if tracker.BackfillDone {
+		return
+	}
+
 	timer := time.NewTicker(m.cfg.WorkerIntervals.DealInterval)
 	for {
 		select {
@@ -31,7 +41,7 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 		case <-timer.C:
 			m.log.Debug("running deal backfill worker")
 
-			tracker, err := m.getQueueTracker()
+			tracker, err = m.getQueueTracker()
 			if err != nil {
 				m.log.Warnf("failed to get deal queue tracker - %s", err)
 				continue
@@ -39,6 +49,9 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 
 			if tracker.LastContID >= tracker.StopAt {
 				m.log.Info("deal queue backfill is done")
+				if err := m.db.Model(model.DealQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+					m.log.Warnf("failed to mark deal backfill as done - %s", err)
+				}
 				return
 			}
 
@@ -130,12 +143,16 @@ func (m *manager) runDealCheckWorker(ctx context.Context) {
 }
 
 func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
-	var trackers []*model.DealQueueTracker
-	if err := m.db.Find(&trackers).Error; err != nil {
+	var trks []*model.DealQueueTracker
+	if err := m.db.Find(&trks).Error; err != nil {
 		return nil, err
 	}
 
-	if len(trackers) == 0 {
+	if len(trks) > 0 && trks[0].BackfillDone {
+		return trks[0], nil
+	}
+
+	if len(trks) == 0 {
 		var contents []*util.Content
 		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
 			return nil, err
@@ -152,7 +169,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 		}
 		return trk, nil
 	}
-	return trackers[0], nil
+	return trks[0], nil
 }
 
 func (m *manager) backfillQueue(cont *util.Content, tracker *model.DealQueueTracker) error {

@@ -21,12 +21,16 @@ func (m *manager) runWorkers(ctx context.Context) {
 }
 
 func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
-	var trackers []*model.SplitQueueTracker
-	if err := m.db.Find(&trackers).Error; err != nil {
+	var trks []*model.SplitQueueTracker
+	if err := m.db.Find(&trks).Error; err != nil {
 		return nil, err
 	}
 
-	if len(trackers) == 0 {
+	if len(trks) > 0 && trks[0].BackfillDone {
+		return trks[0], nil
+	}
+
+	if len(trks) == 0 {
 		// for the first time it will be empty
 		var contents []*util.Content
 		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
@@ -44,10 +48,20 @@ func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
 		}
 		return trk, nil
 	}
-	return trackers[0], nil
+	return trks[0], nil
 }
 
 func (m *manager) runSplitBackFillWorker(ctx context.Context) {
+	// init tracker before work starts
+	tracker, err := m.getQueueTracker()
+	if err != nil {
+		m.log.Warnf("failed to get split queue tracker - %s", err)
+	}
+
+	if tracker.BackfillDone {
+		return
+	}
+
 	timer := time.NewTicker(m.cfg.WorkerIntervals.SplitInterval)
 	for {
 		select {
@@ -57,7 +71,7 @@ func (m *manager) runSplitBackFillWorker(ctx context.Context) {
 		case <-timer.C:
 			m.log.Debug("running split backfill worker")
 
-			tracker, err := m.getQueueTracker()
+			tracker, err = m.getQueueTracker()
 			if err != nil {
 				m.log.Warnf("failed to get split queue tracker - %s", err)
 				continue
@@ -65,6 +79,9 @@ func (m *manager) runSplitBackFillWorker(ctx context.Context) {
 
 			if tracker.LastContID >= tracker.StopAt {
 				m.log.Info("split queue backfill is done")
+				if err := m.db.Model(model.SplitQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+					m.log.Warnf("failed to mark split backfill as done - %s", err)
+				}
 				return
 			}
 

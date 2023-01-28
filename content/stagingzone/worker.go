@@ -28,6 +28,16 @@ func (m *manager) runWorkers(ctx context.Context) {
 }
 
 func (m *manager) runBackFillWorker(ctx context.Context) {
+	// init tracker before work starts
+	tracker, err := m.getQueueTracker()
+	if err != nil {
+		m.log.Warnf("failed to get staging zone tracker - %s", err)
+	}
+
+	if tracker.BackfillDone {
+		return
+	}
+
 	timer := time.NewTicker(m.cfg.WorkerIntervals.StagingZoneInterval)
 	for {
 		select {
@@ -37,7 +47,7 @@ func (m *manager) runBackFillWorker(ctx context.Context) {
 		case <-timer.C:
 			m.log.Debug("running staging zone backfill worker")
 
-			tracker, err := m.getQueueTracker()
+			tracker, err = m.getQueueTracker()
 			if err != nil {
 				m.log.Warnf("failed to get staging zone tracker - %s", err)
 				continue
@@ -45,6 +55,9 @@ func (m *manager) runBackFillWorker(ctx context.Context) {
 
 			if tracker.LastContID >= tracker.StopAt {
 				m.log.Info("staging queue backfill is done")
+				if err := m.db.Model(model.StagingZoneTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+					m.log.Warnf("failed to mark staging zone backfill as done - %s", err)
+				}
 				return
 			}
 
@@ -177,6 +190,10 @@ func (m *manager) getQueueTracker() (*model.StagingZoneTracker, error) {
 	var trks []*model.StagingZoneTracker
 	if err := m.db.Find(&trks).Error; err != nil {
 		return nil, err
+	}
+
+	if len(trks) > 0 && trks[0].BackfillDone {
+		return trks[0], nil
 	}
 
 	if len(trks) == 0 || trks[0].StopAt == 0 {
