@@ -28,7 +28,7 @@ func (m *manager) subscribeEventListener(ctx context.Context) error {
 			}
 			m.trackTransfer(&fst.ChannelID, dbid, &fst)
 
-			m.log.Debugf("recieved data transfer event")
+			m.log.Debugf("recieved data transfer event: %s", fst.StatusStr)
 
 			switch fst.Status {
 			case datatransfer.Requested:
