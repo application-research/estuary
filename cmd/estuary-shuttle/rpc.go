@@ -298,6 +298,7 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
 	}
 }
 
+//todo start sending origins with pin complete
 func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint64, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()

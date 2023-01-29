@@ -1764,11 +1764,11 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 	return totalSize, objects, nil
 }
 
+// handles only pinning, queued and failed states, pinned/active is handled by pincomplete
 func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status pinningstatus.PinningStatus) error {
 	log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
-		"active":  status == pinningstatus.PinningStatusPinned,
 		"pinning": status == pinningstatus.PinningStatusPinning,
 		"failed":  status == pinningstatus.PinningStatusFailed,
 	}).Error; err != nil {

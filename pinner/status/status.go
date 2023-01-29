@@ -44,6 +44,7 @@ func NewUpdater(db *gorm.DB, log *zap.SugaredLogger) IUpdater {
 }
 
 // UpdateContentPinStatus updates content pinning statuses in DB and removes the content from its zone if failed
+// handles only pinning, queued and failed states, pinned/active is handled by pincomplete
 func (up *updater) UpdateContentPinStatus(contID uint64, location string, status PinningStatus) error {
 	up.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
 
@@ -64,25 +65,35 @@ func (up *updater) UpdateContentPinStatus(contID uint64, location string, status
 		).Error
 	}
 
-	updates := map[string]interface{}{
-		"active":  status == PinningStatusPinned,
-		"pinning": status == PinningStatusPinning,
-		"failed":  status == PinningStatusFailed,
-	}
-	if status == PinningStatusFailed {
-		updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
+	// do not change the state when a shuttle is copying contents from another location
+	// let pincomplete change the state when copying is done
+	if c.AggregatedIn > 0 && status == PinningStatusPinning {
+		return nil
 	}
 
 	return up.db.Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{}
+		// for non consolidated/aggregated contents
+		if c.AggregatedIn == 0 {
+			updates["pinning"] = status == PinningStatusPinning
+			updates["failed"] = status == PinningStatusFailed
+		}
+
+		if c.AggregatedIn > 0 && status == PinningStatusFailed {
+			updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
+		}
+
 		if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(updates).Error; err != nil {
 			return errors.Wrapf(err, "failed to update content status as %s in database: %s", status, err)
 		}
 
 		// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
 		// we did not reset the flag so that consolidation will not be reattempted by the worker
-		if c.AggregatedIn > 0 {
+		if c.AggregatedIn > 0 && status == PinningStatusFailed {
 			return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
 		}
+
+		// TODO we should requeue failed aggregate children, so they go into a new staging zone
 		return nil
 	})
 }

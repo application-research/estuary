@@ -327,7 +327,6 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 	// this is used by consolidated contents
 	if cont.Active {
 		return m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"pinning":  false,
 			"location": handle,
 		}).Error
 	}
