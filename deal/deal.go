@@ -251,14 +251,15 @@ func (m *manager) CheckContentReadyForDealMaking(ctx context.Context, content *u
 		return fmt.Errorf("cnt: %d ignored due to missing blocks", content.ID)
 	}
 
-	// if it's a shuttle content and the shuttle is not online, do not proceed
-	isOnline, err := m.shuttleMgr.IsOnline(content.Location)
-	if err != nil {
-		return err
-	}
-
-	if content.Location != constants.ContentLocationLocal && !isOnline {
-		return fmt.Errorf("content shuttle: %s, is not online", content.Location)
+	if content.Location != constants.ContentLocationLocal {
+		// if it's a shuttle content and the shuttle is not online, do not proceed
+		isOnline, err := m.shuttleMgr.IsOnline(content.Location)
+		if err != nil {
+			return err
+		}
+		if !isOnline {
+			return fmt.Errorf("content shuttle: %s, is not online", content.Location)
+		}
 	}
 
 	// only verified deals need datacap checks
