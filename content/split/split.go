@@ -72,8 +72,6 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 	ctx, span := m.tracer.Start(ctx, "splitContent")
 	defer span.End()
 
-	m.log.Debugf("trying to split cont %d", cont.ID)
-
 	var u util.User
 	if err := m.db.First(&u, "id = ?", cont.UserID).Error; err != nil {
 		return fmt.Errorf("failed to load contents user from db: %w", err)
@@ -84,21 +82,17 @@ func (m *manager) SplitContent(ctx context.Context, cont util.Content, size int6
 		return nil
 	}
 
-	m.log.Debugf("splitting content %d (size: %d)", cont.ID, size)
+	m.log.Debugf("splitting content %d (size: %d) by %d", cont.ID, cont.Size, size)
 
 	if cont.Location == constants.ContentLocationLocal {
-		go func() {
-			if err := m.splitContentLocal(ctx, cont, size); err != nil {
-				m.log.Errorw("failed to split local content", "cont", cont.ID, "size", size, "err", err)
-				m.splitQueueMgr.SplitFailed(cont.ID, m.db)
-			} else {
-				m.splitQueueMgr.SplitComplete(cont.ID, m.db)
-			}
-		}()
+		if err := m.splitContentLocal(ctx, cont, size); err != nil {
+			m.splitQueueMgr.SplitFailed(cont.ID, m.db)
+		} else {
+			m.splitQueueMgr.SplitComplete(cont.ID, m.db)
+		}
 		return nil
-	} else {
-		return m.shuttleMgr.SplitContent(ctx, cont.Location, cont.ID, size)
 	}
+	return m.shuttleMgr.SplitContent(ctx, cont.Location, cont.ID, size)
 }
 
 func (m *manager) splitContentLocal(ctx context.Context, cont util.Content, size int64) error {
@@ -141,14 +135,5 @@ func (m *manager) splitContentLocal(ctx context.Context, cont util.Content, size
 		}
 		m.log.Debugw("queuing splited content child", "parent_contID", cont.ID, "child_contID", content.ID)
 	}
-
-	if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-		"dag_split": true,
-		"size":      0,
-		"active":    false,
-		"pinning":   false,
-	}).Error; err != nil {
-		return err
-	}
-	return m.db.Where("content = ?", cont.ID).Delete(&util.ObjRef{}).Error
+	return nil
 }

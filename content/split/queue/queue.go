@@ -32,6 +32,8 @@ func NewManager(log *zap.SugaredLogger) IManager {
 }
 
 func (m *manager) QueueContent(contID uint64, userID uint, tx *gorm.DB) error {
+	m.log.Debugf("adding cont: %d to split queue", contID)
+
 	task := &model.SplitQueue{
 		UserID:        uint64(userID),
 		ContID:        contID,
@@ -43,6 +45,8 @@ func (m *manager) QueueContent(contID uint64, userID uint, tx *gorm.DB) error {
 }
 
 func (m *manager) SplitComplete(contID uint64, tx *gorm.DB) {
+	m.log.Debugf("cont: %d split complete", contID)
+
 	if err := tx.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
 			"dag_split": true,
@@ -63,6 +67,8 @@ func (m *manager) SplitComplete(contID uint64, tx *gorm.DB) {
 }
 
 func (m *manager) SplitFailed(contID uint64, tx *gorm.DB) {
+	m.log.Warnf("cont: %d split failed", contID)
+
 	if err := tx.Exec("UPDATE split_queues SET attempted = attempted + 1, failing = ?, done = ?, next_attempt_at = ? WHERE cont_id = ?", true, false, time.Now().Add(1*time.Hour), contID).Error; err != nil {
 		m.log.Errorf("failed to update split queue (SplitFaileds) for cont %d - %s", contID, err)
 	}
