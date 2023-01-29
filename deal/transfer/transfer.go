@@ -29,7 +29,6 @@ type IManager interface {
 	StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error
 	SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error
 	UpdateDataTransferStatus(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isFailed bool, msg string) error
-	SubscribeEventListener(ctx context.Context) error
 }
 
 type manager struct {
@@ -43,8 +42,8 @@ type manager struct {
 	trackingChannels  map[string]*util.ChanTrack
 }
 
-func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) IManager {
-	return &manager{
+func NewManager(ctx context.Context, db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) (IManager, error) {
+	m := &manager{
 		db:                db,
 		log:               log,
 		fc:                fc,
@@ -53,6 +52,11 @@ func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, sh
 		dealStatusUpdater: dealstatus.NewUpdater(db, log),
 		trackingChannels:  make(map[string]*util.ChanTrack),
 	}
+
+	if err := m.subscribeEventListener(ctx); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string, done chan struct{}) error {

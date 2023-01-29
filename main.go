@@ -570,9 +570,9 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	}
 
 	// stand up transfer manager
-	transferMgr := transfer.NewManager(db, fc, log, shuttleMgr)
-	if err := transferMgr.SubscribeEventListener(ctx); err != nil {
-		return fmt.Errorf("subscribing to libp2p transfer manager: %w", err)
+	transferMgr, err := transfer.NewManager(ctx, db, fc, log, shuttleMgr)
+	if err != nil {
+		return err
 	}
 
 	// resume all resumable legacy data transfer for local contents
