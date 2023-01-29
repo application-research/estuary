@@ -30,6 +30,7 @@ func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
 		return trks[0], nil
 	}
 
+	var trk *model.SplitQueueTracker
 	if len(trks) == 0 {
 		// for the first time it will be empty
 		var contents []*util.Content
@@ -42,13 +43,23 @@ func (m *manager) getQueueTracker() (*model.SplitQueueTracker, error) {
 			stopAt = contents[0].ID
 		}
 
-		trk := &model.SplitQueueTracker{LastContID: 0, StopAt: stopAt}
+		trk = &model.SplitQueueTracker{LastContID: 0, StopAt: stopAt}
 		if err := m.db.Create(&trk).Error; err != nil {
 			return nil, err
 		}
-		return trk, nil
+	} else {
+		trk = trks[0]
 	}
-	return trks[0], nil
+
+	if trk.LastContID >= trk.StopAt {
+		m.log.Info("split queue backfill is done")
+		if err := m.db.Model(model.SplitQueueTracker{}).Where("id = ?", trk.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+			m.log.Warnf("failed to mark split queue backfill as done - %s", err)
+			return nil, err
+		}
+		trk.BackfillDone = true
+	}
+	return trk, nil
 }
 
 func (m *manager) runSplitBackFillWorker(ctx context.Context) {
@@ -77,11 +88,8 @@ func (m *manager) runSplitBackFillWorker(ctx context.Context) {
 				continue
 			}
 
-			if tracker.LastContID >= tracker.StopAt {
+			if tracker.BackfillDone {
 				m.log.Info("split queue backfill is done")
-				if err := m.db.Model(model.SplitQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
-					m.log.Warnf("failed to mark split backfill as done - %s", err)
-				}
 				return
 			}
 

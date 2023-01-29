@@ -53,11 +53,8 @@ func (m *manager) runBackFillWorker(ctx context.Context) {
 				continue
 			}
 
-			if tracker.LastContID >= tracker.StopAt {
-				m.log.Info("staging queue backfill is done")
-				if err := m.db.Model(model.StagingZoneTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
-					m.log.Warnf("failed to mark staging zone backfill as done - %s", err)
-				}
+			if tracker.BackfillDone {
+				m.log.Info("staging zone queue backfill is done")
 				return
 			}
 
@@ -196,7 +193,8 @@ func (m *manager) getQueueTracker() (*model.StagingZoneTracker, error) {
 		return trks[0], nil
 	}
 
-	if len(trks) == 0 || trks[0].StopAt == 0 {
+	var trk *model.StagingZoneTracker
+	if len(trks) == 0 || (trks[0].StopAt == 0 && !trks[0].BackfillDone) {
 		// for the first time it will be empty
 		var contents []*util.Content
 		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
@@ -209,18 +207,28 @@ func (m *manager) getQueueTracker() (*model.StagingZoneTracker, error) {
 		}
 
 		if len(trks) == 0 {
-			trk := &model.StagingZoneTracker{LastContID: 0, StopAt: stopAt}
+			trk = &model.StagingZoneTracker{LastContID: 0, StopAt: stopAt}
 			if err := m.db.Create(&trk).Error; err != nil {
 				return nil, err
 			}
-			return trk, nil
+		} else {
+			trk = trks[0]
+			trk.StopAt = stopAt
+			if err := m.db.Model(&trk).Update("stop_at", stopAt).Error; err != nil {
+				return nil, err
+			}
 		}
+	} else {
+		trk = trks[0]
+	}
 
-		trk := trks[0]
-		if err := m.db.Model(&trk).Update("stop_at", stopAt).Error; err != nil {
+	if trk.LastContID >= trk.StopAt {
+		m.log.Info("staging zone queue backfill is done")
+		if err := m.db.Model(model.StagingZoneTracker{}).Where("id = ?", trk.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+			m.log.Warnf("failed to mark staging zone queue backfill as done - %s", err)
 			return nil, err
 		}
-		return trk, nil
+		trk.BackfillDone = true
 	}
-	return trks[0], nil
+	return trk, nil
 }

@@ -47,11 +47,8 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 				continue
 			}
 
-			if tracker.LastContID >= tracker.StopAt {
+			if tracker.BackfillDone {
 				m.log.Info("deal queue backfill is done")
-				if err := m.db.Model(model.DealQueueTracker{}).Where("id = ?", tracker.ID).UpdateColumn("backfill_done", true).Error; err != nil {
-					m.log.Warnf("failed to mark deal backfill as done - %s", err)
-				}
 				return
 			}
 
@@ -157,6 +154,7 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 		return trks[0], nil
 	}
 
+	var trk *model.DealQueueTracker
 	if len(trks) == 0 {
 		var contents []*util.Content
 		if err := m.db.Where("size > 0").Order("id desc").Limit(1).Find(&contents).Error; err != nil {
@@ -168,13 +166,23 @@ func (m *manager) getQueueTracker() (*model.DealQueueTracker, error) {
 			stopAt = contents[0].ID
 		}
 
-		trk := &model.DealQueueTracker{LastContID: 0, StopAt: stopAt}
+		trk = &model.DealQueueTracker{LastContID: 0, StopAt: stopAt}
 		if err := m.db.Create(&trk).Error; err != nil {
 			return nil, err
 		}
-		return trk, nil
+	} else {
+		trk = trks[0]
 	}
-	return trks[0], nil
+
+	if trk.LastContID >= trk.StopAt {
+		m.log.Info("deal queue backfill is done")
+		if err := m.db.Model(model.DealQueueTracker{}).Where("id = ?", trk.ID).UpdateColumn("backfill_done", true).Error; err != nil {
+			m.log.Warnf("failed to mark deal queue backfill as done - %s", err)
+			return nil, err
+		}
+		trk.BackfillDone = true
+	}
+	return trk, nil
 }
 
 func (m *manager) backfillQueue(cont *util.Content, tracker *model.DealQueueTracker) error {
