@@ -65,24 +65,13 @@ func (m *manager) consolidateStagedContent(ctx context.Context, zoneID uint64, z
 		return m.migrateContentsToLocalNode(ctx, toMove)
 	}
 
-	if err := m.db.Transaction(func(tx *gorm.DB) error {
-		// point zone content location to dstLocation
-		if err := tx.Model(util.Content{}).
-			Where("id = ?", zoneContent.ID).
-			UpdateColumn("location", dstLocation).Error; err != nil {
-			return err
-		}
-
-		// point staging zone location to dstLocation
-		if err := tx.Model(util.Content{}).
-			Where("cont_id = ?", zoneContent.ID).
-			UpdateColumn("location", dstLocation).Error; err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
+	// point staging zone location to dstLocation
+	if err := m.db.Model(model.StagingZone{}).
+		Where("cont_id = ?", zoneContent.ID).
+		UpdateColumn("location", dstLocation).Error; err != nil {
 		return err
 	}
+
 	if err := m.shuttleMgr.ConsolidateContent(ctx, dstLocation, toMove); err != nil {
 		return err
 	}
@@ -315,7 +304,7 @@ func (m *manager) getContentsAndDestinationLocationForConsolidation(ctx context.
 }
 
 func (m *manager) processZoneFailed(zoneID uint64) {
-	if err := m.db.Exec("UPDATE staging_zones SET attempted = attempted + 1, next_attempt_at = ?, status = ?, message = ? WHERE id = ?", time.Now().Add(2*time.Hour), model.ZoneStatusStuck, model.ZoneMessageStuck, zoneID).Error; err != nil {
+	if err := m.db.Exec("UPDATE staging_zones SET attempted = attempted + 1, next_attempt_at = ? WHERE id = ?", time.Now().Add(2*time.Hour), zoneID).Error; err != nil {
 		m.log.Errorf("failed to update staging zone (processZoneFailed) for zone %d - %s", zoneID, err)
 	}
 }
