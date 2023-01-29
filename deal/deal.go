@@ -62,12 +62,6 @@ type IManager interface {
 	SetDealMakingEnabled(enable bool)
 }
 
-type deal struct {
-	minerAddr      address.Address
-	isPushTransfer bool
-	contentDeal    *model.ContentDeal
-}
-
 type manager struct {
 	db                   *gorm.DB
 	api                  api.Gateway
@@ -286,7 +280,7 @@ func (m *manager) CheckContentReadyForDealMaking(ctx context.Context, content *u
 	return nil
 }
 
-func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsToBeMade int) error {
+func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsToBeMade int) ([]*model.ContentDeal, error) {
 	ctx, span := m.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(contID)),
 		attribute.Int("count", dealsToBeMade),
@@ -295,23 +289,23 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 
 	content, err := m.contMgr.GetContent(contID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := m.CheckContentReadyForDealMaking(ctx, content); err != nil {
-		return errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
+		return nil, errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
 	}
 
 	_, _, pieceSize, err := m.commpMgr.GetPieceCommitment(ctx, content.Cid.CID, m.blockstore)
 	if err != nil {
-		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
+		return nil, xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
 	// get content deals to filter miners - TODO move this to miners package
 	var existingContDeals []model.ContentDeal
 	if err := m.db.Find(&existingContDeals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return err
+			return nil, err
 		}
 	}
 
@@ -320,47 +314,26 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 	for _, d := range existingContDeals {
 		maddr, err := d.MinerAddr()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		excludedMiners[maddr] = true
 	}
 
 	miners, err := m.minerManager.PickMiners(ctx, dealsToBeMade*2, pieceSize.Padded(), excludedMiners, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	var readyDeals []deal
+	dealsMade := make([]*model.ContentDeal, 0)
 	for _, mn := range miners {
 		cd, err := m.MakeDealWithMiner(ctx, content, mn.Address)
 		if err != nil {
-			return err
-		}
-		isPushTransfer := cd.DealProtocolVersion == filclient.DealProtocolv110
-		readyDeals = append(readyDeals, deal{minerAddr: mn.Address, isPushTransfer: isPushTransfer, contentDeal: cd})
-		if len(readyDeals) >= dealsToBeMade {
-			break
-		}
-	}
-
-	// Now start up some data transfers!
-	// note: its okay if we dont start all the data transfers, we can just do it next time around
-	for _, rDeal := range readyDeals {
-		// If the data transfer is a pull transfer, we don't need to explicitly
-		// start the transfer (the Storage Provider will start pulling data as
-		// soon as it accepts the proposal)
-		if !rDeal.isPushTransfer {
+			m.log.Warnf("failed to make deal with miner: %s - %s", mn.Address, err)
 			continue
 		}
-
-		// start data transfer async
-		go func(d deal) {
-			if err := m.transferMgr.StartDataTransfer(ctx, d.contentDeal); err != nil {
-				m.log.Errorw("failed to start data transfer", "err", err, "miner", d.minerAddr)
-			}
-		}(rDeal)
+		dealsMade = append(dealsMade, cd)
 	}
-	return nil
+	return dealsMade, nil
 }
 
 func (cm *manager) sendProposalV120(ctx context.Context, contentLoc string, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func() error, bool, error) {
@@ -490,14 +463,14 @@ func (m *manager) MakeDealWithMiner(ctx context.Context, content *util.Content, 
 		return nil, xerrors.Errorf("failed to construct a deal proposal: %w", err)
 	}
 
-	dp, err := m.putProposalRecord(prop.DealProposal)
-	if err != nil {
-		return nil, err
-	}
-
 	propnd, err := cborutil.AsIpld(prop.DealProposal)
 	if err != nil {
 		return nil, xerrors.Errorf("failed to compute deal proposal ipld node: %w", err)
+	}
+
+	dp, err := m.putProposalRecord(prop.DealProposal)
+	if err != nil {
+		return nil, err
 	}
 
 	dealUUID := uuid.New()
@@ -532,12 +505,12 @@ func (m *manager) MakeDealWithMiner(ctx context.Context, content *util.Content, 
 
 	if err != nil {
 		// Clean up the database entry
-		if err := m.db.Delete(&model.ContentDeal{}, deal).Error; err != nil {
+		if err := m.db.Unscoped().Delete(&model.ContentDeal{}, deal).Error; err != nil {
 			return nil, fmt.Errorf("failed to delete content deal from db: %w", err)
 		}
 
 		// Clean up the proposal database entry
-		if err := m.db.Delete(&model.ProposalRecord{}, dp).Error; err != nil {
+		if err := m.db.Unscoped().Delete(&model.ProposalRecord{}, dp).Error; err != nil {
 			return nil, fmt.Errorf("failed to delete deal proposal from db: %w", err)
 		}
 

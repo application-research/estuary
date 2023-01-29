@@ -97,12 +97,17 @@ func (m *manager) runDealWorker(ctx context.Context) {
 				for _, t := range tasks {
 					m.log.Debugf("making %d deal(s) for content: %d", t.DealCount, t.ContID)
 
-					if err := m.makeDealsForContent(ctx, t.ContID, t.DealCount); err != nil {
+					dealsMade, err := m.makeDealsForContent(ctx, t.ContID, t.DealCount)
+					if err != nil {
 						m.log.Errorf("failed to make more deals for cont: %d - %s", t.ContID, err)
 						m.dealQueueMgr.DealFailed(t.ContID, m.db)
 						continue
 					}
-					m.dealQueueMgr.DealComplete(t.ContID, m.db)
+
+					// only mark if any deal is made
+					if len(dealsMade) > 0 {
+						m.dealQueueMgr.DealComplete(t.ContID, m.db)
+					}
 				}
 				return nil
 			}).Error; err != nil {
