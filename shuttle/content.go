@@ -13,27 +13,22 @@ func (m *manager) ConsolidateContent(ctx context.Context, loc string, contents [
 	m.log.Debugf("attempting to send consolidate content cmd to %s", loc)
 	tc := &rpcevent.TakeContent{}
 	for _, c := range contents {
-		prs := make([]*peer.AddrInfo, 0)
-
 		pr, err := m.AddrInfo(c.Location)
 		if err != nil {
-			continue
+			return err
 		}
 
-		if pr != nil {
-			prs = append(prs, pr)
-		}
-
-		if pr == nil {
-			m.log.Warnf("no addr info for node: %s", loc)
-		}
-
-		tc.Contents = append(tc.Contents, rpcevent.ContentFetch{
+		ct := rpcevent.ContentFetch{
 			ID:     c.ID,
 			Cid:    c.Cid.CID,
 			UserID: c.UserID,
-			Peers:  prs,
-		})
+		}
+
+		if pr != nil {
+			ct.Peers = []*peer.AddrInfo{pr}
+		}
+
+		tc.Contents = append(tc.Contents, ct)
 	}
 
 	return m.sendRPCMessage(ctx, loc, &rpcevent.Command{

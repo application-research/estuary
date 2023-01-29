@@ -564,7 +564,7 @@ func Run(ctx context.Context, cfg *config.Estuary) error {
 	}
 
 	// stand up shuttle manager
-	shuttleMgr, err := shuttle.NewManager(ctx, db, cfg, log, sanitycheckMgr)
+	shuttleMgr, err := shuttle.NewManager(ctx, db, nd, cfg, log, sanitycheckMgr)
 	if err != nil {
 		return err
 	}

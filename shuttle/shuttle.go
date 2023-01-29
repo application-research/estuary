@@ -16,6 +16,8 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/config"
+	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/node"
 	rpc "github.com/application-research/estuary/shuttle/rpc"
 	"github.com/labstack/echo/v4"
 
@@ -67,6 +69,7 @@ type IManager interface {
 type manager struct {
 	db                    *gorm.DB
 	cfg                   *config.Estuary
+	nd                    *node.Node
 	tracer                trace.Tracer
 	log                   *zap.SugaredLogger
 	transferStatusUpdater transferstatus.IUpdater
@@ -77,6 +80,7 @@ type manager struct {
 func NewManager(
 	ctx context.Context,
 	db *gorm.DB,
+	nd *node.Node,
 	cfg *config.Estuary,
 	log *zap.SugaredLogger,
 	sanitycheckMgr sanitycheck.IManager,
@@ -89,6 +93,7 @@ func NewManager(
 	return &manager{
 		db:                    db,
 		cfg:                   cfg,
+		nd:                    nd,
 		tracer:                otel.Tracer("shuttle"),
 		log:                   log,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
@@ -123,6 +128,13 @@ func (m *manager) CanAddContent(handle string) (bool, error) {
 }
 
 func (m *manager) AddrInfo(handle string) (*peer.AddrInfo, error) {
+	if handle == constants.ContentLocationLocal {
+		return &peer.AddrInfo{
+			ID:    m.nd.Host.ID(),
+			Addrs: m.nd.Host.Addrs(),
+		}, nil
+	}
+
 	d, err := m.getConnectionByHandle(handle)
 	if err != nil {
 		return nil, err
@@ -241,6 +253,7 @@ func (m *manager) getConnectionByHandle(handle string) (*model.ShuttleConnection
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
+		return nil, nil
 	}
 	return shuttle, nil
 }
