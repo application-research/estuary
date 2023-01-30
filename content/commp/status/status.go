@@ -61,7 +61,7 @@ func (up *updater) ComputeRequested(data cid.Cid) {
 }
 
 func (up *updater) CommpExist(data cid.Cid) {
-	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_failing = ?, commp_done = ? WHERE cont_cid = ?", false, true, data.Bytes()).Error; err != nil {
+	if err := up.db.Exec("UPDATE deal_queues SET commp_attempted = commp_attempted + 1, commp_done = ? WHERE cont_cid = ?", true, data.Bytes()).Error; err != nil {
 		up.log.Errorf("failed to update deal queue (CommpExist) for cid %s - %s", data, err)
 	}
 }
