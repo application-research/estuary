@@ -345,6 +345,7 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 
 			dealsMade = append(dealsMade, cd)
 			excludedMiners[mn.Address] = true
+			break
 		}
 	}
 	return dealsMade, nil
