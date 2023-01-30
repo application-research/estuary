@@ -10,7 +10,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
@@ -62,7 +62,11 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 	case rpcevent.CMD_UnpinContent:
 		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
 	case rpcevent.CMD_SplitContent:
-		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		err := d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		if err != nil {
+			d.sendSplitContentFailed(ctx, cmd.Params.SplitContent.Content)
+		}
+		return err
 	case rpcevent.CMD_RestartTransfer:
 		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
@@ -153,7 +157,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 				Params: rpcevent.MsgParams{
 					UpdatePinStatus: &rpcevent.UpdatePinStatus{
 						DBID:   contid,
-						Status: types.PinningStatusFailed,
+						Status: pinningstatus.PinningStatusFailed,
 					},
 				},
 			}); err != nil {
@@ -192,7 +196,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user 
 		Obj:         data,
 		ContId:      contid,
 		UserId:      user,
-		Status:      types.PinningStatusQueued,
+		Status:      pinningstatus.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
 		Peers:       operation.SerializePeers(peers),
 	}
@@ -240,7 +244,14 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 
 	res, err := d.commpMemo.Do(ctx, cmd.Data.String(), nil)
 	if err != nil {
-		return xerrors.Errorf("failed to compute commP for %s: %w", cmd.Data, err)
+		return d.sendRpcMessage(ctx, &rpcevent.Message{
+			Op: rpcevent.OP_CommPFailed,
+			Params: rpcevent.MsgParams{
+				CommPFailed: &rpcevent.CommPFailed{
+					Data: cmd.Data,
+				},
+			},
+		})
 	}
 
 	commpRes, ok := res.(*commpResult)
@@ -261,6 +272,19 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 	})
 }
 
+func (s *Shuttle) sendSplitContentFailed(ctx context.Context, cont uint64) {
+	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_SplitFailed,
+		Params: rpcevent.MsgParams{
+			SplitFailed: &rpcevent.SplitFailed{
+				ID: cont,
+			},
+		},
+	}); err != nil {
+		log.Errorf("failed to send split content failed message: %s", err)
+	}
+}
+
 func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
 	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
 		Op: rpcevent.OP_SplitComplete,
@@ -274,6 +298,7 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
 	}
 }
 
+//todo start sending origins with pin complete
 func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint64, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
@@ -708,7 +733,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.Split
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c)
 		if err != nil {
 			return err
 		}

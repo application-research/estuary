@@ -13,10 +13,7 @@ import (
 	"github.com/application-research/estuary/shuttle"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
-	"github.com/filecoin-project/go-fil-markets/storagemarket"
-	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -28,12 +25,10 @@ import (
 type IManager interface {
 	RestartAllTransfersForLocation(ctx context.Context, loc string, done chan struct{}) error
 	RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error
-	GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error)
 	GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error)
 	StartDataTransfer(ctx context.Context, cd *model.ContentDeal) error
 	SetDataTransferStartedOrFinished(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isStarted bool) error
 	UpdateDataTransferStatus(ctx context.Context, dealDBID uint, chanIDOrTransferID string, st *filclient.ChannelState, isFailed bool, msg string) error
-	SubscribeEventListener(ctx context.Context) error
 }
 
 type manager struct {
@@ -47,8 +42,8 @@ type manager struct {
 	trackingChannels  map[string]*util.ChanTrack
 }
 
-func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) IManager {
-	return &manager{
+func NewManager(ctx context.Context, db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, shuttleMgr shuttle.IManager) (IManager, error) {
+	m := &manager{
 		db:                db,
 		log:               log,
 		fc:                fc,
@@ -57,6 +52,11 @@ func NewManager(db *gorm.DB, fc *filclient.FilClient, log *zap.SugaredLogger, sh
 		dealStatusUpdater: dealstatus.NewUpdater(db, log),
 		trackingChannels:  make(map[string]*util.ChanTrack),
 	}
+
+	if err := m.subscribeEventListener(ctx); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string, done chan struct{}) error {
@@ -97,25 +97,7 @@ func (m *manager) RestartAllTransfersForLocation(ctx context.Context, loc string
 // RestartTransfer tries to resume incomplete data transfers between client and storage providers.
 // It supports only legacy deals (PushTransfer)
 func (m *manager) RestartTransfer(ctx context.Context, loc string, chanid datatransfer.ChannelID, d model.ContentDeal) error {
-	maddr, err := d.MinerAddr()
-	if err != nil {
-		return err
-	}
-
-	var dealUUID *uuid.UUID
-	if d.DealUUID != "" {
-		parsed, err := uuid.Parse(d.DealUUID)
-		if err != nil {
-			return fmt.Errorf("parsing deal uuid %s: %w", d.DealUUID, err)
-		}
-		dealUUID = &parsed
-	}
-
-	_, isPushTransfer, err := m.GetProviderDealStatus(ctx, &d, maddr, dealUUID)
-	if err != nil {
-		return err
-	}
-
+	isPushTransfer := d.DealProtocolVersion == filclient.DealProtocolv110
 	if !isPushTransfer {
 		return nil
 	}
@@ -149,18 +131,6 @@ func (m *manager) RestartTransfer(ctx context.Context, loc string, chanid datatr
 		return m.fc.RestartTransfer(ctx, &chanid)
 	}
 	return m.shuttleMgr.RestartTransfer(ctx, loc, chanid, d)
-}
-
-// TODO - use from deal package when ready
-// first check deal protocol version 2, then check version 1
-func (m *manager) GetProviderDealStatus(ctx context.Context, d *model.ContentDeal, maddr address.Address, dealUUID *uuid.UUID) (*storagemarket.ProviderDealState, bool, error) {
-	isPushTransfer := false
-	providerDealState, err := m.fc.DealStatus(ctx, maddr, d.PropCid.CID, dealUUID)
-	if err != nil && providerDealState == nil {
-		isPushTransfer = true
-		providerDealState, err = m.fc.DealStatus(ctx, maddr, d.PropCid.CID, nil)
-	}
-	return providerDealState, isPushTransfer, err
 }
 
 func (m *manager) GetTransferStatus(ctx context.Context, d *model.ContentDeal, contCID cid.Cid, contLoc string) (*filclient.ChannelState, error) {

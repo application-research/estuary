@@ -1072,7 +1072,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/types.IpfsPin"
+              "$ref": "#/definitions/pinner.IpfsPin"
             }
           },
           {
@@ -2495,7 +2495,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/types.IpfsListPinStatusResponse"
+              "$ref": "#/definitions/pinner.IpfsListPinStatusResponse"
             }
           },
           "400": {
@@ -2531,7 +2531,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/types.IpfsPin"
+              "$ref": "#/definitions/pinner.IpfsPin"
             }
           },
           {
@@ -2551,7 +2551,7 @@
           "202": {
             "description": "Accepted",
             "schema": {
-              "$ref": "#/definitions/types.IpfsPinStatusResponse"
+              "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
             }
           },
           "500": {
@@ -2586,7 +2586,7 @@
           "200": {
             "description": "OK",
             "schema": {
-              "$ref": "#/definitions/types.IpfsPinStatusResponse"
+              "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
             }
           },
           "404": {
@@ -2629,7 +2629,7 @@
             "in": "body",
             "required": true,
             "schema": {
-              "$ref": "#/definitions/types.IpfsPin"
+              "$ref": "#/definitions/pinner.IpfsPin"
             }
           }
         ],
@@ -2637,7 +2637,7 @@
           "202": {
             "description": "Accepted",
             "schema": {
-              "$ref": "#/definitions/types.IpfsPinStatusResponse"
+              "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
             }
           },
           "404": {
@@ -3574,7 +3574,7 @@
         }
       }
     },
-    "types.IpfsListPinStatusResponse": {
+    "pinner.IpfsListPinStatusResponse": {
       "type": "object",
       "properties": {
         "count": {
@@ -3583,12 +3583,12 @@
         "results": {
           "type": "array",
           "items": {
-            "$ref": "#/definitions/types.IpfsPinStatusResponse"
+            "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
           }
         }
       }
     },
-    "types.IpfsPin": {
+    "pinner.IpfsPin": {
       "type": "object",
       "properties": {
         "cid": {
@@ -3609,7 +3609,7 @@
         }
       }
     },
-    "types.IpfsPinStatusResponse": {
+    "pinner.IpfsPinStatusResponse": {
       "type": "object",
       "properties": {
         "content": {
@@ -3629,17 +3629,17 @@
           "additionalProperties": true
         },
         "pin": {
-          "$ref": "#/definitions/types.IpfsPin"
+          "$ref": "#/definitions/pinner.IpfsPin"
         },
         "requestid": {
           "type": "string"
         },
         "status": {
-          "$ref": "#/definitions/types.PinningStatus"
+          "$ref": "#/definitions/status.PinningStatus"
         }
       }
     },
-    "types.PinningStatus": {
+    "status.PinningStatus": {
       "type": "string",
       "enum": [
         "pinning",

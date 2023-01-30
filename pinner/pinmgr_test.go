@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/progress"
-	pinning_progress "github.com/application-research/estuary/pinner/progress"
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -21,17 +20,17 @@ import (
 
 var countLock sync.Mutex
 
-func onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
+func onPinStatusUpdate(cont uint64, location string, status status.PinningStatus) error {
 	return nil
 }
 
 func newManager(count *int) *PinManager {
 	_ = os.RemoveAll("/tmp/duplicateGuard")
 	_ = os.RemoveAll("/tmp/pinQueueMsgPack")
+	log := logging.Logger("pinner").With("app", "test")
 
 	return newPinManager(
-		func(ctx context.Context, op *operation.PinningOperation, cb pinning_progress.PinProgressCB) error {
-			go cb(1)
+		func(ctx context.Context, op *operation.PinningOperation) error {
 			countLock.Lock()
 			*count += 1
 			countLock.Unlock()
@@ -39,13 +38,14 @@ func newManager(count *int) *PinManager {
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     "/tmp/",
-		})
+		}, log)
 }
 
 func newManagerNoDelete(count *int) *PinManager {
+	log := logging.Logger("pinner").With("app", "test")
+
 	return newPinManager(
-		func(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
-			go cb(1)
+		func(ctx context.Context, op *operation.PinningOperation) error {
 			countLock.Lock()
 			*count += 1
 			countLock.Unlock()
@@ -53,7 +53,7 @@ func newManagerNoDelete(count *int) *PinManager {
 		}, onPinStatusUpdate, &PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     "/tmp/",
-		})
+		}, log)
 }
 
 func TestConstructMultiAddr(t *testing.T) {

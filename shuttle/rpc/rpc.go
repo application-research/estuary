@@ -3,8 +3,12 @@ package rpc
 import (
 	"context"
 	"fmt"
-	"github.com/pkg/errors"
 	"time"
+
+	commpstatus "github.com/application-research/estuary/content/commp/status"
+	splitqueuemgr "github.com/application-research/estuary/content/split/queue"
+	stgzonequeuemgr "github.com/application-research/estuary/content/stagingzone/queue"
+	dealqueuemgr "github.com/application-research/estuary/deal/queue"
 
 	dealstatus "github.com/application-research/estuary/deal/status"
 	transferstatus "github.com/application-research/estuary/deal/transfer/status"
@@ -13,9 +17,8 @@ import (
 
 	"github.com/application-research/estuary/config"
 	"github.com/application-research/estuary/constants"
-	contentqueue "github.com/application-research/estuary/content/queue"
 	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/estuary/shuttle/rpc/engines/queue"
 	websocketeng "github.com/application-research/estuary/shuttle/rpc/engines/websocket"
@@ -31,7 +34,6 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 var ErrNilParams = fmt.Errorf("shuttle message had nil params")
@@ -53,16 +55,20 @@ type manager struct {
 	cfg                   *config.Estuary
 	log                   *zap.SugaredLogger
 	tracer                trace.Tracer
-	cntQueueMgr           contentqueue.IQueueManager
 	sanityCheckMgr        sanitycheck.IManager
 	transferStatusUpdater transferstatus.IUpdater
 	dealStatusUpdater     dealstatus.IUpdater
 	transferStatuses      *lru.ARCCache
 	websocketEng          websocketeng.IEstuaryRpcEngine
 	queueEng              queue.IEstuaryRpcEngine
+	stgZoneQueueMgr       stgzonequeuemgr.IManager
+	dealQueueMgr          dealqueuemgr.IManager
+	splitQueueMgr         splitqueuemgr.IManager
+	commpStatusUpdater    commpstatus.IUpdater
+	pinStatusUpdater      status.IUpdater
 }
 
-func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager, cntQueueMgr contentqueue.IQueueManager) (IManager, error) {
+func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager) (IManager, error) {
 	cache, err := lru.NewARC(50000)
 	if err != nil {
 		return nil, err
@@ -73,11 +79,15 @@ func NewEstuaryRpcManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary,
 		cfg:                   cfg,
 		log:                   log,
 		tracer:                otel.Tracer("shuttle"),
-		cntQueueMgr:           cntQueueMgr,
 		sanityCheckMgr:        sanitycheckMgr,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
 		dealStatusUpdater:     dealstatus.NewUpdater(db, log),
 		transferStatuses:      cache,
+		stgZoneQueueMgr:       stgzonequeuemgr.NewManager(log),
+		dealQueueMgr:          dealqueuemgr.NewManager(cfg, log),
+		splitQueueMgr:         splitqueuemgr.NewManager(log),
+		commpStatusUpdater:    commpstatus.NewUpdater(db, log),
+		pinStatusUpdater:      status.NewUpdater(db, log),
 	}
 
 	rpcMgr.websocketEng = websocketeng.NewEstuaryRpcEngine(ctx, db, cfg, log, rpcMgr.processMessage)
@@ -159,6 +169,16 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 			m.log.Errorf("handling commp complete message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
+	case rpcevent.OP_CommPFailed:
+		param := msg.Params.CommPFailed
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := m.handleRpcCommPFailed(ctx, msg.Handle, param); err != nil {
+			m.log.Errorf("handling commp failed message from shuttle %s: %s", msg.Handle, err)
+		}
+		return nil
 	case rpcevent.OP_TransferStarted:
 		param := msg.Params.TransferStarted
 		if param == nil {
@@ -219,6 +239,16 @@ func (m *manager) processMessage(msg *rpcevent.Message, source string) error {
 			m.log.Errorf("handling split complete message from shuttle %s: %s", msg.Handle, err)
 		}
 		return nil
+	case rpcevent.OP_SplitFailed:
+		param := msg.Params.SplitFailed
+		if param == nil {
+			return ErrNilParams
+		}
+
+		if err := m.handleRpcSplitFailed(ctx, msg.Handle, param); err != nil {
+			m.log.Errorf("handling split failed message from shuttle %s: %s", msg.Handle, err)
+		}
+		return nil
 	case rpcevent.OP_SanityCheck:
 		sc := msg.Params.SanityCheck
 		if sc == nil {
@@ -275,55 +305,16 @@ func (m *manager) handleRpcGarbageCheck(ctx context.Context, handle string, para
 }
 
 // handlePinUpdate exactly copied from UpdateContentPinStatus
-func (m *manager) handlePinUpdate(location string, contID uint64, status types.PinningStatus) error {
-	m.log.Debugf("updating pin: %d, status: %s, loc: %s", contID, status, location)
-
-	var c util.Content
-	if err := m.db.First(&c, "id = ?", contID).Error; err != nil {
-		return errors.Wrap(err, "failed to look up content")
-	}
-
-	// if an aggregate zone is failing, zone is stuck
-	// TODO - revisit this later if it is actually happening
-	if c.Aggregate && status == types.PinningStatusFailed {
-		m.log.Warnf("zone: %d is stuck, failed to aggregate(pin) on location: %s", c.ID, location)
-
-		return m.db.Model(model.StagingZone{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-			"status":  model.ZoneStatusStuck,
-			"message": model.ZoneMessageStuck,
-		}).Error
-	}
-
-	updates := map[string]interface{}{
-		"active":  status == types.PinningStatusPinned,
-		"pinning": status == types.PinningStatusPinning,
-		"failed":  status == types.PinningStatusFailed,
-	}
-
-	if status == types.PinningStatusFailed {
-		updates["aggregated_in"] = 0 // remove from staging zone so the zone can consolidate without it
-	}
-
-	return m.db.Transaction(func(tx *gorm.DB) error {
-		if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(updates).Error; err != nil {
-			m.log.Errorf("failed to update content status as %s in database: %s", status, err)
-			return err
-		}
-
-		// deduct from the zone, so new content can be added, this way we get consistent size for aggregation
-		// we did not reset the flag so that consolidation will not be reattempted by the worker
-		if c.AggregatedIn > 0 {
-			return tx.Raw("UPDATE staging_zones SET size = size - ? WHERE cont_id = ? ", c.Size, contID).Error
-		}
-		return nil
-	})
+func (m *manager) handlePinUpdate(location string, contID uint64, status status.PinningStatus) error {
+	return m.pinStatusUpdater.UpdateContentPinStatus(contID, location, status)
 }
 
+// TODO merge with handlePinUpdate
 func (m *manager) handlePinningComplete(ctx context.Context, handle string, pincomp *rpcevent.PinComplete) error {
 	ctx, span := m.tracer.Start(ctx, "handlePinningComplete")
 	defer span.End()
 
-	var cont util.Content
+	var cont *util.Content
 	if err := m.db.First(&cont, "id = ?", pincomp.DBID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return xerrors.Errorf("failed to look up content: %d (shuttle = %s): %w", pincomp.DBID, handle, err)
@@ -335,13 +326,9 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 	// if content already active, no need to add objects, just update location
 	// this is used by consolidated contents
 	if cont.Active {
-		if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
-			"pinning":  false,
+		return m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 			"location": handle,
-		}).Error; err != nil {
-			return err
-		}
-		return nil
+		}).Error
 	}
 
 	// if content is an aggregate zone
@@ -351,22 +338,25 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 		}
 
 		return m.db.Transaction(func(tx *gorm.DB) error {
+			// create objet
 			obj := &util.Object{
 				Cid:  util.DbCID{CID: pincomp.Objects[0].Cid},
 				Size: pincomp.Objects[0].Size,
 			}
-			if err := m.db.Create(obj).Error; err != nil {
+			if err := tx.Create(obj).Error; err != nil {
 				return xerrors.Errorf("failed to create Object: %w", err)
 			}
 
-			if err := m.db.Create(&util.ObjRef{
+			// create obj ref
+			if err := tx.Create(&util.ObjRef{
 				Content: cont.ID,
 				Object:  obj.ID,
 			}).Error; err != nil {
 				return xerrors.Errorf("failed to create Object reference: %w", err)
 			}
 
-			if err := m.db.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			// update aggregate content
+			if err := tx.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 				"active":   true,
 				"pinning":  false,
 				"cid":      util.DbCID{CID: pincomp.CID},
@@ -375,7 +365,8 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 				return xerrors.Errorf("failed to update content in database: %w", err)
 			}
 
-			if err := m.db.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			// update staging zone
+			if err := tx.Model(model.StagingZone{}).Where("cont_id = ?", cont.ID).UpdateColumns(map[string]interface{}{
 				"status":   model.ZoneStatusDone,
 				"message":  model.ZoneMessageDone,
 				"location": handle,
@@ -383,13 +374,12 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 				return xerrors.Errorf("failed to update zone in database: %w", err)
 			}
 
-			// for now keep pushing to content queue
-			m.cntQueueMgr.ToCheck(cont.ID, cont.Size)
-			return nil
+			// queue aggregate content for deal making
+			return m.dealQueueMgr.QueueContent(cont.ID, tx)
 		})
 	}
 
-	// for individual content pin complete notification
+	// for individual contents
 	objects := make([]*util.Object, 0, len(pincomp.Objects))
 	for _, o := range pincomp.Objects {
 		objects = append(objects, &util.Object{
@@ -398,7 +388,7 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 		})
 	}
 
-	if err := m.addObjectsToDatabase(ctx, pincomp.DBID, objects, handle); err != nil {
+	if err := m.addObjectsToDatabase(ctx, cont, objects, handle); err != nil {
 		return xerrors.Errorf("failed to add objects to database: %w", err)
 	}
 	return nil
@@ -407,63 +397,77 @@ func (m *manager) handlePinningComplete(ctx context.Context, handle string, pinc
 // addObjectsToDatabase creates entries on the estuary database for CIDs related to an already pinned CID (`root`)
 // These entries are saved on the `objects` table, while metadata about the `root` CID is mostly kept on the `contents` table
 // The link between the `objects` and `contents` tables is the `obj_refs` table
-func (m *manager) addObjectsToDatabase(ctx context.Context, contID uint64, objects []*util.Object, loc string) error {
+func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, objects []*util.Object, loc string) error {
 	_, span := m.tracer.Start(ctx, "addObjectsToDatabase")
 	defer span.End()
 
-	if err := m.db.CreateInBatches(objects, 300).Error; err != nil {
-		return xerrors.Errorf("failed to create objects in db: %w", err)
-	}
+	return m.db.Transaction(func(tx *gorm.DB) error {
+		// create objects
+		if err := tx.CreateInBatches(objects, 300).Error; err != nil {
+			return xerrors.Errorf("failed to create objects in db: %w", err)
+		}
 
-	refs := make([]util.ObjRef, 0, len(objects))
-	var totalSize int64
-	for _, o := range objects {
-		refs = append(refs, util.ObjRef{
-			Content: contID,
-			Object:  o.ID,
-		})
-		totalSize += int64(o.Size)
-	}
+		refs := make([]util.ObjRef, 0, len(objects))
+		var contSize int64
+		for _, o := range objects {
+			refs = append(refs, util.ObjRef{
+				Content: cont.ID,
+				Object:  o.ID,
+			})
+			contSize += int64(o.Size)
+		}
 
-	span.SetAttributes(
-		attribute.Int64("totalSize", totalSize),
-		attribute.Int("numObjects", len(objects)),
-	)
+		span.SetAttributes(
+			attribute.Int64("totalSize", contSize),
+			attribute.Int("numObjects", len(objects)),
+		)
 
-	if err := m.db.CreateInBatches(refs, 500).Error; err != nil {
-		return xerrors.Errorf("failed to create refs: %w", err)
-	}
+		// create object refs
+		if err := tx.CreateInBatches(refs, 500).Error; err != nil {
+			return xerrors.Errorf("failed to create refs: %w", err)
+		}
 
-	if err := m.db.Model(util.Content{}).Where("id = ?", contID).UpdateColumns(map[string]interface{}{
-		"active":   true,
-		"size":     totalSize,
-		"pinning":  false,
-		"location": loc,
-	}).Error; err != nil {
-		return xerrors.Errorf("failed to update content in database: %w", err)
-	}
+		// update content
+		if err := tx.Model(util.Content{}).Where("id = ?", cont.ID).UpdateColumns(map[string]interface{}{
+			"active":   true,
+			"size":     contSize,
+			"pinning":  false,
+			"location": loc,
+		}).Error; err != nil {
+			return xerrors.Errorf("failed to update content in database: %w", err)
+		}
 
-	m.cntQueueMgr.ToCheck(contID, totalSize)
-	return nil
+		// if content can be staged, stage it
+		if contSize < m.cfg.Content.MinSize {
+			return m.stgZoneQueueMgr.QueueContent(cont, tx, false)
+		}
+
+		// if it is too large, queue it for splitting.
+		// split worker will pick it up and split it,
+		// its children will be pinned and dealed
+		if contSize > m.cfg.Content.MaxSize {
+			return m.splitQueueMgr.QueueContent(cont.ID, cont.UserID, tx)
+		}
+		// or queue it for deal making
+		return m.dealQueueMgr.QueueContent(cont.ID, tx)
+	})
 }
 
+// shuttle split complete will only update the parent content
+// the childrent contents will come in as pincomplete and they will be queued for deal making
 func (m *manager) handleRpcSplitComplete(ctx context.Context, handle string, param *rpcevent.SplitComplete) error {
 	if param.ID == 0 {
 		return fmt.Errorf("split complete send with ID = 0")
 	}
+	m.splitQueueMgr.SplitComplete(param.ID, m.db)
+	return nil
+}
 
-	// TODO: do some sanity checks that the sub pieces were all made successfully...
-	if err := m.db.Model(util.Content{}).Where("id = ?", param.ID).UpdateColumns(map[string]interface{}{
-		"dag_split": true,
-		"active":    false,
-		"size":      0,
-	}).Error; err != nil {
-		return fmt.Errorf("failed to update content for split complete: %w", err)
+func (m *manager) handleRpcSplitFailed(ctx context.Context, handle string, param *rpcevent.SplitFailed) error {
+	if param.ID == 0 {
+		return fmt.Errorf("split complete send with ID = 0")
 	}
-
-	if err := m.db.Delete(&util.ObjRef{}, "content = ?", param.ID).Error; err != nil {
-		return fmt.Errorf("failed to delete object references for newly split object: %w", err)
-	}
+	m.splitQueueMgr.SplitFailed(param.ID, m.db)
 	return nil
 }
 
@@ -471,14 +475,16 @@ func (m *manager) handleRpcCommPComplete(ctx context.Context, handle string, res
 	_, span := m.tracer.Start(ctx, "handleRpcCommPComplete")
 	defer span.End()
 
-	opcr := model.PieceCommRecord{
-		Data:    util.DbCID{CID: resp.Data},
-		Piece:   util.DbCID{CID: resp.CommP},
-		Size:    resp.Size,
-		CarSize: resp.CarSize,
-	}
+	m.commpStatusUpdater.ComputeCompleted(resp.Data, resp.CommP, resp.Size, resp.CarSize)
+	return nil
+}
 
-	return m.db.Clauses(clause.OnConflict{DoNothing: true}).Create(&opcr).Error
+func (m *manager) handleRpcCommPFailed(ctx context.Context, handle string, resp *rpcevent.CommPFailed) error {
+	_, span := m.tracer.Start(ctx, "handleRpcCommPFailed")
+	defer span.End()
+
+	m.commpStatusUpdater.ComputeFailed(resp.Data)
+	return nil
 }
 
 func (m *manager) handleRpcTransferStarted(ctx context.Context, handle string, param *rpcevent.TransferStartedOrFinished) error {

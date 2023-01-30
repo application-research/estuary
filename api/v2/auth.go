@@ -63,7 +63,7 @@ func (s *apiV2) AuthRequired(level int) echo.MiddlewareFunc {
 func (s *apiV2) checkTokenAuth(token string) (*util.User, error) {
 	var authToken util.AuthToken
 	tokenHash := util.GetTokenHash(token)
-	if err := s.DB.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
+	if err := s.db.First(&authToken, "token = ? OR token_hash = ?", token, tokenHash).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
 				Code:    http.StatusUnauthorized,
@@ -83,7 +83,7 @@ func (s *apiV2) checkTokenAuth(token string) (*util.User, error) {
 	}
 
 	var user util.User
-	if err := s.DB.First(&user, "id = ?", authToken.User).Error; err != nil {
+	if err := s.db.First(&user, "id = ?", authToken.User).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, &util.HttpError{
 				Code:    http.StatusUnauthorized,

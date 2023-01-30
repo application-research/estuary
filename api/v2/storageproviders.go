@@ -22,7 +22,7 @@ func (s *apiV2) handleAddStorageProvider(c echo.Context) error {
 	}
 
 	name := c.QueryParam("name")
-	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
+	if err := s.db.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
@@ -38,7 +38,7 @@ func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
+	if err := s.db.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -161,7 +161,7 @@ func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
 	}
 
 	var miners []model.StorageMiner
-	if err := s.DB.Find(&miners).Error; err != nil {
+	if err := s.db.Find(&miners).Error; err != nil {
 		return err
 	}
 
@@ -199,7 +199,7 @@ func (s *apiV2) handleStorageProviderTransferDiagnostics(c echo.Context) error {
 		return err
 	}
 
-	minerTransferDiagnostics, err := s.FilClient.MinerTransferDiagnostics(c.Request().Context(), m)
+	minerTransferDiagnostics, err := s.fc.MinerTransferDiagnostics(c.Request().Context(), m)
 	if err != nil {
 		return err
 	}
@@ -224,7 +224,7 @@ func (s *apiV2) handleGetStorageProviderFailures(c echo.Context) error {
 	}
 
 	var merrs []model.DfeRecord
-	if err := s.DB.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
+	if err := s.db.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, merrs)
@@ -266,7 +266,7 @@ func (s *apiV2) handleGetStorageProviderDeals(c echo.Context) error {
 		return err
 	}
 
-	q := s.DB.Model(model.ContentDeal{}).Order("created_at desc").
+	q := s.db.Model(model.ContentDeal{}).Order("created_at desc").
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("miner = ?", maddr.String())
 
@@ -320,7 +320,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	}
 
 	var m model.StorageMiner
-	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
+	if err := s.db.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return c.JSON(http.StatusOK, &storageProviderStatsResp{
 				Miner:         maddr,
@@ -331,12 +331,12 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	}
 
 	var dealscount int64
-	if err := s.DB.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+	if err := s.db.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
 		return err
 	}
 
 	var errorcount int64
-	if err := s.DB.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
+	if err := s.db.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
 		return err
 	}
 

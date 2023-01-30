@@ -20,19 +20,21 @@ const (
 	ZoneMessageDone          ZoneMessage = "Zone has been aggregated and a deal will be made for it"
 	ZoneMessageAggregating   ZoneMessage = "Zone contents are under aggregation processing"
 	ZoneMessageConsolidating ZoneMessage = "Zone contents are under consolidation processing"
-	ZoneMessageStuck         ZoneMessage = ""
+	ZoneMessageStuck         ZoneMessage = "Zone aggregation is failing"
 )
 
 type StagingZone struct {
 	gorm.Model
-	ID        uint        `gorm:"index:id_size_status;index:id_status" json:"id"`
-	CreatedAt time.Time   `gorm:"index;not null" json:"createdAt"`
-	MinSize   int64       `gorm:"index;not null" json:"minSize"`
-	MaxSize   int64       `json:"maxSize"`
-	Size      int64       `gorm:"index:size_status;index:id_size_status;index:user_size_status;index;not null" json:"curSize"`
-	UserID    uint        `gorm:"index:user_size_status;index;not null" json:"user"`
-	ContID    uint64      `gorm:"index;not null" json:"contentID"`
-	Location  string      `gorm:"index;not null" json:"location"`
-	Status    ZoneStatus  `gorm:"index:size_status;index:id_size_status;index:user_size_status;index:id_status" json:"status"`
-	Message   ZoneMessage `json:"message" gorm:"type:text"`
+	ID            uint64      `gorm:"index:id_size_status;index:id_status" json:"id"`
+	CreatedAt     time.Time   `gorm:"index;not null" json:"createdAt"`
+	MinSize       int64       `gorm:"index;not null" json:"minSize"`
+	MaxSize       int64       `json:"maxSize"`
+	Size          int64       `gorm:"index:size_status;index:id_size_status;index:user_size_status;index;index:attempted_next_attempt_at_size_status;not null" json:"curSize"`
+	UserID        uint        `gorm:"index:user_size_status;index;not null" json:"user"`
+	ContID        uint64      `gorm:"index;not null" json:"contentID"`
+	Location      string      `gorm:"index;not null" json:"location"`
+	Status        ZoneStatus  `gorm:"index:size_status;index:id_size_status;index:user_size_status;index:id_status;index:attempted_next_attempt_at_size_status" json:"status"`
+	Message       ZoneMessage `json:"message" gorm:"type:text"`
+	Attempted     uint        `gorm:"index:attempted_next_attempt_at_size_status" json:"-"`
+	NextAttemptAt time.Time   `gorm:"index:attempted_next_attempt_at_size_status" json:"-"`
 }

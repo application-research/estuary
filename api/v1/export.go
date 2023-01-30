@@ -21,7 +21,7 @@ type ExportVersion1 struct {
 
 func (s *apiV1) exportUserData(uid uint) (*DataExport, error) {
 	var contents []util.Content
-	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
+	if err := s.db.Find(&contents, "user_id = ?", uid).Error; err != nil {
 		return nil, err
 	}
 
@@ -31,7 +31,7 @@ func (s *apiV1) exportUserData(uid uint) (*DataExport, error) {
 	}
 
 	var deals []model.ContentDeal
-	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
+	if err := s.db.Find(&deals, "content in ?", conts).Error; err != nil {
 		return nil, err
 	}
 

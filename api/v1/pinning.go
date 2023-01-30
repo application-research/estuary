@@ -3,14 +3,15 @@ package api
 import (
 	"errors"
 	"fmt"
-	"github.com/application-research/estuary/pinner"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/application-research/estuary/pinner"
+
 	"github.com/application-research/estuary/model"
-	"github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/echo/v4"
@@ -30,7 +31,7 @@ const (
 // @Description  This endpoint lists all pin status objects
 // @Tags         pinning
 // @Produce      json
-// @Success      200  {object}  types.IpfsListPinStatusResponse
+// @Success      200  {object}  pinner.IpfsListPinStatusResponse
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Router       /pinning/pins [get]
@@ -64,7 +65,7 @@ func (s *apiV1) handleListPins(c echo.Context, u *util.User) error {
 		}
 	}
 
-	q := s.DB.Model(util.Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
+	q := s.db.Model(util.Content{}).Where("user_id = ? AND not aggregate AND not replace", u.ID).Order("created_at desc")
 
 	if qcids != "" {
 		var cids []util.DbCID
@@ -119,13 +120,13 @@ func (s *apiV1) handleListPins(c echo.Context, u *util.User) error {
 		q = q.Where("id in ?", ids)
 	}
 
-	pinStatuses := make(map[types.PinningStatus]bool)
+	pinStatuses := make(map[pinningstatus.PinningStatus]bool)
 	if qstatus != "" {
 		statuses := strings.Split(qstatus, ",")
 		for _, s := range statuses {
-			ps := types.PinningStatus(s)
+			ps := pinningstatus.PinningStatus(s)
 			switch ps {
-			case types.PinningStatusQueued, types.PinningStatusPinning, types.PinningStatusPinned, types.PinningStatusFailed:
+			case pinningstatus.PinningStatusQueued, pinningstatus.PinningStatusPinning, pinningstatus.PinningStatusPinned, pinningstatus.PinningStatusFailed:
 				pinStatuses[ps] = true
 			default:
 				return &util.HttpError{
@@ -154,31 +155,31 @@ func (s *apiV1) handleListPins(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	out := make([]*types.IpfsPinStatusResponse, 0)
+	out := make([]*pinner.IpfsPinStatusResponse, 0)
 	for _, c := range contents {
-		st, err := s.CM.PinStatus(c, nil)
+		st, err := s.pinMgr.PinStatus(c, nil)
 		if err != nil {
 			return err
 		}
 		out = append(out, st)
 	}
 
-	return c.JSON(http.StatusOK, types.IpfsListPinStatusResponse{
+	return c.JSON(http.StatusOK, pinner.IpfsListPinStatusResponse{
 		Count:   int(count),
 		Results: out,
 	})
 }
 
-func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*gorm.DB, error) {
+func filterForStatusQuery(q *gorm.DB, statuses map[pinningstatus.PinningStatus]bool) (*gorm.DB, error) {
 	// TODO maybe we should move all these statuses to a status column in contents
 	if len(statuses) == 0 || len(statuses) == 4 {
 		return q, nil // if no status filter or all statuses are specified, return all pins
 	}
 
-	pinned := statuses[types.PinningStatusPinned]
-	failed := statuses[types.PinningStatusFailed]
-	pinning := statuses[types.PinningStatusPinning]
-	queued := statuses[types.PinningStatusQueued]
+	pinned := statuses[pinningstatus.PinningStatusPinned]
+	failed := statuses[pinningstatus.PinningStatusFailed]
+	pinning := statuses[pinningstatus.PinningStatusPinning]
+	queued := statuses[pinningstatus.PinningStatusQueued]
 
 	if len(statuses) == 1 {
 		switch {
@@ -219,15 +220,15 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 		}
 	}
 
-	if !statuses[types.PinningStatusFailed] {
+	if !statuses[pinningstatus.PinningStatusFailed] {
 		return q.Where("not failed and (active or pinning)"), nil
 	}
 
-	if !statuses[types.PinningStatusPinned] {
+	if !statuses[pinningstatus.PinningStatusPinned] {
 		return q.Where("not active and (failed or pinning"), nil
 	}
 
-	if !statuses[types.PinningStatusPinning] {
+	if !statuses[pinningstatus.PinningStatusPinning] {
 		return q.Where("not pinning and (active or failed"), nil
 	}
 	return q.Where("active or pinning or failed"), nil
@@ -239,14 +240,18 @@ func filterForStatusQuery(q *gorm.DB, statuses map[types.PinningStatus]bool) (*g
 // @Tags         pinning
 // @Accept		 json
 // @Produce      json
-// @Success      202	{object}  types.IpfsPinStatusResponse
+// @Success      202	{object}  pinner.IpfsPinStatusResponse
 // @Failure      500    {object}  util.HttpError
 // @in           202,default  string  Token "token"
-// @Param        pin          body      types.IpfsPin  true   "Pin Body {cid:cid, name:name}"
+// @Param        pin          body      pinner.IpfsPin  true   "Pin Body {cid:cid, name:name}"
 // @Param        ignore-dupes  query     string                   false  "Ignore Dupes"
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /pinning/pins [post]
 func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
+	var pin pinner.IpfsPin
+	if err := c.Bind(&pin); err != nil {
+		return err
+	}
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -262,36 +267,19 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		ignoreDuplicates = true
 	}
 
-	var pin types.IpfsPin
-	if err := c.Bind(&pin); err != nil {
-		return err
-	}
-
-	// params
 	pinningParam := pinner.PinCidParam{
-		Ctx:              c,                // echo context to access echo specific vars
-		Db:               s.DB,             // the database instance for looking up collections
-		CM:               s.CM,             // the content manager either from v1 or v2
 		User:             u,                // the user
 		CidToPin:         pin,              // the pin object
 		Overwrite:        overwrite,        // the overwrite flag
 		IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 		Replication:      s.cfg.Replication,
+		MakeDeal:         true,
 	}
 
-	status, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
-	if err != nil {
-		return &util.HttpError{
-			Code:    http.StatusBadRequest,
-			Reason:  err.(*pinner.PinningHelperError).Reason,
-			Details: err.(*pinner.PinningHelperError).Details,
-		}
-	}
-
+	status, err := s.pinMgr.PinCid(c, pinningParam)
 	if err != nil {
 		return err
 	}
-	s.pinMgr.Add(pinOp)
 
 	return c.JSON(http.StatusAccepted, status)
 }
@@ -301,7 +289,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200	{object}  types.IpfsPinStatusResponse
+// @Success      200	{object}  pinner.IpfsPinStatusResponse
 // @Failure      404	{object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Param        pinid  path      string  true  "cid"
@@ -313,7 +301,7 @@ func (s *apiV1) handleGetPin(c echo.Context, u *util.User) error {
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -328,7 +316,7 @@ func (s *apiV1) handleGetPin(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	st, err := s.CM.PinStatus(content, nil)
+	st, err := s.pinMgr.PinStatus(content, nil)
 	if err != nil {
 		return err
 	}
@@ -341,14 +329,13 @@ func (s *apiV1) handleGetPin(c echo.Context, u *util.User) error {
 // @Tags         pinning
 // @Accept		 json
 // @Produce      json
-// @Success      202	{object}	types.IpfsPinStatusResponse
+// @Success      202	{object}	pinner.IpfsPinStatusResponse
 // @Failure      404	{object}	util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        pinid		path      string  true  "Pin ID to be replaced"
-// @Param        pin          body      types.IpfsPin  true   "New pin"
+// @Param        pin          body      pinner.IpfsPin  true   "New pin"
 // @Router       /pinning/pins/{pinid} [post]
 func (s *apiV1) handleReplacePin(c echo.Context, u *util.User) error {
-
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
@@ -358,13 +345,13 @@ func (s *apiV1) handleReplacePin(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var pin types.IpfsPin
+	var pin pinner.IpfsPin
 	if err := c.Bind(&pin); err != nil {
 		return err
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -394,11 +381,10 @@ func (s *apiV1) handleReplacePin(c echo.Context, u *util.User) error {
 	}
 
 	makeDeal := true
-	status, pinOp, err := s.CM.PinContent(c.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, s.cfg.Replication, makeDeal)
+	status, err := s.pinMgr.PinContent(c.Request().Context(), u.ID, pinCID, pin.Name, nil, origins, uint(pinID), pin.Meta, s.cfg.Replication, makeDeal)
 	if err != nil {
 		return err
 	}
-	s.pinMgr.Add(pinOp)
 
 	return c.JSON(http.StatusAccepted, status)
 }
@@ -419,7 +405,7 @@ func (s *apiV1) handleDeletePin(c echo.Context, u *util.User) error {
 	}
 
 	var content util.Content
-	if err := s.DB.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
+	if err := s.db.First(&content, "id = ? AND not replace", pinID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return &util.HttpError{
 				Code:    http.StatusNotFound,
@@ -436,7 +422,7 @@ func (s *apiV1) handleDeletePin(c echo.Context, u *util.User) error {
 
 	if content.AggregatedIn > 0 {
 		var zone *model.StagingZone
-		if err := s.DB.First(&zone, "cont_id = ?", content.AggregatedIn).Error; err != nil {
+		if err := s.db.First(&zone, "cont_id = ?", content.AggregatedIn).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				s.log.Errorf("content %d's aggregatedIn zone %d not found in DB", content.ID, content.AggregatedIn)
 			}
@@ -449,13 +435,13 @@ func (s *apiV1) handleDeletePin(c echo.Context, u *util.User) error {
 	}
 
 	// mark as replace since it will removed and so it should not be fetched anymore
-	if err := s.DB.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
+	if err := s.db.Model(&util.Content{}).Where("id = ?", pinID).Update("replace", true).Error; err != nil {
 		return err
 	}
 
 	// unpin async
 	go func() {
-		if err := s.CM.UnpinContent(c.Request().Context(), uint(pinID)); err != nil {
+		if err := s.cm.UnpinContent(c.Request().Context(), uint(pinID)); err != nil {
 			s.log.Errorf("could not unpinContent(%d): %s", err, pinID)
 		}
 	}()

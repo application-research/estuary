@@ -1,114 +1,86 @@
 package contentmgr
 
 import (
+	"context"
 	"sync"
-	"time"
+
+	"github.com/application-research/estuary/util"
+	"github.com/ipfs/go-cid"
+	"go.opentelemetry.io/otel/trace"
+	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/config"
-	contentqueue "github.com/application-research/estuary/content/queue"
-	"github.com/application-research/estuary/deal/transfer"
-	"github.com/application-research/estuary/miner"
+
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/shuttle"
-	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/filecoin-project/lotus/api"
-	lru "github.com/hashicorp/golang-lru"
-	"github.com/ipfs/go-cid"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-fil-markets/retrievalmarket"
+	blocks "github.com/ipfs/go-block-format"
+
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/xerrors"
-	"gorm.io/gorm"
 )
 
-type ContentManager struct {
+type IManager interface {
+	GarbageCollect(ctx context.Context) error
+	RemoveContent(ctx context.Context, contID uint, now bool) error
+	RefreshContent(ctx context.Context, cont uint64) error
+	OffloadContents(ctx context.Context, conts []uint64) (int, error)
+	ClearUnused(ctx context.Context, spaceRequest int64, loc string, users []uint, dryrun bool) (*collectionResult, error)
+	GetRemovalCandidates(ctx context.Context, all bool, loc string, users []uint) ([]removalCandidateInfo, error)
+	UnpinContent(ctx context.Context, contid uint) error
+	GetContent(id uint64) (*util.Content, error)
+	TryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error
+	RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error
+	RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error)
+}
+
+type manager struct {
 	db                   *gorm.DB
-	api                  api.Gateway
-	filClient            *filclient.FilClient
+	fc                   *filclient.FilClient
+	blockstore           node.EstuaryBlockstore
 	node                 *node.Node
 	cfg                  *config.Estuary
+	log                  *zap.SugaredLogger
+	shuttleMgr           shuttle.IManager
 	tracer               trace.Tracer
-	blockstore           node.EstuaryBlockstore
 	notifyBlockstore     *node.NotifyBlockstore
-	queueMgr             contentqueue.IQueueManager
 	retrLk               sync.Mutex
 	retrievalsInProgress map[uint64]*util.RetrievalProgress
 	contentLk            sync.RWMutex
-
-	dealDisabledLk       sync.Mutex
-	isDealMakingDisabled bool
-
-	shuttleMgr           shuttle.IManager
-	remoteTransferStatus *lru.ARCCache
 	inflightCids         map[cid.Cid]uint
 	inflightCidsLk       sync.Mutex
-	minerManager         miner.IMinerManager
-	log                  *zap.SugaredLogger
-	transferMgr          transfer.IManager
 }
 
-func NewContentManager(
+func NewManager(
 	db *gorm.DB,
-	api api.Gateway,
 	fc *filclient.FilClient,
 	tbs *util.TrackingBlockstore,
 	nd *node.Node,
 	cfg *config.Estuary,
-	minerManager miner.IMinerManager,
 	log *zap.SugaredLogger,
 	shuttleMgr shuttle.IManager,
-	transferMgr transfer.IManager,
-	queueMgr contentqueue.IQueueManager,
-) (*ContentManager, error) {
-	cache, err := lru.NewARC(50000)
-	if err != nil {
-		return nil, err
-	}
-
-	cm := &ContentManager{
-		cfg:                  cfg,
+) IManager {
+	return &manager{
 		db:                   db,
-		api:                  api,
-		filClient:            fc,
+		fc:                   fc,
 		blockstore:           tbs.Under().(node.EstuaryBlockstore),
 		node:                 nd,
+		cfg:                  cfg,
+		log:                  log,
+		shuttleMgr:           shuttleMgr,
+		tracer:               otel.Tracer("content"),
 		notifyBlockstore:     nd.NotifBlockstore,
 		retrievalsInProgress: make(map[uint64]*util.RetrievalProgress),
-		remoteTransferStatus: cache,
-		shuttleMgr:           shuttleMgr,
 		inflightCids:         make(map[cid.Cid]uint),
-		isDealMakingDisabled: cfg.Deal.IsDisabled,
-		tracer:               otel.Tracer("replicator"),
-		minerManager:         minerManager,
-		log:                  log,
-		transferMgr:          transferMgr,
-		queueMgr:             queueMgr,
 	}
-	return cm, nil
 }
 
-func (cm *ContentManager) rebuildToCheckQueue() error {
-	cm.log.Info("rebuilding contents queue .......")
-
-	var allcontent []util.Content
-	// select only active and not staged contents
-	if err := cm.db.Where("active and aggregated_in = 0").FindInBatches(&allcontent, util.DefaultBatchSize, func(tx *gorm.DB, batch int) error {
-		for i, c := range allcontent {
-			// every 100 contents re-queued, wait 5 seconds to avoid over-saturating queues
-			// time to requeue all: 10m / 100 * 5 seconds = 5.78 days
-			if i%100 == 0 {
-				time.Sleep(time.Second * 5)
-			}
-			cm.queueMgr.ToCheck(c.ID, c.Size)
-		}
-		return nil
-	}).Error; err != nil {
-		return xerrors.Errorf("finding all content in database: %w", err)
+func (m *manager) GetContent(id uint64) (*util.Content, error) {
+	var content util.Content
+	if err := m.db.First(&content, "id = ?", id).Error; err != nil {
+		return nil, err
 	}
-	return nil
-}
-
-func (cm *ContentManager) ToCheck(contID uint64, contSize int64) {
-	cm.queueMgr.ToCheck(contID, contSize)
+	return &content, nil
 }

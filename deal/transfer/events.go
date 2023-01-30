@@ -14,7 +14,7 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (m *manager) SubscribeEventListener(ctx context.Context) error {
+func (m *manager) subscribeEventListener(ctx context.Context) error {
 	// Subscribe to data transfer events from Boost - we need this to get started and finished actual timestamps
 	_, err := m.fc.Libp2pTransferMgr.Subscribe(func(dbid uint, fst filclient.ChannelState) {
 		go func() {
@@ -27,6 +27,8 @@ func (m *manager) SubscribeEventListener(ctx context.Context) error {
 				return
 			}
 			m.trackTransfer(&fst.ChannelID, dbid, &fst)
+
+			m.log.Debugf("recieved data transfer event: %s", fst.StatusStr)
 
 			switch fst.Status {
 			case datatransfer.Requested:

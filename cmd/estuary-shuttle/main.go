@@ -24,8 +24,7 @@ import (
 	estumetrics "github.com/application-research/estuary/metrics"
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/progress"
-	"github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/estuary/util/gateway"
 	"github.com/application-research/filclient/retrievehelper"
 	"github.com/filecoin-project/go-address"
@@ -326,7 +325,7 @@ func main() {
 			Value: cfg.Dev,
 		},
 		&cli.StringSliceFlag{
-			Name:  "announce-addr",
+			Name: "announce-addr",
 			Usage: "specify multiaddrs that this node can be connected to	",
 			Value: cli.NewStringSlice(cfg.Node.AnnounceAddrs...),
 		},
@@ -554,7 +553,7 @@ func main() {
 		s.PinMgr = pinner.NewShuttlePinManager(s.doPinning, s.onPinStatusUpdate, &pinner.PinManagerOpts{
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
-		})
+		}, log)
 		go s.PinMgr.Run(300)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled
@@ -1622,7 +1621,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 }
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation, cb progress.PinProgressCB) error {
+func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation) error {
 	ctx, span := d.Tracer.Start(ctx, "doPinning")
 	defer span.End()
 
@@ -1637,7 +1636,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 	dserv := merkledag.NewDAGService(bserv)
 	dsess := dserv.Session(ctx)
 
-	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj, cb)
+	totalSize, objects, err := d.addDatabaseTrackingToContent(ctx, op.ContId, dsess, d.Node.Blockstore, op.Obj)
 	if err != nil {
 		return xerrors.Errorf("failed to addDatabaseTrackingToContent - contID(%d), cid(%s): %w", op.ContId, op.Obj.String(), err)
 	}
@@ -1651,7 +1650,7 @@ func (d *Shuttle) doPinning(ctx context.Context, op *operation.PinningOperation,
 const noDataTimeout = time.Minute * 10
 
 // TODO: mostly copy paste from estuary, dedup code
-func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint64, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid, cb func(int64)) (int64, []*Object, error) {
+func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint64, dserv ipld.NodeGetter, bs blockstore.Blockstore, root cid.Cid) (int64, []*Object, error) {
 	ctx, span := d.Tracer.Start(ctx, "computeObjRefsUpdate")
 	defer span.End()
 
@@ -1712,8 +1711,6 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 			return nil, fmt.Errorf("failed to Get CID node: %w", err)
 		}
 
-		cb(int64(len(node.RawData())))
-
 		select {
 		case gotData <- struct{}{}:
 		case <-ctx.Done():
@@ -1767,13 +1764,13 @@ func (d *Shuttle) addDatabaseTrackingToContent(ctx context.Context, contid uint6
 	return totalSize, objects, nil
 }
 
-func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status types.PinningStatus) error {
+// handles only pinning, queued and failed states, pinned/active is handled by pincomplete
+func (d *Shuttle) onPinStatusUpdate(cont uint64, location string, status pinningstatus.PinningStatus) error {
 	log.Debugf("updating pin: %d, status: %s, loc: %s", cont, status, location)
 
 	if err := d.DB.Model(Pin{}).Where("content = ?", cont).UpdateColumns(map[string]interface{}{
-		"active":  status == types.PinningStatusPinned,
-		"pinning": status == types.PinningStatusPinning,
-		"failed":  status == types.PinningStatusFailed,
+		"pinning": status == pinningstatus.PinningStatusPinning,
+		"failed":  status == pinningstatus.PinningStatusFailed,
 	}).Error; err != nil {
 		log.Errorf("failed to update pin status for cont %d in database: %s", cont, err)
 	}
@@ -1829,7 +1826,7 @@ func (s *Shuttle) addPinToQueue(p Pin, peers []*peer.AddrInfo, replace uint) {
 		Obj:     p.Cid.CID,
 		Peers:   operation.SerializePeers(peers),
 		Started: p.CreatedAt,
-		Status:  types.PinningStatusQueued,
+		Status:  pinningstatus.PinningStatusQueued,
 		Replace: replace,
 	}
 
@@ -2375,7 +2372,7 @@ func (s *Shuttle) handleImportDeal(c echo.Context, u *User) error {
 	}
 
 	dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc, nil)
+	totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, cc)
 	if err != nil {
 		return err
 	}

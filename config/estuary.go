@@ -18,28 +18,29 @@ import (
 )
 
 type Estuary struct {
-	AppVersion             string        `json:"app_version"`
-	DatabaseConnString     string        `json:"database_conn_string"`
-	StagingDataDir         string        `json:"staging_data_dir"`
-	ServerCacheDir         string        `json:"server_cache_dir"`
-	DataDir                string        `json:"data_dir"`
-	ApiListen              string        `json:"api_listen"`
-	LightstepToken         string        `json:"lightstep_token"`
-	Hostname               string        `json:"hostname"`
-	DisableAutoRetrieve    bool          `json:"enable_autoretrieve"`
-	LowMem                 bool          `json:"low_mem"`
-	DisableFilecoinStorage bool          `json:"disable_filecoin_storage"`
-	DisableSwaggerEndpoint bool          `json:"disable_swagger_endpoint"`
-	Node                   Node          `json:"node"`
-	Jaeger                 Jaeger        `json:"jaeger"`
-	Deal                   Deal          `json:"deal"`
-	Content                Content       `json:"content"`
-	Logging                Logging       `json:"logging"`
-	StagingBucket          StagingBucket `json:"staging_bucket"`
-	Replication            int           `json:"replication"`
-	RpcEngine              RpcEngine     `json:"rpc_engine"`
-	Pinning                Pinning       `json:"pinning"`
-	RateLimit              rate.Limit    `json:"rate_limit"`
+	AppVersion             string          `json:"app_version"`
+	DatabaseConnString     string          `json:"database_conn_string"`
+	StagingDataDir         string          `json:"staging_data_dir"`
+	ServerCacheDir         string          `json:"server_cache_dir"`
+	DataDir                string          `json:"data_dir"`
+	ApiListen              string          `json:"api_listen"`
+	LightstepToken         string          `json:"lightstep_token"`
+	Hostname               string          `json:"hostname"`
+	DisableAutoRetrieve    bool            `json:"enable_autoretrieve"`
+	LowMem                 bool            `json:"low_mem"`
+	DisableFilecoinStorage bool            `json:"disable_filecoin_storage"`
+	DisableSwaggerEndpoint bool            `json:"disable_swagger_endpoint"`
+	Node                   Node            `json:"node"`
+	Jaeger                 Jaeger          `json:"jaeger"`
+	Deal                   Deal            `json:"deal"`
+	Content                Content         `json:"content"`
+	Logging                Logging         `json:"logging"`
+	StagingBucket          StagingBucket   `json:"staging_bucket"`
+	Replication            int             `json:"replication"`
+	RpcEngine              RpcEngine       `json:"rpc_engine"`
+	Pinning                Pinning         `json:"pinning"`
+	WorkerIntervals        WorkerIntervals `json:"worker_intervals"`
+	RateLimit              rate.Limit      `json:"rate_limit"`
 }
 
 func (cfg *Estuary) Load(filename string) error {
@@ -111,9 +112,7 @@ func NewEstuary(appVersion string) *Estuary {
 		},
 
 		StagingBucket: StagingBucket{
-			Enabled:           true,
-			AggregateInterval: time.Minute * 5, // aggregate staging buckets every 5 minutes
-			CreationInterval:  time.Minute * 2, // aggregate staging buckets every 2 minutes
+			Enabled: true,
 		},
 
 		Pinning: Pinning{
@@ -206,9 +205,15 @@ func NewEstuary(appVersion string) *Estuary {
 			Queue: QueueEngine{
 				Host:      "",
 				Enabled:   false,
-				Consumers: 5,
+				Consumers: 3,
 				Driver:    "nsq",
 			},
+		},
+		WorkerIntervals: WorkerIntervals{
+			StagingZoneInterval: time.Minute * 1,
+			SplitInterval:       time.Minute * 1,
+			CommpInterval:       time.Minute * 1,
+			DealInterval:        time.Minute * 1,
 		},
 	}
 }

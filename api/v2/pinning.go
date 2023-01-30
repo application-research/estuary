@@ -1,11 +1,11 @@
 package api
 
 import (
+	"net/http"
+
 	"github.com/application-research/estuary/pinner"
-	"github.com/application-research/estuary/pinner/types"
 	"github.com/application-research/estuary/util"
 	"github.com/labstack/echo/v4"
-	"net/http"
 )
 
 type BatchedPinRequest struct {
@@ -17,38 +17,31 @@ type BatchedPinRequest struct {
 // @Description  This endpoint returns a pin status object.
 // @Tags         pinning
 // @Produce      json
-// @Success      200	{object}  []types.IpfsPinStatusResponse
+// @Success      200	{object}  []pinner.IpfsPinStatusResponse
 // @Failure      404	{object}  util.HttpError
 // @Failure      500    {object}  util.HttpError
 // @Param        pin           body      []api.BatchedPinRequest  true   "Pin Body {[content_id:"content_id_to_pin"]}"
 // @Router       /v2/pinning/batched-pins/ [get]
 func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
-
 	var pins []BatchedPinRequest
-	err := c.Bind(&pins)
-	if err != nil {
+	if err := c.Bind(&pins); err != nil {
 		return err
 	}
 
-	var pinStatuses []*types.IpfsPinStatusResponse
-	for _, pinId := range pins {
+	var pinStatuses []*pinner.IpfsPinStatusResponse
+	for _, pin := range pins {
 		paramCidsToGet := pinner.GetPinParam{
-			Ctx:      c,                    // echo context to access echo specific vars
-			Db:       s.DB,                 // the database instance for looking up collections
-			CM:       s.CM,                 // the content manager either from v1 or v2
-			User:     u,                    // the user
-			CidToGet: pinId.ContentIdToPin, // the pin object
-
+			User:     u,                  // the user
+			CidToGet: pin.ContentIdToPin, // the pin object
 		}
-		st, err := pinner.GetPin(paramCidsToGet)
+		st, err := s.pinMgr.GetPin(paramCidsToGet)
+		if err != nil {
+			return err
+		}
 
 		pinStatuses = append(pinStatuses, st)
 		if err != nil {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  err.(*pinner.PinningHelperError).Reason,
-				Details: err.(*pinner.PinningHelperError).Details,
-			}
+			return err
 		}
 	}
 
@@ -61,7 +54,7 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 // @Tags         pinning
 // @Accept		 json
 // @Produce      json
-// @Success      202	{object}  []types.IpfsPinStatusResponse
+// @Success      202	{object}  []pinner.IpfsPinStatusResponse
 // @Failure      500    {object}  util.HttpError
 // @in           202,default  string  Token "token"
 // @Param        pin           body      []types.IpfsPin  true   "Pin Body {[cid:cid, name:name]}"
@@ -69,6 +62,10 @@ func (s *apiV2) handleGetBatchedPins(c echo.Context, u *util.User) error {
 // @Param        overwrite	   query     string                   false  "Overwrite conflicting files in collections"
 // @Router       /v2/pinning/batched-pins [post]
 func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
+	var pins []pinner.IpfsPin
+	if err := c.Bind(&pins); err != nil {
+		return err
+	}
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -84,41 +81,26 @@ func (s *apiV2) handleAddBatchedPins(c echo.Context, u *util.User) error {
 		ignoreDuplicates = true
 	}
 
-	var pins []types.IpfsPin
-	if err := c.Bind(&pins); err != nil {
-		return err
-	}
-
-	var pinStatuses []*types.IpfsPinStatusResponse
+	var pinStatuses []*pinner.IpfsPinStatusResponse
 	for _, pin := range pins {
-
-		// params
 		pinningParam := pinner.PinCidParam{
-			Ctx:              c,                // echo context to access echo specific vars
-			Db:               s.DB,             // the database instance for looking up collections
-			CM:               s.CM,             // the content manager either from v1 or v2
 			User:             u,                // the user
 			CidToPin:         pin,              // the pin object
 			Overwrite:        overwrite,        // the overwrite flag
 			IgnoreDuplicates: ignoreDuplicates, // the ignore duplicates flag
 			Replication:      s.cfg.Replication,
+			MakeDeal:         true,
 		}
 
-		pinnerAddStatus, pinOp, err := pinner.PinCidAndRequestMakeDeal(pinningParam)
-		if err != nil {
-			return &util.HttpError{
-				Code:    http.StatusBadRequest,
-				Reason:  err.(*pinner.PinningHelperError).Reason,
-				Details: err.(*pinner.PinningHelperError).Details,
-			}
-		}
-
-		pinStatuses = append(pinStatuses, pinnerAddStatus) // collect the status
+		pinSts, err := s.pinMgr.PinCid(c, pinningParam)
 		if err != nil {
 			return err
 		}
-		s.pinMgr.Add(pinOp)
-	}
 
+		pinStatuses = append(pinStatuses, pinSts)
+		if err != nil {
+			return err
+		}
+	}
 	return c.JSON(http.StatusAccepted, pinStatuses)
 }

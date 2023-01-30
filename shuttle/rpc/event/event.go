@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -15,12 +15,14 @@ var MessageTopics = map[string]bool{
 	OP_UpdatePinStatus:  true,
 	OP_PinComplete:      true,
 	OP_CommPComplete:    true,
+	OP_CommPFailed:      true,
 	OP_TransferStarted:  true,
 	OP_TransferFinished: true,
 	OP_TransferStatus:   true,
 	OP_ShuttleUpdate:    true,
 	OP_GarbageCheck:     true,
 	OP_SplitComplete:    true,
+	OP_SplitFailed:      true,
 	OP_SanityCheck:      true,
 }
 
@@ -209,12 +211,14 @@ type MsgParams struct {
 	UpdatePinStatus  *UpdatePinStatus           `json:",omitempty"`
 	PinComplete      *PinComplete               `json:",omitempty"`
 	CommPComplete    *CommPComplete             `json:",omitempty"`
+	CommPFailed      *CommPFailed               `json:",omitempty"`
 	TransferStatus   *TransferStatus            `json:",omitempty"`
 	TransferStarted  *TransferStartedOrFinished `json:",omitempty"`
 	TransferFinished *TransferStartedOrFinished `json:",omitempty"`
 	ShuttleUpdate    *ShuttleUpdate             `json:",omitempty"`
 	GarbageCheck     *GarbageCheck              `json:",omitempty"`
 	SplitComplete    *SplitComplete             `json:",omitempty"`
+	SplitFailed      *SplitFailed               `json:",omitempty"`
 	SanityCheck      *SanityCheck               `json:",omitempty"`
 }
 
@@ -222,7 +226,7 @@ const OP_UpdatePinStatus = "UpdateContentPinStatus"
 
 type UpdatePinStatus struct {
 	DBID   uint64
-	Status types.PinningStatus
+	Status status.PinningStatus
 }
 
 type PinObj struct {
@@ -246,6 +250,12 @@ type CommPComplete struct {
 	CommP   cid.Cid
 	CarSize uint64
 	Size    abi.UnpaddedPieceSize
+}
+
+const OP_CommPFailed = "OP_CommPFailed"
+
+type CommPFailed struct {
+	Data cid.Cid
 }
 
 const OP_TransferStarted = "TransferStarted"
@@ -285,6 +295,12 @@ type GarbageCheck struct {
 const OP_SplitComplete = "SplitComplete"
 
 type SplitComplete struct {
+	ID uint64
+}
+
+const OP_SplitFailed = "OP_SplitFailed"
+
+type SplitFailed struct {
 	ID uint64
 }
 

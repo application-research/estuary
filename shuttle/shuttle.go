@@ -16,10 +16,11 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/application-research/estuary/config"
+	"github.com/application-research/estuary/constants"
+	"github.com/application-research/estuary/node"
 	rpc "github.com/application-research/estuary/shuttle/rpc"
 	"github.com/labstack/echo/v4"
 
-	contentqueue "github.com/application-research/estuary/content/queue"
 	dealstatus "github.com/application-research/estuary/deal/status"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/sanitycheck"
@@ -54,7 +55,7 @@ type IManager interface {
 	UnpinContent(ctx context.Context, loc string, conts []uint64) error
 	PinContent(ctx context.Context, loc string, cont util.Content, origins []*peer.AddrInfo) error
 	ConsolidateContent(ctx context.Context, loc string, contents []util.Content) error
-	AggregateContent(ctx context.Context, loc string, zone util.Content, zoneContents []util.Content) error
+	AggregateContent(ctx context.Context, loc string, zone *util.Content, zoneContents []util.Content) error
 	CommPContent(ctx context.Context, loc string, data cid.Cid) error
 	SplitContent(ctx context.Context, loc string, cont uint64, size int64) error
 	GetLocationForRetrieval(ctx context.Context, cont util.Content) (string, error)
@@ -68,6 +69,7 @@ type IManager interface {
 type manager struct {
 	db                    *gorm.DB
 	cfg                   *config.Estuary
+	nd                    *node.Node
 	tracer                trace.Tracer
 	log                   *zap.SugaredLogger
 	transferStatusUpdater transferstatus.IUpdater
@@ -75,8 +77,15 @@ type manager struct {
 	rpcMgr                rpc.IManager
 }
 
-func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.SugaredLogger, sanitycheckMgr sanitycheck.IManager, cntQueueMgr contentqueue.IQueueManager) (IManager, error) {
-	rpcMgr, err := rpc.NewEstuaryRpcManager(ctx, db, cfg, log, sanitycheckMgr, cntQueueMgr)
+func NewManager(
+	ctx context.Context,
+	db *gorm.DB,
+	nd *node.Node,
+	cfg *config.Estuary,
+	log *zap.SugaredLogger,
+	sanitycheckMgr sanitycheck.IManager,
+) (IManager, error) {
+	rpcMgr, err := rpc.NewEstuaryRpcManager(ctx, db, cfg, log, sanitycheckMgr)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +93,7 @@ func NewManager(ctx context.Context, db *gorm.DB, cfg *config.Estuary, log *zap.
 	return &manager{
 		db:                    db,
 		cfg:                   cfg,
+		nd:                    nd,
 		tracer:                otel.Tracer("shuttle"),
 		log:                   log,
 		transferStatusUpdater: transferstatus.NewUpdater(db),
@@ -99,7 +109,7 @@ func (m *manager) IsOnline(handle string) (bool, error) {
 		return false, err
 	}
 	if d == nil {
-		return false, err
+		return false, nil
 	}
 	// if connection not updated in the last 5 minutes
 	return time.Now().Add(-5 * time.Minute).Before(d.UpdatedAt), nil
@@ -118,6 +128,13 @@ func (m *manager) CanAddContent(handle string) (bool, error) {
 }
 
 func (m *manager) AddrInfo(handle string) (*peer.AddrInfo, error) {
+	if handle == constants.ContentLocationLocal {
+		return &peer.AddrInfo{
+			ID:    m.nd.Host.ID(),
+			Addrs: m.nd.Host.Addrs(),
+		}, nil
+	}
+
 	d, err := m.getConnectionByHandle(handle)
 	if err != nil {
 		return nil, err
@@ -236,6 +253,7 @@ func (m *manager) getConnectionByHandle(handle string) (*model.ShuttleConnection
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
+		return nil, nil
 	}
 	return shuttle, nil
 }

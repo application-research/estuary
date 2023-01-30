@@ -139,7 +139,7 @@ func (s *Shuttle) runRetrieval(ctx context.Context, req *rpcevent.RetrieveConten
 		}
 
 		dserv := merkledag.NewDAGService(blockservice.New(s.Node.Blockstore, nil))
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, s.Node.Blockstore, req.Cid, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, req.Content, dserv, s.Node.Blockstore, req.Cid)
 		if err != nil {
 			log.Errorw("failed adding content to database after successful retrieval", "cont", req.Content, "err", err.Error())
 			return err

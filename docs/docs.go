@@ -1079,7 +1079,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPin"
+                            "$ref": "#/definitions/pinner.IpfsPin"
                         }
                     },
                     {
@@ -2502,7 +2502,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsListPinStatusResponse"
+                            "$ref": "#/definitions/pinner.IpfsListPinStatusResponse"
                         }
                     },
                     "400": {
@@ -2538,7 +2538,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPin"
+                            "$ref": "#/definitions/pinner.IpfsPin"
                         }
                     },
                     {
@@ -2558,7 +2558,7 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
+                            "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
                         }
                     },
                     "500": {
@@ -2593,7 +2593,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
+                            "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
                         }
                     },
                     "404": {
@@ -2636,7 +2636,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPin"
+                            "$ref": "#/definitions/pinner.IpfsPin"
                         }
                     }
                 ],
@@ -2644,7 +2644,7 @@ const docTemplate = `{
                     "202": {
                         "description": "Accepted",
                         "schema": {
-                            "$ref": "#/definitions/types.IpfsPinStatusResponse"
+                            "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
                         }
                     },
                     "404": {
@@ -3581,7 +3581,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.IpfsListPinStatusResponse": {
+        "pinner.IpfsListPinStatusResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -3590,12 +3590,12 @@ const docTemplate = `{
                 "results": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/types.IpfsPinStatusResponse"
+                        "$ref": "#/definitions/pinner.IpfsPinStatusResponse"
                     }
                 }
             }
         },
-        "types.IpfsPin": {
+        "pinner.IpfsPin": {
             "type": "object",
             "properties": {
                 "cid": {
@@ -3616,7 +3616,7 @@ const docTemplate = `{
                 }
             }
         },
-        "types.IpfsPinStatusResponse": {
+        "pinner.IpfsPinStatusResponse": {
             "type": "object",
             "properties": {
                 "content": {
@@ -3636,17 +3636,17 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "pin": {
-                    "$ref": "#/definitions/types.IpfsPin"
+                    "$ref": "#/definitions/pinner.IpfsPin"
                 },
                 "requestid": {
                     "type": "string"
                 },
                 "status": {
-                    "$ref": "#/definitions/types.PinningStatus"
+                    "$ref": "#/definitions/status.PinningStatus"
                 }
             }
         },
-        "types.PinningStatus": {
+        "status.PinningStatus": {
             "type": "string",
             "enum": [
                 "pinning",

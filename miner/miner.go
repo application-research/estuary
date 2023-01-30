@@ -71,7 +71,6 @@ func (mm *MinerManager) randomMinerListForDeal(ctx context.Context, n int, piece
 
 		if ask.SizeIsCloseEnough(pieceSize) {
 			out = append(out, miner{Address: dbm.Address.Addr, DealProtocolVersion: proto, Ask: ask})
-			exclude[dbm.Address.Addr] = true
 		}
 	}
 	return out, nil

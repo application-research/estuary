@@ -19,29 +19,29 @@ import (
 	"golang.org/x/xerrors"
 )
 
-func (cm *ContentManager) RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
-	return cm.db.Create(rfr).Error
+func (m *manager) RecordRetrievalFailure(rfr *util.RetrievalFailureRecord) error {
+	return m.db.Create(rfr).Error
 }
 
-func (cm *ContentManager) TryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
+func (m *manager) TryRetrieve(ctx context.Context, maddr address.Address, c cid.Cid, ask *retrievalmarket.QueryResponse) error {
 	proposal, err := retrievehelper.RetrievalProposalForAsk(ask, c, nil)
 	if err != nil {
 		return err
 	}
 
-	stats, err := cm.filClient.RetrieveContent(ctx, maddr, proposal)
+	stats, err := m.fc.RetrieveContent(ctx, maddr, proposal)
 	if err != nil {
 		return err
 	}
 
-	cm.RecordRetrievalSuccess(c, maddr, stats)
+	m.RecordRetrievalSuccess(c, maddr, stats)
 	return nil
 }
 
-func (cm *ContentManager) RecordRetrievalSuccess(cc cid.Cid, m address.Address, rstats *filclient.RetrievalStats) {
-	if err := cm.db.Create(&model.RetrievalSuccessRecord{
+func (m *manager) RecordRetrievalSuccess(cc cid.Cid, ma address.Address, rstats *filclient.RetrievalStats) {
+	if err := m.db.Create(&model.RetrievalSuccessRecord{
 		Cid:          util.DbCID{CID: cc},
-		Miner:        m.String(),
+		Miner:        ma.String(),
 		Peer:         rstats.Peer.String(),
 		Size:         rstats.Size,
 		DurationMs:   rstats.Duration.Milliseconds(),
@@ -50,23 +50,23 @@ func (cm *ContentManager) RecordRetrievalSuccess(cc cid.Cid, m address.Address, 
 		NumPayments:  rstats.NumPayments,
 		AskPrice:     rstats.AskPrice.String(),
 	}).Error; err != nil {
-		cm.log.Errorf("failed to write retrieval success record: %s", err)
+		m.log.Errorf("failed to write retrieval success record: %s", err)
 	}
 }
 
-func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint64) error {
-	ctx, span := cm.tracer.Start(ctx, "runRetrieval")
+func (m *manager) runRetrieval(ctx context.Context, contentToFetch uint64) error {
+	ctx, span := m.tracer.Start(ctx, "runRetrieval")
 	defer span.End()
 
 	var content util.Content
-	if err := cm.db.First(&content, contentToFetch).Error; err != nil {
+	if err := m.db.First(&content, contentToFetch).Error; err != nil {
 		return err
 	}
 
 	index := -1
 	if content.AggregatedIn > 0 {
 		rootContent := content.AggregatedIn
-		ix, err := cm.indexForAggregate(ctx, rootContent, contentToFetch)
+		ix, err := m.indexForAggregate(ctx, rootContent, contentToFetch)
 		if err != nil {
 			return err
 		}
@@ -75,7 +75,7 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint6
 	_ = index
 
 	var deals []model.ContentDeal
-	if err := cm.db.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
+	if err := m.db.Find(&deals, "content = ? and not failed", contentToFetch).Error; err != nil {
 		return err
 	}
 
@@ -90,18 +90,18 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint6
 
 		maddr, err := deal.MinerAddr()
 		if err != nil {
-			cm.log.Errorf("deal %d had bad miner address: %s", deal.ID, err)
+			m.log.Errorf("deal %d had bad miner address: %s", deal.ID, err)
 			continue
 		}
 
-		cm.log.Infow("attempting retrieval deal", "content", contentToFetch, "miner", maddr)
+		m.log.Infow("attempting retrieval deal", "content", contentToFetch, "miner", maddr)
 
-		ask, err := cm.filClient.RetrievalQuery(ctx, maddr, content.Cid.CID)
+		ask, err := m.fc.RetrievalQuery(ctx, maddr, content.Cid.CID)
 		if err != nil {
 			span.RecordError(err)
 
-			cm.log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
-			if err := cm.RecordRetrievalFailure(&util.RetrievalFailureRecord{
+			m.log.Errorw("failed to query retrieval", "miner", maddr, "content", content.Cid.CID, "err", err)
+			if err := m.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "query",
 				Message: err.Error(),
@@ -112,12 +112,12 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint6
 			}
 			continue
 		}
-		cm.log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
+		m.log.Infow("got retrieval ask", "content", content, "miner", maddr, "ask", ask)
 
-		if err := cm.TryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
+		if err := m.TryRetrieve(ctx, maddr, content.Cid.CID, ask); err != nil {
 			span.RecordError(err)
-			cm.log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
-			if err := cm.RecordRetrievalFailure(&util.RetrievalFailureRecord{
+			m.log.Errorw("failed to retrieve content", "miner", maddr, "content", content.Cid.CID, "err", err)
+			if err := m.RecordRetrievalFailure(&util.RetrievalFailureRecord{
 				Miner:   maddr.String(),
 				Phase:   "retrieval",
 				Message: err.Error(),
@@ -134,16 +134,16 @@ func (cm *ContentManager) runRetrieval(ctx context.Context, contentToFetch uint6
 	return fmt.Errorf("failed to retrieve with any miner we have deals with")
 }
 
-func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc string, cont util.Content) error {
+func (m *manager) sendRetrieveContentMessage(ctx context.Context, loc string, cont util.Content) error {
 	return fmt.Errorf("not retrieving content yet until implementation is finished")
 	/*
 		var activeDeals []contentDeal
-		if err := cm.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
+		if err := m.DB.Find(&activeDeals, "content = ? and not failed and deal_id > 0", cont.ID).Error; err != nil {
 			return err
 		}
 
 		if len(activeDeals) == 0 {
-			cm.log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
+			m.log.Errorf("attempted to retrieve content %d but have no active deals", cont.ID)
 			return fmt.Errorf("no active deals for content %d, cannot retrieve", cont.ID)
 		}
 
@@ -151,7 +151,7 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 		for _, d := range activeDeals {
 			ma, err := d.MinerAddr()
 			if err != nil {
-				cm.log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
+				m.log.Errorf("failed to parse miner addres for deal %d: %s", d.ID, err)
 				continue
 			}
 
@@ -161,7 +161,7 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 			})
 		}
 
-		return cm.sendShuttleCommand(ctx, loc, &drpc.Command{
+		return m.sendShuttleCommand(ctx, loc, &drpc.Command{
 			Op: drpc.CMD_RetrieveContent,
 			Params: drpc.CmdParams{
 				RetrieveContent: &drpc.RetrieveContent{
@@ -174,21 +174,21 @@ func (cm *ContentManager) sendRetrieveContentMessage(ctx context.Context, loc st
 	*/
 }
 
-func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch uint64) error {
-	ctx, span := cm.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
+func (m *manager) retrieveContent(ctx context.Context, contentToFetch uint64) error {
+	ctx, span := m.tracer.Start(ctx, "retrieveContent", trace.WithAttributes(
 		attribute.Int("content", int(contentToFetch)),
 	))
 	defer span.End()
 
-	cm.retrLk.Lock()
-	prog, ok := cm.retrievalsInProgress[contentToFetch]
+	m.retrLk.Lock()
+	prog, ok := m.retrievalsInProgress[contentToFetch]
 	if !ok {
 		prog = &util.RetrievalProgress{
 			Wait: make(chan struct{}),
 		}
-		cm.retrievalsInProgress[contentToFetch] = prog
+		m.retrievalsInProgress[contentToFetch] = prog
 	}
-	cm.retrLk.Unlock()
+	m.retrLk.Unlock()
 
 	if ok {
 		select {
@@ -200,70 +200,69 @@ func (cm *ContentManager) retrieveContent(ctx context.Context, contentToFetch ui
 	}
 
 	defer func() {
-		cm.retrLk.Lock()
-		delete(cm.retrievalsInProgress, contentToFetch)
-		cm.retrLk.Unlock()
+		m.retrLk.Lock()
+		delete(m.retrievalsInProgress, contentToFetch)
+		m.retrLk.Unlock()
 
 		close(prog.Wait)
 	}()
 
-	if err := cm.runRetrieval(ctx, contentToFetch); err != nil {
+	if err := m.runRetrieval(ctx, contentToFetch); err != nil {
 		prog.EndErr = err
 		return err
 	}
-
 	return nil
 }
 
-func (cm *ContentManager) RefreshContent(ctx context.Context, cont uint64) error {
-	ctx, span := cm.tracer.Start(ctx, "refreshContent")
+func (m *manager) RefreshContent(ctx context.Context, cont uint64) error {
+	ctx, span := m.tracer.Start(ctx, "refreshContent")
 	defer span.End()
 
 	// TODO: this retrieval needs to mark all of its content as 'referenced'
 	// until we can update its offloading status in the database
 	var c util.Content
-	if err := cm.db.First(&c, "id = ?", cont).Error; err != nil {
+	if err := m.db.First(&c, "id = ?", cont).Error; err != nil {
 		return err
 	}
 
-	loc, err := cm.shuttleMgr.GetLocationForRetrieval(ctx, c)
+	loc, err := m.shuttleMgr.GetLocationForRetrieval(ctx, c)
 	if err != nil {
 		return err
 	}
-	cm.log.Infof("refreshing content %d onto shuttle %s", cont, loc)
+	m.log.Infof("refreshing content %d onto shuttle %s", cont, loc)
 
 	switch loc {
 	case constants.ContentLocationLocal:
-		if err := cm.retrieveContent(ctx, cont); err != nil {
+		if err := m.retrieveContent(ctx, cont); err != nil {
 			return err
 		}
 
-		if err := cm.db.Model(&util.Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
+		if err := m.db.Model(&util.Content{}).Where("id = ?", cont).Update("offloaded", false).Error; err != nil {
 			return err
 		}
 
-		if err := cm.db.Model(&util.ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
+		if err := m.db.Model(&util.ObjRef{}).Where("content = ?", cont).Update("offloaded", 0).Error; err != nil {
 			return err
 		}
 	default:
-		return cm.sendRetrieveContentMessage(ctx, loc, c)
+		return m.sendRetrieveContentMessage(ctx, loc, c)
 	}
 	return nil
 }
 
-func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error) {
-	ctx, span := cm.tracer.Start(ctx, "refreshForCid", trace.WithAttributes(
+func (m *manager) RefreshContentForCid(ctx context.Context, c cid.Cid) (blocks.Block, error) {
+	ctx, span := m.tracer.Start(ctx, "refreshForCid", trace.WithAttributes(
 		attribute.Stringer("cid", c),
 	))
 	defer span.End()
 
 	var obj util.Object
-	if err := cm.db.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
+	if err := m.db.First(&obj, "cid = ?", c.Bytes()).Error; err != nil {
 		return nil, xerrors.Errorf("failed to get object from db: %s", err)
 	}
 
 	var refs []util.ObjRef
-	if err := cm.db.Find(&refs, "object = ?", obj.ID).Error; err != nil {
+	if err := m.db.Find(&refs, "object = ?", obj.ID).Error; err != nil {
 		return nil, err
 	}
 
@@ -280,7 +279,7 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 		// if one of the referenced contents has the requested cid as its root, then we should probably fetch that one
 
 		var contents []util.Content
-		if err := cm.db.Find(&contents, "cid = ?", c.Bytes()).Error; err != nil {
+		if err := m.db.Find(&contents, "cid = ?", c.Bytes()).Error; err != nil {
 			return nil, err
 		}
 
@@ -293,11 +292,11 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 		}
 	}
 
-	ch := cm.notifyBlockstore.WaitFor(ctx, c)
+	ch := m.notifyBlockstore.WaitFor(ctx, c)
 
 	go func() {
-		if err := cm.retrieveContent(ctx, contentToFetch); err != nil {
-			cm.log.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
+		if err := m.retrieveContent(ctx, contentToFetch); err != nil {
+			m.log.Errorf("failed to retrieve content to serve %d: %w", contentToFetch, err)
 		}
 	}()
 
@@ -309,6 +308,6 @@ func (cm *ContentManager) RefreshContentForCid(ctx context.Context, c cid.Cid) (
 	}
 }
 
-func (cm *ContentManager) indexForAggregate(ctx context.Context, aggregateID uint64, contID uint64) (int, error) {
+func (m *manager) indexForAggregate(ctx context.Context, aggregateID, contID uint64) (int, error) {
 	return 0, fmt.Errorf("selector based retrieval not yet implemented")
 }
