@@ -281,7 +281,7 @@ func (m *manager) CheckContentReadyForDealMaking(ctx context.Context, content *u
 	return nil
 }
 
-func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsToBeMade int) ([]*model.ContentDeal, error) {
+func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsToBeMade int) error {
 	ctx, span := m.tracer.Start(ctx, "makeDealsForContent", trace.WithAttributes(
 		attribute.Int64("content", int64(contID)),
 		attribute.Int("count", dealsToBeMade),
@@ -290,23 +290,23 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 
 	content, err := m.contMgr.GetContent(contID)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := m.CheckContentReadyForDealMaking(ctx, content); err != nil {
-		return nil, errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
+		return errors.Wrapf(err, "content %d not ready for dealmaking", content.ID)
 	}
 
 	_, _, pieceSize, err := m.commpMgr.GetPieceCommitment(ctx, content.Cid.CID, m.blockstore)
 	if err != nil {
-		return nil, xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
+		return xerrors.Errorf("failed to compute piece commitment while making deals %d: %w", content.ID, err)
 	}
 
 	// get content deals to filter miners - TODO move this to miners package
 	var existingContDeals []model.ContentDeal
 	if err := m.db.Find(&existingContDeals, "content = ? AND NOT failed", content.ID).Error; err != nil {
 		if !xerrors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+			return err
 		}
 	}
 
@@ -315,7 +315,7 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 	for _, d := range existingContDeals {
 		maddr, err := d.MinerAddr()
 		if err != nil {
-			return nil, err
+			return err
 		}
 		excludedMiners[maddr] = true
 	}
@@ -323,32 +323,29 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 	minerCount := 10000 // pick enough miners so we can try to make the most deal
 	miners, err := m.minerManager.PickMiners(ctx, minerCount, pieceSize.Padded(), excludedMiners, true)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	dealsMade := make([]*model.ContentDeal, 0)
 	for i := 0; i < dealsToBeMade; i++ {
 		for _, mn := range miners {
 			if excludedMiners[mn.Address] {
 				continue
 			}
 
-			cd, err := m.MakeDealWithMiner(ctx, content, mn.Address)
-			if err != nil {
+			if _, err := m.MakeDealWithMiner(ctx, content, mn.Address); err != nil {
 				m.log.Warnf("failed to make deal for cont: %d, with miner: %s - %s", contID, mn.Address, err)
 				continue
 			}
 
 			if err := m.dealQueueMgr.MadeOneDeal(contID, m.db); err != nil {
-				return nil, err
+				return err
 			}
 
-			dealsMade = append(dealsMade, cd)
 			excludedMiners[mn.Address] = true
 			break
 		}
 	}
-	return dealsMade, nil
+	return nil
 }
 
 func (cm *manager) sendProposalV120(ctx context.Context, contentLoc string, netprop network.Proposal, propCid cid.Cid, dealUUID uuid.UUID, dbid uint) (func() error, bool, error) {
