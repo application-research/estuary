@@ -1743,7 +1743,7 @@ func (s *apiV1) handleGetSystemConfig(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
-type minerResp struct {
+type MinerResp struct {
 	Addr            address.Address       `json:"addr"`
 	Name            string                `json:"name"`
 	Suspended       bool                  `json:"suspended"`
@@ -1768,7 +1768,7 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	key := util.CacheKey(c, nil)
 	cached, ok := s.extendedCacher.Get(key)
 	if ok {
-		out, ok := cached.([]minerResp)
+		out, ok := cached.([]MinerResp)
 		if ok {
 			return c.JSON(http.StatusOK, out)
 		} else {
@@ -1785,7 +1785,7 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		return err
 	}
 
-	out := make([]minerResp, len(miners))
+	out := make([]MinerResp, len(miners))
 	wg := new(sync.WaitGroup)
 
 	for i, m := range miners {

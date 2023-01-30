@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"time"
 
+	"github.com/application-research/estuary/api/v1"
 	"github.com/application-research/estuary/node"
+	"github.com/filecoin-project/go-address"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -14,32 +17,71 @@ import (
 )
 
 type PeerPingManager struct {
-	Node   *node.Node
-	Result PingManyResult
+	Node     *node.Node
+	HtClient *ShuttleHttpClient
+	Result   PingManyResult
 }
 
-type Libp2pHost struct {
-	addr   multiaddr.Multiaddr
-	peerID peer.ID
+type SpHost struct {
+	spAddr    address.Address
+	multiAddr multiaddr.Multiaddr
+	peerID    peer.ID
 }
 
 type PingManyResult map[peer.ID]time.Duration
 
-func NewPPM(node *node.Node) *PeerPingManager {
+func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 
 	return &PeerPingManager{
-		Node:   node,
-		Result: make(map[peer.ID]time.Duration),
+		Node:     node,
+		HtClient: shtc,
+		Result:   make(map[peer.ID]time.Duration),
 	}
 }
 
+func (ppm *PeerPingManager) Run(interval time.Duration) {
+	// ctx := context.TODO()
+	for {
+		// hosts := []
+		// Get list of miners to ping
+
+		// PingMany(ctx, hosts)
+		time.Sleep(interval)
+	}
+}
+
+func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
+	resp, err := ppm.HtClient.MakeRequest("GET", "/miners", nil, "")
+	if err != nil {
+		return nil, err
+	}
+
+	var out []api.MinerResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+
+	var sps []SpHost
+
+	for _, m := range out {
+		sp := SpHost{
+			spAddr:    m.Addr,
+			peerID:    m.ChainInfo.PeerID,
+			multiAddr: m.ChainInfo.Addresses[0], // TODO: @jcace ping all multiaddrs in case first one does not work
+		}
+		sps = append(sps, sp)
+	}
+
+	return sps, nil
+}
+
 // Ping a list of hosts, returning RTT for each of them. Errors will be ignored, unresponsive hosts will not be returned
-func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []Libp2pHost) {
+func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []SpHost) {
 	result := make(PingManyResult)
 
 	// TODO: Batch them in go funcs for faster performance
 	for _, h := range hosts {
-		res, err := ppm.pingOne(ctx, h.addr, h.peerID)
+		res, err := ppm.pingOne(ctx, h.multiAddr, h.peerID)
 
 		if err == nil {
 			result[h.peerID] = *res
