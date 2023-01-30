@@ -16,6 +16,7 @@ import (
 type IManager interface {
 	QueueContent(contID uint64, tx *gorm.DB) error
 	DealComplete(contID uint64, tx *gorm.DB)
+	MadeOneDeal(contID uint64, tx *gorm.DB) error
 	DealFailed(contID uint64, tx *gorm.DB)
 	DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB)
 	DealCheckFailed(contID uint64, tx *gorm.DB)
@@ -82,6 +83,8 @@ func (m *manager) QueueContent(contID uint64, tx *gorm.DB) error {
 }
 
 func (m *manager) DealComplete(contID uint64, tx *gorm.DB) {
+	m.log.Debugf("deal-making complete for content: %d", contID)
+
 	if err := tx.Model(model.DealQueue{}).Where("cont_id = ?", contID).UpdateColumns(map[string]interface{}{
 		"can_deal":   false,
 		"deal_count": 0,
@@ -93,6 +96,8 @@ func (m *manager) DealComplete(contID uint64, tx *gorm.DB) {
 }
 
 func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.DB) {
+	m.log.Debugf("deal-check complete for content: %d", contID)
+
 	canDeal := true
 	if dealsToBeMade == 0 { // if no new deal is needed
 		canDeal = false
@@ -105,6 +110,12 @@ func (m *manager) DealCheckComplete(contID uint64, dealsToBeMade int, tx *gorm.D
 	}).Error; err != nil {
 		m.log.Errorf("failed to update deal queue (DealCheckComplete) for cont %d - %s", contID, err)
 	}
+}
+
+func (m *manager) MadeOneDeal(contID uint64, tx *gorm.DB) error {
+	m.log.Debugf("made one deal for content: %d", contID)
+
+	return tx.Exec("UPDATE deal_queues SET deal_count = deal_count - 1 WHERE cont_id = ?", contID).Error
 }
 
 func (m *manager) DealFailed(contID uint64, tx *gorm.DB) {

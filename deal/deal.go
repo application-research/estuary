@@ -320,19 +320,32 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 		excludedMiners[maddr] = true
 	}
 
-	miners, err := m.minerManager.PickMiners(ctx, dealsToBeMade*2, pieceSize.Padded(), excludedMiners, true)
+	minerCount := 10000 // pick enough miners so we can try to make the most deal
+	miners, err := m.minerManager.PickMiners(ctx, minerCount, pieceSize.Padded(), excludedMiners, true)
 	if err != nil {
 		return nil, err
 	}
 
 	dealsMade := make([]*model.ContentDeal, 0)
-	for _, mn := range miners {
-		cd, err := m.MakeDealWithMiner(ctx, content, mn.Address)
-		if err != nil {
-			m.log.Warnf("failed to make deal with miner: %s - %s", mn.Address, err)
-			continue
+	for i := 0; i < dealsToBeMade; i++ {
+		for _, mn := range miners {
+			if excludedMiners[mn.Address] {
+				continue
+			}
+
+			cd, err := m.MakeDealWithMiner(ctx, content, mn.Address)
+			if err != nil {
+				m.log.Warnf("failed to make deal for cont: %d, with miner: %s - %s", contID, mn.Address, err)
+				continue
+			}
+
+			if err := m.dealQueueMgr.MadeOneDeal(contID, m.db); err != nil {
+				return nil, err
+			}
+
+			dealsMade = append(dealsMade, cd)
+			excludedMiners[mn.Address] = true
 		}
-		dealsMade = append(dealsMade, cd)
 	}
 	return dealsMade, nil
 }
