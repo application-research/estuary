@@ -1795,10 +1795,9 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		out[i].Version = m.Version
 
 		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
-		if err != nil {
+		if err == nil {
 			out[i].ChainInfo = ci
 		}
-
 	}
 
 	s.extendedCacher.Add(key, out)
