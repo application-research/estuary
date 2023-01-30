@@ -39,15 +39,22 @@ func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 	}
 }
 
+// Kicks off a PPM task to get a list of SPs and ping them every <interval>
+// Spawns a new go thread, and returns immedately
 func (ppm *PeerPingManager) Run(interval time.Duration) {
-	// ctx := context.TODO()
-	for {
-		// hosts := []
-		// Get list of miners to ping
+	go func() {
+		ctx := context.TODO()
+		for {
+			hosts, err := ppm.getSpList()
+			if err != nil {
+				log.Errorf("ppm could not get SP list %v", err)
+			}
 
-		// PingMany(ctx, hosts)
-		time.Sleep(interval)
-	}
+			ppm.PingMany(ctx, hosts)
+
+			time.Sleep(interval)
+		}
+	}()
 }
 
 func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {

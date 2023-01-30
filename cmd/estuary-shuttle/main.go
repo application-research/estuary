@@ -480,7 +480,9 @@ func main() {
 
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
-		s.PPM = NewPPM(nd)
+		s.PPM = NewPPM(nd, shtc)
+		// TODO @jcace parameterize
+		s.PPM.Run(time.Duration(12) * time.Hour)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
