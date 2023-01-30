@@ -186,7 +186,6 @@ func (mm *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n 
 
 		if ask.SizeIsCloseEnough(pieceSize) {
 			out = append(out, miner{Address: m, DealProtocolVersion: proto, Ask: ask})
-			exclude[m] = true
 		}
 	}
 	return out, nil
