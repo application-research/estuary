@@ -1786,6 +1786,7 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 	}
 
 	out := make([]minerResp, len(miners))
+	wg := new(sync.WaitGroup)
 
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
@@ -1794,11 +1795,18 @@ func (s *apiV1) handleAdminGetMiners(c echo.Context) error {
 		out[i].Name = m.Name
 		out[i].Version = m.Version
 
-		ci, err := s.minerManager.GetMinerChainInfo(ctx, m.Address.Addr)
-		if err == nil {
-			out[i].ChainInfo = ci
-		}
+		// Spawn a thread to fetch the Chain Info (Lotus RPC call - takes a few ms)
+		wg.Add(1)
+		go func(w *sync.WaitGroup, addr address.Address, i int) {
+			defer w.Done()
+			ci, err := s.minerManager.GetMinerChainInfo(ctx, addr)
+			if err == nil {
+				out[i].ChainInfo = ci
+			}
+		}(wg, m.Address.Addr, i)
 	}
+
+	wg.Wait()
 
 	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
