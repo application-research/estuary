@@ -24,7 +24,7 @@ type PeerPingManager struct {
 
 type SpHost struct {
 	spAddr    address.Address
-	multiAddr multiaddr.Multiaddr
+	multiAddr []multiaddr.Multiaddr
 	peerID    peer.ID
 }
 
@@ -74,7 +74,7 @@ func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 		sp := SpHost{
 			spAddr:    m.Addr,
 			peerID:    m.ChainInfo.PeerID,
-			multiAddr: m.ChainInfo.Addresses[0], // TODO: @jcace ping all multiaddrs in case first one does not work
+			multiAddr: m.ChainInfo.Addresses,
 		}
 		sps = append(sps, sp)
 	}
@@ -88,10 +88,15 @@ func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []SpHost) {
 
 	// TODO: Batch them in go funcs for faster performance
 	for _, h := range hosts {
-		res, err := ppm.pingOne(ctx, h.multiAddr, h.peerID)
 
-		if err == nil {
-			result[h.peerID] = *res
+		// Try all multiaddrs until one is pingable, and take that result
+		for _, addr := range h.multiAddr {
+			res, err := ppm.pingOne(ctx, addr, h.peerID)
+
+			if err == nil {
+				result[h.peerID] = *res
+				break
+			}
 		}
 	}
 
