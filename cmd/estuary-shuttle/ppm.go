@@ -58,7 +58,7 @@ func (ppm *PeerPingManager) Run(interval time.Duration) {
 }
 
 func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
-	resp, err := ppm.HtClient.MakeRequest("GET", "/miners", nil, "")
+	resp, err := ppm.HtClient.MakeRequest("GET", "/v2/storage-providers", nil, "")
 	if err != nil {
 		return nil, err
 	}
