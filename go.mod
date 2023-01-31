@@ -52,7 +52,7 @@ require (
 	github.com/ipfs/go-path v0.3.0
 	github.com/ipfs/go-unixfs v0.4.2
 	github.com/ipfs/go-unixfsnode v1.5.1
-	github.com/ipld/go-car v0.5.0
+	github.com/ipld/go-car v0.6.0
 	github.com/ipld/go-codec-dagpb v1.5.0
 	github.com/ipld/go-ipld-prime v0.19.0
 	github.com/jinzhu/gorm v1.9.16
@@ -74,7 +74,7 @@ require (
 	github.com/swaggo/swag v1.8.10
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/urfave/cli/v2 v2.24.2
-	github.com/whyrusleeping/cbor-gen v0.0.0-20230120000152-6c51ebf552c2
+	github.com/whyrusleeping/cbor-gen v0.0.0-20230126041949-52956bd4c9aa
 	github.com/whyrusleeping/memo v0.0.0-20211124220851-3b94446416a3
 	go.opencensus.io v0.24.0
 	go.opentelemetry.io/otel v1.12.0
@@ -218,7 +218,7 @@ require (
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
 	github.com/ipfs/go-ipns v0.3.0 // indirect
-	github.com/ipfs/go-libipfs v0.3.0 // indirect
+	github.com/ipfs/go-libipfs v0.4.0 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.0 // indirect
 	github.com/ipfs/go-verifcid v0.0.2 // indirect
