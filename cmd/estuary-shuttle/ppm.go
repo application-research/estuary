@@ -124,6 +124,9 @@ func (ppm *PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiadd
 // Output will be truncated to the top `n`
 func (p PingManyResult) GetTopPeers(n int) []peer.ID {
 	result := make([]peer.ID, 0, len(p))
+	if len(p) < n {
+		return result
+	}
 
 	for k := range p {
 		result = append(result, k)
