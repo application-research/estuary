@@ -28,14 +28,14 @@ type SpHost struct {
 	peerID    peer.ID
 }
 
-type PingManyResult map[peer.ID]time.Duration
+type PingManyResult map[address.Address]time.Duration
 
 func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 
 	return &PeerPingManager{
 		Node:     node,
 		HtClient: shtc,
-		Result:   make(map[peer.ID]time.Duration),
+		Result:   make(map[address.Address]time.Duration),
 	}
 }
 
@@ -121,7 +121,7 @@ func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []SpHost) {
 			res, err := ppm.pingOne(ctx, addr, h.peerID)
 
 			if err == nil {
-				result[h.peerID] = *res
+				result[h.spAddr] = *res
 				break
 			}
 		}
@@ -149,8 +149,8 @@ func (ppm *PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiadd
 
 // Returns a slice of the top-performing (lowest-latency) peers in the ping result.
 // Output will be truncated to the top `n`
-func (p PingManyResult) GetTopPeers(n int) []peer.ID {
-	result := make([]peer.ID, 0, len(p))
+func (p PingManyResult) GetTopPeers(n int) []address.Address {
+	result := make([]address.Address, 0, len(p))
 	if len(p) < n {
 		return result
 	}
