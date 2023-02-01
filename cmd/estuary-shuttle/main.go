@@ -481,8 +481,6 @@ func main() {
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
 		s.PPM = NewPPM(nd, shtc)
-		// TODO @jcace parameterize
-		s.PPM.Run(time.Duration(12) * time.Hour)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
@@ -809,6 +807,8 @@ func main() {
 			}
 		}()
 
+		s.PPM.Run(time.Duration(12) * time.Hour)
+
 		return s.ServeAPI()
 	}
 
@@ -1041,10 +1041,11 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	resp, err := d.HtClient.MakeRequest("GET", "/viewer", nil, token)
+	resp, closer, err := d.HtClient.MakeRequest("GET", "/viewer", nil, token)
 	if err != nil {
 		return nil, err
 	}
+	defer closer()
 
 	var out util.ViewerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1517,10 +1518,11 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 		return 0, err
 	}
 
-	resp, err := s.HtClient.MakeRequest("POST", "/content/create", bytes.NewReader(data), u.AuthToken)
+	resp, closer, err := s.HtClient.MakeRequest("POST", "/content/create", bytes.NewReader(data), u.AuthToken)
 	if err != nil {
 		return 0, err
 	}
+	defer closer()
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
@@ -1549,10 +1551,11 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 		return 0, err
 	}
 
-	resp, err := s.HtClient.MakeRequest("POST", "/shuttle/cojntent/create", bytes.NewReader(data), s.shuttleToken)
+	resp, closer, err := s.HtClient.MakeRequest("POST", "/shuttle/cojntent/create", bytes.NewReader(data), s.shuttleToken)
 	if err != nil {
 		return 0, err
 	}
+	defer closer()
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {

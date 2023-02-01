@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/application-research/estuary/api/v1"
 	"github.com/application-research/estuary/node"
+	util "github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -44,6 +44,7 @@ func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 func (ppm *PeerPingManager) Run(interval time.Duration) {
 	go func() {
 		ctx := context.TODO()
+
 		for {
 			hosts, err := ppm.getSpList()
 			if err != nil {
@@ -52,18 +53,38 @@ func (ppm *PeerPingManager) Run(interval time.Duration) {
 
 			ppm.PingMany(ctx, hosts)
 
+			log.Debugf("ping completed on %d hosts", len(hosts))
+
 			time.Sleep(interval)
 		}
 	}()
 }
 
+type SpResp struct {
+	Addr            address.Address `json:"addr"`
+	Name            string          `json:"name"`
+	Suspended       bool            `json:"suspended"`
+	SuspendedReason string          `json:"suspendedReason,omitempty"`
+	Version         string          `json:"version"`
+	ChainInfo       SPChainInfo     `json:"chain_info"`
+}
+
+type SPChainInfo struct {
+	PeerID    peer.ID  `json:"peerId"`
+	Addresses []string `json:"addresses"`
+
+	Owner  address.Address `json:"owner"`
+	Worker address.Address `json:"worker"`
+}
+
 func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
-	resp, err := ppm.HtClient.MakeRequest("GET", "/v2/storage-providers", nil, "")
+	resp, closer, err := ppm.HtClient.MakeRequest("GET", "/v2/storage-providers", nil, "")
 	if err != nil {
 		return nil, err
 	}
+	defer closer()
 
-	var out []api.MinerResp
+	var out []SpResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
@@ -71,10 +92,16 @@ func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 	var sps []SpHost
 
 	for _, m := range out {
+		ma, err := util.ToMultiAddresses(m.ChainInfo.Addresses)
+
+		if err != nil {
+			log.Error(err)
+			continue
+		}
 		sp := SpHost{
 			spAddr:    m.Addr,
 			peerID:    m.ChainInfo.PeerID,
-			multiAddr: m.ChainInfo.Addresses,
+			multiAddr: ma,
 		}
 		sps = append(sps, sp)
 	}
