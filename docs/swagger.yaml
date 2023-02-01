@@ -137,15 +137,14 @@ definitions:
   miner.MinerChainInfo:
     properties:
       addresses:
-        items:
-          type: string
+        items: {}
         type: array
       owner:
-        type: string
+        $ref: '#/definitions/address.Address'
       peerId:
         type: string
       worker:
-        type: string
+        $ref: '#/definitions/address.Address'
     type: object
   miner.MinerSetInfoParams:
     properties:

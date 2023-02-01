@@ -3533,18 +3533,16 @@ const docTemplate = `{
             "properties": {
                 "addresses": {
                     "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
+                    "items": {}
                 },
                 "owner": {
-                    "type": "string"
+                    "$ref": "#/definitions/address.Address"
                 },
                 "peerId": {
                     "type": "string"
                 },
                 "worker": {
-                    "type": "string"
+                    "$ref": "#/definitions/address.Address"
                 }
             }
         },
