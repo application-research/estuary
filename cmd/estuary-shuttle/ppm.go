@@ -28,14 +28,18 @@ type SpHost struct {
 	peerID    peer.ID
 }
 
-type PingManyResult map[address.Address]time.Duration
+type PingManyResult []PingResult
+type PingResult struct {
+	Address address.Address `json:"address"`
+	Latency int64           `json:"latency"`
+}
 
 func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 
 	return &PeerPingManager{
 		Node:     node,
 		HtClient: shtc,
-		Result:   make(map[address.Address]time.Duration),
+		Result:   make(PingManyResult, 0),
 	}
 }
 
@@ -111,21 +115,29 @@ func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 
 // Ping a list of hosts, returning RTT for each of them. Errors will be ignored, unresponsive hosts will not be returned
 func (ppm *PeerPingManager) PingMany(ctx context.Context, hosts []SpHost) {
-	result := make(PingManyResult)
+	result := make(PingManyResult, 0)
 
 	// TODO: Batch them in go funcs for faster performance
 	for _, h := range hosts {
 
 		// Try all multiaddrs until one is pingable, and take that result
 		for _, addr := range h.multiAddr {
-			res, err := ppm.pingOne(ctx, addr, h.peerID)
+			rtt, err := ppm.pingOne(ctx, addr, h.peerID)
 
-			if err == nil {
-				result[h.spAddr] = *res
+			if err == nil && rtt != nil {
+				result = append(result, PingResult{
+					Address: h.spAddr,
+					Latency: rtt.Milliseconds(),
+				})
 				break
 			}
 		}
 	}
+
+	// Sort in order of ascending ping (lowest to greatest)
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Latency < result[j].Latency
+	})
 
 	ppm.Result = result
 }
@@ -149,21 +161,12 @@ func (ppm *PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiadd
 
 // Returns a slice of the top-performing (lowest-latency) peers in the ping result.
 // Output will be truncated to the top `n`
-func (p PingManyResult) GetTopPeers(n int) []address.Address {
-	result := make([]address.Address, 0, len(p))
+func (p PingManyResult) GetTopPeers(n int) PingManyResult {
 	if len(p) < n {
-		return result
+		return p
 	}
 
-	for k := range p {
-		result = append(result, k)
-	}
-
-	sort.SliceStable(result, func(i, j int) bool {
-		return p[result[i]] < p[result[j]]
-	})
-
-	return result[0:n]
+	return p[0:n]
 }
 
 func netPing(ctx context.Context, h host.Host, p peer.ID) (time.Duration, error) {
