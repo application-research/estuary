@@ -3538,13 +3538,13 @@ const docTemplate = `{
                     }
                 },
                 "owner": {
-                    "type": "string"
+                    "$ref": "#/definitions/address.Address"
                 },
                 "peerId": {
                     "type": "string"
                 },
                 "worker": {
-                    "type": "string"
+                    "$ref": "#/definitions/address.Address"
                 }
             }
         },

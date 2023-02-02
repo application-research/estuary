@@ -23,7 +23,7 @@ import (
 )
 
 func (m *manager) checkContentDeals(ctx context.Context, contID uint64) (int, error) {
-	ctx, span := m.tracer.Start(ctx, "ensureStorage", trace.WithAttributes(
+	ctx, span := m.tracer.Start(ctx, "checkContentDeals", trace.WithAttributes(
 		attribute.Int("content", int(contID)),
 	))
 	defer span.End()

@@ -17,6 +17,7 @@ import (
 
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/sanitycheck"
+	"github.com/application-research/estuary/util"
 
 	"github.com/application-research/estuary/config"
 
@@ -205,7 +206,7 @@ func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckF
 	peerServ := peering.NewEstuaryPeeringService(h)
 	//	add the peers
 	for _, addrInfo := range cfg.PeeringPeers {
-		addrs, err := toMultiAddresses(addrInfo.Addrs)
+		addrs, err := util.ToMultiAddresses(addrInfo.Addrs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse peering peers multi addr: %w", err)
 		}
@@ -320,28 +321,6 @@ func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckF
 		StorageDir: stordir,
 		Peering:    peerServ,
 	}, nil
-}
-
-// Converting the public key to a multiaddress.
-func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
-	a, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse string multi addr: %w", err)
-	}
-	return a, nil
-}
-
-// It takes a slice of strings and returns a slice of multiaddresses
-func toMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
-	var multiAddrs []multiaddr.Multiaddr
-	for _, addr := range addrs {
-		a, err := toMultiAddress(addr)
-		if err != nil {
-			log.Errorf("toMultiAddresses failed: %s", err)
-		}
-		multiAddrs = append(multiAddrs, a)
-	}
-	return multiAddrs, nil
 }
 
 func parseBsCfg(bscfg string) (string, []string, string, error) {

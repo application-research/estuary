@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/textproto"
+	"strings"
+
 	"github.com/application-research/filclient"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	blocks "github.com/ipfs/go-block-format"
@@ -11,11 +15,9 @@ import (
 	blockstore "github.com/ipfs/go-ipfs-blockstore"
 	ipld "github.com/ipfs/go-ipld-format"
 	"github.com/labstack/echo/v4"
+	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"go.opentelemetry.io/otel/trace"
-	"net/http"
-	"net/textproto"
-	"strings"
 )
 
 func CanRestartTransfer(st *filclient.ChannelState) bool {
@@ -172,4 +174,26 @@ func DumpBlockstoreTo(ctx context.Context, tc trace.Tracer, from, to blockstore.
 		}
 	}
 	return nil
+}
+
+// It takes a slice of strings and returns a slice of multiaddresses
+func ToMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
+	var multiAddrs []multiaddr.Multiaddr
+	for _, addr := range addrs {
+		a, err := ToMultiAddress(addr)
+		if err != nil {
+			log.Errorf("toMultiAddresses failed: %s", err)
+		}
+		multiAddrs = append(multiAddrs, a)
+	}
+	return multiAddrs, nil
+}
+
+// Converting the public key to a multiaddress.
+func ToMultiAddress(addr string) (multiaddr.Multiaddr, error) {
+	a, err := multiaddr.NewMultiaddr(addr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse string multi addr: %w", err)
+	}
+	return a, nil
 }

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 
 	"golang.org/x/time/rate"
@@ -475,9 +474,13 @@ func main() {
 		if err != nil {
 			return err
 		}
+
+		shtc := NewShuttleHttpClient(cfg.EstuaryRemote.Api, cfg.Dev)
+		s.HtClient = shtc
+
 		s.Node = nd
 		s.gwayHandler = gateway.NewGatewayHandler(nd.Blockstore)
-		s.PPM = NewPPM(nd)
+		s.PPM = NewPPM(nd, shtc)
 
 		// send a CLI context to lotus that contains only the node "api-url" flag set, so that other flags don't accidentally conflict with lotus cli flags
 		// https://github.com/filecoin-project/lotus/blob/731da455d46cb88ee5de9a70920a2d29dec9365c/cli/util/api.go#L37
@@ -804,6 +807,8 @@ func main() {
 			}
 		}()
 
+		s.PPM.Run(time.Duration(12) * time.Hour)
+
 		return s.ServeAPI()
 	}
 
@@ -829,6 +834,7 @@ type Shuttle struct {
 	StagingMgr  *stagingbs.StagingBSMgr
 	gwayHandler *gateway.GatewayHandler
 	PPM         *PeerPingManager
+	HtClient    *ShuttleHttpClient
 
 	Tracer trace.Tracer
 
@@ -1035,31 +1041,11 @@ func (d *Shuttle) checkTokenAuth(token string) (*User, error) {
 		}
 	}
 
-	scheme := "https"
-	if d.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("GET", scheme+"://"+d.estuaryHost+"/viewer", nil)
+	resp, closer, err := d.HtClient.MakeRequest("GET", "/viewer", nil, token)
 	if err != nil {
 		return nil, err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var out util.HttpErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return nil, err
-		}
-		return nil, &out.Error
-	}
+	defer closer()
 
 	var out util.ViewerResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -1532,32 +1518,11 @@ func (s *Shuttle) createContent(ctx context.Context, u *User, root cid.Cid, file
 		return 0, err
 	}
 
-	scheme := "https"
-	if s.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/content/create", bytes.NewReader(data))
+	resp, closer, err := s.HtClient.MakeRequest("POST", "/content/create", bytes.NewReader(data), u.AuthToken)
 	if err != nil {
 		return 0, err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+u.AuthToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, errors.Wrap(err, "failed to Do createContent")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		var out util.HttpErrorResponse
-		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-			return 0, err
-		}
-		return 0, &out.Error
-	}
+	defer closer()
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
@@ -1586,32 +1551,11 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 		return 0, err
 	}
 
-	scheme := "https"
-	if s.dev {
-		scheme = "http"
-	}
-
-	req, err := http.NewRequest("POST", scheme+"://"+s.estuaryHost+"/shuttle/content/create", bytes.NewReader(data))
+	resp, closer, err := s.HtClient.MakeRequest("POST", "/shuttle/content/create", bytes.NewReader(data), s.shuttleToken)
 	if err != nil {
 		return 0, err
 	}
-
-	req.Header.Set("Authorization", "Bearer "+s.shuttleToken)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return 0, errors.Wrap(err, "failed to do shuttle content create request")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return 0, err
-		}
-		return 0, fmt.Errorf("request to create shuttle content failed: %s", bodyBytes)
-	}
+	defer closer()
 
 	var rbody util.ContentCreateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&rbody); err != nil {
@@ -2451,12 +2395,12 @@ func setupMetrics(metCtx context.Context) Metrics {
 }
 
 // handleStorageProviderList godoc
-// @Summary      Get a list of the top storage providers
-// @Description  This endpoint returns a list of storage providers, sorted by lowest latency to this shuttle
+// @Summary      Get a list of the top storage providers, ordered by latency
+// @Description  This endpoint returns a list of storage providers and their latency (in ms) ping to the shuttle. Sorted in ascending order.
 // @Tags         sp
 // @Produce      json
-// @Success      200  {object}  []peer.ID
-// @Param        n  query      int  true  "Number of top SPs to return"
+// @Success      200  {object}  PingManyResult
+// @Param        n  query      int  true  "Number of SPs to return"
 // @Router       /list/{n} [get]
 func (s *Shuttle) handleStorageProviderList(e echo.Context) error {
 	n, err := strconv.Atoi(e.Param("n"))
