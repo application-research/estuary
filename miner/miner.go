@@ -23,8 +23,8 @@ type miner struct {
 }
 
 type MinerChainInfo struct {
-	PeerID    peer.ID               `json:"peerId"`
-	Addresses []multiaddr.Multiaddr `json:"addresses"`
+	PeerID    peer.ID  `json:"peerId"`
+	Addresses []string `json:"addresses"`
 
 	Owner  address.Address `json:"owner"`
 	Worker address.Address `json:"worker"`
@@ -123,7 +123,7 @@ func (mm *MinerManager) GetMinerChainInfo(ctx context.Context, maddr address.Add
 		if err != nil {
 			return nil, err
 		}
-		ci.Addresses = append(ci.Addresses, ma)
+		ci.Addresses = append(ci.Addresses, ma.String())
 	}
 
 	return &ci, nil

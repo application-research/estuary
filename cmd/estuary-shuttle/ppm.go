@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	apiv2 "github.com/application-research/estuary/api/v2"
 	"github.com/application-research/estuary/node"
 	util "github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
@@ -64,23 +65,6 @@ func (ppm *PeerPingManager) Run(interval time.Duration) {
 	}()
 }
 
-type SpResponse struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
-	ChainInfo       SPChainInfo     `json:"chain_info"`
-}
-
-type SPChainInfo struct {
-	PeerID    peer.ID  `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  address.Address `json:"owner"`
-	Worker address.Address `json:"worker"`
-}
-
 func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 	resp, closer, err := ppm.HtClient.MakeRequest("GET", "/v2/storage-providers", nil, "")
 	if err != nil {
@@ -88,7 +72,7 @@ func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 	}
 	defer closer()
 
-	var out []SpResponse
+	var out []apiv2.StorageProviderResp
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
