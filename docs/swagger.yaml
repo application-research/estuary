@@ -137,7 +137,8 @@ definitions:
   miner.MinerChainInfo:
     properties:
       addresses:
-        items: {}
+        items:
+          type: string
         type: array
       owner:
         $ref: '#/definitions/address.Address'

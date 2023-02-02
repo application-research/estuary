@@ -3533,7 +3533,9 @@ const docTemplate = `{
             "properties": {
                 "addresses": {
                     "type": "array",
-                    "items": {}
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "owner": {
                     "$ref": "#/definitions/address.Address"
