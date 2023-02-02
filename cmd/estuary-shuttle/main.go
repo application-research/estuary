@@ -1551,7 +1551,7 @@ func (s *Shuttle) shuttleCreateContent(ctx context.Context, uid uint, root cid.C
 		return 0, err
 	}
 
-	resp, closer, err := s.HtClient.MakeRequest("POST", "/shuttle/cojntent/create", bytes.NewReader(data), s.shuttleToken)
+	resp, closer, err := s.HtClient.MakeRequest("POST", "/shuttle/content/create", bytes.NewReader(data), s.shuttleToken)
 	if err != nil {
 		return 0, err
 	}
