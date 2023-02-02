@@ -2395,12 +2395,12 @@ func setupMetrics(metCtx context.Context) Metrics {
 }
 
 // handleStorageProviderList godoc
-// @Summary      Get a list of the top storage providers
-// @Description  This endpoint returns a list of storage providers, sorted by lowest latency to this shuttle
+// @Summary      Get a list of the top storage providers, ordered by latency
+// @Description  This endpoint returns a list of storage providers and their latency (in ms) ping to the shuttle. Sorted in ascending order.
 // @Tags         sp
 // @Produce      json
 // @Success      200  {object}  PingManyResult
-// @Param        n  query      int  true  "Number of top SPs to return"
+// @Param        n  query      int  true  "Number of SPs to return"
 // @Router       /list/{n} [get]
 func (s *Shuttle) handleStorageProviderList(e echo.Context) error {
 	n, err := strconv.Atoi(e.Param("n"))
