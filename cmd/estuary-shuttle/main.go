@@ -2399,7 +2399,7 @@ func setupMetrics(metCtx context.Context) Metrics {
 // @Description  This endpoint returns a list of storage providers, sorted by lowest latency to this shuttle
 // @Tags         sp
 // @Produce      json
-// @Success      200  {object}  []peer.ID
+// @Success      200  {object}  PingManyResult
 // @Param        n  query      int  true  "Number of top SPs to return"
 // @Router       /list/{n} [get]
 func (s *Shuttle) handleStorageProviderList(e echo.Context) error {

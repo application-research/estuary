@@ -44,7 +44,7 @@ func NewPPM(node *node.Node, shtc *ShuttleHttpClient) *PeerPingManager {
 }
 
 // Kicks off a PPM task to get a list of SPs and ping them every <interval>
-// Spawns a new go thread, and returns immedately
+// Spawns a new go thread, and returns immediately
 func (ppm *PeerPingManager) Run(interval time.Duration) {
 	go func() {
 		ctx := context.TODO()
@@ -64,7 +64,7 @@ func (ppm *PeerPingManager) Run(interval time.Duration) {
 	}()
 }
 
-type SpResp struct {
+type SpResponse struct {
 	Addr            address.Address `json:"addr"`
 	Name            string          `json:"name"`
 	Suspended       bool            `json:"suspended"`
@@ -88,7 +88,7 @@ func (ppm *PeerPingManager) getSpList() ([]SpHost, error) {
 	}
 	defer closer()
 
-	var out []SpResp
+	var out []SpResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
