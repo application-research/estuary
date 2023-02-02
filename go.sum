@@ -352,8 +352,8 @@ github.com/filecoin-project/go-state-types v0.1.4/go.mod h1:xCA/WfKlC2zcn3fUmDv4
 github.com/filecoin-project/go-state-types v0.1.6/go.mod h1:UwGVoMsULoCK+bWjEdd/xLCvLAQFBC7EDT477SKml+Q=
 github.com/filecoin-project/go-state-types v0.1.8/go.mod h1:UwGVoMsULoCK+bWjEdd/xLCvLAQFBC7EDT477SKml+Q=
 github.com/filecoin-project/go-state-types v0.1.10/go.mod h1:UwGVoMsULoCK+bWjEdd/xLCvLAQFBC7EDT477SKml+Q=
-github.com/filecoin-project/go-state-types v0.10.0-alpha-2 h1:xz8+sXAuCMane7SkEYCtQjD/zYJ4n1d5bxwYNL8Thf0=
-github.com/filecoin-project/go-state-types v0.10.0-alpha-2/go.mod h1:7ty480tvttEAqWKywhAaDCElk7ksTqEXtXWAzTSdEKo=
+github.com/filecoin-project/go-state-types v0.10.0-alpha.7 h1:CnHwzDJpeixx1FLHtlp3iDv2j346qFDYa0w99mSt9A4=
+github.com/filecoin-project/go-state-types v0.10.0-alpha.7/go.mod h1:FPgQE05BFwZxKw/vCuIaIrzfJKo4RPQQMMPGd43dAFI=
 github.com/filecoin-project/go-statemachine v0.0.0-20200925024713-05bd7c71fbfe/go.mod h1:FGwQgZAt2Gh5mjlwJUlVB62JeYdo+if0xWxSEfBD9ig=
 github.com/filecoin-project/go-statemachine v1.0.3 h1:N07o6alys+V1tNoSTi4WuuoeNC4erS/6jE74+NsgQuk=
 github.com/filecoin-project/go-statemachine v1.0.3/go.mod h1:jZdXXiHa61n4NmgWFG4w8tnqgvZVHYbJ3yW7+y8bF54=
@@ -363,8 +363,8 @@ github.com/filecoin-project/go-statestore v0.2.0/go.mod h1:8sjBYbS35HwPzct7iT4lI
 github.com/filecoin-project/go-storedcounter v0.1.0 h1:Mui6wSUBC+cQGHbDUBcO7rfh5zQkWJM/CpAZa/uOuus=
 github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97 h1:DhInoZAO/6HDOfYFJt39WUn+rpZzxTu3MzanzWUxiCo=
 github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97/go.mod h1:nRY+S42x0fMwi43xIEVpdxhgDjkkbRweEd25iWRR/cg=
-github.com/filecoin-project/lotus v1.19.0 h1:DEk+vYSwpUGfJE9k+EqRYOtjgDv6b7yC3s2oc8jqsh8=
-github.com/filecoin-project/lotus v1.19.0/go.mod h1:NFGujQadzd5XSW4EzCIhCzXAJeCRs9pymcCjkJc5bV4=
+github.com/filecoin-project/lotus v1.19.0-rc2 h1:f88Tgk29Dt9ksjZpVoNDU7rZL1t5loLc0zvKx+fMrxE=
+github.com/filecoin-project/lotus v1.19.0-rc2/go.mod h1:w7kBaEx6cq9PL1fR8JontdMyz2THzhYox4cRnSpGMg8=
 github.com/filecoin-project/pubsub v1.0.0 h1:ZTmT27U07e54qV1mMiQo4HDr0buo8I1LDHBYLXlsNXM=
 github.com/filecoin-project/pubsub v1.0.0/go.mod h1:GkpB33CcUtUNrLPhJgfdy4FDx4OMNR9k+46DHx/Lqrg=
 github.com/filecoin-project/specs-actors v0.9.13/go.mod h1:TS1AW/7LbG+615j4NsjMK1qlpAwaFsG9w0V2tg2gSao=
