@@ -175,6 +175,12 @@ func (m *manager) StorageStats(handle string) (*util.ShuttleStorageStats, error)
 	return nil, nil
 }
 
+// func (m* manager) GetSpPreference() ([]string, error) {
+// 	m.
+
+// 	return nil, nil
+// }
+
 func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 	var shts []interface{}
 	connectedShuttles, err := m.getConnections()
@@ -198,19 +204,7 @@ func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 }
 
 func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
-	u, err := url.Parse(hostname)
-	if err != nil {
-		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
-	}
-	u.Path = ""
-
-	req, err := http.NewRequest("GET", fmt.Sprintf("%s://%s/admin/system/config", u.Scheme, u.Host), nil)
-	if err != nil {
-		return nil, errors.Errorf("failed to build GET request for shuttle(%s) config: %s", hostname, err)
-	}
-	req.Header.Set("Authorization", "Bearer "+authToken)
-
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := callAPI("GET", hostname, "/admin/system/config", authToken)
 	if err != nil {
 		return nil, errors.Errorf("failed to request shuttle(%s) config: %s", hostname, err)
 	}
@@ -233,6 +227,28 @@ func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 
 func (m *manager) sendRPCMessage(ctx context.Context, handle string, cmd *rpcevent.Command) error {
 	return m.rpcMgr.SendRPCMessage(ctx, handle, cmd)
+}
+
+// Call an API on the shuttle
+func callAPI(method string, hostname string, route string, authToken string) (*http.Response, error) {
+	u, err := url.Parse(hostname)
+	if err != nil {
+		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
+	}
+	u.Path = ""
+
+	req, err := http.NewRequest(method, fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, route), nil)
+	if err != nil {
+		return nil, errors.Errorf("failed to build %s request for shuttle(%s): %s", method, hostname, err)
+	}
+
+	if authToken != "" {
+		req.Header.Set("Authorization", "Bearer "+authToken)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+
+	return resp, err
 }
 
 func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) error {
