@@ -25,6 +25,7 @@ import (
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/sanitycheck"
 	"github.com/application-research/filclient"
+	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 
 	"github.com/ipfs/go-cid"
@@ -175,11 +176,44 @@ func (m *manager) StorageStats(handle string) (*util.ShuttleStorageStats, error)
 	return nil, nil
 }
 
-// func (m* manager) GetSpPreference() ([]string, error) {
-// 	m.
+type ShuttleSPPing struct {
+	Address address.Address `json:"address"`
+	Latency int64           `json:"latency"`
+}
 
-// 	return nil, nil
-// }
+// Queries the shuttle for top `n` storage providers
+func (m *manager) GetSPPreference(handle string, n int32) ([]ShuttleSPPing, error) {
+	var out []ShuttleSPPing
+	connectedShuttles, err := m.getConnections()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sh := range connectedShuttles {
+		if sh.Handle == handle {
+			resp, err := callAPI("GET", sh.Hostname, "/storage-provider/list"+string(n), "") // TODO: Auth token?
+			if err != nil {
+				return nil, err
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != 200 {
+				_, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					return nil, err
+				}
+				return nil, err
+			}
+
+			if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+				return nil, errors.Errorf("failed to decode shuttle-SP list response: %s", err)
+			}
+			break
+		}
+	}
+
+	return out, nil
+}
 
 func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 	var shts []interface{}
