@@ -2400,15 +2400,9 @@ func setupMetrics(metCtx context.Context) Metrics {
 // @Tags         sp
 // @Produce      json
 // @Success      200  {object}  PingManyResult
-// @Param        n  query      int  true  "Number of SPs to return"
-// @Router       /list/{n} [get]
+// @Router       /list [get]
 func (s *Shuttle) handleStorageProviderList(e echo.Context) error {
-	n, err := strconv.Atoi(e.Param("n"))
-	if err != nil {
-		return err
-	}
-
-	resp := s.PPM.Result.GetTopPeers(n)
+	resp := s.PPM.Result
 
 	return e.JSON(http.StatusOK, resp)
 }

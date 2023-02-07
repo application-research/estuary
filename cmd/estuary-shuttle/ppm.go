@@ -143,16 +143,6 @@ func (ppm *PeerPingManager) pingOne(ctx context.Context, addr multiaddr.Multiadd
 	return &t, nil
 }
 
-// Returns a slice of the top-performing (lowest-latency) peers in the ping result.
-// Output will be truncated to the top `n`
-func (p PingManyResult) GetTopPeers(n int) PingManyResult {
-	if len(p) < n {
-		return p
-	}
-
-	return p[0:n]
-}
-
 func netPing(ctx context.Context, h host.Host, p peer.ID) (time.Duration, error) {
 	result, ok := <-ping.Ping(ctx, h, p)
 	if !ok {
