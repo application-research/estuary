@@ -1,6 +1,7 @@
 package collections
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"path/filepath"
@@ -27,9 +28,9 @@ type Collection struct {
 type CollectionRef struct {
 	ID         uint `gorm:"primaryKey"`
 	CreatedAt  time.Time
-	Collection uint    `gorm:"index:,option:CONCURRENTLY; not null"`
-	Content    uint    `gorm:"index:,option:CONCURRENTLY;not null"`
-	Path       *string `gorm:"not null"`
+	Collection uint    `gorm:"index:,option:CONCURRENTLY;not null"`
+	Content    uint64  `gorm:"index:,option:CONCURRENTLY;not null"`
+	Path       *string `gorm:"null"`
 }
 
 type CidType string
@@ -38,7 +39,7 @@ type CollectionListResponse struct {
 	Name      string      `json:"name"`
 	Type      CidType     `json:"type"`
 	Size      int64       `json:"size"`
-	ContID    uint        `json:"contId"`
+	ContID    uint64      `json:"contId"`
 	Cid       *util.DbCID `json:"cid,omitempty"`
 	Dir       string      `json:"dir"`
 	ColUuid   string      `json:"coluuid"`
@@ -61,6 +62,7 @@ func GetCollection(coluuid string, db *gorm.DB, u *util.User) (Collection, error
 			}
 		}
 	}
+	// check if user owns the collection
 	if err := util.IsCollectionOwner(u.ID, col.UserID); err != nil {
 		return Collection{}, err
 	}
@@ -93,6 +95,52 @@ func GetContentsInPath(coluuid string, path string, db *gorm.DB, u *util.User) (
 	}
 
 	return selectedRefs, nil
+}
+
+func Contains(collection *Collection, fullPath string, db *gorm.DB) bool {
+	var colRef CollectionRef
+	err := db.First(&colRef, "collection = ? and path = ?", collection.ID, fullPath).Error
+	return !errors.Is(err, gorm.ErrRecordNotFound)
+}
+
+func AddContentToCollection(coluuid string, contentID string, dir string, overwrite bool, db *gorm.DB, u *util.User) error {
+	// first we get the collection and content
+	col, err := GetCollection(coluuid, db, u)
+	if err != nil {
+		return err
+	}
+	content, err := util.GetContent(contentID, db, u)
+	if err != nil {
+		return err
+	}
+
+	path, err := ConstructDirectoryPath(dir)
+	if err != nil {
+		return err
+	}
+	fullPath := filepath.Join(path, content.Name)
+
+	// see if there's already a file with that name/path on that collection
+	pathInCollection := Contains(&col, fullPath, db)
+	if pathInCollection && !overwrite {
+		return xerrors.Errorf("file already exists in collection, specify 'overwrite=true' to overwrite")
+	}
+
+	// if there's a duplicate and overwrite has been set to true, then update
+	if pathInCollection && overwrite {
+		if err := db.Model(CollectionRef{}).Where("collection = ? and path = ?", col.ID, fullPath).UpdateColumn("content", content.ID).Error; err != nil {
+			return xerrors.Errorf("unable to overwrite file: %w", err)
+		}
+	} else { // else, create collectionRef for new file
+		if err := db.Create(&CollectionRef{
+			Collection: col.ID,
+			Content:    content.ID,
+			Path:       &fullPath,
+		}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string) ([]*CollectionListResponse, error) {
@@ -176,4 +224,39 @@ func getRelativePath(r util.ContentWithPath, queryDir string) (string, error) {
 	contentPath := r.Path
 	relp, err := filepath.Rel(queryDir, contentPath)
 	return relp, err
+}
+
+func ConstructDirectoryPath(dir string) (string, error) {
+	defaultPath := "/"
+	path := defaultPath
+	if cp := dir; cp != "" {
+		sp, err := sanitizePath(cp)
+		if err != nil {
+			return "", err
+		}
+
+		path = sp
+	}
+	return path, nil
+}
+
+func sanitizePath(p string) (string, error) {
+	if len(p) == 0 {
+		return "", fmt.Errorf("can't sanitize empty path")
+	}
+
+	if p[0] != '/' {
+		return "", fmt.Errorf("paths must start with /")
+	}
+
+	// TODO: prevent use of special weird characters
+
+	cleanPath := filepath.Clean(p)
+
+	// if original path ends in /, append / to cleaned path
+	// needed for full path vs dir+filename magic to work in handleAddIpfs
+	if strings.HasSuffix(p, "/") {
+		cleanPath = cleanPath + "/"
+	}
+	return cleanPath, nil
 }

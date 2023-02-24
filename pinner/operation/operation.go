@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -59,19 +59,17 @@ type PinningOperation struct {
 	Peers []AddrInfoString
 	Meta  string
 
-	Status types.PinningStatus
+	Status status.PinningStatus
 
 	UserId  uint
-	ContId  uint
+	ContId  uint64
 	Replace uint
 
 	LastUpdate time.Time
 
-	Started     time.Time
-	NumFetched  int
-	SizeFetched int64
-	FetchErr    error
-	EndTime     time.Time
+	Started  time.Time
+	FetchErr error
+	EndTime  time.Time
 
 	Location string
 
@@ -88,11 +86,11 @@ func (po *PinningOperation) Fail(err error) {
 
 	po.FetchErr = err
 	po.EndTime = time.Now()
-	po.Status = types.PinningStatusFailed
+	po.Status = status.PinningStatusFailed
 	po.LastUpdate = time.Now()
 }
 
-func (po *PinningOperation) SetStatus(st types.PinningStatus) {
+func (po *PinningOperation) SetStatus(st status.PinningStatus) {
 	po.lk.Lock()
 	defer po.lk.Unlock()
 
@@ -106,13 +104,5 @@ func (po *PinningOperation) Complete() {
 
 	po.EndTime = time.Now()
 	po.LastUpdate = time.Now()
-	po.Status = types.PinningStatusPinned
-}
-
-func (po *PinningOperation) UpdateProgress(size int64) {
-	po.lk.Lock()
-	defer po.lk.Unlock()
-
-	po.NumFetched++
-	po.SizeFetched += size
+	po.Status = status.PinningStatusPinned
 }

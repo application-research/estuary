@@ -9,7 +9,7 @@ type RetrievalFailureRecord struct {
 	Miner   string `json:"miner"`
 	Phase   string `json:"phase"`
 	Message string `json:"message"`
-	Content uint   `json:"content"`
+	Content uint64 `json:"content"`
 	Cid     DbCID  `json:"cid"`
 }
 

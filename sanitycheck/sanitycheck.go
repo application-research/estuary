@@ -57,7 +57,7 @@ func (m *manager) HandleMissingBlocks(cc cid.Cid, errMsg string) {
 	}
 
 	// mark all contents affected by this missing block
-	marks := make(map[uint]bool, 0)
+	marks := make(map[uint64]bool, 0)
 	for _, cnt := range cnts {
 		if _, ok := marks[cnt.ID]; !ok {
 			m.log.Debugf("setting sanity check for cont: %d", cnt.ID)

@@ -1,7 +1,7 @@
 package event
 
 import (
-	"github.com/application-research/estuary/pinner/types"
+	"github.com/application-research/estuary/pinner/status"
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
@@ -15,12 +15,14 @@ var MessageTopics = map[string]bool{
 	OP_UpdatePinStatus:  true,
 	OP_PinComplete:      true,
 	OP_CommPComplete:    true,
+	OP_CommPFailed:      true,
 	OP_TransferStarted:  true,
 	OP_TransferFinished: true,
 	OP_TransferStatus:   true,
 	OP_ShuttleUpdate:    true,
 	OP_GarbageCheck:     true,
 	OP_SplitComplete:    true,
+	OP_SplitFailed:      true,
 	OP_SanityCheck:      true,
 }
 
@@ -98,7 +100,7 @@ type ComputeCommP struct {
 const CMD_AddPin = "AddPin"
 
 type AddPin struct {
-	DBID   uint
+	DBID   uint64
 	UserId uint
 	Cid    cid.Cid
 	Peers  []*peer.AddrInfo
@@ -113,13 +115,13 @@ type TakeContent struct {
 const CMD_AggregateContent = "AggregateContent"
 
 type AggregateContents struct {
-	DBID     uint
+	DBID     uint64
 	UserID   uint
 	Contents []AggregateContent
 }
 
 type AggregateContent struct {
-	ID   uint
+	ID   uint64
 	CID  cid.Cid
 	Name string
 }
@@ -128,7 +130,7 @@ const CMD_StartTransfer = "StartTransfer"
 
 type StartTransfer struct {
 	DealDBID  uint
-	ContentID uint
+	ContentID uint64
 	Miner     address.Address
 	PropCid   cid.Cid
 	DataCid   cid.Cid
@@ -161,7 +163,7 @@ type ReqTxStatus struct {
 const CMD_SplitContent = "SplitContent"
 
 type SplitContent struct {
-	Content uint
+	Content uint64
 	Size    int64
 }
 
@@ -174,7 +176,7 @@ type StorageDeal struct {
 
 type RetrieveContent struct {
 	UserID  uint
-	Content uint
+	Content uint64
 	Cid     cid.Cid
 	Deals   []StorageDeal
 }
@@ -182,7 +184,7 @@ type RetrieveContent struct {
 const CMD_UnpinContent = "UnpinContent"
 
 type UnpinContent struct {
-	Contents []uint
+	Contents []uint64
 }
 
 const CMD_RestartTransfer = "RestartTransfer"
@@ -190,11 +192,11 @@ const CMD_RestartTransfer = "RestartTransfer"
 type RestartTransfer struct {
 	ChanID    datatransfer.ChannelID
 	DealDBID  uint
-	ContentID uint
+	ContentID uint64
 }
 
 type ContentFetch struct {
-	ID     uint
+	ID     uint64
 	Cid    cid.Cid
 	UserID uint
 	Peers  []*peer.AddrInfo
@@ -209,31 +211,33 @@ type MsgParams struct {
 	UpdatePinStatus  *UpdatePinStatus           `json:",omitempty"`
 	PinComplete      *PinComplete               `json:",omitempty"`
 	CommPComplete    *CommPComplete             `json:",omitempty"`
+	CommPFailed      *CommPFailed               `json:",omitempty"`
 	TransferStatus   *TransferStatus            `json:",omitempty"`
 	TransferStarted  *TransferStartedOrFinished `json:",omitempty"`
 	TransferFinished *TransferStartedOrFinished `json:",omitempty"`
 	ShuttleUpdate    *ShuttleUpdate             `json:",omitempty"`
 	GarbageCheck     *GarbageCheck              `json:",omitempty"`
 	SplitComplete    *SplitComplete             `json:",omitempty"`
+	SplitFailed      *SplitFailed               `json:",omitempty"`
 	SanityCheck      *SanityCheck               `json:",omitempty"`
 }
 
-const OP_UpdatePinStatus = "UpdatePinStatus"
+const OP_UpdatePinStatus = "UpdateContentPinStatus"
 
 type UpdatePinStatus struct {
-	DBID   uint
-	Status types.PinningStatus
+	DBID   uint64
+	Status status.PinningStatus
 }
 
 type PinObj struct {
 	Cid  cid.Cid
-	Size int
+	Size uint64
 }
 
 const OP_PinComplete = "PinComplete"
 
 type PinComplete struct {
-	DBID    uint
+	DBID    uint64
 	Size    int64
 	CID     cid.Cid
 	Objects []PinObj
@@ -246,6 +250,12 @@ type CommPComplete struct {
 	CommP   cid.Cid
 	CarSize uint64
 	Size    abi.UnpaddedPieceSize
+}
+
+const OP_CommPFailed = "OP_CommPFailed"
+
+type CommPFailed struct {
+	Data cid.Cid
 }
 
 const OP_TransferStarted = "TransferStarted"
@@ -279,13 +289,19 @@ type ShuttleUpdate struct {
 const OP_GarbageCheck = "GarbageCheck"
 
 type GarbageCheck struct {
-	Contents []uint
+	Contents []uint64
 }
 
 const OP_SplitComplete = "SplitComplete"
 
 type SplitComplete struct {
-	ID uint
+	ID uint64
+}
+
+const OP_SplitFailed = "OP_SplitFailed"
+
+type SplitFailed struct {
+	ID uint64
 }
 
 const OP_SanityCheck = "SanityCheck"

@@ -3,15 +3,14 @@ package api
 import (
 	"encoding/hex"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/model"
 	"github.com/application-research/estuary/util"
 	"github.com/filecoin-project/go-address"
-	"github.com/filecoin-project/lotus/chain/types"
 	"github.com/labstack/echo/v4"
-	"github.com/multiformats/go-multiaddr"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,7 +23,7 @@ func (s *apiV2) handleAddStorageProvider(c echo.Context) error {
 	}
 
 	name := c.QueryParam("name")
-	if err := s.DB.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
+	if err := s.db.Clauses(&clause.OnConflict{UpdateAll: true}).Create(&model.StorageMiner{
 		Address: util.DbAddr{Addr: m},
 		Name:    name,
 	}).Error; err != nil {
@@ -40,7 +39,7 @@ func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
 		return err
 	}
 
-	if err := s.DB.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
+	if err := s.db.Unscoped().Where("address = ?", m.String()).Delete(&model.StorageMiner{}).Error; err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, map[string]string{})
@@ -56,7 +55,7 @@ func (s *apiV2) handleRemoveStorageProvider(c echo.Context) error {
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.SuspendMinerBody  true   "Suspend Storage Provider Body"
 // @Param        sp           path      string  true   "Storage Provider to suspend"
-// @Router       /storage-providers/suspend/{sp} [post]
+// @Router       /v2/storage-providers/suspend/{sp} [post]
 func (s *apiV2) handleSuspendStorageProvider(c echo.Context, u *util.User) error {
 	var body miner.SuspendMinerBody
 	if err := c.Bind(&body); err != nil {
@@ -83,7 +82,7 @@ func (s *apiV2) handleSuspendStorageProvider(c echo.Context, u *util.User) error
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp           path      string  true   "Storage Provider to unsuspend"
-// @Router      /storage-providers/unsuspend/{sp} [put]
+// @Router      /v2/storage-providers/unsuspend/{sp} [put]
 func (s *apiV2) handleUnsuspendStorageProvider(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -106,7 +105,7 @@ func (s *apiV2) handleUnsuspendStorageProvider(c echo.Context, u *util.User) err
 // @Failure      500  {object}  util.HttpError
 // @Param        params           body      miner.MinerSetInfoParams  true   "Storage Provider set info params"
 // @Param        sp           path      string  true   "Storage Provider to set info for"
-// @Router       /storage-providers/set-info/{sp} [put]
+// @Router       /v2/storage-providers/set-info/{sp} [put]
 func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -124,38 +123,73 @@ func (s *apiV2) handleStorageProvidersSetInfo(c echo.Context, u *util.User) erro
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
-type storageProviderResp struct {
-	Addr            address.Address `json:"addr"`
-	Name            string          `json:"name"`
-	Suspended       bool            `json:"suspended"`
-	SuspendedReason string          `json:"suspendedReason,omitempty"`
-	Version         string          `json:"version"`
+type StorageProviderResp struct {
+	Addr            address.Address       `json:"addr"`
+	Name            string                `json:"name"`
+	Suspended       bool                  `json:"suspended"`
+	SuspendedReason string                `json:"suspendedReason,omitempty"`
+	Version         string                `json:"version"`
+	ChainInfo       *miner.MinerChainInfo `json:"chain_info"`
 }
 
 // handleGetStorageProviders godoc
 // @Summary      Get all storage providers
-// @Description  This endpoint returns all storage providers
+// @Description  This endpoint returns all storage providers. Note: Value may be cached
 // @Tags         sp
 // @Produce      json
 // @Success      200  {object}  []storageProviderResp
 // @Failure      400           {object}  util.HttpError
 // @Failure      500           {object}  util.HttpError
-// @Router       /storage-providers [get]
+// @Router       /v2/storage-providers [get]
 func (s *apiV2) handleGetStorageProviders(c echo.Context) error {
+	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviders")
+	defer span.End()
+
+	// Cache the Chain Lookup for this miner, looking up if it doesnt exist / is expired
+	key := util.CacheKey(c, nil)
+	cached, ok := s.extendedCacher.Get(key)
+	if ok {
+		out, ok := cached.([]StorageProviderResp)
+		if ok {
+			return c.JSON(http.StatusOK, out)
+		} else {
+			return c.JSON(http.StatusInternalServerError, &util.HttpError{
+				Code:    http.StatusInternalServerError,
+				Reason:  util.ERR_INTERNAL_SERVER,
+				Details: "unable to read cached Storage Providers list",
+			})
+		}
+	}
+
 	var miners []model.StorageMiner
-	if err := s.DB.Find(&miners).Error; err != nil {
+	if err := s.db.Find(&miners).Error; err != nil {
 		return err
 	}
 
-	out := make([]storageProviderResp, len(miners))
+	out := make([]StorageProviderResp, len(miners))
+	wg := new(sync.WaitGroup)
+
 	for i, m := range miners {
 		out[i].Addr = m.Address.Addr
 		out[i].Suspended = m.Suspended
 		out[i].SuspendedReason = m.SuspendedReason
 		out[i].Name = m.Name
 		out[i].Version = m.Version
+
+		// Spawn a thread to fetch the Chain Info (Lotus RPC call - takes a few ms)
+		wg.Add(1)
+		go func(w *sync.WaitGroup, addr address.Address, i int) {
+			defer w.Done()
+			ci, err := s.minerManager.GetMinerChainInfo(ctx, addr)
+			if err == nil {
+				out[i].ChainInfo = ci
+			}
+		}(wg, m.Address.Addr, i)
 	}
 
+	wg.Wait()
+
+	s.extendedCacher.Add(key, out)
 	return c.JSON(http.StatusOK, out)
 }
 
@@ -173,7 +207,7 @@ func (s *apiV2) handleStorageProviderTransferDiagnostics(c echo.Context) error {
 		return err
 	}
 
-	minerTransferDiagnostics, err := s.FilClient.MinerTransferDiagnostics(c.Request().Context(), m)
+	minerTransferDiagnostics, err := s.fc.MinerTransferDiagnostics(c.Request().Context(), m)
 	if err != nil {
 		return err
 	}
@@ -190,7 +224,7 @@ func (s *apiV2) handleStorageProviderTransferDiagnostics(c echo.Context) error {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  true  "Filter by storage provider"
-// @Router       /storage-providers/failures/{sp} [get]
+// @Router       /v2/storage-providers/failures/{sp} [get]
 func (s *apiV2) handleGetStorageProviderFailures(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -198,7 +232,7 @@ func (s *apiV2) handleGetStorageProviderFailures(c echo.Context) error {
 	}
 
 	var merrs []model.DfeRecord
-	if err := s.DB.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
+	if err := s.db.Limit(1000).Order("created_at desc").Find(&merrs, "miner = ?", maddr.String()).Error; err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, merrs)
@@ -233,14 +267,14 @@ type storageProviderDealsResp struct {
 // @Failure      500  {object}  util.HttpError
 // @Param        sp          path      string  true   "Filter by storage provider"
 // @Param        ignore-failed  query     string  false  "Ignore Failed"
-// @Router       /storage-providers/deals/{sp} [get]
+// @Router       /v2/storage-providers/deals/{sp} [get]
 func (s *apiV2) handleGetStorageProviderDeals(c echo.Context) error {
 	maddr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
 		return err
 	}
 
-	q := s.DB.Model(model.ContentDeal{}).Order("created_at desc").
+	q := s.db.Model(model.ContentDeal{}).Order("created_at desc").
 		Joins("left join contents on contents.id = content_deals.content").
 		Where("miner = ?", maddr.String())
 
@@ -266,15 +300,7 @@ type storageProviderStatsResp struct {
 	Suspended       bool            `json:"suspended"`
 	SuspendedReason string          `json:"suspendedReason"`
 
-	ChainInfo *storageProviderChainInfo `json:"chainInfo"`
-}
-
-type storageProviderChainInfo struct {
-	PeerID    string   `json:"peerId"`
-	Addresses []string `json:"addresses"`
-
-	Owner  string `json:"owner"`
-	Worker string `json:"worker"`
+	ChainInfo *miner.MinerChainInfo `json:"chainInfo"`
 }
 
 // handleGetStorageProviderStats godoc
@@ -286,7 +312,7 @@ type storageProviderChainInfo struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path      string  true  "Filter by storage provider"
-// @Router       /storage-providers/stats/{sp} [get]
+// @Router       /v2/storage-providers/stats/{sp} [get]
 func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	ctx, span := s.tracer.Start(c.Request().Context(), "handleGetStorageProviderStats")
 	defer span.End()
@@ -296,29 +322,13 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 		return err
 	}
 
-	minfo, err := s.Api.StateMinerInfo(ctx, maddr, types.EmptyTSK)
+	ci, err := s.minerManager.GetMinerChainInfo(ctx, maddr)
 	if err != nil {
 		return err
 	}
 
-	ci := storageProviderChainInfo{
-		Owner:  minfo.Owner.String(),
-		Worker: minfo.Worker.String(),
-	}
-
-	if minfo.PeerId != nil {
-		ci.PeerID = minfo.PeerId.String()
-	}
-	for _, a := range minfo.Multiaddrs {
-		ma, err := multiaddr.NewMultiaddrBytes(a)
-		if err != nil {
-			return err
-		}
-		ci.Addresses = append(ci.Addresses, ma.String())
-	}
-
 	var m model.StorageMiner
-	if err := s.DB.First(&m, "address = ?", maddr.String()).Error; err != nil {
+	if err := s.db.First(&m, "address = ?", maddr.String()).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return c.JSON(http.StatusOK, &storageProviderStatsResp{
 				Miner:         maddr,
@@ -329,12 +339,12 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 	}
 
 	var dealscount int64
-	if err := s.DB.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
+	if err := s.db.Model(&model.ContentDeal{}).Where("miner = ?", maddr.String()).Count(&dealscount).Error; err != nil {
 		return err
 	}
 
 	var errorcount int64
-	if err := s.DB.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
+	if err := s.db.Model(&model.DfeRecord{}).Where("miner = ?", maddr.String()).Count(&errorcount).Error; err != nil {
 		return err
 	}
 
@@ -347,7 +357,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 		SuspendedReason: m.SuspendedReason,
 		Name:            m.Name,
 		Version:         m.Version,
-		ChainInfo:       &ci,
+		ChainInfo:       ci,
 	})
 }
 
@@ -360,7 +370,7 @@ func (s *apiV2) handleGetStorageProviderStats(c echo.Context) error {
 // @Failure      400   {object}  util.HttpError
 // @Failure      500   {object}  util.HttpError
 // @Param        cid  path      string  true  "CID"
-// @router       /storage-providers/storage/query/{cid} [get]
+// @router       /v2/storage-providers/storage/query/{cid} [get]
 func (s *apiV2) handleStorageProviderQueryAsk(c echo.Context) error {
 	addr, err := address.NewFromString(c.Param("sp"))
 	if err != nil {
@@ -387,7 +397,7 @@ type claimResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        req           body      miner.ClaimMinerBody  true   "Claim Storage Provider Body"
-// @Router       /storage-providers/claim [post]
+// @Router       /v2/storage-providers/claim [post]
 func (s *apiV2) handleClaimStorageProvider(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
@@ -415,7 +425,7 @@ type claimMsgResponse struct {
 // @Failure      400  {object}  util.HttpError
 // @Failure      500  {object}  util.HttpError
 // @Param        sp  path     string  true  "Storage Provider claim message"
-// @Router       /storage-providers/claim/{sp} [get]
+// @Router       /v2/storage-providers/claim/{sp} [get]
 func (s *apiV2) handleGetClaimStorageProviderMsg(c echo.Context, u *util.User) error {
 	m, err := address.NewFromString(c.Param("sp"))
 	if err != nil {

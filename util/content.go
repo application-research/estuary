@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,13 +29,14 @@ const (
 type ContentInCollection struct {
 	CollectionID  string `json:"coluuid"`
 	CollectionDir string `json:"dir"`
+	Overwrite     bool   `json:"overwrite"`
 }
 
 type ContentAddResponse struct {
 	Cid                 string   `json:"cid"`
 	RetrievalURL        string   `json:"retrieval_url"`
 	EstuaryRetrievalURL string   `json:"estuary_retrieval_url"`
-	EstuaryId           uint     `json:"estuaryId"`
+	EstuaryId           uint64   `json:"estuaryId"`
 	Providers           []string `json:"providers"`
 }
 
@@ -48,11 +50,11 @@ type ContentCreateBody struct {
 }
 
 type ContentCreateResponse struct {
-	ID uint `json:"id"`
+	ID uint64 `json:"id"`
 }
 
 type Content struct {
-	ID        uint           `gorm:"primarykey" json:"id"`
+	ID        uint64         `gorm:"primarykey" json:"id"`
 	CreatedAt time.Time      `json:"createdAt"`
 	UpdatedAt time.Time      `json:"updatedAt"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -69,8 +71,8 @@ type Content struct {
 
 	// TODO: shift most of the 'state' booleans in here into a single state
 	// field, should make reasoning about things much simpler
-	AggregatedIn uint `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
-	Aggregate    bool `json:"aggregate"`
+	AggregatedIn uint64 `json:"aggregatedIn" gorm:"index:,option:CONCURRENTLY"`
+	Aggregate    bool   `json:"aggregate"`
 
 	Pinning bool   `json:"pinning"`
 	PinMeta string `json:"pinMeta"`
@@ -90,8 +92,8 @@ type Content struct {
 	// In such a case, the 'root' content should be advertised on the dht, but
 	// not have deals made for it, and the children should have deals made for
 	// them (unlike with aggregates)
-	DagSplit  bool `json:"dagSplit"`
-	SplitFrom uint `json:"splitFrom"`
+	DagSplit  bool   `json:"dagSplit"`
+	SplitFrom uint64 `json:"splitFrom"`
 
 	PinningStatus string `json:"pinningStatus" gorm:"-"`
 	DealStatus    string `json:"dealStatus" gorm:"-"`
@@ -103,17 +105,17 @@ type ContentWithPath struct {
 }
 
 type Object struct {
-	ID         uint  `gorm:"primarykey"`
-	Cid        DbCID `gorm:"index"`
-	Size       int
-	Reads      int
+	ID         uint64 `gorm:"primarykey"`
+	Cid        DbCID  `gorm:"index"`
+	Size       uint64
+	Reads      uint64
 	LastAccess time.Time
 }
 
 type ObjRef struct {
-	ID        uint `gorm:"primarykey"`
-	Content   uint `gorm:"index:,option:CONCURRENTLY"`
-	Object    uint `gorm:"index:,option:CONCURRENTLY"`
+	ID        uint64 `gorm:"primarykey"`
+	Content   uint64 `gorm:"index:,option:CONCURRENTLY"`
+	Object    uint64 `gorm:"index:,option:CONCURRENTLY"`
 	Offloaded uint
 }
 
@@ -195,7 +197,11 @@ func CreateEstuaryRetrievalURL(cid string) string {
 
 func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
 	var content Content
-	if err := db.First(&content, "id = ?", contentid).Error; err != nil {
+	contID, err := strconv.Atoi(contentid)
+	if err != nil {
+		return Content{}, err
+	}
+	if err := db.First(&content, "id = ?", contID).Error; err != nil {
 		if xerrors.Is(err, gorm.ErrRecordNotFound) {
 			return Content{}, &HttpError{
 				Code:    http.StatusNotFound,
@@ -208,39 +214,4 @@ func GetContent(contentid string, db *gorm.DB, u *User) (Content, error) {
 		return Content{}, err
 	}
 	return content, nil
-}
-
-func ConstructDirectoryPath(dir string) (string, error) {
-	defaultPath := "/"
-	path := defaultPath
-	if cp := dir; cp != "" {
-		sp, err := SanitizePath(cp)
-		if err != nil {
-			return "", err
-		}
-
-		path = sp
-	}
-	return path, nil
-}
-
-func SanitizePath(p string) (string, error) {
-	if len(p) == 0 {
-		return "", fmt.Errorf("can't sanitize empty path")
-	}
-
-	if p[0] != '/' {
-		return "", fmt.Errorf("paths must start with /")
-	}
-
-	// TODO: prevent use of special weird characters
-
-	cleanPath := filepath.Clean(p)
-
-	// if original path ends in /, append / to cleaned path
-	// needed for full path vs dir+filename magic to work in handleAddIpfs
-	if strings.HasSuffix(p, "/") {
-		cleanPath = cleanPath + "/"
-	}
-	return cleanPath, nil
 }

@@ -36,6 +36,7 @@ type AuthToken struct {
 	User       uint
 	UploadOnly bool
 	Expiry     time.Time
+	IsSession  bool
 }
 
 type InviteCode struct {

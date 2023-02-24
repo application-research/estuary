@@ -17,6 +17,7 @@ import (
 
 	"github.com/application-research/estuary/node/modules/peering"
 	"github.com/application-research/estuary/sanitycheck"
+	"github.com/application-research/estuary/util"
 
 	"github.com/application-research/estuary/config"
 
@@ -118,6 +119,29 @@ type Node struct {
 	Config  *config.Node
 }
 
+func (n *Node) Origins() ([]*peer.AddrInfo, error) {
+	var fullP2pMultiAddrs []multiaddr.Multiaddr
+	for _, listenAddr := range n.Host.Addrs() {
+		fullP2pAddr := fmt.Sprintf("%s/p2p/%s", listenAddr, n.Host.ID())
+		fullP2pMultiAddr, err := multiaddr.NewMultiaddr(fullP2pAddr)
+		if err != nil {
+			return nil, err
+		}
+		fullP2pMultiAddrs = append(fullP2pMultiAddrs, fullP2pMultiAddr)
+	}
+
+	// transform multiaddresses into AddrInfo objects
+	var origins []*peer.AddrInfo
+	for _, p := range fullP2pMultiAddrs {
+		ai, err := peer.AddrInfoFromP2pAddr(p)
+		if err != nil {
+			return nil, err
+		}
+		origins = append(origins, ai)
+	}
+	return origins, nil
+}
+
 func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckFn) (*Node, error) {
 	cfg := init.Config()
 
@@ -182,7 +206,7 @@ func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckF
 	peerServ := peering.NewEstuaryPeeringService(h)
 	//	add the peers
 	for _, addrInfo := range cfg.PeeringPeers {
-		addrs, err := toMultiAddresses(addrInfo.Addrs)
+		addrs, err := util.ToMultiAddresses(addrInfo.Addrs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse peering peers multi addr: %w", err)
 		}
@@ -297,28 +321,6 @@ func Setup(ctx context.Context, init NodeInitializer, checkFn sanitycheck.CheckF
 		StorageDir: stordir,
 		Peering:    peerServ,
 	}, nil
-}
-
-// Converting the public key to a multiaddress.
-func toMultiAddress(addr string) (multiaddr.Multiaddr, error) {
-	a, err := multiaddr.NewMultiaddr(addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse string multi addr: %w", err)
-	}
-	return a, nil
-}
-
-// It takes a slice of strings and returns a slice of multiaddresses
-func toMultiAddresses(addrs []string) ([]multiaddr.Multiaddr, error) {
-	var multiAddrs []multiaddr.Multiaddr
-	for _, addr := range addrs {
-		a, err := toMultiAddress(addr)
-		if err != nil {
-			log.Errorf("toMultiAddresses failed: %s", err)
-		}
-		multiAddrs = append(multiAddrs, a)
-	}
-	return multiAddrs, nil
 }
 
 func parseBsCfg(bscfg string) (string, []string, string, error) {

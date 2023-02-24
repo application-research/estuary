@@ -10,7 +10,7 @@ import (
 	uio "github.com/ipfs/go-unixfs/io"
 
 	"github.com/application-research/estuary/pinner/operation"
-	"github.com/application-research/estuary/pinner/types"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
 	rpcevent "github.com/application-research/estuary/shuttle/rpc/event"
 	"github.com/application-research/estuary/util"
 	dagsplit "github.com/application-research/estuary/util/dagsplit"
@@ -62,7 +62,11 @@ func (d *Shuttle) handleRpcCmd(cmd *rpcevent.Command, source string) error {
 	case rpcevent.CMD_UnpinContent:
 		return d.handleRpcUnpinContent(ctx, cmd.Params.UnpinContent)
 	case rpcevent.CMD_SplitContent:
-		return d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		err := d.handleRpcSplitContent(ctx, cmd.Params.SplitContent)
+		if err != nil {
+			d.sendSplitContentFailed(ctx, cmd.Params.SplitContent.Content)
+		}
+		return err
 	case rpcevent.CMD_RestartTransfer:
 		return d.handleRpcRestartTransfer(ctx, cmd.Params.RestartTransfer)
 	default:
@@ -122,7 +126,7 @@ func (d *Shuttle) handleRpcAddPin(ctx context.Context, apo *rpcevent.AddPin) err
 	return d.addPin(ctx, apo.DBID, apo.Cid, apo.UserId, apo.Peers, false)
 }
 
-func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
+func (d *Shuttle) addPin(ctx context.Context, contid uint64, data cid.Cid, user uint, peers []*peer.AddrInfo, skipLimiter bool) error {
 	ctx, span := d.Tracer.Start(ctx, "addPin", trace.WithAttributes(
 		attribute.Int64("contID", int64(contid)),
 		attribute.Int64("userID", int64(user)),
@@ -153,7 +157,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 				Params: rpcevent.MsgParams{
 					UpdatePinStatus: &rpcevent.UpdatePinStatus{
 						DBID:   contid,
-						Status: types.PinningStatusFailed,
+						Status: pinningstatus.PinningStatusFailed,
 					},
 				},
 			}); err != nil {
@@ -162,7 +166,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			return nil
 		}
 
-		if !existing.Pinning && existing.Active {
+		if existing.Active {
 			// we already finished pinning this one
 			// This implies that the pin complete message got lost, need to resend all the objects
 
@@ -173,12 +177,6 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			}()
 			return nil
 		}
-
-		if !existing.Active && !existing.Pinning {
-			if err := d.DB.Model(Pin{}).Where("id = ?", existing.ID).UpdateColumn("pinning", true).Error; err != nil {
-				return xerrors.Errorf("failed to update pin pinning state to true: %s", err)
-			}
-		}
 	} else {
 		// good, no pin found with this content id, lets create it
 		pin := &Pin{
@@ -186,7 +184,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 			Cid:     util.DbCID{CID: data},
 			UserID:  user,
 			Active:  false,
-			Pinning: true,
+			Pinning: false,
 		}
 
 		if err := d.DB.Create(pin).Error; err != nil {
@@ -198,7 +196,7 @@ func (d *Shuttle) addPin(ctx context.Context, contid uint, data cid.Cid, user ui
 		Obj:         data,
 		ContId:      contid,
 		UserId:      user,
-		Status:      types.PinningStatusQueued,
+		Status:      pinningstatus.PinningStatusQueued,
 		SkipLimiter: skipLimiter,
 		Peers:       operation.SerializePeers(peers),
 	}
@@ -217,7 +215,7 @@ func (s *Shuttle) resendPinComplete(ctx context.Context, pin Pin) error {
 	return nil
 }
 
-func (s *Shuttle) objectsForPin(ctx context.Context, pin uint) ([]*Object, error) {
+func (s *Shuttle) objectsForPin(ctx context.Context, pin uint64) ([]*Object, error) {
 	_, span := s.Tracer.Start(ctx, "objectsForPin")
 	defer span.End()
 
@@ -246,7 +244,14 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 
 	res, err := d.commpMemo.Do(ctx, cmd.Data.String(), nil)
 	if err != nil {
-		return xerrors.Errorf("failed to compute commP for %s: %w", cmd.Data, err)
+		return d.sendRpcMessage(ctx, &rpcevent.Message{
+			Op: rpcevent.OP_CommPFailed,
+			Params: rpcevent.MsgParams{
+				CommPFailed: &rpcevent.CommPFailed{
+					Data: cmd.Data,
+				},
+			},
+		})
 	}
 
 	commpRes, ok := res.(*commpResult)
@@ -267,7 +272,20 @@ func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.Compu
 	})
 }
 
-func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
+func (s *Shuttle) sendSplitContentFailed(ctx context.Context, cont uint64) {
+	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
+		Op: rpcevent.OP_SplitFailed,
+		Params: rpcevent.MsgParams{
+			SplitFailed: &rpcevent.SplitFailed{
+				ID: cont,
+			},
+		},
+	}); err != nil {
+		log.Errorf("failed to send split content failed message: %s", err)
+	}
+}
+
+func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint64) {
 	if err := s.sendRpcMessage(ctx, &rpcevent.Message{
 		Op: rpcevent.OP_SplitComplete,
 		Params: rpcevent.MsgParams{
@@ -280,7 +298,8 @@ func (s *Shuttle) sendSplitContentComplete(ctx context.Context, cont uint) {
 	}
 }
 
-func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint, size int64, objects []*Object, contCID cid.Cid) {
+//todo start sending origins with pin complete
+func (d *Shuttle) sendPinCompleteMessage(ctx context.Context, contID uint64, size int64, objects []*Object, contCID cid.Cid) {
 	ctx, span := d.Tracer.Start(ctx, "sendPinCompleteMessage")
 	defer span.End()
 
@@ -436,7 +455,7 @@ func (s *Shuttle) handleRpcAggregateStagedContent(ctx context.Context, aggregate
 	// mark it as active and change pinning status
 	obj := &Object{
 		Cid:  util.DbCID{CID: dirNd.Cid()},
-		Size: len(dirNd.RawData()),
+		Size: uint64(len(dirNd.RawData())),
 	}
 	if err := s.DB.Create(obj).Error; err != nil {
 		return err
@@ -577,7 +596,7 @@ func (s *Shuttle) handleRpcRetrieveContent(ctx context.Context, req *rpcevent.Re
 
 func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *rpcevent.UnpinContent) error {
 	for _, c := range req.Contents {
-		go func(cntID uint) {
+		go func(cntID uint64) {
 			if err := s.Unpin(ctx, cntID); err != nil {
 				log.Errorf("failed to unpin content %d: %s", cntID, err)
 			}
@@ -586,7 +605,7 @@ func (s *Shuttle) handleRpcUnpinContent(ctx context.Context, req *rpcevent.Unpin
 	return nil
 }
 
-func (s *Shuttle) markStartUnpin(cont uint) bool {
+func (s *Shuttle) markStartUnpin(cont uint64) bool {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
 
@@ -598,13 +617,13 @@ func (s *Shuttle) markStartUnpin(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishUnpin(cont uint) {
+func (s *Shuttle) finishUnpin(cont uint64) {
 	s.unpinLk.Lock()
 	defer s.unpinLk.Unlock()
 	delete(s.unpinInProgress, cont)
 }
 
-func (s *Shuttle) markStartAggr(cont uint) bool {
+func (s *Shuttle) markStartAggr(cont uint64) bool {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
 
@@ -616,13 +635,13 @@ func (s *Shuttle) markStartAggr(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishAggr(cont uint) {
+func (s *Shuttle) finishAggr(cont uint64) {
 	s.aggrLk.Lock()
 	defer s.aggrLk.Unlock()
 	delete(s.aggrInProgress, cont)
 }
 
-func (s *Shuttle) markStartSplit(cont uint) bool {
+func (s *Shuttle) markStartSplit(cont uint64) bool {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 
@@ -634,7 +653,7 @@ func (s *Shuttle) markStartSplit(cont uint) bool {
 	return true
 }
 
-func (s *Shuttle) finishSplit(cont uint) {
+func (s *Shuttle) finishSplit(cont uint64) {
 	s.splitLk.Lock()
 	defer s.splitLk.Unlock()
 	delete(s.splitsInProgress, cont)
@@ -714,7 +733,7 @@ func (s *Shuttle) handleRpcSplitContent(ctx context.Context, req *rpcevent.Split
 			return xerrors.Errorf("failed to track new content in database: %w", err)
 		}
 
-		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c, func(int64) {})
+		totalSize, objects, err := s.addDatabaseTrackingToContent(ctx, contid, dserv, s.Node.Blockstore, c)
 		if err != nil {
 			return err
 		}

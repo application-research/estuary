@@ -91,7 +91,7 @@ func (m *manager) Connect(c echo.Context, handle string, done chan struct{}) err
 
 		if err := m.db.Clauses(&clause.OnConflict{
 			Columns:   []clause.Column{{Name: "handle"}},
-			DoUpdates: clause.AssignmentColumns([]string{"address", "addr_info", "hostname", "private", "content_adding_disabled", "queue_eng_enabled"}),
+			DoUpdates: clause.AssignmentColumns([]string{"address", "addr_info", "hostname", "private", "content_adding_disabled", "queue_eng_enabled", "updated_at"}),
 		}).Create(&s).Error; err != nil {
 			return
 		}

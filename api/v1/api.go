@@ -2,7 +2,10 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	contentmgr "github.com/application-research/estuary/content"
+	content "github.com/application-research/estuary/content"
+	"github.com/application-research/estuary/content/stagingzone"
+
+	"github.com/application-research/estuary/deal"
 	"github.com/application-research/estuary/deal/transfer"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
@@ -23,21 +26,23 @@ import (
 
 type apiV1 struct {
 	cfg            *config.Estuary
-	DB             *gorm.DB
+	db             *gorm.DB
 	tracer         trace.Tracer
-	Node           *node.Node
-	FilClient      *filclient.FilClient
-	Api            api.Gateway
-	CM             *contentmgr.ContentManager
-	StagingMgr     *stagingbs.StagingBSMgr
+	nd             *node.Node
+	fc             *filclient.FilClient
+	api            api.Gateway
+	cm             content.IManager
+	stagingBsMgr   *stagingbs.StagingBSMgr
 	gwayHandler    *gateway.GatewayHandler
 	cacher         *explru.ExpirableLRU
 	extendedCacher *explru.ExpirableLRU
 	minerManager   miner.IMinerManager
-	pinMgr         *pinner.EstuaryPinManager
+	pinMgr         pinner.IEstuaryPinManager
 	log            *zap.SugaredLogger
 	shuttleMgr     shuttle.IManager
 	transferMgr    transfer.IManager
+	dealMgr        deal.IManager
+	stgZoneMgr     stagingzone.IManager
 }
 
 func NewAPIV1(
@@ -47,25 +52,27 @@ func NewAPIV1(
 	fc *filclient.FilClient,
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
-	cm *contentmgr.ContentManager,
+	cm content.IManager,
 	cacher *explru.ExpirableLRU,
 	extendedCacher *explru.ExpirableLRU,
 	mm miner.IMinerManager,
-	pinMgr *pinner.EstuaryPinManager,
+	pinMgr pinner.IEstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 	shuttleMgr shuttle.IManager,
 	transferMgr transfer.IManager,
+	dealMgr deal.IManager,
+	stgZoneMgr stagingzone.IManager,
 ) *apiV1 {
 	return &apiV1{
 		cfg:            cfg,
-		DB:             db,
+		db:             db,
 		tracer:         trc,
-		Node:           nd,
-		FilClient:      fc,
-		Api:            gwApi,
-		CM:             cm,
-		StagingMgr:     sbm,
+		nd:             nd,
+		fc:             fc,
+		api:            gwApi,
+		cm:             cm,
+		stagingBsMgr:   sbm,
 		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
 		cacher:         cacher,
 		extendedCacher: extendedCacher,
@@ -74,6 +81,8 @@ func NewAPIV1(
 		log:            log,
 		shuttleMgr:     shuttleMgr,
 		transferMgr:    transferMgr,
+		dealMgr:        dealMgr,
+		stgZoneMgr:     stgZoneMgr,
 	}
 }
 
@@ -136,13 +145,16 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	content.GET("/by-cid/:cid", s.handleGetContentByCid)
 	content.GET("/:cont_id", util.WithUser(s.handleGetContent))
 	content.GET("/stats", util.WithUser(s.handleStats))
+	content.GET("/contents", util.WithUser(s.handleGetUserContents))
 	content.GET("/ensure-replication/:datacid", s.handleEnsureReplication)
 	content.GET("/status/:id", util.WithUser(s.handleContentStatus))
 	content.GET("/list", util.WithUser(s.handleListContent))
 	content.GET("/deals", util.WithUser(s.handleListContentWithDeals))
 	content.GET("/failures/:content", util.WithUser(s.handleGetContentFailures))
 	content.GET("/bw-usage/:content", util.WithUser(s.handleGetContentBandwidth))
-	content.GET("/staging-zones", util.WithUser(s.handleGetStagingZoneForUser))
+	content.GET("/staging-zones", util.WithUser(s.handleGetStagingZonesForUser))
+	content.GET("/staging-zones/:staging_zone", util.WithUser(s.handleGetStagingZoneWithoutContents))
+	content.GET("/staging-zones/:staging_zone/contents", util.WithUser(s.handleGetStagingZoneContents))
 	content.GET("/aggregated/:content", util.WithUser(s.handleGetAggregatedForContent))
 	content.GET("/all-deals", util.WithUser(s.handleGetAllDealsForUser))
 

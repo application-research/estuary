@@ -33,6 +33,7 @@ type IMinerManager interface {
 	GetAsk(ctx context.Context, m address.Address, maxCacheAge time.Duration) (*model.MinerStorageAsk, error)
 	SetMinerInfo(m address.Address, params MinerSetInfoParams, u *util.User) error
 	GetMsgForMinerClaim(miner address.Address, uid uint) []byte
+	GetMinerChainInfo(ctx context.Context, maddr address.Address) (*MinerChainInfo, error)
 	ClaimMiner(ctx context.Context, params ClaimMinerBody, u *util.User) error
 	SuspendMiner(m address.Address, params SuspendMinerBody, u *util.User) error
 	UnSuspendMiner(m address.Address, u *util.User) error
@@ -74,7 +75,7 @@ func (mm *MinerManager) EstimatePrice(ctx context.Context, repl int, pieceSize a
 	))
 	defer span.End()
 
-	miners, err := mm.PickMiners(ctx, repl, pieceSize, nil, false)
+	miners, err := mm.PickMiners(ctx, repl, pieceSize, nil, true)
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +186,6 @@ func (mm *MinerManager) sortedMinersForDeal(ctx context.Context, out []miner, n 
 
 		if ask.SizeIsCloseEnough(pieceSize) {
 			out = append(out, miner{Address: m, DealProtocolVersion: proto, Ask: ask})
-			exclude[m] = true
 		}
 	}
 	return out, nil

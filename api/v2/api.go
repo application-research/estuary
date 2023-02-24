@@ -2,7 +2,7 @@ package api
 
 import (
 	"github.com/application-research/estuary/config"
-	contentmgr "github.com/application-research/estuary/content"
+	content "github.com/application-research/estuary/content"
 	"github.com/application-research/estuary/miner"
 	"github.com/application-research/estuary/node"
 	"github.com/application-research/estuary/pinner"
@@ -12,6 +12,7 @@ import (
 	"github.com/application-research/filclient"
 	"github.com/filecoin-project/lotus/api"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	explru "github.com/paskal/golang-lru/simplelru"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -19,19 +20,20 @@ import (
 )
 
 type apiV2 struct {
-	cfg          *config.Estuary
-	DB           *gorm.DB
-	tracer       trace.Tracer
-	Node         *node.Node
-	FilClient    *filclient.FilClient
-	Api          api.Gateway
-	CM           *contentmgr.ContentManager
-	StagingMgr   *stagingbs.StagingBSMgr
-	gwayHandler  *gateway.GatewayHandler
-	cacher       *explru.ExpirableLRU
-	minerManager miner.IMinerManager
-	pinMgr       *pinner.EstuaryPinManager
-	log          *zap.SugaredLogger
+	cfg            *config.Estuary
+	db             *gorm.DB
+	tracer         trace.Tracer
+	nd             *node.Node
+	fc             *filclient.FilClient
+	api            api.Gateway
+	cm             content.IManager
+	stagingBsMgr   *stagingbs.StagingBSMgr
+	gwayHandler    *gateway.GatewayHandler
+	cacher         *explru.ExpirableLRU
+	extendedCacher *explru.ExpirableLRU
+	minerManager   miner.IMinerManager
+	pinMgr         pinner.IEstuaryPinManager
+	log            *zap.SugaredLogger
 }
 
 func NewAPIV2(
@@ -41,27 +43,29 @@ func NewAPIV2(
 	fc *filclient.FilClient,
 	gwApi api.Gateway,
 	sbm *stagingbs.StagingBSMgr,
-	cm *contentmgr.ContentManager,
+	cm content.IManager,
 	cacher *explru.ExpirableLRU,
-	mm miner.IMinerManager,
-	pinMgr *pinner.EstuaryPinManager,
+	minerManager miner.IMinerManager,
+	extendedCacher *explru.ExpirableLRU,
+	pinMgr pinner.IEstuaryPinManager,
 	log *zap.SugaredLogger,
 	trc trace.Tracer,
 ) *apiV2 {
 	return &apiV2{
-		cfg:          cfg,
-		DB:           db,
-		tracer:       trc,
-		Node:         nd,
-		FilClient:    fc,
-		Api:          gwApi,
-		CM:           cm,
-		StagingMgr:   sbm,
-		gwayHandler:  gateway.NewGatewayHandler(nd.Blockstore),
-		cacher:       cacher,
-		minerManager: mm,
-		pinMgr:       pinMgr,
-		log:          log,
+		cfg:            cfg,
+		db:             db,
+		tracer:         trc,
+		nd:             nd,
+		fc:             fc,
+		api:            gwApi,
+		cm:             cm,
+		stagingBsMgr:   sbm,
+		gwayHandler:    gateway.NewGatewayHandler(nd.Blockstore),
+		cacher:         cacher,
+		extendedCacher: extendedCacher,
+		minerManager:   minerManager,
+		pinMgr:         pinMgr,
+		log:            log,
 	}
 }
 
@@ -83,10 +87,11 @@ func NewAPIV2(
 // @securityDefinitions.Bearer.in header
 // @securityDefinitions.Bearer.name Authorization
 func (s *apiV2) RegisterRoutes(e *echo.Echo) {
-	_ = e.Group("/v2")
+	api := e.Group("/v2")
+	api.Use(middleware.RateLimiterWithConfig(util.ConfigureRateLimiter(s.cfg.RateLimit)))
 
 	// Storage Provider Endpoints
-	storageProvider := e.Group("/storage-providers")
+	storageProvider := api.Group("/storage-providers")
 	storageProvider.POST("/add/:sp", s.handleAddStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/rm/:sp", s.handleRemoveStorageProvider, s.AuthRequired(util.PermLevelAdmin))
 	storageProvider.POST("/suspend/:sp", util.WithUser(s.handleSuspendStorageProvider))
@@ -101,4 +106,14 @@ func (s *apiV2) RegisterRoutes(e *echo.Echo) {
 	storageProvider.GET("/storage/query/:cid", s.handleStorageProviderQueryAsk)
 	storageProvider.POST("/claim", util.WithUser(s.handleClaimStorageProvider))
 	storageProvider.GET("/claim/:sp", util.WithUser(s.handleGetClaimStorageProviderMsg))
+
+	// Pinning
+	pinning := api.Group("/pinning")
+	pinning.Use(s.AuthRequired(util.PermLevelUser))
+	pinning.POST("/batched-pins", util.WithUser(s.handleAddBatchedPins))
+	pinning.GET("/batched-pins", util.WithUser(s.handleGetBatchedPins))
+}
+
+func (s *apiV2) isContentAddingDisabled(u *util.User) bool {
+	return (s.cfg.Content.DisableGlobalAdding && s.cfg.Content.DisableLocalAdding) || u.StorageDisabled
 }

@@ -21,17 +21,17 @@ type ExportVersion1 struct {
 
 func (s *apiV1) exportUserData(uid uint) (*DataExport, error) {
 	var contents []util.Content
-	if err := s.DB.Find(&contents, "user_id = ?", uid).Error; err != nil {
+	if err := s.db.Find(&contents, "user_id = ?", uid).Error; err != nil {
 		return nil, err
 	}
 
-	var conts []uint
+	var conts []uint64
 	for _, c := range contents {
 		conts = append(conts, c.ID)
 	}
 
 	var deals []model.ContentDeal
-	if err := s.DB.Find(&deals, "content in ?", conts).Error; err != nil {
+	if err := s.db.Find(&deals, "content in ?", conts).Error; err != nil {
 		return nil, err
 	}
 

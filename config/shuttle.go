@@ -2,8 +2,9 @@ package config
 
 import (
 	"errors"
-	"golang.org/x/time/rate"
 	"path/filepath"
+
+	"golang.org/x/time/rate"
 
 	rcmgr "github.com/libp2p/go-libp2p/p2p/host/resource-manager"
 
@@ -84,7 +85,7 @@ func NewShuttle(appVersion string) *Shuttle {
 		Private:            false,
 		Dev:                false,
 		NoReloadPinQueue:   false,
-		RateLimit:          rate.Limit(20),
+		RateLimit:          rate.Limit(200),
 
 		Content: Content{
 			DisableLocalAdding: false,
@@ -180,7 +181,7 @@ func NewShuttle(appVersion string) *Shuttle {
 			Queue: QueueEngine{
 				Host:      "",
 				Enabled:   false,
-				Consumers: 5,
+				Consumers: 3,
 				Driver:    "nsq",
 			},
 		},
