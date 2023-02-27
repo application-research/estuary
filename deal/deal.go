@@ -288,6 +288,11 @@ func (m *manager) makeDealsForContent(ctx context.Context, contID uint64, dealsT
 	))
 	defer span.End()
 
+	// set up delta as a separate instance but use the same BLOCKSTORE
+	// get the content id
+	// get the list of miners
+	// make deal for each content
+
 	content, err := m.contMgr.GetContent(contID)
 	if err != nil {
 		return err
