@@ -237,6 +237,9 @@ type commpResult struct {
 }
 
 func (d *Shuttle) handleRpcComputeCommP(ctx context.Context, cmd *rpcevent.ComputeCommP) error {
+	d.commpLk.Lock()
+	defer d.commpLk.Unlock()
+
 	ctx, span := d.Tracer.Start(ctx, "handleComputeCommP", trace.WithAttributes(
 		attribute.String("data", cmd.Data.String()),
 	))

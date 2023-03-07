@@ -841,6 +841,8 @@ type Shuttle struct {
 	tcLk             sync.Mutex
 	trackingChannels map[string]*util.ChanTrack
 
+	commpLk sync.Mutex
+
 	splitLk          sync.Mutex
 	splitsInProgress map[uint64]bool
 
