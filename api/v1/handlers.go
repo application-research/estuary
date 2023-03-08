@@ -415,7 +415,12 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		}()
 	}()
 
-	defer c.Request().Body.Close()
+	defer func() {
+		if err := c.Request().Body.Close(); err != nil {
+			s.log.Warnf("failed to close request body: %s", err)
+		}
+	}()
+
 	header, err := s.loadCar(ctx, sbs, c.Request().Body)
 	if err != nil {
 		return err

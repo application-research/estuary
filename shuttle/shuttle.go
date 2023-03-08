@@ -188,7 +188,7 @@ func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 			continue
 		}
 
-		out, err := getShuttleConfig(sh.Hostname, u.AuthToken.Token)
+		out, err := m.getShuttleConfig(sh.Hostname, u.AuthToken.Token)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +197,7 @@ func (m *manager) GetShuttlesConfig(u *util.User) (interface{}, error) {
 	return shts, nil
 }
 
-func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
+func (m *manager) getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 	u, err := url.Parse(hostname)
 	if err != nil {
 		return nil, errors.Errorf("failed to parse url for shuttle(%s) config: %s", hostname, err)
@@ -214,7 +214,12 @@ func getShuttleConfig(hostname string, authToken string) (interface{}, error) {
 	if err != nil {
 		return nil, errors.Errorf("failed to request shuttle(%s) config: %s", hostname, err)
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			m.log.Warnf("failed to close request body: %s", err)
+		}
+	}()
 
 	if resp.StatusCode != 200 {
 		bodyBytes, err := ioutil.ReadAll(resp.Body)
