@@ -22,7 +22,7 @@ import (
 	"gorm.io/gorm"
 )
 
-var logger = logging.Logger("shuttle")
+var logger = logging.Logger("benchtest")
 
 func main() {
 	app := getApp()
