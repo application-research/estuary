@@ -13,12 +13,16 @@ import (
 	"strings"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
+
 	"github.com/application-research/estuary/util"
 	pgd "github.com/jinzhu/gorm/dialects/postgres"
 	"github.com/urfave/cli/v2"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
+
+var logger = logging.Logger("shuttle")
 
 func main() {
 	app := getApp()
@@ -420,7 +424,11 @@ func benchFetch(c string) (*fetchStats, error) {
 
 	status := resp.StatusCode
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warnf("failed to close request body: %s", err)
+		}
+	}()
 
 	br := bufio.NewReader(resp.Body)
 
@@ -473,7 +481,11 @@ func ipfsCheck(c string, maddr string) *checkResp {
 		}
 	}
 
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warnf("failed to close request body: %s", err)
+		}
+	}()
 
 	var out checkResp
 	out.CheckTook = time.Since(start)

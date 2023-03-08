@@ -1110,7 +1110,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
-	e.Binder = new(util.Binder)
+	e.Binder = util.NewBinder(log)
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
@@ -1436,12 +1436,17 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 	defer func() {
 		go func() {
 			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
+				log.Warnf("failed to clean up staging blockstore: %s", err)
 			}
 		}()
 	}()
 
-	defer c.Request().Body.Close()
+	defer func() {
+		if err := c.Request().Body.Close(); err != nil {
+			log.Warnf("failed to close request body: %s", err)
+		}
+	}()
+
 	header, err := s.loadCar(ctx, bs, c.Request().Body)
 	if err != nil {
 		return err
