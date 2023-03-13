@@ -211,7 +211,7 @@ func (pm *PinManager) doPinning(po *operation.PinningOperation) error {
 	ctx, cancel := context.WithTimeout(context.Background(), maxTimeout)
 	defer cancel()
 
-	pm.log.Debugf("tryping to process pin(%d) operation to the pinner queue", po.ContId)
+	pm.log.Debugf("trying to process pin(%d) operation to the pinner queue", po.ContId)
 
 	po.SetStatus(status.PinningStatusPinning)
 	if err2 := pm.StatusChangeFunc(po.ContId, po.Location, status.PinningStatusPinning); err2 != nil {
