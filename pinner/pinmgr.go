@@ -141,7 +141,7 @@ func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, log
 	if opts.QueueDataDir == "" {
 		log.Fatal("Deque needs queue data dir")
 	}
-	duplicateGuard := buildDupliceGuardFromPinQueue(opts.QueueDataDir, log)
+	duplicateGuard := buildDuplicateeGuardFromPinQueue(opts.QueueDataDir, log)
 	pinQueue := createDQue(opts.QueueDataDir, log)
 	//we need to have a variable pinQueueCount which keeps track in memory count in the queue
 	//Since the disk dequeue is durable
@@ -299,7 +299,7 @@ func createLevelDBKey(value PinningOperationData, log *zap.SugaredLogger) uint64
 	return value.ContId
 }
 
-func buildDupliceGuardFromPinQueue(QueueDataDir string, log *zap.SugaredLogger) map[uint64]bool {
+func buildDuplicateeGuardFromPinQueue(QueueDataDir string, log *zap.SugaredLogger) map[uint64]bool {
 	ret := make(map[uint64]bool)
 	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
 	db, err := leveldb.OpenFile(dname, nil)
@@ -314,7 +314,11 @@ func buildDupliceGuardFromPinQueue(QueueDataDir string, log *zap.SugaredLogger) 
 		}
 		ret[entry.ContId] = true
 	}
-	db.Close()
+
+	err = db.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
 	return ret
 }
 
