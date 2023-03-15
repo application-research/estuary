@@ -557,7 +557,7 @@ func main() {
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
 		}, log)
-		go s.PinMgr.Run(300)
+		go s.PinMgr.Run(10)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled
 		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
