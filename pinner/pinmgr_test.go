@@ -127,7 +127,7 @@ func TestSend1Pin1worker(t *testing.T) {
 		go mgr.Add(&pin)
 
 		sleepWhileWork(mgr, 0)
-		assert.Equal(t, 0, int(mgr.pinQueue.Length()), "first pin doesn't enter queue")
+		assert.Equal(t, 0, int(mgr.pinQueueData.pinQueue.Length()), "first pin doesn't enter queue")
 		assert.Equal(t, 1, count, "DoPin called once")
 		mgr.closeQueueDataStructures()
 	})

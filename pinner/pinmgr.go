@@ -60,14 +60,21 @@ type PinManagerOpts struct {
 	QueueDataDir     string
 }
 
+
+type PinQueueData struct{
+	pinQueue         *goque.PrefixQueue
+	pinQueueFront    map[uint][]*operation.PinningOperation
+	pinQueueBack     map[uint][]*operation.PinningOperation
+}
+
 type PinManager struct {
 	pinQueueIn       chan *operation.PinningOperation
 	pinQueueOut      chan *operation.PinningOperation
 	pinComplete      chan *operation.PinningOperation
 	duplicateGuard   map[uint64]bool // track whether a content id already exists in the queue
 	activePins       map[uint]int    // used to limit the number of pins per user
+	pinQueueData	 PinQueueData
 	pinQueueCount    map[uint]int    // keep track of queue count per user
-	pinQueue         *goque.PrefixQueue
 	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
 	StatusChangeFunc PinStatusFunc
@@ -142,14 +149,14 @@ func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, log
 		log.Fatal("Deque needs queue data dir")
 	}
 	duplicateGuard := buildDuplicateGuardFromPinQueue(opts.QueueDataDir, log)
-	pinQueue := createDQue(opts.QueueDataDir, log)
+	pinQueueData := createPinQueue(opts.QueueDataDir, log)
 	//we need to have a variable pinQueueCount which keeps track in memory count in the queue
 	//Since the disk dequeue is durable
 	//we initialize pinQueueCount on boot by iterating through the queue
-	pinQueueCount := buildPinQueueCount(pinQueue, log)
+	pinQueueCount := buildPinQueueCount(pinQueueData.pinQueue, log)
 
 	return &PinManager{
-		pinQueue:         pinQueue,
+		pinQueueData:         pinQueueData,
 		activePins:       make(map[uint]int),
 		pinQueueCount:    pinQueueCount,
 		pinQueueIn:       make(chan *operation.PinningOperation, 64),
@@ -190,7 +197,7 @@ func (pm *PinManager) complete(po *operation.PinningOperation) {
 func (pm *PinManager) PinQueueSize() int {
 	pm.pinQueueLk.Lock()
 	defer pm.pinQueueLk.Unlock()
-	return int(pm.pinQueue.Length())
+	return int(pm.pinQueueData.pinQueue.Length()) // XXX TODO better length func to include front and back
 }
 
 func (pm *PinManager) Add(op *operation.PinningOperation) {
@@ -226,7 +233,7 @@ func (pm *PinManager) doPinning(po *operation.PinningOperation) error {
 }
 
 func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
-	if pm.pinQueue.Length() == 0 {
+	if pm.pinQueueData.pinQueue.Length() == 0 { // todo better length
 		return nil // no content in queue
 	}
 
@@ -260,7 +267,7 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 	}
 
 	// Dequeue the next item in the queue
-	item, err := pm.pinQueue.Dequeue(getUserForQueue(user))
+	item, err := pm.pinQueueData.pinQueue.Dequeue(getUserForQueue(user)) // XXX TODO have this know about the dequeue
 	pm.pinQueueCount[user]--
 	if pm.pinQueueCount[user] == 0 {
 		delete(pm.pinQueueCount, user)
@@ -289,7 +296,7 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 //currently only used for the tests since the tests need to open and close multiple dbs
 //handling errors paritally for gosec security scanner
 func (pm *PinManager) closeQueueDataStructures() {
-	err := pm.pinQueue.Close()
+	err := pm.pinQueueData.pinQueue.Close() // todo add front and back to queue
 	if err != nil {
 		pm.log.Fatal(err)
 	}
@@ -345,6 +352,15 @@ func buildPinQueueCount(q *goque.PrefixQueue, log *zap.SugaredLogger) map[uint]i
 	return mapUint
 }
 
+func createPinQueue(QueueDataDir string, log *zap.SugaredLogger) PinQueueData{
+	pq := PinQueueData{
+		pinQueue: createDQue(QueueDataDir, log),
+		pinQueueFront: make(map[uint][]*operation.PinningOperation),
+		pinQueueBack: make(map[uint][]*operation.PinningOperation),
+	}
+	return pq
+}
+
 func createDQue(QueueDataDir string, log *zap.SugaredLogger) *goque.PrefixQueue {
 	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
 	if err := os.MkdirAll(dname, os.ModePerm); err != nil {
@@ -392,7 +408,7 @@ func (pm *PinManager) enqueuePinOp(po *operation.PinningOperation) {
 	}
 
 	// Add it to the queue.
-	_, err = pm.pinQueue.Enqueue(getUserForQueue(u), opBytes)
+	_, err = pm.pinQueueData.pinQueue.Enqueue(getUserForQueue(u), opBytes)
 	if err != nil {
 		pm.log.Fatal("Unable to add pin to queue.", err)
 	}
