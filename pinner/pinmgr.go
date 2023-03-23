@@ -60,12 +60,11 @@ type PinManagerOpts struct {
 	QueueDataDir     string
 }
 
-
-type PinQueueData struct{
-	pinQueue         *goque.PrefixQueue
-	pinQueueFront    map[uint][]*operation.PinningOperation
-	pinQueueBack     map[uint][]*operation.PinningOperation
-	N		 int
+type PinQueueData struct {
+	pinQueue      *goque.PrefixQueue
+	pinQueueFront map[uint][]*operation.PinningOperation
+	pinQueueBack  map[uint][]*operation.PinningOperation
+	N             int
 }
 
 type PinManager struct {
@@ -74,8 +73,8 @@ type PinManager struct {
 	pinComplete      chan *operation.PinningOperation
 	duplicateGuard   map[uint64]bool // track whether a content id already exists in the queue
 	activePins       map[uint]int    // used to limit the number of pins per user
-	pinQueueData	 PinQueueData
-	pinQueueCount    map[uint]int    // keep track of queue count per user
+	pinQueueData     PinQueueData
+	pinQueueCount    map[uint]int // keep track of queue count per user
 	pinQueueLk       sync.Mutex
 	RunPinFunc       PinFunc
 	StatusChangeFunc PinStatusFunc
@@ -157,7 +156,7 @@ func newPinManager(pinfunc PinFunc, scf PinStatusFunc, opts *PinManagerOpts, log
 	pinQueueCount := buildPinQueueCount(pinQueueData.pinQueue, log)
 
 	return &PinManager{
-		pinQueueData:         pinQueueData,
+		pinQueueData:     pinQueueData,
 		activePins:       make(map[uint]int),
 		pinQueueCount:    pinQueueCount,
 		pinQueueIn:       make(chan *operation.PinningOperation, 64),
@@ -201,8 +200,7 @@ func (pm *PinManager) PinQueueSizeSafe() int {
 	return int(len(pm.pinQueueData.pinQueueFront)) + int(len(pm.pinQueueData.pinQueueBack)) + int(pm.pinQueueData.pinQueue.Length())
 }
 
-
-func (pq PinQueueData) popBack(  UserId uint) (po *operation.PinningOperation) {
+func (pq PinQueueData) popBack(UserId uint) (po *operation.PinningOperation) {
 	next := pq.pinQueueBack[UserId][0]
 	if len(pq.pinQueueBack[UserId]) == 1 {
 		delete(pq.pinQueueBack, UserId)
@@ -212,7 +210,7 @@ func (pq PinQueueData) popBack(  UserId uint) (po *operation.PinningOperation) {
 	return next
 }
 
-func (pq PinQueueData) popFront( UserId uint) (po *operation.PinningOperation) {
+func (pq PinQueueData) popFront(UserId uint) (po *operation.PinningOperation) {
 	next := pq.pinQueueFront[UserId][0]
 	if len(pq.pinQueueFront[UserId]) == 1 {
 		delete(pq.pinQueueFront, UserId)
@@ -222,37 +220,35 @@ func (pq PinQueueData) popFront( UserId uint) (po *operation.PinningOperation) {
 	return next
 }
 
-func (pq PinQueueData) Enqueue( UserId uint, po *operation.PinningOperation) (error) {
+func (pq PinQueueData) Enqueue(UserId uint, po *operation.PinningOperation) error {
 	q := pq.pinQueueFront[UserId]
 	pq.pinQueueFront[UserId] = append(q, po)
 
 	//move front to disk dequeue
-	if (len(pq.pinQueueFront[UserId]) < pq.N ){
+	if len(pq.pinQueueFront[UserId]) > pq.N {
 		opBytes, err := encodeMsgPack(pq.pinQueueFront[UserId])
 		if err != nil {
-		return err	
+			return err
 		}
-		_,err = pq.pinQueue.Enqueue(getUserForQueue(UserId), opBytes)
+		_, err = pq.pinQueue.Enqueue(getUserForQueue(UserId), opBytes)
 		if err != nil {
 			return err
 		}
 		delete(pq.pinQueueFront, UserId)
-		}
-		return nil
 	}
+	return nil
+}
 
-
-
-	//get size of leveldb queue for a user
+//get size of leveldb queue for a user
 func (pm *PinManager) PinQueueSizeUser(userId uint) int {
-			return pm.pinQueueCount[userId] - len(pm.pinQueueData.pinQueueFront[userId]) - len(pm.pinQueueData.pinQueueBack[userId])
+	return pm.pinQueueCount[userId] - len(pm.pinQueueData.pinQueueFront[userId]) - len(pm.pinQueueData.pinQueueBack[userId])
 }
 func (pm *PinManager) PinQueueSize() int {
 	total := 0
-		for u := range pm.pinQueueCount {
-			total += pm.pinQueueCount[u]
-		}
-		return total
+	for u := range pm.pinQueueCount {
+		total += pm.pinQueueCount[u]
+	}
+	return total
 }
 
 func (pm *PinManager) Add(op *operation.PinningOperation) {
@@ -288,9 +284,10 @@ func (pm *PinManager) doPinning(po *operation.PinningOperation) error {
 }
 
 func (pm *PinManager) popUser(user uint) *operation.PinningOperation {
-	if len(pm.pinQueueData.pinQueueFront[user]) > 0 {
-		return pm.pinQueueData.popFront(user)
-	}else{
+
+	if len(pm.pinQueueData.pinQueueBack[user]) > 0 {
+		return pm.pinQueueData.popBack(user)
+	} else {
 		pinQueueLength := pm.PinQueueSizeUser(user)
 		if pinQueueLength > 0 {
 			item, err := pm.pinQueueData.pinQueue.Dequeue(getUserForQueue(user))
@@ -299,17 +296,17 @@ func (pm *PinManager) popUser(user uint) *operation.PinningOperation {
 			}
 
 			// Assert type of the response to an Item pointer so we can work with it
-			newFrontQueue, err := decodeMsgPack(item.Value)
+			newBackQueue, err := decodeMsgPack(item.Value)
 			if err != nil {
 				pm.log.Fatal("Cannot decode PinningOperation pointer")
 			}
 
 			//read N objects into pinQueueFront, and pop and return
-			pm.pinQueueData.pinQueueFront[user] = newFrontQueue
-			return  pm.pinQueueData.popFront(user)
-		}
-		if len(pm.pinQueueData.pinQueueBack[user]) > 0 {
+			pm.pinQueueData.pinQueueBack[user] = newBackQueue
 			return pm.pinQueueData.popBack(user)
+		}
+		if len(pm.pinQueueData.pinQueueFront[user]) > 0 {
+			return pm.pinQueueData.popFront(user)
 		}
 
 	}
@@ -339,8 +336,6 @@ func (pm *PinManager) popNextPinOp() *operation.PinningOperation {
 			}
 		}
 	}
-
-
 
 	if minCount >= pm.maxActivePerUser && user != 0 {
 		//return nil if the min count is greater than the limit and user is not 0
@@ -379,7 +374,7 @@ func createLevelDBKey(value PinningOperationData, log *zap.SugaredLogger) uint64
 
 func buildDuplicateGuardFromPinQueue(QueueDataDir string, log *zap.SugaredLogger) map[uint64]bool {
 	ret := make(map[uint64]bool)
-	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
+	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack-v2")
 	db, err := leveldb.OpenFile(dname, nil)
 	if err != nil {
 		return ret
@@ -425,12 +420,12 @@ func buildPinQueueCount(q *goque.PrefixQueue, log *zap.SugaredLogger) map[uint]i
 	return mapUint
 }
 
-func createPinQueue(QueueDataDir string, log *zap.SugaredLogger) PinQueueData{
+func createPinQueue(QueueDataDir string, log *zap.SugaredLogger) PinQueueData {
 	pq := PinQueueData{
-		pinQueue: createDQue(QueueDataDir, log),
+		pinQueue:      createDQue(QueueDataDir, log),
 		pinQueueFront: make(map[uint][]*operation.PinningOperation),
-		pinQueueBack: make(map[uint][]*operation.PinningOperation),
-		N : 50, // let frontQueue have 50 before pushing to disk
+		pinQueueBack:  make(map[uint][]*operation.PinningOperation),
+		N:             50, // let frontQueue have 50 before pushing to disk
 	}
 	return pq
 }
@@ -474,7 +469,6 @@ func (pm *PinManager) enqueuePinOp(po *operation.PinningOperation) {
 	if po.SkipLimiter {
 		u = 0
 	}
-
 
 	// Add it to the queue.
 	err := pm.pinQueueData.Enqueue(u, po)
