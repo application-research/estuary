@@ -431,7 +431,7 @@ func createPinQueue(QueueDataDir string, log *zap.SugaredLogger) PinQueueData {
 }
 
 func createDQue(QueueDataDir string, log *zap.SugaredLogger) *goque.PrefixQueue {
-	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack")
+	dname := filepath.Join(QueueDataDir, "pinQueueMsgPack-v2")
 	if err := os.MkdirAll(dname, os.ModePerm); err != nil {
 		log.Fatal("Unable to create directory for LevelDB. Out of disk? Too many open files? try ulimit -n 50000")
 	}
