@@ -55,7 +55,7 @@ func (m *manager) runDealBackFillWorker(ctx context.Context) {
 			m.log.Debugf("trying to start deal queue backfill, starting from content: %d", tracker.LastContID)
 
 			var contents []*util.Content
-			if err := m.db.Where("size >= ? and size <= ? and active", m.cfg.Content.MinSize, m.cfg.Content.MaxSize).Order("id asc").Limit(2000).Find(&contents).Error; err != nil {
+			if err := m.db.Where("size >= ? and size <= ? and active and id > ?", m.cfg.Content.MinSize, m.cfg.Content.MaxSize, tracker.LastContID).Order("id asc").Limit(2000).Find(&contents).Error; err != nil {
 				m.log.Warnf("failed to get contents for deal queue backfill - %s", err)
 				continue
 			}
