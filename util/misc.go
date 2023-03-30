@@ -18,6 +18,7 @@ import (
 	"github.com/multiformats/go-multiaddr"
 	"github.com/multiformats/go-multihash"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
 func CanRestartTransfer(st *filclient.ChannelState) bool {
@@ -96,7 +97,21 @@ func WithContentLengthCheck(f func(echo.Context) error) func(echo.Context) error
 	}
 }
 
-type Binder struct{}
+type binder struct {
+	log *zap.SugaredLogger
+}
+
+func NewBinder(log *zap.SugaredLogger) binder {
+	return binder{log: log}
+}
+
+func (b binder) Bind(i interface{}, c echo.Context) error {
+	defer func() {
+		if err := c.Request().Body.Close(); err != nil {
+			b.log.Warnf("failed to close request body: %s", err)
+		}
+	}()
+
 
 func (b Binder) Bind(i interface{}, c echo.Context) error {
 	defer func() {
@@ -104,6 +119,7 @@ func (b Binder) Bind(i interface{}, c echo.Context) error {
 			log.Warnf("failed to close request body: %s", err)
 		}
 	}()
+
 	if err := json.NewDecoder(c.Request().Body).Decode(i); err != nil {
 		return &HttpError{
 			Code:    http.StatusBadRequest,

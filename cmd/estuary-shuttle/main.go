@@ -557,7 +557,7 @@ func main() {
 			MaxActivePerUser: 30,
 			QueueDataDir:     cfg.DataDir,
 		}, log)
-		go s.PinMgr.Run(300)
+		go s.PinMgr.Run(5)
 
 		// only refresh pin queue if pin queue refresh and local adding are enabled
 		if !cfg.NoReloadPinQueue && !cfg.Content.DisableLocalAdding {
@@ -841,6 +841,8 @@ type Shuttle struct {
 	tcLk             sync.Mutex
 	trackingChannels map[string]*util.ChanTrack
 
+	commpLk sync.Mutex
+
 	splitLk          sync.Mutex
 	splitsInProgress map[uint64]bool
 
@@ -1108,7 +1110,7 @@ func withUser(f func(echo.Context, *User) error) func(echo.Context) error {
 
 func (s *Shuttle) ServeAPI() error {
 	e := echo.New()
-	e.Binder = new(util.Binder)
+	e.Binder = util.NewBinder(log)
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	if s.shuttleConfig.Logging.ApiEndpointLogging {
@@ -1434,7 +1436,7 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 	defer func() {
 		go func() {
 			if err := s.StagingMgr.CleanUp(bsid); err != nil {
-				log.Errorf("failed to clean up staging blockstore: %s", err)
+				log.Warnf("failed to clean up staging blockstore: %s", err)
 			}
 		}()
 	}()
@@ -1444,6 +1446,7 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 			log.Warnf("failed to close request body: %s", err)
 		}
 	}()
+
 	header, err := s.loadCar(ctx, bs, c.Request().Body)
 	if err != nil {
 		return err

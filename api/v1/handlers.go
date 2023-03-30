@@ -420,6 +420,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 			s.log.Warnf("failed to close request body: %s", err)
 		}
 	}()
+
 	header, err := s.loadCar(ctx, sbs, c.Request().Body)
 	if err != nil {
 		return err

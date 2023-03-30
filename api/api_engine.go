@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	echoSwagger "github.com/swaggo/echo-swagger"
 	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/zap"
 )
 
 type IRegister interface {
@@ -25,9 +26,9 @@ type apiEngine struct {
 	cfg *config.Estuary
 }
 
-func NewEngine(cfg *config.Estuary, tcr trace.Tracer) *apiEngine {
+func NewEngine(cfg *config.Estuary, tcr trace.Tracer, log *zap.SugaredLogger) *apiEngine {
 	e := echo.New()
-	e.Binder = new(util.Binder)
+	e.Binder = util.NewBinder(log)
 	e.Pre(middleware.RemoveTrailingSlash())
 
 	if cfg.Logging.ApiEndpointLogging {
