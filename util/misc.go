@@ -99,7 +99,11 @@ func WithContentLengthCheck(f func(echo.Context) error) func(echo.Context) error
 type Binder struct{}
 
 func (b Binder) Bind(i interface{}, c echo.Context) error {
-	defer c.Request().Body.Close()
+	defer func() {
+		if err := c.Request().Body.Close(); err != nil {
+			log.Warnf("failed to close request body: %s", err)
+		}
+	}()
 	if err := json.NewDecoder(c.Request().Body).Decode(i); err != nil {
 		return &HttpError{
 			Code:    http.StatusBadRequest,

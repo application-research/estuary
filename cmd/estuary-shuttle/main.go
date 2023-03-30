@@ -1439,7 +1439,11 @@ func (s *Shuttle) handleAddCarToShuttle(c echo.Context, u *User) error {
 		}()
 	}()
 
-	defer c.Request().Body.Close()
+	defer func() {
+		if err := c.Request().Body.Close(); err != nil {
+			log.Warnf("failed to close request body: %s", err)
+		}
+	}()
 	header, err := s.loadCar(ctx, bs, c.Request().Body)
 	if err != nil {
 		return err
