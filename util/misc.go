@@ -108,14 +108,6 @@ func NewBinder(log *zap.SugaredLogger) binder {
 func (b binder) Bind(i interface{}, c echo.Context) error {
 	defer func() {
 		if err := c.Request().Body.Close(); err != nil {
-			b.log.Warnf("failed to close request body: %s", err)
-		}
-	}()
-
-
-func (b Binder) Bind(i interface{}, c echo.Context) error {
-	defer func() {
-		if err := c.Request().Body.Close(); err != nil {
 			log.Warnf("failed to close request body: %s", err)
 		}
 	}()
