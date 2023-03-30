@@ -155,12 +155,13 @@ func GetDirectoryContents(refs []util.ContentWithPath, queryDir, coluuid string)
 
 		if directoryContent != nil { // if there was content
 			if directoryContent.Type == CidTypeDir { // if the content was a directory
-				subDir := directoryContent.Dir
+				subDir := filepath.Join(directoryContent.Dir, directoryContent.Name)
 				if dirs[subDir] { // if the directory had already been added to response, continue
 					continue
 				}
 				dirs[subDir] = true
 			}
+			
 			result = append(result, directoryContent)
 		}
 	}
