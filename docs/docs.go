@@ -3732,6 +3732,9 @@ const docTemplate = `{
                 "address": {
                     "type": "string"
                 },
+                "authAddress": {
+                    "type": "string"
+                },
                 "auth_expiry": {
                     "type": "string"
                 },
