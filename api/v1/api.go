@@ -113,6 +113,7 @@ func (s *apiV1) RegisterRoutes(e *echo.Echo) {
 	user.PUT("/password", withUser(s.handleUserChangePassword))
 	user.PUT("/address", withUser(s.handleUserChangeAddress))
 	user.GET("/stats", withUser(s.handleGetUserStats))
+	user.PUT("/auth-address", withUser(s.handleUserAuthAddress))
 
 	userMiner := user.Group("/miner")
 	userMiner.POST("/claim", withUser(s.handleUserClaimMiner))
