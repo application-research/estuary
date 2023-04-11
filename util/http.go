@@ -154,13 +154,14 @@ type UserSettings struct {
 }
 
 type ViewerResponse struct {
-	Username   string       `json:"username"`
-	Perms      int          `json:"perms"`
-	ID         uint         `json:"id"`
-	Address    string       `json:"address,omitempty"`
-	Miners     []string     `json:"miners,omitempty"`
-	AuthExpiry time.Time    `json:"auth_expiry,omitempty"`
-	Settings   UserSettings `json:"settings"`
+	Username    string       `json:"username"`
+	Perms       int          `json:"perms"`
+	ID          uint         `json:"id"`
+	Address     string       `json:"address,omitempty"`
+	AuthAddress string       `json:"authAddress"`
+	Miners      []string     `json:"miners,omitempty"`
+	AuthExpiry  time.Time    `json:"auth_expiry,omitempty"`
+	Settings    UserSettings `json:"settings"`
 }
 
 func ErrorHandler(err error, ctx echo.Context) {

@@ -22,6 +22,7 @@ type User struct {
 	Flags     int
 
 	StorageDisabled bool
+	AuthAddress     string
 }
 
 func (u *User) FlagSplitContent() bool {
