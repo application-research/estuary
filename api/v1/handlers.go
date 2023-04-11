@@ -2772,6 +2772,23 @@ func (s *apiV1) handleUserChangePassword(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, map[string]string{})
 }
 
+type authAddressParams struct {
+	AuthAddress string `json:"authAddress"`
+}
+
+func (s *apiV1) handleUserAuthAddress(c echo.Context, u *util.User) error {
+	var params authAddressParams
+	if err := c.Bind(&params); err != nil {
+		return err
+	}
+
+	if err := s.DB.Model(util.User{}).Where("id = ?", u.ID).Update("auth_address", params.AuthAddress).Error; err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{})
+}
+
 type changeAddressParams struct {
 	Address string `json:"address"`
 }
@@ -2873,11 +2890,12 @@ func (s *apiV1) handleGetViewer(c echo.Context, u *util.User) error {
 	}
 
 	return c.JSON(http.StatusOK, &util.ViewerResponse{
-		ID:       u.ID,
-		Username: u.Username,
-		Perms:    u.Perm,
-		Address:  u.Address.Addr.String(),
-		Miners:   s.getMinersOwnedByUser(u),
+		ID:          u.ID,
+		Username:    u.Username,
+		Perms:       u.Perm,
+		Address:     u.Address.Addr.String(),
+		AuthAddress: u.AuthAddress,
+		Miners:      s.getMinersOwnedByUser(u),
 		Settings: util.UserSettings{
 			Replication:           s.cfg.Replication,
 			Verified:              s.cfg.Deal.IsVerified,
