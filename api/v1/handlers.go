@@ -380,6 +380,23 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return s.redirectContentAdding(c, u)
 	}
 
+	bdSize, err := util.GetRequestBodySize(c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	var usc util.UsersStorageCapacity
+	usc.GetUserStorageCapacity(u, s.DB)
+
+	// Increase and validate that the user storage threshold has not reached limit
+	if !usc.IncreaseAndValidateThreshold(bdSize) {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed.", util.BytesToTB(usc.HardLimit)),
+		}
+	}
+
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	// if !u.FlagSplitContent() {
@@ -470,6 +487,9 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return err
 	}
 
+	// Update user storage capacity with new value
+	s.DB.Save(&usc)
+
 	go func() {
 		if err := s.nd.Provider.Provide(rootCID); err != nil {
 			s.log.Warnf("failed to announce providers: %s", err)
@@ -547,7 +567,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if you need additonal storage.", util.BytesToTB(usc.HardLimit)),
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed.", util.BytesToTB(usc.HardLimit)),
 		}
 	}
 
@@ -4526,6 +4546,23 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
+	bdSize, err := util.GetRequestBodySize(c.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	var usc util.UsersStorageCapacity
+	usc.GetUserStorageCapacity(u, s.DB)
+
+	// Increase and validate that the user storage threshold has not reached limit
+	if !usc.IncreaseAndValidateThreshold(bdSize) {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed.", util.BytesToTB(usc.HardLimit)),
+		}
+	}
+
 	rootCID, err := cid.Decode(req.Root)
 	if err != nil {
 		return err
@@ -4589,6 +4626,9 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 			return err
 		}
 	}
+
+	// Update user storage capacity with new value
+	s.DB.Save(&usc)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,

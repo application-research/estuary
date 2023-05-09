@@ -262,6 +262,23 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		overwrite = true
 	}
 
+	bdSize, err := util.GetRequestBodySize(e.Request().Body)
+	if err != nil {
+		return err
+	}
+
+	var usc util.UsersStorageCapacity
+	usc.GetUserStorageCapacity(u, s.DB)
+
+	// Increase and validate that the user storage threshold has not reached limit
+	if !usc.IncreaseAndValidateThreshold(bdSize) {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed.", util.BytesToTB(usc.HardLimit)),
+		}
+	}
+
 	ignoreDuplicates := false
 	if c.QueryParam("ignore-dupes") == "true" {
 		ignoreDuplicates = true
@@ -281,7 +298,10 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	return c.JSON(http.StatusAccepted, status)
+	// Update user storage capacity with new value
+	s.DB.Save(&usc)
+
+	return e.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
