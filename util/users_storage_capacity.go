@@ -9,8 +9,8 @@ type UsersStorageCapacity struct {
 
 	UserId    uint
 	Size      int64
-	SoftLimit int64 `gorm:"default:1319413953331"`
-	HardLimit int64 `gorm:"default:1649267441664"`
+	SoftLimit int64 `gorm:"default:1319413953331"` // Hardlimit*.8
+	HardLimit int64 `gorm:"default:1649267441664"` // 1.5TB
 }
 
 func (usc *UsersStorageCapacity) GetUserStorageCapacity(user *User, db *gorm.DB) error {
@@ -19,6 +19,7 @@ func (usc *UsersStorageCapacity) GetUserStorageCapacity(user *User, db *gorm.DB)
 		usc.UserId = user.ID
 		db.Create(&usc)
 	}
+	// check if cache is outdated and resync?
 	return nil
 }
 
