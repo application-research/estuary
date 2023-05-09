@@ -45,19 +45,3 @@ type InviteCode struct {
 	CreatedBy uint
 	ClaimedBy uint
 }
-
-// Max Storage per User 1.5 TB
-const MaxUserStorageThreshold = int64(1_500_000_000_000)
-
-func IsUserReachedStorageThreshold(userId uint, db *gorm.DB) (bool, error) {
-	var sum int64
-	err := db.Model(&Content{}).
-		Where("user_id = ?", userId).
-		Pluck("SUM(size)", &sum).
-		Error
-
-	if err != nil {
-		return false, err
-	}
-	return sum >= MaxUserStorageThreshold, nil
-}
