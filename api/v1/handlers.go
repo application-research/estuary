@@ -539,6 +539,18 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
+	var usc util.UsersStorageCapacity
+	usc.GetUserStorageCapacity(u, s.DB)
+
+	// Increase and validate that the user storage threshold has not reached limit
+	if !usc.IncreaseAndValidateThreshold(mpf.Size) {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if you need additonal storage.", util.BytesToTB(usc.HardLimit)),
+		}
+	}
+
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	if !u.FlagSplitContent() && mpf.Size > s.cfg.Content.MaxSize {

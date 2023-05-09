@@ -22,10 +22,6 @@ func (usc *UsersStorageCapacity) GetUserStorageCapacity(user *User, db *gorm.DB)
 	return nil
 }
 
-func (usc *UsersStorageCapacity) Save(db *gorm.DB) {
-	db.Save(&usc)
-}
-
 func (usc *UsersStorageCapacity) IncreaseAndValidateThreshold(add int64) bool {
 	usc.Size += add
 	return usc.Size <= usc.HardLimit
