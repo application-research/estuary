@@ -386,7 +386,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.DB)
+	usc.GetUserStorageCapacity(u, s.db)
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {
@@ -488,7 +488,7 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	}
 
 	// Update user storage capacity with new value
-	s.DB.Save(&usc)
+	s.db.Save(&usc)
 
 	go func() {
 		if err := s.nd.Provider.Provide(rootCID); err != nil {
@@ -560,7 +560,7 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.DB)
+	usc.GetUserStorageCapacity(u, s.db)
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(mpf.Size) {
@@ -2895,7 +2895,7 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 // @Router       /user/utilization [get]
 func (s *apiV1) handleGetUserUtilization(c echo.Context, u *util.User) error {
 	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.DB); err != nil {
+	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, usc)
@@ -4569,7 +4569,7 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.DB)
+	usc.GetUserStorageCapacity(u, s.db)
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {
@@ -4645,7 +4645,7 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	}
 
 	// Update user storage capacity with new value
-	s.DB.Save(&usc)
+	s.db.Save(&usc)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,

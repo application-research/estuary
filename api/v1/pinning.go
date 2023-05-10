@@ -262,13 +262,13 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		overwrite = true
 	}
 
-	bdSize, err := util.GetRequestBodySize(e.Request().Body)
+	bdSize, err := util.GetRequestBodySize(c.Request().Body)
 	if err != nil {
 		return err
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.DB)
+	usc.GetUserStorageCapacity(u, s.db)
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {
@@ -299,9 +299,9 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 	}
 
 	// Update user storage capacity with new value
-	s.DB.Save(&usc)
+	s.db.Save(&usc)
 
-	return e.JSON(http.StatusAccepted, status)
+	return c.JSON(http.StatusAccepted, status)
 }
 
 // handleGetPin  godoc
