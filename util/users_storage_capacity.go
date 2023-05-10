@@ -8,11 +8,11 @@ import (
 type UsersStorageCapacity struct {
 	gorm.Model
 
-	UserId     uint
-	Size       int64 `gorm:"default:0"`
-	SoftLimit  int64 `gorm:"default:1319413953331"` // Hardlimit*.8
-	HardLimit  int64 `gorm:"default:1649267441664"` // 1.5TB
-	LastSyncAt time.Time
+	UserId     uint      `json:"user_id"`
+	Size       int64     `json:"size" gorm:"default:0"`
+	SoftLimit  int64     `json:"soft_limit" gorm:"default:1319413953331"` // Hardlimit*.8
+	HardLimit  int64     `json:"hard_limit" gorm:"default:1649267441664"` // 1.5TB
+	LastSyncAt time.Time `json:"last_sync_at"`
 }
 
 type Utilization struct {

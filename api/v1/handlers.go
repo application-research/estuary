@@ -2884,6 +2884,23 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
+// handleGetUserStats godoc
+// @Summary      Gets User Utilization Stats
+// @Description  This endpoint is used to get utilization stats for the current user.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Router       /user/utilization [get]
+func (s *apiV1) handleGetUserUtilization(c echo.Context, u *util.User) error {
+	var usc util.UsersStorageCapacity
+	if err := usc.GetUserStorageCapacity(u, s.DB); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, usc)
+}
+
 func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string, isSession bool) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
