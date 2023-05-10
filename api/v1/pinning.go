@@ -268,7 +268,9 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.db)
+	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+		return err
+	}
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {

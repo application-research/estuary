@@ -386,7 +386,9 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.db)
+	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+		return err
+	}
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {
@@ -560,7 +562,9 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.db)
+	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+		return err
+	}
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(mpf.Size) {
@@ -4569,7 +4573,9 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	}
 
 	var usc util.UsersStorageCapacity
-	usc.GetUserStorageCapacity(u, s.db)
+	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+		return err
+	}
 
 	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.IncreaseAndValidateThreshold(bdSize) {
