@@ -45,6 +45,10 @@ func (usc *UsersStorageCapacity) IncreaseAndValidateThreshold(add int64) bool {
 	return usc.Size <= usc.HardLimit
 }
 
+func (usc *UsersStorageCapacity) ValidateThreshold() bool {
+	return usc.Size <= usc.HardLimit
+}
+
 const SyncRefreshInHours = 24
 
 func isSyncNeeded(t time.Time) bool {

@@ -4564,15 +4564,13 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	contentLength := c.Request().ContentLength
-
 	var usc util.UsersStorageCapacity
 	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
 		return err
 	}
 
 	// Increase and validate that the user storage threshold has not reached limit
-	if !usc.IncreaseAndValidateThreshold(contentLength) {
+	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
@@ -4643,9 +4641,6 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 			return err
 		}
 	}
-
-	// Update user storage capacity with new value
-	s.db.Save(&usc)
 
 	return c.JSON(http.StatusOK, util.ContentCreateResponse{
 		ID: content.ID,

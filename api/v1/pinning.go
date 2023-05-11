@@ -253,8 +253,6 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	contentLength := c.Request().ContentLength
-
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
@@ -270,7 +268,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 	}
 
 	// Increase and validate that the user storage threshold has not reached limit
-	if !usc.IncreaseAndValidateThreshold(contentLength) {
+	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
@@ -296,9 +294,6 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 	if err != nil {
 		return err
 	}
-
-	// Update user storage capacity with new value
-	s.db.Save(&usc)
 
 	return c.JSON(http.StatusAccepted, status)
 }
