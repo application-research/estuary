@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,9 +19,6 @@ import (
 	"github.com/multiformats/go-multihash"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-
-	"io"
-	"io/ioutil"
 )
 
 func CanRestartTransfer(st *filclient.ChannelState) bool {
@@ -217,15 +213,4 @@ func ToMultiAddress(addr string) (multiaddr.Multiaddr, error) {
 func BytesToTB(bytes int64) float64 {
 	tb := float64(bytes) / (1024 * 1024 * 1024 * 1024)
 	return tb
-}
-
-func GetRequestBodySize(in io.ReadCloser) (int64, error) {
-	bdWriter := &bytes.Buffer{}
-	bdReader := io.TeeReader(in, bdWriter)
-
-	bdSize, err := io.Copy(ioutil.Discard, bdReader)
-	if err != nil {
-		return 0, err
-	}
-	return bdSize, nil
 }
