@@ -262,12 +262,12 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		overwrite = true
 	}
 
-	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
 		return err
 	}
 
-	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,

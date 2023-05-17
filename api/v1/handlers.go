@@ -372,7 +372,7 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
-	contentLength := c.Request().ContentLength
+	//contentLength := c.Request().ContentLength
 
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
@@ -382,13 +382,13 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return s.redirectContentAdding(c, u)
 	}
 
-	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
 		return err
 	}
 
-	// Increase and validate that the user storage threshold has not reached limit
-	if !usc.IncreaseAndValidateThreshold(contentLength) {
+	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
@@ -486,9 +486,6 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	// Update user storage capacity with new value
-	s.db.Save(&usc)
-
 	go func() {
 		if err := s.nd.Provider.Provide(rootCID); err != nil {
 			s.log.Warnf("failed to announce providers: %s", err)
@@ -509,6 +506,24 @@ func (s *apiV1) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Read
 	defer span.End()
 
 	return car.LoadCar(ctx, bs, r)
+}
+
+func (s *apiV1) getUserStorageCapacity(user *util.User) (*util.UsersStorageCapacity, error) {
+	var usc *util.UsersStorageCapacity
+	err := s.db.First(&usc, "user_id = ?", user.ID).Error
+
+	if err != nil || usc.IsSyncNeeded() {
+		var usage util.Utilization
+		if err := s.db.Raw(`SELECT (SELECT SUM(size) FROM contents where user_id = ? AND created_at >= ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size`, user.ID, util.CutOverUtilizationDate).
+			Scan(&usage).Error; err != nil {
+			return usc, err
+		}
+		usc.Size = usage.TotalSize
+		usc.LastSyncAt = time.Now()
+		s.db.Save(&usc)
+	}
+
+	return usc, err
 }
 
 // handleAdd godoc
@@ -558,13 +573,13 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
 		return err
 	}
 
-	// Increase and validate that the user storage threshold has not reached limit
-	if !usc.IncreaseAndValidateThreshold(mpf.Size) {
+	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
@@ -891,9 +906,9 @@ func (s *apiV1) handleGetContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-		return err
-	}
+	//if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+	//	return err
+	//}
 
 	return c.JSON(http.StatusOK, content)
 }
@@ -2895,8 +2910,8 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 // @Failure      500  {object}  util.HttpError
 // @Router       /user/utilization [get]
 func (s *apiV1) handleGetUserUtilization(c echo.Context, u *util.User) error {
-	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
 		return err
 	}
 	return c.JSON(http.StatusOK, usc)
@@ -4564,12 +4579,12 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	var usc util.UsersStorageCapacity
-	if err := usc.GetUserStorageCapacity(u, s.db); err != nil {
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
 		return err
 	}
 
-	// Increase and validate that the user storage threshold has not reached limit
 	if !usc.ValidateThreshold() {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
