@@ -372,8 +372,6 @@ func (s *apiV1) handleAddIpfs(c echo.Context, u *util.User) error {
 func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 	ctx := c.Request().Context()
 
-	//contentLength := c.Request().ContentLength
-
 	if err := util.ErrorIfContentAddingDisabled(s.isContentAddingDisabled(u)); err != nil {
 		return err
 	}
@@ -906,9 +904,9 @@ func (s *apiV1) handleGetContent(c echo.Context, u *util.User) error {
 		return err
 	}
 
-	//if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
-	//	return err
-	//}
+	if err := util.IsContentOwner(u.ID, content.UserID); err != nil {
+		return err
+	}
 
 	return c.JSON(http.StatusOK, content)
 }
