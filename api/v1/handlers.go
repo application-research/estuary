@@ -516,12 +516,13 @@ func (s *apiV1) getUserStorageCapacity(user *util.User) (*util.UsersStorageCapac
 			Scan(&usage).Error; err != nil {
 			return usc, err
 		}
+		usc.UserId = user.ID
 		usc.Size = usage.TotalSize
 		usc.LastSyncAt = time.Now()
 		s.db.Save(&usc)
 	}
 
-	return usc, err
+	return usc, nil
 }
 
 // handleAdd godoc
