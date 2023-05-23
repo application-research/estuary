@@ -272,7 +272,7 @@ func (s *apiV1) handleAddPin(c echo.Context, u *util.User) error {
 		return &util.HttpError{
 			Code:    http.StatusBadRequest,
 			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
-			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed.", util.BytesToTB(usc.HardLimit)),
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed. We can be reached on the Filecoin slack under the #ecosystem-dev channel.", util.BytesToTB(usc.HardLimit)),
 		}
 	}
 

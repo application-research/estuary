@@ -20,7 +20,7 @@ type Utilization struct {
 }
 
 // CutOverUtilizationDate All content uploaded pass this date will count toward your user storage capacity
-const CutOverUtilizationDate = "2023-05-12 00:00:00"
+const CutOverUtilizationDate = "2023-05-26 00:00:00"
 const SyncRefreshInHours = 24
 
 func (usc *UsersStorageCapacity) ValidateThreshold() bool {
