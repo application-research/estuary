@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/cenkalti/backoff"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -49,7 +50,6 @@ import (
 	"github.com/application-research/estuary/stagingbs"
 	"github.com/application-research/estuary/util"
 	"github.com/application-research/filclient"
-	"github.com/cenkalti/backoff/v4"
 	"github.com/filecoin-project/go-address"
 	datatransfer "github.com/filecoin-project/go-data-transfer"
 	"github.com/filecoin-project/go-state-types/abi"
@@ -797,8 +797,8 @@ var backoffTimer = backoff.ExponentialBackOff{
 	InitialInterval: time.Second * 5,
 	Multiplier:      1.5,
 	MaxInterval:     time.Second * 10,
-	Stop:            backoff.Stop,
-	Clock:           backoff.SystemClock,
+	//Stop:            backoff.Stop,
+	Clock: backoff.SystemClock,
 }
 
 type Shuttle struct {
@@ -1144,6 +1144,7 @@ func (s *Shuttle) ServeAPI() error {
 	content.POST("/add", withUser(s.handleAdd))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCar)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
+	content.DELETE("/delete/:cid", withUser(s.handleDeleteContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 
@@ -2097,6 +2098,27 @@ func (s *Shuttle) handleReadContent(c echo.Context, u *User) error {
 		return err
 	}
 	return nil
+}
+
+func (s *Shuttle) handleDeleteContent(c echo.Context, u *User) error {
+	cidParam, err := strconv.Atoi(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+
+	cidToDelete, err := cid.Decode(string(cidParam))
+	if err != nil {
+		return err
+	}
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	dserv := merkledag.NewDAGService(bserv)
+
+	ctx := context.Background()
+	err = dserv.Remove(ctx, cidToDelete)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, "deleted: "+cidToDelete.String())
 }
 
 func (s *Shuttle) handleContentHealthCheck(c echo.Context) error {
