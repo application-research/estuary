@@ -1158,6 +1158,7 @@ func (s *Shuttle) ServeAPI() error {
 	content.POST("/add", util.WithMultipartFormDataChecker(withUser(s.handleAddToShuttle)))
 	content.POST("/add-car", util.WithContentLengthCheck(withUser(s.handleAddCarToShuttle)))
 	content.GET("/read/:cont", withUser(s.handleReadContent))
+	content.DELETE("/delete/:cont", withUser(s.handleDeleteContent))
 	content.POST("/importdeal", withUser(s.handleImportDeal))
 	//content.POST("/add-ipfs", withUser(d.handleAddIpfs))
 
@@ -1180,6 +1181,27 @@ func (s *Shuttle) ServeAPI() error {
 	storageProvider.GET("/list/:n", s.handleStorageProviderList)
 
 	return e.Start(s.shuttleConfig.ApiListen)
+}
+
+func (s *Shuttle) handleDeleteContent(c echo.Context, u *User) error {
+	cidParam, err := strconv.Atoi(c.Param("cid"))
+	if err != nil {
+		return err
+	}
+	cidToDelete, err := cid.Decode(string(cidParam))
+	if err != nil {
+		return err
+	}
+	bserv := blockservice.New(s.Node.Blockstore, offline.Exchange(s.Node.Blockstore))
+	dserv := merkledag.NewDAGService(bserv)
+
+	ctx := context.Background()
+	err = dserv.Remove(ctx, cidToDelete)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(http.StatusOK, "delete success"+cidToDelete.String())
 }
 
 func serveProfile(c echo.Context) error {
