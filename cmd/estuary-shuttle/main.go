@@ -1184,11 +1184,8 @@ func (s *Shuttle) ServeAPI() error {
 }
 
 func (s *Shuttle) handleDeleteContent(c echo.Context, u *User) error {
-	cidParam, err := strconv.Atoi(c.Param("cid"))
-	if err != nil {
-		return err
-	}
-	cidToDelete, err := cid.Decode(string(cidParam))
+	cidParam := c.Param("cid")
+	cidToDelete, err := cid.Decode(cidParam)
 	if err != nil {
 		return err
 	}
