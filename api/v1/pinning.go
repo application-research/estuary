@@ -10,14 +10,15 @@ import (
 
 	"github.com/application-research/estuary/pinner"
 
-	"github.com/application-research/estuary/model"
-	pinningstatus "github.com/application-research/estuary/pinner/status"
-	"github.com/application-research/estuary/util"
 	"github.com/ipfs/go-cid"
 	"github.com/labstack/echo/v4"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"golang.org/x/xerrors"
 	"gorm.io/gorm"
+
+	"github.com/application-research/estuary/model"
+	pinningstatus "github.com/application-research/estuary/pinner/status"
+	"github.com/application-research/estuary/util"
 )
 
 const (
@@ -176,62 +177,42 @@ func filterForStatusQuery(q *gorm.DB, statuses map[pinningstatus.PinningStatus]b
 		return q, nil // if no status filter or all statuses are specified, return all pins
 	}
 
-	pinned := statuses[pinningstatus.PinningStatusPinned]
-	failed := statuses[pinningstatus.PinningStatusFailed]
-	pinning := statuses[pinningstatus.PinningStatusPinning]
-	queued := statuses[pinningstatus.PinningStatusQueued]
-
-	if len(statuses) == 1 {
-		switch {
-		case pinned:
-			return q.Where("active and not failed and not pinning"), nil
-		case failed:
-			return q.Where("failed and not active and not pinning"), nil
-		case pinning:
-			return q.Where("pinning and not active and not failed"), nil
-		default:
-			return q.Where("not active and not pinning and not failed"), nil
+	whereSet := false
+	for status, ok := range statuses {
+		if ok {
+			switch status {
+			case pinningstatus.PinningStatusPinned:
+				if whereSet {
+					q = q.Or("active")
+				} else {
+					q = q.Where("active")
+					whereSet = true
+				}
+			case pinningstatus.PinningStatusFailed:
+				if whereSet {
+					q = q.Or("failed")
+				} else {
+					q = q.Where("failed")
+					whereSet = true
+				}
+			case pinningstatus.PinningStatusPinning:
+				if whereSet {
+					q = q.Or("pinning")
+				} else {
+					q = q.Where("pinning")
+					whereSet = true
+				}
+			case pinningstatus.PinningStatusQueued:
+				if whereSet {
+					q = q.Or("not active and not pinning and not failed")
+				} else {
+					q = q.Where("not active and not pinning and not failed")
+					whereSet = true
+				}
+			}
 		}
 	}
-
-	if len(statuses) == 2 {
-		if pinned && failed {
-			return q.Where("(active or failed) and not pinning"), nil
-		}
-
-		if pinned && queued {
-			return q.Where("active and not failed and not pinning"), nil
-		}
-
-		if pinned && pinning {
-			return q.Where("(active or pinning) and not failed"), nil
-		}
-
-		if pinning && failed {
-			return q.Where("(pinning or failed) and not active"), nil
-		}
-
-		if pinning && queued {
-			return q.Where("pinning and not active and not failed"), nil
-		}
-
-		if failed && queued {
-			return q.Where("failed and not active and not pinning"), nil
-		}
-	}
-
-	if !statuses[pinningstatus.PinningStatusFailed] {
-		return q.Where("not failed and (active or pinning)"), nil
-	}
-
-	if !statuses[pinningstatus.PinningStatusPinned] {
-		return q.Where("not active and (failed or pinning"), nil
-	}
-
-	if !statuses[pinningstatus.PinningStatusPinning] {
-		return q.Where("not pinning and (active or failed"), nil
-	}
-	return q.Where("active or pinning or failed"), nil
+	return q, nil
 }
 
 // handleAddPin  godoc
