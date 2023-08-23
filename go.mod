@@ -21,7 +21,7 @@ require (
 	github.com/filecoin-project/go-jsonrpc v0.2.3
 	github.com/filecoin-project/go-legs v0.4.9 // indirect
 	github.com/filecoin-project/go-padreader v0.0.1
-	github.com/filecoin-project/go-state-types v0.10.0-alpha-2
+	github.com/filecoin-project/go-state-types v0.13.0
 	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
 	github.com/filecoin-project/lotus v1.19.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
