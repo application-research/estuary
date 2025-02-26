@@ -1,6 +1,15 @@
+> [!WARNING]
+>  # Project Discontinued
+> 
+> The instance and its related API endpoints hosted at <https://estuary.tech> are discontinued and no longer maintained.
+> 
+> The codebase is provided as-is for anyone interested in forking or learning.
+> 
+----
+
 # Estuary
 
-> An experimental ipfs node
+> An experimental [IPFS](https://ipfs.tech) node
 
 Questions? Reach out! [![slack](https://img.shields.io/badge/slack-filecoin-blue.svg?logo=slack)](https://filecoinproject.slack.com/)
 
