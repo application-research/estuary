@@ -56,8 +56,8 @@ require (
 	github.com/ipld/go-codec-dagpb v1.6.0
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/jinzhu/gorm v1.9.16
-	github.com/labstack/echo/v4 v4.10.0
-	github.com/labstack/gommon v0.4.0
+	github.com/labstack/echo/v4 v4.13.3
+	github.com/labstack/gommon v0.4.2
 	github.com/libp2p/go-libp2p v0.32.0
 	github.com/libp2p/go-libp2p-kad-dht v0.21.0
 	github.com/libp2p/go-libp2p-pubsub v0.8.3 // indirect
@@ -69,7 +69,7 @@ require (
 	github.com/paskal/golang-lru v0.6.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/echo-swagger v1.3.5
 	github.com/swaggo/swag v1.8.10
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
@@ -99,7 +99,7 @@ require (
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/vmihailenco/msgpack/v5 v5.3.5
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
-	golang.org/x/time v0.3.0
+	golang.org/x/time v0.8.0
 )
 
 require (
@@ -184,7 +184,6 @@ require (
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang/glog v1.2.4 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/mock v1.6.0 // indirect
