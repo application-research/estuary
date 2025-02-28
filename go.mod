@@ -70,8 +70,8 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.14.0
 	github.com/stretchr/testify v1.10.0
-	github.com/swaggo/echo-swagger v1.3.5
-	github.com/swaggo/swag v1.8.10
+	github.com/swaggo/echo-swagger v1.4.1
+	github.com/swaggo/swag v1.8.12
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/urfave/cli/v2 v2.24.3
 	github.com/whyrusleeping/cbor-gen v0.2.0
@@ -173,6 +173,7 @@ require (
 	github.com/gbrlsnchs/jwt/v3 v3.0.1 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
 	github.com/gdamore/tcell/v2 v2.2.0 // indirect
+	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.4 // indirect
@@ -306,7 +307,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/shirou/gopsutil v2.18.12+incompatible // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/swaggo/files v0.0.0-20220728132757-551d4a08d97a // indirect
+	github.com/swaggo/files/v2 v2.0.0 // indirect
 	github.com/twmb/murmur3 v1.1.6 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
