@@ -26,7 +26,7 @@ require (
 	github.com/filecoin-project/lotus v1.19.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.18 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.1
+	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru v0.5.4
