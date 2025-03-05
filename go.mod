@@ -99,7 +99,7 @@ require (
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
-	golang.org/x/time v0.8.0
+	golang.org/x/time v0.10.0
 )
 
 require (
