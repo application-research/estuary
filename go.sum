@@ -685,8 +685,9 @@ github.com/ipfs/go-ds-leveldb v0.5.1 h1:Tf72nrJ1FecwJDQjtxc32sfvoqp0j8P5Jwb723LB
 github.com/ipfs/go-ds-leveldb v0.5.1/go.mod h1:1Spu3TBKk5GBarr2qc8q2cV26rdBjA3M8XjZkULvUtQ=
 github.com/ipfs/go-ds-measure v0.2.0 h1:sG4goQe0KDTccHMyT45CY1XyUbxe5VwTKpg2LjApYyQ=
 github.com/ipfs/go-ds-measure v0.2.0/go.mod h1:SEUD/rE2PwRa4IQEC5FuNAmjJCyYObZr9UvVh8V3JxE=
-github.com/ipfs/go-fetcher v1.6.1 h1:UFuRVYX5AIllTiRhi5uK/iZkfhSpBCGX7L70nSZEmK8=
 github.com/ipfs/go-fetcher v1.6.1/go.mod h1:27d/xMV8bodjVs9pugh/RCjjK2OZ68UgAMspMdingNo=
+github.com/ipfs/go-fetcher v1.6.2 h1:elxLilwA4CmheOohjxkax6A8XQBJkW/rKgm6G2Dn/GM=
+github.com/ipfs/go-fetcher v1.6.2/go.mod h1:WhpN4pe4Kin/7FoJjxmIr342MAGbMBJBbQhv/xSZTEM=
 github.com/ipfs/go-fs-lock v0.0.6/go.mod h1:OTR+Rj9sHiRubJh3dRhD15Juhd/+w6VPOY28L7zESmM=
 github.com/ipfs/go-fs-lock v0.0.7 h1:6BR3dajORFrFTkb5EpCUFIAypsoxpGpDSVUdFwzgL9U=
 github.com/ipfs/go-fs-lock v0.0.7/go.mod h1:Js8ka+FNYmgQRLrRXzU3CB/+Csr1BwrRilEcvYrHhhc=
