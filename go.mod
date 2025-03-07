@@ -37,7 +37,7 @@ require (
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
 	github.com/ipfs/go-datastore v0.8.0
 	github.com/ipfs/go-ds-leveldb v0.5.1
-	github.com/ipfs/go-fetcher v1.6.1
+	github.com/ipfs/go-fetcher v1.6.2
 	github.com/ipfs/go-graphsync v0.17.0
 	github.com/ipfs/go-ipfs v0.13.1
 	github.com/ipfs/go-ipfs-blockstore v1.3.0
