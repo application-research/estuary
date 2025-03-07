@@ -52,7 +52,7 @@ require (
 	github.com/ipfs/go-path v0.3.2
 	github.com/ipfs/go-unixfs v0.4.6
 	github.com/ipfs/go-unixfsnode v1.7.4
-	github.com/ipld/go-car v0.6.1
+	github.com/ipld/go-car v0.6.2
 	github.com/ipld/go-codec-dagpb v1.7.0
 	github.com/ipld/go-ipld-prime v0.21.0
 	github.com/jinzhu/gorm v1.9.16
