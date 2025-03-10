@@ -29,7 +29,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.6.0
-	github.com/hashicorp/golang-lru v0.6.0
+	github.com/hashicorp/golang-lru v1.0.2
 	github.com/ipfs/go-bitswap v0.12.0
 	github.com/ipfs/go-block-format v0.2.0
 	github.com/ipfs/go-blockservice v0.5.1
