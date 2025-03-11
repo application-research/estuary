@@ -6,7 +6,7 @@ require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
 	github.com/application-research/filclient v0.5.0-rc1
 	github.com/application-research/goque v2.1.0+incompatible
-	github.com/cenkalti/backoff/v4 v4.2.0
+	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cheggaaa/pb/v3 v3.1.7
 	github.com/docker/go-units v0.5.0
 	github.com/dustin/go-humanize v1.0.1 // indirect
