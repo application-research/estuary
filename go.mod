@@ -65,7 +65,7 @@ require (
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/libp2p/go-libp2p-routing-helpers v0.7.3
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/multiformats/go-multiaddr v0.14.0
+	github.com/multiformats/go-multiaddr v0.15.0
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/paskal/golang-lru v0.6.0
 	github.com/pkg/errors v0.9.1
