@@ -96,7 +96,7 @@ require (
 	github.com/application-research/go-bs-autobatch v0.1.0
 	github.com/ipfs/go-ds-flatfs v0.5.1
 	github.com/ipfs/go-ipfs-provider v0.8.2
-	github.com/ipfs/go-metrics-prometheus v0.0.2
+	github.com/ipfs/go-metrics-prometheus v0.1.0
 	github.com/nsqio/go-nsq v1.1.0
 	github.com/vmihailenco/msgpack/v5 v5.4.1
 	github.com/whyrusleeping/go-bs-measure v0.0.0-20220728174732-077cd42cf89d
