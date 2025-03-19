@@ -735,8 +735,8 @@ github.com/ipfs/go-test v0.2.1/go.mod h1:dzu+KB9cmWjuJnXFDYJwC25T3j1GcN57byN+ixm
 github.com/ipfs/go-unixfs v0.2.2-0.20190827150610-868af2e9e5cb/go.mod h1:IwAAgul1UQIcNZzKPYZWOCijryFBeCV79cNubPzol+k=
 github.com/ipfs/go-unixfs v0.4.6 h1:4PCH8+ptflEqmD1ifrdjGu0hA/MfM1s4QlrsQb4BvJM=
 github.com/ipfs/go-unixfs v0.4.6/go.mod h1:BIznJNvt/gEx/ooRMI4Us9K8+qeGO7vx1ohnbk8gjFg=
-github.com/ipfs/go-unixfsnode v1.9.2 h1:0A12BYs4XOtDPJTMlwmNPlllDfqcc4yie4e919hcUXk=
-github.com/ipfs/go-unixfsnode v1.9.2/go.mod h1:v1nuMFHf4QTIhFUdPMvg1nQu7AqDLvIdwyvJ531Ot1U=
+github.com/ipfs/go-unixfsnode v1.10.0 h1:cZPUUcYjXw2kMOgx4THw2uouw/8TBpmzZpWtPINdLvk=
+github.com/ipfs/go-unixfsnode v1.10.0/go.mod h1:hVbWqN38WOk7FHao2y0mQAwUHDq58m7plGd+W6GSq2M=
 github.com/ipfs/go-verifcid v0.0.1/go.mod h1:5Hrva5KBeIog4A+UpqlaIU+DEstipcJYQQZc0g37pY0=
 github.com/ipfs/go-verifcid v0.0.3 h1:gmRKccqhWDocCRkC+a59g5QW7uJw5bpX9HWBevXa0zs=
 github.com/ipfs/go-verifcid v0.0.3/go.mod h1:gcCtGniVzelKrbk9ooUSX/pM3xlH73fZZJDzQJRvOUw=
