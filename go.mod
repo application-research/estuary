@@ -26,7 +26,7 @@ require (
 	github.com/filecoin-project/lotus v1.32.0-rc3
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.18 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.9
+	github.com/gabriel-vasile/mimetype v1.4.10
 	github.com/go-openapi/swag v0.21.1 // indirect
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru v1.0.2
@@ -35,7 +35,7 @@ require (
 	github.com/ipfs/go-blockservice v0.5.2
 	github.com/ipfs/go-cid v0.6.1
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
-	github.com/ipfs/go-datastore v0.8.3
+	github.com/ipfs/go-datastore v0.9.0
 	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-fetcher v1.6.2
 	github.com/ipfs/go-graphsync v0.17.0
@@ -45,14 +45,14 @@ require (
 	github.com/ipfs/go-ipfs-exchange-interface v0.2.1
 	github.com/ipfs/go-ipfs-exchange-offline v0.3.1
 	github.com/ipfs/go-ipld-cbor v0.2.1
-	github.com/ipfs/go-ipld-format v0.6.2
+	github.com/ipfs/go-ipld-format v0.6.3
 	github.com/ipfs/go-log/v2 v2.8.1
 	github.com/ipfs/go-merkledag v0.11.0
 	github.com/ipfs/go-metrics-interface v0.3.0
 	github.com/ipfs/go-path v0.3.2
 	github.com/ipfs/go-unixfs v0.4.6
-	github.com/ipfs/go-unixfsnode v1.10.1
-	github.com/ipld/go-car v0.6.2
+	github.com/ipfs/go-unixfsnode v1.10.2
+	github.com/ipld/go-car v0.6.3
 	github.com/ipld/go-codec-dagpb v1.7.0
 	github.com/ipld/go-ipld-prime v0.22.0
 	github.com/jinzhu/gorm v1.9.16
@@ -68,7 +68,7 @@ require (
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/paskal/golang-lru v0.6.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/client_golang v1.23.0
+	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/echo-swagger v1.4.1
 	github.com/swaggo/swag v1.16.4
@@ -170,6 +170,7 @@ require (
 	github.com/filecoin-project/specs-actors/v8 v8.0.1 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
+	github.com/gammazero/chanqueue v1.1.1 // indirect
 	github.com/gammazero/deque v1.1.0 // indirect
 	github.com/gbrlsnchs/jwt/v3 v3.0.1 // indirect
 	github.com/gdamore/encoding v1.0.0 // indirect
@@ -204,9 +205,10 @@ require (
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
-	github.com/ipfs/boxo v0.34.0 // indirect
+	github.com/ipfs/boxo v0.35.0 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-ds-measure v0.2.0 // indirect
+	github.com/ipfs/go-dsqueue v0.0.5 // indirect
 	github.com/ipfs/go-fs-lock v0.0.7 // indirect
 	github.com/ipfs/go-ipfs-blocksutil v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
@@ -220,7 +222,7 @@ require (
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.2 // indirect
 	github.com/ipfs/go-verifcid v0.0.3 // indirect
-	github.com/ipld/go-car/v2 v2.14.3 // indirect
+	github.com/ipld/go-car/v2 v2.15.0 // indirect
 	github.com/ipld/go-ipld-adl-hamt v0.0.0-20230103232215-ec18ad32db9b // indirect
 	github.com/ipni/go-libipni v0.0.8 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -308,7 +310,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/polydawn/refmt v0.89.1-0.20231129105047-37766d95467a // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.65.0 // indirect
+	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/prometheus/statsd_exporter v0.23.0 // indirect
 	github.com/puzpuzpuz/xsync/v2 v2.4.0 // indirect
@@ -349,8 +351,9 @@ require (
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/mock v0.5.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
-	golang.org/x/exp v0.0.0-20250813145105-42675adae3e6 // indirect
+	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260311193753-579e4da9a98c // indirect
