@@ -9,7 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "axios": "^1.15.0",
+    "axios": "^1.15.2",
     "estuary-client": "^1.0.1",
     "openapi-to-postmanv2": "^6.0.0",
     "postman-code-generators": "^1.14.2"
