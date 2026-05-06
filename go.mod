@@ -37,7 +37,7 @@ require (
 	github.com/ipfs/go-datastore v0.9.1
 	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-fetcher v1.6.2
-	github.com/ipfs/go-graphsync v0.17.0
+	github.com/ipfs/go-graphsync v0.18.0
 	github.com/ipfs/go-ipfs v0.13.1
 	github.com/ipfs/go-ipfs-blockstore v1.3.1
 	github.com/ipfs/go-ipfs-chunker v0.0.6
