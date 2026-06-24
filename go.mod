@@ -34,7 +34,7 @@ require (
 	github.com/ipfs/go-blockservice v0.5.2
 	github.com/ipfs/go-cid v0.6.1
 	github.com/ipfs/go-cidutil v0.1.1 // indirect
-	github.com/ipfs/go-datastore v0.9.1
+	github.com/ipfs/go-datastore v0.9.2
 	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-fetcher v1.6.2
 	github.com/ipfs/go-graphsync v0.18.0
