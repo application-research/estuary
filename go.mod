@@ -58,7 +58,7 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/labstack/gommon v0.5.0
 	github.com/libp2p/go-libp2p v0.48.0
-	github.com/libp2p/go-libp2p-kad-dht v0.40.0
+	github.com/libp2p/go-libp2p-kad-dht v0.41.0
 	github.com/libp2p/go-libp2p-pubsub v0.15.0 // indirect
 	github.com/libp2p/go-libp2p-record v0.3.1
 	github.com/libp2p/go-libp2p-routing-helpers v0.7.5
