@@ -666,8 +666,8 @@ github.com/ipfs/go-ipld-format v0.0.1/go.mod h1:kyJtbkDALmFHv3QR6et67i35QzO3S0dC
 github.com/ipfs/go-ipld-format v0.0.2/go.mod h1:4B6+FM2u9OJ9zCV+kSbgFAZlOrv1Hqbf0INGQgiKf9k=
 github.com/ipfs/go-ipld-format v0.3.0/go.mod h1:co/SdBE8h99968X0hViiw1MNlh6fvxxnHpvVLnH7jSM=
 github.com/ipfs/go-ipld-format v0.4.0/go.mod h1:co/SdBE8h99968X0hViiw1MNlh6fvxxnHpvVLnH7jSM=
-github.com/ipfs/go-ipld-format v0.6.3 h1:9/lurLDTotJpZSuL++gh3sTdmcFhVkCwsgx2+rAh4j8=
-github.com/ipfs/go-ipld-format v0.6.3/go.mod h1:74ilVN12NXVMIV+SrBAyC05UJRk0jVvGqdmrcYZvCBk=
+github.com/ipfs/go-ipld-format v0.6.4 h1:NikmzItTDyQO0WkJI3rC2TGv4OFKOqM/DvcOCZZXuwM=
+github.com/ipfs/go-ipld-format v0.6.4/go.mod h1:1WGiDa1Nv8dXNQBknGQYe+9OF8IoNrErvN76BYvlaIA=
 github.com/ipfs/go-ipld-legacy v0.3.0 h1:7XhFKkRyCvP5upOlQfKUFIqL3S5DEZnbUE4bQmQ/tNE=
 github.com/ipfs/go-ipld-legacy v0.3.0/go.mod h1:Ukef9ARQiX+RVetwH2XiReLgJvQDEXcUPszrZ1KRjKI=
 github.com/ipfs/go-libipfs v0.7.0 h1:Mi54WJTODaOL2/ZSm5loi3SwI3jI2OuFWUrQIkJ5cpM=
