@@ -33,7 +33,7 @@ require (
 	github.com/ipfs/go-block-format v0.2.4
 	github.com/ipfs/go-blockservice v0.5.2
 	github.com/ipfs/go-cid v0.6.2
-	github.com/ipfs/go-cidutil v0.1.1 // indirect
+	github.com/ipfs/go-cidutil v0.1.2 // indirect
 	github.com/ipfs/go-datastore v0.9.2
 	github.com/ipfs/go-ds-leveldb v0.5.2
 	github.com/ipfs/go-fetcher v1.6.2
@@ -50,7 +50,7 @@ require (
 	github.com/ipfs/go-metrics-interface v0.3.0
 	github.com/ipfs/go-path v0.3.2
 	github.com/ipfs/go-unixfs v0.4.6
-	github.com/ipfs/go-unixfsnode v1.10.4
+	github.com/ipfs/go-unixfsnode v1.10.5
 	github.com/ipld/go-car v0.6.3
 	github.com/ipld/go-codec-dagpb v1.7.0
 	github.com/ipld/go-ipld-prime v0.24.0
