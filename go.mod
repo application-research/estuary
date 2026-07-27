@@ -50,7 +50,7 @@ require (
 	github.com/ipfs/go-metrics-interface v0.3.0
 	github.com/ipfs/go-path v0.3.2
 	github.com/ipfs/go-unixfs v0.4.6
-	github.com/ipfs/go-unixfsnode v1.10.5
+	github.com/ipfs/go-unixfsnode v1.10.6
 	github.com/ipld/go-car v0.6.3
 	github.com/ipld/go-codec-dagpb v1.7.0
 	github.com/ipld/go-ipld-prime v0.24.0
