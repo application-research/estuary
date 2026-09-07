@@ -1,6 +1,6 @@
 module github.com/application-research/estuary
 
-go 1.25.7
+go 1.26.0
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.4.2
@@ -81,7 +81,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
