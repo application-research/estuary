@@ -380,6 +380,20 @@ func (s *apiV1) handleAddCar(c echo.Context, u *util.User) error {
 		return s.redirectContentAdding(c, u)
 	}
 
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
+		return err
+	}
+
+	if !usc.ValidateThreshold() {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed. We can be reached on the Filecoin slack under the #ecosystem-dev channel.", util.BytesToTB(usc.HardLimit)),
+		}
+	}
+
 	// if splitting is disabled and uploaded content size is greater than content size limit
 	// reject the upload, as it will only get stuck and deals will never be made for it
 	// if !u.FlagSplitContent() {
@@ -492,6 +506,25 @@ func (s *apiV1) loadCar(ctx context.Context, bs blockstore.Blockstore, r io.Read
 	return car.LoadCar(ctx, bs, r)
 }
 
+func (s *apiV1) getUserStorageCapacity(user *util.User) (*util.UsersStorageCapacity, error) {
+	var usc *util.UsersStorageCapacity
+	err := s.db.First(&usc, "user_id = ?", user.ID).Error
+
+	if err != nil || usc.IsSyncNeeded() {
+		var usage util.Utilization
+		if err := s.db.Raw(`SELECT (SELECT SUM(size) FROM contents where user_id = ? AND created_at >= ? AND NOT aggregate AND active AND deleted_at IS NULL) as total_size`, user.ID, util.CutOverUtilizationDate).
+			Scan(&usage).Error; err != nil {
+			return usc, err
+		}
+		usc.UserId = user.ID
+		usc.Size = usage.TotalSize
+		usc.LastSyncAt = time.Now()
+		s.db.Save(&usc)
+	}
+
+	return usc, nil
+}
+
 // handleAdd godoc
 // @Summary      Add new content
 // @Description  This endpoint is used to upload new content.
@@ -537,6 +570,20 @@ func (s *apiV1) handleAdd(c echo.Context, u *util.User) error {
 	mpf, err := c.FormFile("data")
 	if err != nil {
 		return err
+	}
+
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
+		return err
+	}
+
+	if !usc.ValidateThreshold() {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed. We can be reached on the Filecoin slack under the #ecosystem-dev channel.", util.BytesToTB(usc.HardLimit)),
+		}
 	}
 
 	// if splitting is disabled and uploaded content size is greater than content size limit
@@ -2852,6 +2899,23 @@ func (s *apiV1) handleGetUserStats(c echo.Context, u *util.User) error {
 	return c.JSON(http.StatusOK, stats)
 }
 
+// handleGetUserStats godoc
+// @Summary      Gets User Utilization Stats
+// @Description  This endpoint is used to get utilization stats for the current user.
+// @Tags         User
+// @Produce      json
+// @Success      200  {object}  string
+// @Failure      400  {object}  util.HttpError
+// @Failure      500  {object}  util.HttpError
+// @Router       /user/utilization [get]
+func (s *apiV1) handleGetUserUtilization(c echo.Context, u *util.User) error {
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, usc)
+}
+
 func (s *apiV1) newAuthTokenForUser(user *util.User, expiry time.Time, perms []string, label string, isSession bool) (*util.AuthToken, error) {
 	if len(perms) > 1 {
 		return nil, fmt.Errorf("invalid perms")
@@ -4512,6 +4576,20 @@ func (s *apiV1) handleCreateContent(c echo.Context, u *util.User) error {
 	var req util.ContentCreateBody
 	if err := c.Bind(&req); err != nil {
 		return err
+	}
+
+	// Get user storage capacity
+	usc, err := s.getUserStorageCapacity(u)
+	if err != nil {
+		return err
+	}
+
+	if !usc.ValidateThreshold() {
+		return &util.HttpError{
+			Code:    http.StatusBadRequest,
+			Reason:  util.ERR_CONTENT_SIZE_OVER_LIMIT,
+			Details: fmt.Sprintf("Reached Max Storage Threshold: %.2f TB. Please contact the Estuary Team for provisionning dedicated infrastruture if additonal storage is needed. We can be reached on the Filecoin slack under the #ecosystem-dev channel.", util.BytesToTB(usc.HardLimit)),
+		}
 	}
 
 	rootCID, err := cid.Decode(req.Root)

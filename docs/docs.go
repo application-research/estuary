@@ -3291,6 +3291,38 @@ const docTemplate = `{
                 }
             }
         },
+        "/user/utilization": {
+            "get": {
+                "description": "This endpoint is used to get utilization stats for the current user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Gets User Utilization Stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/util.HttpError"
+                        }
+                    }
+                }
+            }
+        },
         "/viewer": {
             "get": {
                 "description": "This endpoint fetches viewer details such as username, permissions, address, owned miners, user settings etc.",

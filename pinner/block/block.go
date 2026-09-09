@@ -96,6 +96,16 @@ func (m *manager) addObjectsToDatabase(ctx context.Context, cont *util.Content, 
 			return xerrors.Errorf("failed to update content in database: %w", err)
 		}
 
+		var usc *util.UsersStorageCapacity
+		err := tx.First(&usc, "user_id = ?", cont.UserID).Error
+		if err != nil {
+			usc.UserId = cont.UserID
+			usc.Size = 0
+		}
+
+		usc.Size += contSize
+		tx.Save(&usc)
+
 		// if content can be staged, stage it
 		if contSize < m.cfg.Content.MinSize {
 			return m.stgZoneQueueMgr.QueueContent(cont, tx, false)
