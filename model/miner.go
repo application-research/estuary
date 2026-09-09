@@ -7,11 +7,12 @@ import (
 
 type StorageMiner struct {
 	gorm.Model
-	Address         util.DbAddr `gorm:"unique"`
-	Suspended       bool
-	SuspendedReason string
-	Name            string
-	Version         string
-	Location        string
-	Owner           uint
+	Address           util.DbAddr `gorm:"unique"`
+	Suspended         bool
+	SuspendedReason   string
+	Name              string
+	Version           string
+	Location          string
+	Owner             uint
+	ShuttlePreference []ShuttlePreference
 }
