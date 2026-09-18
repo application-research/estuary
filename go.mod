@@ -23,7 +23,7 @@ require (
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.19.0-rc1
 	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
-	github.com/filecoin-project/lotus v1.36.2
+	github.com/filecoin-project/lotus v1.36.3
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.18 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15
@@ -136,7 +136,7 @@ require (
 	github.com/dgraph-io/ristretto v0.2.0 // indirect
 	github.com/dgryski/go-farm v0.0.0-20200201041132-a6ae2369ad13 // indirect
 	github.com/dunglas/httpsfv v1.1.0 // indirect
-	github.com/elastic/gosigar v0.14.3 // indirect
+	github.com/elastic/gosigar v0.14.4 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/filecoin-project/boost-gfm v1.26.6 // indirect
 	github.com/filecoin-project/boost-graphsync v0.13.6 // indirect
@@ -209,7 +209,7 @@ require (
 	github.com/icza/backscanner v0.0.0-20210726202459-ac2ffc679f94 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/ipfs/bbloom v0.1.0 // indirect
-	github.com/ipfs/boxo v0.42.1 // indirect
+	github.com/ipfs/boxo v0.42.2 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-ds-measure v0.2.3 // indirect
 	github.com/ipfs/go-dsqueue v0.2.0 // indirect
@@ -268,7 +268,7 @@ require (
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect
-	github.com/mattn/go-sqlite3 v1.14.48 // indirect
+	github.com/mattn/go-sqlite3 v1.14.50 // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
