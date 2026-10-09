@@ -23,7 +23,7 @@ require (
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.19.1
 	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
-	github.com/filecoin-project/lotus v1.36.3
+	github.com/filecoin-project/lotus v1.37.0
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.18 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15
@@ -140,8 +140,8 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/filecoin-project/boost-gfm v1.26.6 // indirect
 	github.com/filecoin-project/boost-graphsync v0.13.6 // indirect
-	github.com/filecoin-project/filecoin-ffi v1.36.1 // indirect
-	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
+	github.com/filecoin-project/filecoin-ffi v1.37.0 // indirect
+	github.com/filecoin-project/go-amt-ipld/v2 v2.2.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v4 v4.4.0 // indirect
 	github.com/filecoin-project/go-bitfield v0.2.4 // indirect
@@ -157,7 +157,7 @@ require (
 	github.com/filecoin-project/go-hamt-ipld/v2 v2.0.0 // indirect
 	github.com/filecoin-project/go-hamt-ipld/v3 v3.4.1 // indirect
 	github.com/filecoin-project/go-keccak v0.1.0 // indirect
-	github.com/filecoin-project/go-paramfetch v0.0.5 // indirect
+	github.com/filecoin-project/go-paramfetch v0.0.6 // indirect
 	github.com/filecoin-project/go-statemachine v1.0.3 // indirect
 	github.com/filecoin-project/go-statestore v0.2.0 // indirect
 	github.com/filecoin-project/pubsub v1.0.0 // indirect
@@ -307,6 +307,7 @@ require (
 	github.com/polydawn/refmt v0.90.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/otlptranslator v1.0.0 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/prometheus/statsd_exporter v0.23.0 // indirect
 	github.com/puzpuzpuz/xsync/v2 v2.5.1 // indirect
@@ -342,7 +343,7 @@ require (
 	gitlab.com/yawning/secp256k1-voi v0.0.0-20230925100816-f2616030848b // indirect
 	gitlab.com/yawning/tuplehash v0.0.0-20230713102510-df83abbf9a02 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
-	go.opentelemetry.io/otel/exporters/prometheus v0.50.0 // indirect
+	go.opentelemetry.io/otel/exporters/prometheus v0.68.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
@@ -364,7 +365,7 @@ require (
 	gonum.org/v1/gonum v0.17.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/grpc v1.83.2 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
