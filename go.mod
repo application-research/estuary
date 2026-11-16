@@ -23,7 +23,7 @@ require (
 	github.com/filecoin-project/go-padreader v0.0.1
 	github.com/filecoin-project/go-state-types v0.20.0-dev
 	github.com/filecoin-project/index-provider v0.8.3-0.20220816114513-ecf5e9c2ae97
-	github.com/filecoin-project/lotus v1.39.0
+	github.com/filecoin-project/lotus v1.39.1
 	github.com/filecoin-project/specs-actors/v6 v6.0.2
 	github.com/filecoin-project/storetheindex v0.4.18 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.16
@@ -139,7 +139,7 @@ require (
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/filecoin-project/boost-gfm v1.26.6 // indirect
 	github.com/filecoin-project/boost-graphsync v0.13.6 // indirect
-	github.com/filecoin-project/filecoin-ffi v1.38.0-dev // indirect
+	github.com/filecoin-project/filecoin-ffi v1.38.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.2.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v4 v4.4.0 // indirect
