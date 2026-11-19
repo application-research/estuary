@@ -405,6 +405,7 @@ func migrateSchemas(db *gorm.DB) error {
 		&model.DealQueueTracker{},
 		&model.SplitQueue{},
 		&model.SplitQueueTracker{},
+		&util.UsersStorageCapacity{},
 	); err != nil {
 		return err
 	}

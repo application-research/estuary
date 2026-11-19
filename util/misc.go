@@ -209,3 +209,8 @@ func ToMultiAddress(addr string) (multiaddr.Multiaddr, error) {
 	}
 	return a, nil
 }
+
+func BytesToTB(bytes int64) float64 {
+	tb := float64(bytes) / (1024 * 1024 * 1024 * 1024)
+	return tb
+}
