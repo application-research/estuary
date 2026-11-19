@@ -17,15 +17,15 @@ total=0
 
 set +e
 
-for test_script in $( ls jstests/*|grep -v DELETE|grep -v miner| grep -v deal ; ls jstests/*|grep DELETE;); do
+for test_script in $(ls jstests/*|grep -v miner| grep -v deal); do
   total=$((total+1))
 
-  node $test_script > /dev/null
+  node $test_script 2>&1 > /dev/null
   if [ $? -eq 0 ]; then
     success=$((success+1))
   else
     echo "[$test_script]($test_script)" failed
-    echo 
+    echo
     fails=$((fails+1))
   fi
 
